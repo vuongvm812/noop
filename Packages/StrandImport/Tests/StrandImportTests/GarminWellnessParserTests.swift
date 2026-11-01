@@ -17,6 +17,17 @@ final class GarminWellnessParserTests: XCTestCase {
         day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
         day 2024-11-09 steps=50 dist=- cal=10 act=-
         rmr 1731087296 1650
+        == midnight
+        offset 21600 complete true other 0 dropped 0
+        mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
+        mon 1731088500 type=6 int=- cyc=3400 dist=2400.0000 cal=- act=140 time=- hr=- mod=- vig=-
+        mon 1731087900 type=6 int=- cyc=3100 dist=2200.0000 cal=- act=130 time=- hr=- mod=- vig=-
+        mon 1731088800 type=1 int=- cyc=12500 dist=9600.0000 cal=- act=640 time=- hr=- mod=- vig=-
+        mon 1731088800 type=6 int=- cyc=3600 dist=2500.0000 cal=- act=150 time=- hr=- mod=- vig=-
+        mon 1731088801 type=6 int=- cyc=5 dist=4.0000 cal=- act=0 time=- hr=- mod=- vig=-
+        mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
+        day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
+        day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
         == restingHeartRate
         offset - complete true other 0 dropped 1
         rhr 1731087296 52
@@ -87,6 +98,20 @@ final class GarminWellnessParserTests: XCTestCase {
 
     func testOracleOutputIsPinned() {
         XCTAssertEqual(WellnessFixtures.oracleOutput(), Self.expected)
+    }
+
+    func testMidnightRecordCountsTowardTheEndedDay() {
+        let s = GarminWellnessParser.parse(data: WellnessFixtures.midnight())
+        XCTAssertEqual(s.dailyActivity.map(\.day), ["2024-11-08", "2024-11-09"])
+        XCTAssertEqual(s.dailyActivity.map(\.steps), [16_100, 31])
+        XCTAssertEqual(s.dailyActivity.map(\.activeCalories), [790, 1])
+        // A file holding only the 00:00:00 records (as the watch's last file of a day can) still
+        // credits them to the day that ended, never to the new one.
+        let midnightOnly = s.monitoring.filter { ($0.ts + 21_600) % 86_400 == 0 }
+        XCTAssertEqual(midnightOnly.count, 2)
+        let days = GarminWellnessParser.dailyTotals(midnightOnly, utcOffsetS: 21_600)
+        XCTAssertEqual(days.map(\.day), ["2024-11-08"])
+        XCTAssertEqual(days.map(\.steps), [16_100])
     }
 
     func testCandidateMessagesAreFlagged() {

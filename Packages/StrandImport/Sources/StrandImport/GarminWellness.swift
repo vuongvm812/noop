@@ -52,7 +52,9 @@ import Foundation
 //
 // Cumulative counters: MONITORING calories, active calories, distance and cycles are running totals
 // per activity type that reset at local midnight. A day's total is the sum, over activity types, of
-// each type's latest value that day (`dailyActivity`), never the sum of every record.
+// each type's largest value that day (`dailyActivity`), never the sum of every record. A record stamped
+// exactly at local midnight belongs to the day that just ended: a Forerunner 165 writes its final
+// totals at 00:00:00 before the counters reset.
 //
 // SECURITY: all reads go through `FitRecordStream`, which bounds-checks every access and stops at the
 // first malformed definition or truncated record. Unknown messages and developer fields are skipped.
@@ -204,29 +206,33 @@ public enum GarminWellnessParser {
     public static var candidateMessages: Set<Int> { [290, 397, 398] }
 
     /// Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-    /// latest value of each counter, summed over activity types.
+    /// largest value of each counter, summed over activity types. A record stamped exactly at local
+    /// midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
+    /// the counters reset), so it counts toward the previous day. The counters only rise within a day,
+    /// so the largest value is the day's total even when records arrive out of order.
     /// Kotlin twin: `GarminWellnessParser.dailyTotals`.
     public static func dailyTotals(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyActivity] {
-        struct Latest { var cycles: Int?; var distance: Double?; var calories: Int?; var active: Int? }
-        var byDay: [String: [Int: Latest]] = [:]
+        struct Peak { var cycles: Int?; var distance: Double?; var calories: Int?; var active: Int? }
+        var byDay: [String: [Int: Peak]] = [:]
         for r in records {
-            let day = localDay(r.ts, utcOffsetS: utcOffsetS)
+            let atMidnight = (r.ts + Int64(utcOffsetS)) % 86_400 == 0
+            let day = localDay(atMidnight ? r.ts - 1 : r.ts, utcOffsetS: utcOffsetS)
             var types = byDay[day] ?? [:]
-            var latest = types[r.activityType ?? -1] ?? Latest()
-            if let v = r.cycles { latest.cycles = v }
-            if let v = r.distanceM { latest.distance = v }
-            if let v = r.calories { latest.calories = v }
-            if let v = r.activeCalories { latest.active = v }
-            types[r.activityType ?? -1] = latest
+            var peak = types[r.activityType ?? -1] ?? Peak()
+            if let v = r.cycles { peak.cycles = max(peak.cycles ?? v, v) }
+            if let v = r.distanceM { peak.distance = max(peak.distance ?? v, v) }
+            if let v = r.calories { peak.calories = max(peak.calories ?? v, v) }
+            if let v = r.activeCalories { peak.active = max(peak.active ?? v, v) }
+            types[r.activityType ?? -1] = peak
             byDay[day] = types
         }
         return byDay.keys.sorted().map { day in
             // Sum in activity-type order so the floating-point total is platform-independent.
-            let latest = byDay[day]!.sorted { $0.key < $1.key }.map(\.value)
-            let steps = latest.compactMap(\.cycles)
-            let distances = latest.compactMap(\.distance)
-            let calories = latest.compactMap(\.calories)
-            let active = latest.compactMap(\.active)
+            let peaks = byDay[day]!.sorted { $0.key < $1.key }.map(\.value)
+            let steps = peaks.compactMap(\.cycles)
+            let distances = peaks.compactMap(\.distance)
+            let calories = peaks.compactMap(\.calories)
+            let active = peaks.compactMap(\.active)
             return GarminWellnessSamples.DailyActivity(day: day,
                                  steps: steps.isEmpty ? nil : steps.reduce(0, +),
                                  distanceM: distances.isEmpty ? nil : distances.reduce(0, +),

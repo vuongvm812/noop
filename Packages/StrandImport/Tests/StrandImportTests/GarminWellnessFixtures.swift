@@ -91,6 +91,27 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// Local midnight shaped like a Forerunner 165 day boundary: at exactly 00:00:00 the watch writes
+    /// one record per activity type still carrying the ENDED day's totals, then the counters reset.
+    static func midnight() -> Data {
+        let midnight = t + 1504 // t + offset is 23:34:56 local
+        var f = WellnessFit()
+        f.def(0, 103, [(253, 4, u32), (0, 4, u32)])
+        f.data(0); f.u32(t); f.u32(t + offset)
+        f.def(1, 55, [(253, 4, u32), (5, 1, en), (3, 4, u32), (2, 4, u32), (19, 2, u16)])
+        f.data(1); f.u32(midnight - 600); f.u8(1); f.u32(11_000); f.u32(850_000); f.u16(560)
+        // Written out of order: an earlier, lower reading after a later one must not lower the total.
+        f.data(1); f.u32(midnight - 300); f.u8(6); f.u32(3_400); f.u32(240_000); f.u16(140)
+        f.data(1); f.u32(midnight - 900); f.u8(6); f.u32(3_100); f.u32(220_000); f.u16(130)
+        // 00:00:00: the ended day's final totals.
+        f.data(1); f.u32(midnight); f.u8(1); f.u32(12_500); f.u32(960_000); f.u16(640)
+        f.data(1); f.u32(midnight); f.u8(6); f.u32(3_600); f.u32(250_000); f.u16(150)
+        // 00:00:01 onwards: the new day's counters, starting again from zero.
+        f.data(1); f.u32(midnight + 1); f.u8(6); f.u32(5); f.u32(400); f.u16(0)
+        f.data(1); f.u32(midnight + 60); f.u8(6); f.u32(31); f.u32(2_400); f.u16(1)
+        return f.finish()
+    }
+
     static func restingHeartRate() -> Data {
         var f = WellnessFit()
         f.def(0, 211, [(253, 4, u32), (0, 1, u8), (1, 1, u8)])
@@ -209,7 +230,7 @@ enum WellnessFixtures {
     }
 
     static let all: [(String, () -> Data)] = [
-        ("monitoring", monitoring), ("restingHeartRate", restingHeartRate), ("stress", stress),
+        ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
         ("spo2", spo2), ("sleep", sleep), ("respiration", respiration), ("hrv", hrv),
         ("candidates", candidates), ("framing", framing),
     ]

@@ -22,7 +22,8 @@ package com.noop.ingest
  * Timestamps: only field 253 and compressed-timestamp headers move the running timestamp. MONITORING
  * may carry `timestamp_16`, resolved forward from the previous monitoring time across a 0xFFFF
  * rollover. Cumulative MONITORING counters reset at local midnight per activity type; a day's total is
- * the sum over types of each type's latest value that day ([GarminWellnessParser.dailyTotals]).
+ * the sum over types of each type's largest value that day ([GarminWellnessParser.dailyTotals]); a record
+ * stamped exactly at local midnight still carries the day that just ended.
  */
 data class GarminWellnessSamples(
     /** Local time minus UTC, in seconds, from the file's own local timestamps; null when it has none. */
@@ -140,26 +141,30 @@ object GarminWellnessParser {
 
     /**
      * Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-     * latest value of each counter, summed over activity types.
+     * largest value of each counter, summed over activity types. A record stamped exactly at local
+     * midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
+     * the counters reset), so it counts toward the previous day. The counters only rise within a day,
+     * so the largest value is the day's total even when records arrive out of order.
      */
     fun dailyTotals(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyActivity> {
-        class Latest { var cycles: Int? = null; var distance: Double? = null; var calories: Int? = null; var active: Int? = null }
-        val byDay = HashMap<String, HashMap<Int, Latest>>()
+        class Peak { var cycles: Int? = null; var distance: Double? = null; var calories: Int? = null; var active: Int? = null }
+        val byDay = HashMap<String, HashMap<Int, Peak>>()
         for (r in records) {
-            val types = byDay.getOrPut(localDay(r.ts, utcOffsetS)) { HashMap() }
-            val latest = types.getOrPut(r.activityType ?: -1) { Latest() }
-            r.cycles?.let { latest.cycles = it }
-            r.distanceM?.let { latest.distance = it }
-            r.calories?.let { latest.calories = it }
-            r.activeCalories?.let { latest.active = it }
+            val atMidnight = (r.ts + utcOffsetS) % 86_400 == 0L
+            val types = byDay.getOrPut(localDay(if (atMidnight) r.ts - 1 else r.ts, utcOffsetS)) { HashMap() }
+            val peak = types.getOrPut(r.activityType ?: -1) { Peak() }
+            r.cycles?.let { peak.cycles = maxOf(peak.cycles ?: it, it) }
+            r.distanceM?.let { peak.distance = maxOf(peak.distance ?: it, it) }
+            r.calories?.let { peak.calories = maxOf(peak.calories ?: it, it) }
+            r.activeCalories?.let { peak.active = maxOf(peak.active ?: it, it) }
         }
         return byDay.keys.sorted().map { day ->
             // Sum in activity-type order so the floating-point total is platform-independent.
-            val latest = byDay.getValue(day).entries.sortedBy { it.key }.map { it.value }
-            val steps = latest.mapNotNull { it.cycles }
-            val distances = latest.mapNotNull { it.distance }
-            val calories = latest.mapNotNull { it.calories }
-            val active = latest.mapNotNull { it.active }
+            val peaks = byDay.getValue(day).entries.sortedBy { it.key }.map { it.value }
+            val steps = peaks.mapNotNull { it.cycles }
+            val distances = peaks.mapNotNull { it.distance }
+            val calories = peaks.mapNotNull { it.calories }
+            val active = peaks.mapNotNull { it.active }
             GarminWellnessSamples.DailyActivity(
                 day = day,
                 steps = if (steps.isEmpty()) null else steps.sum(),

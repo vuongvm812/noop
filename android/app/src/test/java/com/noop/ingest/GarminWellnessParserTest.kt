@@ -21,6 +21,21 @@ class GarminWellnessParserTest {
     }
 
     @Test
+    fun midnightRecordCountsTowardTheEndedDay() {
+        val s = GarminWellnessParser.parse(midnight())
+        assertEquals(listOf("2024-11-08", "2024-11-09"), s.dailyActivity.map { it.day })
+        assertEquals(listOf(16_100, 31), s.dailyActivity.map { it.steps })
+        assertEquals(listOf(790, 1), s.dailyActivity.map { it.activeCalories })
+        // A file holding only the 00:00:00 records (as the watch's last file of a day can) still
+        // credits them to the day that ended, never to the new one.
+        val midnightOnly = s.monitoring.filter { (it.ts + 21_600) % 86_400 == 0L }
+        assertEquals(2, midnightOnly.size)
+        val days = GarminWellnessParser.dailyTotals(midnightOnly, 21_600)
+        assertEquals(listOf("2024-11-08"), days.map { it.day })
+        assertEquals(listOf(16_100), days.map { it.steps })
+    }
+
+    @Test
     fun candidateMessagesAreFlagged() {
         assertEquals(setOf(290, 397, 398), GarminWellnessParser.candidateMessages)
     }
@@ -235,6 +250,29 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /**
+         * Local midnight shaped like a Forerunner 165 day boundary: at exactly 00:00:00 the watch writes
+         * one record per activity type still carrying the ENDED day's totals, then the counters reset.
+         */
+        fun midnight(): ByteArray {
+            val midnight = T + 1504 // T + OFFSET is 23:34:56 local
+            val f = WellnessFit()
+            f.def(0, 103, listOf(Triple(253, 4, U32), Triple(0, 4, U32)))
+            f.data(0); f.u32(T); f.u32(T + OFFSET)
+            f.def(1, 55, listOf(Triple(253, 4, U32), Triple(5, 1, EN), Triple(3, 4, U32), Triple(2, 4, U32), Triple(19, 2, U16)))
+            f.data(1); f.u32(midnight - 600); f.u8(1); f.u32(11_000); f.u32(850_000); f.u16(560)
+            // Written out of order: an earlier, lower reading after a later one must not lower the total.
+            f.data(1); f.u32(midnight - 300); f.u8(6); f.u32(3_400); f.u32(240_000); f.u16(140)
+            f.data(1); f.u32(midnight - 900); f.u8(6); f.u32(3_100); f.u32(220_000); f.u16(130)
+            // 00:00:00: the ended day's final totals.
+            f.data(1); f.u32(midnight); f.u8(1); f.u32(12_500); f.u32(960_000); f.u16(640)
+            f.data(1); f.u32(midnight); f.u8(6); f.u32(3_600); f.u32(250_000); f.u16(150)
+            // 00:00:01 onwards: the new day's counters, starting again from zero.
+            f.data(1); f.u32(midnight + 1); f.u8(6); f.u32(5); f.u32(400); f.u16(0)
+            f.data(1); f.u32(midnight + 60); f.u8(6); f.u32(31); f.u32(2_400); f.u16(1)
+            return f.finish()
+        }
+
         fun restingHeartRate(): ByteArray {
             val f = WellnessFit()
             f.def(0, 211, listOf(Triple(253, 4, U32), Triple(0, 1, U8), Triple(1, 1, U8)))
@@ -357,7 +395,7 @@ class GarminWellnessParserTest {
         }
 
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
-            "monitoring" to ::monitoring, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
+            "monitoring" to ::monitoring, "midnight" to ::midnight, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
             "spo2" to ::spo2, "sleep" to ::sleep, "respiration" to ::respiration, "hrv" to ::hrv,
             "candidates" to ::candidates, "framing" to ::framing,
         )
@@ -461,6 +499,17 @@ class GarminWellnessParserTest {
             day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
             day 2024-11-09 steps=50 dist=- cal=10 act=-
             rmr 1731087296 1650
+            == midnight
+            offset 21600 complete true other 0 dropped 0
+            mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
+            mon 1731088500 type=6 int=- cyc=3400 dist=2400.0000 cal=- act=140 time=- hr=- mod=- vig=-
+            mon 1731087900 type=6 int=- cyc=3100 dist=2200.0000 cal=- act=130 time=- hr=- mod=- vig=-
+            mon 1731088800 type=1 int=- cyc=12500 dist=9600.0000 cal=- act=640 time=- hr=- mod=- vig=-
+            mon 1731088800 type=6 int=- cyc=3600 dist=2500.0000 cal=- act=150 time=- hr=- mod=- vig=-
+            mon 1731088801 type=6 int=- cyc=5 dist=4.0000 cal=- act=0 time=- hr=- mod=- vig=-
+            mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
+            day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
+            day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
             == restingHeartRate
             offset - complete true other 0 dropped 1
             rhr 1731087296 52
