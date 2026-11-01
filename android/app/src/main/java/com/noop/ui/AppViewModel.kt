@@ -2691,12 +2691,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             resetSmoothing()
             ble.startRealtime()
         }
+        syncGarminLiveDemand()
     }
 
     /** A live-HR screen went away. Stops the realtime stream only when the last one leaves. */
     fun releaseRealtimeHr() {
         realtimeWanters = (realtimeWanters - 1).coerceAtLeast(0)
         if (realtimeWanters == 0) ble.stopRealtime()
+        syncGarminLiveDemand()
+    }
+
+    /** An EXPERIMENTAL Garmin watch opens its live channels only while someone is watching: a live-HR screen is
+     *  on screen, or a workout is recording (the one demand that survives backgrounding). The coordinator
+     *  forwards this to the Garmin source, whose [com.noop.ble.GarminRadioPolicy] decides the channels. Twin of
+     *  macOS `AppModel.syncGarminLiveDemand`. */
+    private fun syncGarminLiveDemand() {
+        val visible = realtimeWanters > 0
+        val workout = _activeWorkout.value != null
+        noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(liveScreenVisible = visible, workoutActive = workout) }
+    }
+
+    private var lastGarminWorkout = false
+
+    /** Re-sync the Garmin live demand whenever a workout starts or ends (from any of its entry points). */
+    private val garminWorkoutDemand = viewModelScope.launch {
+        _activeWorkout.collect { w -> if ((w != null) != lastGarminWorkout) { lastGarminWorkout = w != null; syncGarminLiveDemand() } }
     }
 
     /** Refresh the battery reading. Reads the standard 0x2A19 characteristic (works on 5/MG, where the

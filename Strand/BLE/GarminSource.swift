@@ -7,6 +7,14 @@ import UIKit
 import AppKit
 #endif
 
+/// What the live-channel layer reports to the app: a decoded reading, a channel's handle opening or closing
+/// on the watch, or the link going down (which closes every channel).
+enum GarminLiveEvent: Equatable {
+    case reading(GarminRealtimeReading)
+    case channel(GarminService, open: Bool)
+    case linkDown
+}
+
 /// EXPERIMENTAL Garmin watch source over the watch's own GFDI protocol (the `GarminProtocol` package).
 ///
 /// Holds one stable, low-power session: connect by stored identifier, pick the transport the watch offers
@@ -23,6 +31,11 @@ import AppKit
 /// `garminSyncedFile` ledger); each file goes to `ingest`, which decodes, stores and records it. Nothing
 /// on the watch is archived, flagged or deleted. A transfer cut short by a dropped link is continued from
 /// its last checked offset on the next sync.
+///
+/// Live channels are a VIEWER: the app reports who is watching (`updateLiveDemand`), `GarminRadioPolicy`
+/// with its 30 s linger turns that into a channel set, and the session registers / closes the handles.
+/// Nothing opens without demand, nothing opens in the background except for an active workout, SpO2 opens
+/// only on an explicit request, and the accelerometer never opens. Readings go out through `onLive`.
 ///
 /// Owns its OWN `CBCentralManager` and never references `BLEManager`, so the WHOOP path cannot regress.
 /// Uses only Foundation, CoreBluetooth and GarminProtocol plus `GarminRadioPolicy`, so it can also be
@@ -51,6 +64,8 @@ final class GarminSource: NSObject, ObservableObject {
     @Published private(set) var lastSyncSummary: GarminSyncSummary?
     /// Bytes of the file transfer in flight, nil between files (sync status line, Test Centre).
     var transferOffset: Int? { session?.syncResumePoint.map { Int($0.offset) } }
+    /// Live channels whose handle is open on the watch right now (the watch confirmed the registration).
+    @Published private(set) var openLiveChannels: Set<GarminLiveChannel> = []
 
     private let deviceId: String
     private let isFirstPairing: () -> Bool
@@ -61,6 +76,7 @@ final class GarminSource: NSObject, ObservableObject {
     private let onBattery: (Int) -> Void
     private let onWatch: (GarminDeviceInformation) -> Void
     private let onSyncAnnounced: () -> Void
+    private let onLive: (GarminLiveEvent) -> Void
     private let nameMatches: (String) -> Bool
     private let loadSynced: () async -> Set<GarminSyncFileKey>
     private let ingest: (GarminDownloadedFile) async -> Bool
@@ -81,6 +97,15 @@ final class GarminSource: NSObject, ObservableObject {
     private var deadlineTimer: DispatchWorkItem?
     private var reconnectTimer: DispatchWorkItem?
     private var telemetry = GarminRadioTelemetry()
+
+    /// Who is watching. `appInForeground` is always overwritten with this source's own foreground state.
+    private var liveDemand = GarminRadioInputs(appInForeground: true)
+    private var linger = GarminLiveChannelLinger()
+    /// The channel set the policy currently holds open (demand plus linger), handed to every session.
+    private var wantedLive: Set<GarminService> = []
+    /// A dispatch source rather than `asyncAfter`: GCD gives `asyncAfter` a leeway that grows with the delay,
+    /// which closed the 30 s linger ~1.7 s late on hardware. 100 ms is plenty for an auto-close.
+    private var lingerTimer: DispatchSourceTimer?
 
     /// The watch to keep reaching. nil = no target (stopped, or never started).
     private var reconnectID: UUID?
@@ -112,6 +137,7 @@ final class GarminSource: NSObject, ObservableObject {
          onBattery: @escaping (Int) -> Void = { _ in },
          onWatch: @escaping (GarminDeviceInformation) -> Void = { _ in },
          onSyncAnnounced: @escaping () -> Void = {},
+         onLive: @escaping (GarminLiveEvent) -> Void = { _ in },
          nameMatches: @escaping (String) -> Bool = { _ in false },
          loadSynced: @escaping () async -> Set<GarminSyncFileKey> = { [] },
          ingest: @escaping (GarminDownloadedFile) async -> Bool = { _ in false },
@@ -127,6 +153,7 @@ final class GarminSource: NSObject, ObservableObject {
         self.onBattery = onBattery
         self.onWatch = onWatch
         self.onSyncAnnounced = onSyncAnnounced
+        self.onLive = onLive
         self.nameMatches = nameMatches
         self.loadSynced = loadSynced
         self.ingest = ingest
@@ -190,6 +217,7 @@ final class GarminSource: NSObject, ObservableObject {
         reconnectTimer?.cancel()
         deadlineTimer?.cancel()
         periodicTimer?.cancel()
+        lingerTimer?.cancel()
         if central.isScanning { central.stopScan() }
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         endSession()
@@ -282,6 +310,49 @@ final class GarminSource: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Live demand
+
+    /// Report who is watching: the live screen, an active workout, the continuous-live toggle, the
+    /// optional channels whose UI is on screen, or an explicit request (the only way SpO2 opens). The
+    /// policy decides the channels; the 30 s linger keeps them across a quick screen change.
+    func updateLiveDemand(_ change: (inout GarminRadioInputs) -> Void) {
+        change(&liveDemand)
+        applyLiveDemand()
+    }
+
+    private func applyLiveDemand() {
+        liveDemand.appInForeground = foreground
+        let hold = linger.update(liveDemand, now: Self.uptimeSeconds())
+        let wanted = Set(hold.channels.compactMap { GarminService(rawValue: UInt16($0.rawValue)) })
+        if wanted != wantedLive {
+            say(true, "live channels wanted: \(Self.list(wanted))"
+                + (hold.recheckAt != nil ? " (lingering \(Int(GarminRadioPolicy.liveLingerSeconds)) s)" : ""))
+        }
+        wantedLive = wanted
+        if var s = session {
+            let outputs = s.setLiveChannels(wanted, clock())
+            session = s
+            perform(outputs)
+        }
+        lingerTimer?.cancel()
+        lingerTimer = nil
+        if let at = hold.recheckAt {
+            let timer = DispatchSource.makeTimerSource(queue: .main)
+            timer.setEventHandler { [weak self] in MainActor.assumeIsolated { self?.applyLiveDemand() } }
+            timer.schedule(deadline: .now() + max(0, at - Self.uptimeSeconds()) + 0.05, leeway: .milliseconds(100))
+            timer.resume()
+            lingerTimer = timer
+        }
+    }
+
+    nonisolated static func uptimeSeconds() -> TimeInterval {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+    }
+
+    private static func list(_ services: Set<GarminService>) -> String {
+        services.isEmpty ? "none" : services.map(\.rawValue).sorted().map(String.init).joined(separator: ",")
+    }
+
     // MARK: - Session plumbing
 
     private func attach(_ p: CBPeripheral) {
@@ -345,6 +416,20 @@ final class GarminSource: NSObject, ObservableObject {
                 syncFinished(summary)
             case let .transferActive(active):
                 syncing = active
+            case let .live(reading):
+                onLive(.reading(reading))
+            case let .liveChannel(service, open):
+                if let channel = GarminLiveChannel(rawValue: Int(service.rawValue)) {
+                    let now = Date().timeIntervalSince1970
+                    if open {
+                        telemetry.channelOpened(channel, at: now)
+                        openLiveChannels.insert(channel)
+                    } else {
+                        telemetry.channelClosed(channel, at: now)
+                        openLiveChannels.remove(channel)
+                    }
+                }
+                onLive(.channel(service, open: open))
             }
         }
         scheduleDeadline()
@@ -397,6 +482,8 @@ final class GarminSource: NSObject, ObservableObject {
             let now = Date().timeIntervalSince1970
             telemetry.linkDown(at: now)
             say(false, telemetry.summary(now: now))
+            openLiveChannels = []
+            onLive(.linkDown)
         }
         session = nil
         notifyChar = nil
@@ -457,11 +544,14 @@ final class GarminSource: NSObject, ObservableObject {
             central.stopScan()
             say(true, "scan stopped - the app went to the background")
         }
-        guard var s = session else { return }
-        let outputs = s.setForeground(isForeground, clock())
-        session = s
-        perform(outputs)
+        if var s = session {
+            let outputs = s.setForeground(isForeground, clock())
+            session = s
+            perform(outputs)
+        }
         if isForeground { requestSync(.foreground) }
+        // Backgrounding closes every live channel at once (no linger), except an active workout's HR + RR.
+        applyLiveDemand()
     }
 
     private static func hostIdentity() -> GarminHostIdentity {
@@ -642,6 +732,8 @@ extension GarminSource: CBPeripheralDelegate {
             let c = clock()
             var outputs = s.start(c)
             if !foreground { outputs += s.setForeground(false, c) }
+            // Remembered by the session and registered once its handshake completes.
+            outputs += s.setLiveChannels(wantedLive, c)
             session = s
             linkPhase = .handshaking
             perform(outputs)

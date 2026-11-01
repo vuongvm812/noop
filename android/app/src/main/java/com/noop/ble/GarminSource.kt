@@ -38,6 +38,7 @@ import com.noop.garmin.GarminGattService
 import com.noop.garmin.GarminSession
 import com.noop.garmin.GarminSessionConfig
 import com.noop.garmin.GarminSessionOutput
+import com.noop.garmin.GarminService
 import com.noop.garmin.GarminSessionPhase
 import com.noop.garmin.GarminTransport
 import com.noop.garmin.GarminTransportSelection
@@ -77,6 +78,11 @@ import java.util.UUID
  * Runs on the app-scoped [SourceCoordinator], so the existing foreground connection service keeps the
  * process (and this link) alive. Every GATT callback is posted to the main looper, which keeps the
  * session single-threaded. Owns its OWN GATT and never references [WhoopBleClient].
+ *
+ * Live channels are a VIEWER: the app reports who is watching ([updateLiveDemand]), [GarminRadioPolicy] with
+ * its 30 s linger turns that into a channel set, and the session registers / closes the handles. Nothing opens
+ * without demand, nothing opens in the background except for an active workout, SpO2 opens only on an explicit
+ * request, and the accelerometer never opens. Readings go out through [onLive].
  */
 @SuppressLint("MissingPermission")
 class GarminSource(
@@ -96,6 +102,7 @@ class GarminSource(
     private val syncFlow: (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(it?.productNumber) },
     /** DownloadRequest compression; the policy's value unless a caller needs uncompressed transfers. */
     private val requestsCompression: Boolean = GarminRadioPolicy.REQUESTS_COMPRESSION,
+    private val onLive: (GarminLiveEvent) -> Unit = {},
 ) : LiveHrSource {
 
     enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
@@ -118,6 +125,9 @@ class GarminSource(
     val lastSyncSummary: StateFlow<GarminSyncSummary?> = _lastSyncSummary.asStateFlow()
     /** Bytes of the file transfer in flight, null between files (sync status line, Test Centre). */
     val transferOffset: Long? get() = session?.syncResumePoint?.offset
+    /** Live channels whose handle is open on the watch right now (the watch confirmed the registration). */
+    private val _openLiveChannels = MutableStateFlow<Set<GarminLiveChannel>>(emptySet())
+    val openLiveChannels: StateFlow<Set<GarminLiveChannel>> = _openLiveChannels.asStateFlow()
 
     private val appContext = context.applicationContext
     private val adapter: BluetoothAdapter? =
@@ -133,6 +143,13 @@ class GarminSource(
     private val writeQueue = ArrayDeque<ByteArray>()
     private var writeInFlight = false
     private val telemetry = GarminRadioTelemetry()
+
+    /** Who is watching. `appInForeground` is always overwritten with this source's own foreground state. */
+    private var liveDemand = GarminRadioInputs(appInForeground = true)
+    private val linger = GarminLiveChannelLinger()
+    /** The channel set the policy currently holds open (demand plus linger), handed to every session. */
+    private var wantedLive: Set<GarminService> = emptySet()
+    private val lingerRecheck = Runnable { applyLiveDemand() }
 
     private var targetAddress: String? = null
     private var intentionalDisconnect = false
@@ -202,6 +219,7 @@ class GarminSource(
         handler.removeCallbacks(reconnectRunnable)
         handler.removeCallbacks(deadline)
         handler.removeCallbacks(periodicSync)
+        handler.removeCallbacks(lingerRecheck)
         stopScan()
         gatt?.let { runCatching { it.disconnect(); it.close() } }
         gatt = null
@@ -288,6 +306,38 @@ class GarminSource(
         }
     }
 
+    // Live demand
+
+    /**
+     * Report who is watching: the live screen, an active workout, the continuous-live toggle, optional channels
+     * on screen, or an explicit request (the only way SpO2 opens). The policy decides the channels; the 30 s
+     * linger keeps them across a quick screen change. Call on the main thread.
+     */
+    fun updateLiveDemand(change: (GarminRadioInputs) -> GarminRadioInputs) {
+        liveDemand = change(liveDemand)
+        applyLiveDemand()
+    }
+
+    private fun applyLiveDemand() {
+        liveDemand = liveDemand.copy(appInForeground = foreground)
+        val hold = linger.update(liveDemand, SystemClock.elapsedRealtime() / 1000.0)
+        val wanted = hold.channels.mapNotNull { GarminService.fromRaw(it.serviceId) }.toSet()
+        if (wanted != wantedLive) {
+            say(true, "live channels wanted: ${list(wanted)}" +
+                if (hold.recheckAtSeconds != null) " (lingering ${GarminRadioPolicy.LIVE_LINGER_SECONDS.toInt()} s)" else "")
+        }
+        wantedLive = wanted
+        session?.let { perform(it.setLiveChannels(wanted, clock())) }
+        handler.removeCallbacks(lingerRecheck)
+        hold.recheckAtSeconds?.let { at ->
+            val delayMs = ((at - SystemClock.elapsedRealtime() / 1000.0) * 1000).toLong().coerceAtLeast(0) + 50
+            handler.postDelayed(lingerRecheck, delayMs)
+        }
+    }
+
+    private fun list(services: Set<GarminService>): String =
+        if (services.isEmpty()) "none" else services.map { it.raw }.sorted().joinToString(",")
+
     // Session plumbing
 
     private fun attach(device: BluetoothDevice) {
@@ -365,6 +415,20 @@ class GarminSource(
                     setPriority(GarminRadioPolicy.connectionPriority(
                         if (o.active) GarminLinkActivity.FILE_TRANSFER else GarminLinkActivity.IDLE))
                 }
+                is GarminSessionOutput.Live -> onLive(GarminLiveEvent.Reading(o.reading))
+                is GarminSessionOutput.LiveChannel -> {
+                    GarminLiveChannel.entries.firstOrNull { it.serviceId == o.service.raw }?.let { channel ->
+                        val now = System.currentTimeMillis() / 1000.0
+                        if (o.open) {
+                            telemetry.channelOpened(channel, now)
+                            _openLiveChannels.value = _openLiveChannels.value + channel
+                        } else {
+                            telemetry.channelClosed(channel, now)
+                            _openLiveChannels.value = _openLiveChannels.value - channel
+                        }
+                    }
+                    onLive(GarminLiveEvent.Channel(o.service, o.open))
+                }
             }
         }
         drainWrites()
@@ -427,6 +491,8 @@ class GarminSource(
             val now = System.currentTimeMillis() / 1000.0
             telemetry.linkDown(now)
             say(false, telemetry.summary(now))
+            _openLiveChannels.value = emptySet()
+            onLive(GarminLiveEvent.LinkDown)
         }
         session = null
         notifyChar = null
@@ -474,6 +540,8 @@ class GarminSource(
         }
         session?.let { perform(it.setForeground(isForeground, clock())) }
         if (isForeground) requestSync(GarminSyncTrigger.FOREGROUND)
+        // Backgrounding closes every live channel at once (no linger), except an active workout's HR + RR.
+        applyLiveDemand()
     }
 
     private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
@@ -638,6 +706,8 @@ class GarminSource(
             val c = clock()
             val outputs = s.start(c).toMutableList()
             if (!foreground) outputs += s.setForeground(false, c)
+            // Remembered by the session and registered once its handshake completes.
+            outputs += s.setLiveChannels(wantedLive, c)
             perform(outputs)
         }
 

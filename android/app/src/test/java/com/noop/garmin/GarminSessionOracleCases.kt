@@ -8,6 +8,7 @@ internal sealed class OracleSessionStep {
     class Rx(val bytes: ByteArray) : OracleSessionStep()
     object Tick : OracleSessionStep()
     class Foreground(val fg: Boolean) : OracleSessionStep()
+    class Live(val services: List<GarminService>) : OracleSessionStep()
 }
 
 /** The Forerunner 165's 5024 as observed on 2026-11-01 (protocol 151, product 4432, firmware 29.05). */
@@ -32,6 +33,8 @@ internal fun oracleDescribe(o: GarminSessionOutput): String = when (o) {
     is GarminSessionOutput.SyncFile -> "sync-file ${o.file.key.label}"
     is GarminSessionOutput.SyncFinished -> "sync-finished ${o.summary.line}"
     is GarminSessionOutput.TransferActive -> "transfer ${o.active}"
+    is GarminSessionOutput.Live -> "live ${GarminRealtime.describe(o.reading)}"
+    is GarminSessionOutput.LiveChannel -> "channel ${o.service.raw} ${if (o.open) "open" else "closed"}"
 }
 
 internal fun oracleRunSession(
@@ -49,6 +52,7 @@ internal fun oracleRunSession(
             is OracleSessionStep.Rx -> session.receive(step.bytes, clock)
             is OracleSessionStep.Tick -> session.tick(clock)
             is OracleSessionStep.Foreground -> session.setForeground(step.fg, clock)
+            is OracleSessionStep.Live -> session.setLiveChannels(step.services.toSet(), clock)
         }
         out += outputs.map { "@$ms " + oracleDescribe(it) }
     }
@@ -137,6 +141,80 @@ internal fun garminSessionOracleLines(): List<String> {
         30L to rx(mlrInfo),
         50L to OracleSessionStep.Tick,
         1_040L to OracleSessionStep.Tick,
+    ))
+
+    // F: live channels (see the Swift trace for what each step exercises).
+    val f = GarminSession(GarminSessionConfig(oracleSessionHost(), firstPairing = false, sendsHostLifecycleEvents = false),
+        GarminTransportKind.MULTI_LINK_V2, 150)
+    val hr = GarminService.REALTIME_HEART_RATE
+    val hrv = GarminService.REALTIME_HRV
+    val all = listOf(hr, hrv, GarminService.REALTIME_STEPS, GarminService.REALTIME_FLOORS, GarminService.REALTIME_SPO2,
+        GarminService.REALTIME_BODY_BATTERY, GarminService.REALTIME_RESPIRATION, GarminService.REALTIME_STRESS,
+        GarminService.REALTIME_ACCELEROMETER)
+    fun live(vararg v: GarminService) = OracleSessionStep.Live(v.toList())
+    out += oracleRunSession("ml-live", f, listOf(
+        0L to OracleSessionStep.Start,
+        1L to live(hr, hrv),
+        10L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
+        20L to rx(oracleControl(1, oracleLE16(1) + bytes(0, handle, 0))),
+        30L to rx(ml(oracleFr165DeviceInformation())),
+        40L to rx(ml(oracleFrame(5050, bytes(1, 0x09)))),
+        50L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x66, 0))),
+        51L to rx(oracleControl(1, oracleLE16(12) + bytes(0, 0x67, 0))),
+        60L to rx(bytes(0x66, 3, 62, 55, 0xFF, 0xFF)),
+        61L to rx(bytes(0x66, 3, 0, 0, 0xFF, 0xFF)),
+        62L to rx(bytes(0x66, 2, 250, 0)),
+        63L to rx(bytes(0x66, 3)),
+        70L to rx(bytes(0x67, 0xE8, 0x03) + oracleLE32(0x0102_0304L)),
+        71L to rx(bytes(0x67, 0x00, 0x00) + oracleLE32(7)),
+        72L to rx(bytes(0x67, 0x52, 0x03)),
+        73L to rx(bytes(0x67, 0x05)),
+        80L to OracleSessionStep.Live(all),
+        90L to rx(oracleControl(1, oracleLE16(7) + bytes(0, 0x68, 0))),
+        91L to rx(oracleControl(1, oracleLE16(9) + bytes(0, 0x69, 0))),
+        92L to rx(oracleControl(1, oracleLE16(19) + bytes(1, 0, 0))),
+        93L to rx(oracleControl(1, oracleLE16(20) + bytes(0, 0x6A, 1))),
+        94L to rx(oracleControl(1, oracleLE16(21) + bytes(0, 0x6B, 0))),
+        100L to rx(bytes(0x68) + oracleLE32(4_321) + oracleLE32(7_500)),
+        101L to rx(bytes(0x69) + oracleLE16(3) + oracleLE16(1) + oracleLE16(10)),
+        102L to rx(bytes(0x6B, 14)),
+        103L to rx(bytes(0x6B, 0xFE)),
+        104L to rx(bytes(0x6B, 0x00)),
+        110L to OracleSessionStep.Live(all),
+        120L to rx(oracleControl(3, oracleLE16(20) + bytes(0x6A, 0))),
+        130L to live(hr, hrv),
+        140L to rx(oracleControl(3, oracleLE16(7) + bytes(0x68, 0))),
+        141L to rx(oracleControl(3, oracleLE16(9) + bytes(0x69, 0))),
+        142L to rx(oracleControl(3, oracleLE16(21) + bytes(0x6B, 0))),
+        150L to live(GarminService.REALTIME_SPO2),
+        160L to rx(oracleControl(1, oracleLE16(19) + bytes(0, 0x6C, 0))),
+        161L to rx(bytes(0x6C, 0xFF) + oracleLE32(0)),
+        162L to rx(bytes(0x6C, 97) + oracleLE32(1_162_481_386L)),
+        163L to rx(bytes(0x6C, 101) + oracleLE32(5)),
+        170L to live(),
+        171L to live(hr),
+        180L to rx(oracleControl(3, oracleLE16(6) + bytes(0x66, 0))),
+        181L to rx(oracleControl(3, oracleLE16(12) + bytes(0x67, 0))),
+        182L to rx(oracleControl(3, oracleLE16(19) + bytes(0x6C, 0))),
+        190L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x6D, 0))),
+        191L to rx(oracleControl(1, oracleLE16(21) + bytes(0, 0x6E, 0))),
+        192L to rx(oracleControl(3, oracleLE16(21) + bytes(0x6E, 0))),
+        193L to rx(oracleControl(1, oracleLE16(77) + bytes(0, 0x6F, 0))),
+        200L to rx(bytes(0x6D, 3, 70, 0, 0xFF, 0xFF)),
+        210L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
+        211L to rx(bytes(0x6D, 3, 71, 0, 0xFF, 0xFF)),
+        220L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x70, 0))),
+        221L to rx(bytes(0x70) + oracleCobs(oracleFr165DeviceInformation())),
+        222L to rx(bytes(0x70) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        230L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x71, 0))),
+        240L to rx(oracleControl(2, oracleLE16(6) + bytes(0x71, 0))),
+    ))
+
+    // G: a direct (V1) transport has no live channels; asked once, said once.
+    val g = GarminSession(GarminSessionConfig(oracleSessionHost(), firstPairing = false, sendsHostLifecycleEvents = false),
+        GarminTransportKind.V1, 23)
+    out += oracleRunSession("v1-live", g, listOf(
+        0L to OracleSessionStep.Start, 1L to live(hr), 2L to live(hr), 3L to live(),
     ))
 
     val s = GarminTransportSelection

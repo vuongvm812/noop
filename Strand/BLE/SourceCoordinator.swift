@@ -329,7 +329,15 @@ final class SourceCoordinator: ObservableObject {
     /// Centre domain is active; state changes, refusals and failures are always logged.
     private func makeGarminSource(id: String) -> any LiveHRSource {
         let pairedKey = "noop.garmin.pairingEventsSent.\(id)"
-        return GarminSource(
+        // Live channels feed the SAME LiveState + store funnels as every other source (GarminLiveFeed).
+        let feed = GarminLiveFeed(
+            live: live,
+            persist: { [storeHandle] streams in
+                Task { if let store = await storeHandle() { _ = try? await store.insert(streams, deviceId: id) } }
+            },
+            log: straplog,
+            detail: { TestCentre.active(.connection) || TestCentre.active(.sources) || TestCentre.active(.hrv) })
+        let source = GarminSource(
             deviceId: id,
             isFirstPairing: { !UserDefaults.standard.bool(forKey: pairedKey) },
             markPaired: { UserDefaults.standard.set(true, forKey: pairedKey) },
@@ -339,6 +347,7 @@ final class SourceCoordinator: ObservableObject {
             onWatch: { [registry] info in
                 if !info.bluetoothName.isEmpty { registry.setModel(id, model: info.bluetoothName) }
             },
+            onLive: { feed.handle($0) },
             nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin },
             // History sync: the local ledger says what is already stored; each downloaded file is decoded
             // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
@@ -350,6 +359,20 @@ final class SourceCoordinator: ObservableObject {
                 guard let store = await storeHandle() else { return false }
                 return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)
             })
+        // Whoever is already watching (the Live screen open while the user switches to the watch).
+        source.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
+        return source
+    }
+
+    /// Who is watching live data (`GarminRadioPolicy` inputs). Kept here so a Garmin source built later,
+    /// or rebuilt on a strap switch, starts from the current demand. Only a Garmin source acts on it.
+    private var garminLiveDemand = GarminRadioInputs(appInForeground: true)
+
+    /// Report a change in live demand (the Live screen, an active workout, an explicit SpO2 request).
+    /// Forwarded to the active Garmin source; every other source ignores live demand.
+    func updateGarminLiveDemand(_ change: (inout GarminRadioInputs) -> Void) {
+        change(&garminLiveDemand)
+        (activeSource as? GarminSource)?.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
     }
 
     /// Build the isolated `FTMSSource` for a gym machine `id`. HR (when the machine reports it) rides the

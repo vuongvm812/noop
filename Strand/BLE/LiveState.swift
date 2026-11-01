@@ -4,6 +4,7 @@ import StrandAnalytics
 import WhoopProtocol
 import WhoopStore
 import OuraProtocol
+import GarminProtocol
 
 /// Observable snapshot of the live connection + biometric state, driven by FrameRouter
 /// (from decoded frames) and BLEManager (from CoreBluetooth callbacks).
@@ -54,6 +55,10 @@ public final class LiveState: ObservableObject {
     /// radio-off / connect-fail / disconnect). Twin of the Android LiveState.streamingLiveHR.
     @Published public var streamingLiveHR: Bool = false
     @Published public var heartRate: Int? = nil
+    /// The latest live values an EXPERIMENTAL Garmin watch reported on its realtime channels (Body Battery,
+    /// respiration, SpO2, steps, floors, resting HR). nil when no Garmin is streaming; a field is nil when its
+    /// channel is closed or the watch sent its "unknown" code. Kotlin twin: `LiveState.garminLive`.
+    @Published public var garminLive: GarminLiveSnapshot? = nil
     /// Whether the heavy R10/R11 realtime burst is currently armed (the "live feed"). Tracks the
     /// realtime INTENT (startRealtime/stopRealtime), NOT `heartRate` — the lightweight 0x2A37 profile
     /// keeps setting heartRate while bonded, so a heartRate-driven toggle could never read "off". The
@@ -770,6 +775,7 @@ public final class LiveState: ObservableObject {
         ouraWearState = nil               // a stale worn/charging badge must not outlive the link either
         ouraBatteryPct = nil              // nor a stale ring charge (#2075)
         packSocPct = nil                  // nor an attached pack's charge
+        garminLive = nil                  // nor a Garmin watch's live Body Battery / respiration / SpO2
     }
 
     /// Cap on the in-app strap-log ring buffer. Raised from the old ~1h (200 lines) to retain a rolling

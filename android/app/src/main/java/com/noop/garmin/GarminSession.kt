@@ -70,6 +70,10 @@ sealed class GarminSessionOutput {
     data class SyncFinished(val summary: GarminSyncSummary) : GarminSessionOutput()
     /** A history transfer started (true) or ended (false): CONNECTION_PRIORITY_HIGH only in between. */
     data class TransferActive(val active: Boolean) : GarminSessionOutput()
+    /** One decoded realtime notification from an open live channel. */
+    data class Live(val reading: GarminRealtimeReading) : GarminSessionOutput()
+    /** A live channel's handle opened or closed on the watch. */
+    data class LiveChannel(val service: GarminService, val open: Boolean) : GarminSessionOutput()
 }
 
 /** How the watch said it has new data. */
@@ -111,10 +115,15 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
     private var pairingSent = false
     private val loggedUnknownTypes = HashSet<Int>()
     private val sync = GarminHistorySync()
+    private val live = GarminLiveChannelTable()
+    private var loggedNoLiveTransport = false
     private val out = ArrayList<GarminSessionOutput>()
 
     /** The earliest moment [tick] has work: the handshake deadline, an MLR timer, or the sync's stall deadline. */
     val nextDeadlineMs: Long? get() = listOfNotNull(handshakeDeadline, mlr?.nextDeadlineMs, sync.deadlineMs).minOrNull()
+
+    /** Realtime channels whose handle is open on the watch right now. */
+    val openLiveChannels: Set<GarminService> get() = live.openServices
 
     /** A history sync is running. */
     val isSyncing: Boolean get() = sync.isActive
@@ -156,6 +165,20 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
         return flush()
     }
 
+    /** The realtime channels that should be open (decided by GarminRadioPolicy on the platform). Opened once the
+     *  handshake is done and re-applied after the watch re-grants GFDI. Multi-link only. */
+    fun setLiveChannels(services: Set<GarminService>, clock: GarminClock): List<GarminSessionOutput> {
+        if (transport != GarminTransportKind.MULTI_LINK_V2) {
+            if (services.isNotEmpty() && !loggedNoLiveTransport) {
+                loggedNoLiveTransport = true
+                note(true, "live channels need the multi-link transport; ${transport.label} has none")
+            }
+            return flush()
+        }
+        emit(live.setDesired(services, phase == GarminSessionPhase.Ready))
+        return flush()
+    }
+
     fun tick(clock: GarminClock): List<GarminSessionOutput> {
         perform(sync.tick(clock.nowMs), clock)
         val deadline = handshakeDeadline
@@ -183,10 +206,17 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                 for (p in received.outbound) out.add(GarminSessionOutput.Write(p))
                 received.data?.let { feed(it, clock) }
             }
-            is GarminMultiLink.Route.Plain ->
-                if (route.handle == gfdiHandle) feed(route.payload, clock)
-                else if (routeSync(sync.handlePipeData(route.handle, route.payload, clock.nowMs), clock)) Unit
-                else note(false, "ignored ${route.payload.size} bytes on unregistered handle ${hex8(route.handle)}")
+            is GarminMultiLink.Route.Plain -> {
+                when {
+                    route.handle == gfdiHandle -> feed(route.payload, clock)
+                    routeSync(sync.handlePipeData(route.handle, route.payload, clock.nowMs), clock) -> Unit
+                    else -> {
+                        val events = live.receive(route.handle, route.payload)
+                        if (events != null) emit(events)
+                        else note(false, "ignored ${route.payload.size} bytes on unregistered handle ${hex8(route.handle)}")
+                    }
+                }
+            }
         }
         return flush()
     }
@@ -201,6 +231,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
         }
         when (response) {
             is GarminMultiLink.ControlResponse.AllClosed -> {
+                emit(live.allClosed())
                 if (phase == GarminSessionPhase.ClosingAll) {
                     note(false, "all handles closed")
                 } else {
@@ -219,12 +250,18 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                     setPhase(GarminSessionPhase.Registering)
                     control(GarminMultiLink.ControlRequest.Register(GarminService.GFDI, false))
                 } else {
-                    note(false, "handle ${hex8(response.handle)} service=${response.service} closed status=${response.status}")
+                    val liveEvents = live.handleClosed(response.handle, response.status)
+                    if (liveEvents != null) emit(liveEvents)
+                    else note(false, "handle ${hex8(response.handle)} service=${response.service} closed status=${response.status}")
                 }
             }
             is GarminMultiLink.ControlResponse.Registered -> {
                 if (routeSync(sync.handleRegistered(response.service, response.status, response.handle, clock.nowMs), clock)) return
-                if (response.service != GarminService.GFDI.raw || phase != GarminSessionPhase.Registering) {
+                if (response.service != GarminService.GFDI.raw) {
+                    emit(live.registered(response.service, response.status, response.handle, response.reliable))
+                    return
+                }
+                if (phase != GarminSessionPhase.Registering) {
                     note(false, "registration for service ${response.service} status=${response.status} ignored")
                     return
                 }
@@ -389,6 +426,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
         setPhase(GarminSessionPhase.Ready)
         note(true, "handshake complete in ${clock.nowMs - (startedAtMs ?: clock.nowMs)} ms")
         sendLifecycleIfNeeded(clock)
+        emit(live.apply())
     }
 
     private fun sendLifecycleIfNeeded(clock: GarminClock) {
@@ -444,6 +482,18 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                     out.add(GarminSessionOutput.Write(frame.bytes.copyOfRange(start, end)))
                     start = end
                 }
+            }
+        }
+    }
+
+    private fun emit(events: List<GarminLiveChannelEvent>) {
+        for (e in events) {
+            when (e) {
+                is GarminLiveChannelEvent.Control -> control(e.request)
+                is GarminLiveChannelEvent.Log -> note(e.rare, e.text)
+                is GarminLiveChannelEvent.Opened -> out.add(GarminSessionOutput.LiveChannel(e.service, true))
+                is GarminLiveChannelEvent.Closed -> out.add(GarminSessionOutput.LiveChannel(e.service, false))
+                is GarminLiveChannelEvent.Reading -> out.add(GarminSessionOutput.Live(e.reading))
             }
         }
     }

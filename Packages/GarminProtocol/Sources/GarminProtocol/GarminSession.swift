@@ -130,6 +130,10 @@ public enum GarminSessionOutput: Equatable, Sendable {
     /// A history transfer started (true) or ended (false); Android holds CONNECTION_PRIORITY_HIGH only
     /// in between (`GarminRadioPolicy.connectionPriority`).
     case transferActive(Bool)
+    /// One decoded realtime notification from an open live channel.
+    case live(GarminRealtimeReading)
+    /// A live channel's handle opened or closed on the watch (telemetry; the readings stop on close).
+    case liveChannel(GarminService, open: Bool)
 }
 
 /// How the watch said it has new data.
@@ -180,7 +184,12 @@ public struct GarminSession {
     private var pairingSent = false
     private var loggedUnknownTypes: Set<UInt16> = []
     private var sync = GarminHistorySync()
+    private var live = GarminLiveChannelTable()
+    private var loggedNoLiveTransport = false
     private var out: [GarminSessionOutput] = []
+
+    /// Realtime channels whose handle is open on the watch right now.
+    public var openLiveChannels: Set<GarminService> { live.openServices }
 
     public init(config: GarminSessionConfig, transport: GarminTransportKind, mtu: Int) {
         self.config = config
@@ -241,6 +250,21 @@ public struct GarminSession {
         return flush()
     }
 
+    /// The realtime channels that should be open (decided by `GarminRadioPolicy` on the platform). Opened
+    /// with REGISTER and closed with CLOSE_HANDLE once the handshake is done; remembered until then, and
+    /// re-applied after the watch drops and re-grants GFDI. Multi-link only: V1 / V0 have no channels.
+    public mutating func setLiveChannels(_ services: Set<GarminService>, _ clock: GarminClock) -> [GarminSessionOutput] {
+        guard transport == .multiLinkV2 else {
+            if !services.isEmpty, !loggedNoLiveTransport {
+                loggedNoLiveTransport = true
+                note(true, "live channels need the multi-link transport; \(transport.rawValue) has none")
+            }
+            return flush()
+        }
+        emit(live.setDesired(services, active: phase == .ready))
+        return flush()
+    }
+
     public mutating func tick(_ clock: GarminClock) -> [GarminSessionOutput] {
         perform(sync.tick(nowMs: clock.nowMs), clock)
         if let deadline = handshakeDeadline, clock.nowMs >= deadline {
@@ -279,6 +303,8 @@ public struct GarminSession {
                 feed(payload, clock)
             } else if routeSync(sync.handlePipeData(handle: handle, payload: payload, nowMs: clock.nowMs), clock) {
                 break
+            } else if let events = live.receive(handle: handle, payload: payload) {
+                emit(events)
             } else {
                 note(false, "ignored \(payload.count) bytes on unregistered handle \(hex8(handle))")
             }
@@ -295,6 +321,7 @@ public struct GarminSession {
         }
         switch response {
         case .allClosed:
+            emit(live.allClosed())
             if phase == .closingAll {
                 note(false, "all handles closed")
             } else {
@@ -311,6 +338,8 @@ public struct GarminSession {
                 dropGfdi(clock)
                 setPhase(.registering)
                 control(.register(.gfdi, reliable: false))
+            } else if let events = live.handleClosed(handle: handle, status: status) {
+                emit(events)
             } else {
                 note(false, "handle \(hex8(handle)) service=\(service) closed status=\(status)")
             }
@@ -318,7 +347,11 @@ public struct GarminSession {
             if routeSync(sync.handleRegistered(service: service, status: status, handle: handle, nowMs: clock.nowMs), clock) {
                 return
             }
-            guard service == GarminService.gfdi.rawValue, phase == .registering else {
+            guard service == GarminService.gfdi.rawValue else {
+                emit(live.registered(service: service, status: status, handle: handle, reliable: reliable))
+                return
+            }
+            guard phase == .registering else {
                 note(false, "registration for service \(service) status=\(status) ignored")
                 return
             }
@@ -485,6 +518,7 @@ public struct GarminSession {
         setPhase(.ready)
         note(true, "handshake complete in \(clock.nowMs - (startedAtMs ?? clock.nowMs)) ms")
         sendLifecycleIfNeeded(clock)
+        emit(live.apply())
     }
 
     private mutating func sendLifecycleIfNeeded(_ clock: GarminClock) {
@@ -549,6 +583,18 @@ public struct GarminSession {
                 let end = min(start + size, frame.bytes.count)
                 out.append(.write(Array(frame.bytes[start..<end])))
                 start = end
+            }
+        }
+    }
+
+    private mutating func emit(_ events: [GarminLiveChannelEvent]) {
+        for event in events {
+            switch event {
+            case let .control(request): control(request)
+            case let .log(rare, text): note(rare, text)
+            case let .opened(service, _): out.append(.liveChannel(service, open: true))
+            case let .closed(service): out.append(.liveChannel(service, open: false))
+            case let .reading(_, reading): out.append(.live(reading))
             }
         }
     }

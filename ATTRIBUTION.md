@@ -119,6 +119,13 @@ numbers.
   layout (sequence, last flag, checkpoint, checkpoint CRC, zlib piece), the `FIT_TYPE_<n>` FileAccess
   names and the watch restarting a file on CONTINUE were OBSERVED on a Forerunner 165 (fw 29.05), not
   taken from Gadgetbridge, which names id 5054 only. The zlib inflater is written from RFC 1950/1951.
+- **Garmin realtime channels** (`GarminRealtime.swift`, `GarminRealtime.kt`): the realtime service
+  numbers and the payload layouts of heart rate (6), steps (7), floors (9), beat intervals (12), SpO2 (19),
+  Body Battery (20) and respiration (21), with their "unknown" codes, were taken as facts from
+  Gadgetbridge's `CommunicatorV2` realtime callbacks at the same commit. The heart-rate type byte and the
+  u32 after each beat interval are undecoded upstream and stay logged-only candidates in NOOP. Checked on a
+  Forerunner 165 (firmware 29.05): every layout's length and the unknown codes 0x7F (Body Battery), -2
+  (respiration) and -1 (SpO2) as sent off the wrist.
 
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).

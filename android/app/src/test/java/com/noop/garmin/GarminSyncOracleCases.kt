@@ -266,7 +266,8 @@ internal fun oracleSyncDescribe(o: GarminSessionOutput): String? = when (o) {
     is GarminSessionOutput.SyncAnnounced -> "announced ${o.announcement.label} filter=${o.announcement.expectsFilter}"
     is GarminSessionOutput.TransferActive -> "transfer ${o.active}"
     is GarminSessionOutput.Phase -> "phase ${o.phase.label}"
-    is GarminSessionOutput.Battery, is GarminSessionOutput.Watch, is GarminSessionOutput.PairingEventsSent -> null
+    is GarminSessionOutput.Battery, is GarminSessionOutput.Watch, is GarminSessionOutput.PairingEventsSent,
+    is GarminSessionOutput.Live, is GarminSessionOutput.LiveChannel -> null
 }
 
 internal sealed class OracleSyncStep {

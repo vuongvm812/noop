@@ -93,7 +93,9 @@ final class AppModel: ObservableObject {
     /// since; on End the window is scored via `StrainScorer` and saved as a `WorkoutRow` (source
     /// "manual"), which then shows in the Workouts view. The day's strain already counts this HR (it's
     /// the same live stream the store persists), so this is a per-session annotation, not a double-count.
-    @Published var activeWorkout: ActiveWorkout?
+    @Published var activeWorkout: ActiveWorkout? {
+        didSet { if (oldValue == nil) != (activeWorkout == nil) { syncGarminLiveDemand() } }
+    }
     /// The just-ended workout, for a brief inline confirmation on Live (cleared on the next start).
     @Published var lastWorkout: WorkoutRow?
 
@@ -657,6 +659,7 @@ final class AppModel: ObservableObject {
             registry?.setActive(serialId)
         }
         self.sourceCoordinator = coordinator
+        syncGarminLiveDemand()   // a Live screen already open before the store finished opening
         bindOuraFeatureStatusMirror()
         // #814 READ SPINE (HIGH-1): drive the read side off the registry's `activeDeviceId` for the WHOLE
         // session, exactly as SourceCoordinator drives the WRITE side off the SAME publisher. A Devices-
@@ -1414,6 +1417,7 @@ final class AppModel: ObservableObject {
             ble.startRealtime()
         }
         realtimeWanters += 1
+        syncGarminLiveDemand()
     }
     /// A live-HR surface went away. Stops the realtime stream only when the last one leaves (1→0 edge);
     /// the lightweight 0x2A37 HR keeps recording regardless. Clamped at 0 so an unbalanced extra stop
@@ -1421,6 +1425,19 @@ final class AppModel: ObservableObject {
     func stopRealtimeHR() {
         realtimeWanters = max(0, realtimeWanters - 1)
         if realtimeWanters == 0 { ble.stopRealtime() }
+        syncGarminLiveDemand()
+    }
+
+    /// An EXPERIMENTAL Garmin watch opens its live channels only while someone is watching: a live-HR
+    /// surface is on screen, or a workout is recording (the one demand that survives backgrounding). The
+    /// coordinator forwards this to the Garmin source, whose `GarminRadioPolicy` decides the channels.
+    func syncGarminLiveDemand() {
+        let visible = realtimeWanters > 0
+        let workout = activeWorkout != nil
+        sourceCoordinator?.updateGarminLiveDemand {
+            $0.liveScreenVisible = visible
+            $0.workoutActive = workout
+        }
     }
 
     /// Re-issue the BLE realtime arm WITHOUT touching the ref-count , used when a fresh
