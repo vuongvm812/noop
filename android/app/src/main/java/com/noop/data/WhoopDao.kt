@@ -354,6 +354,15 @@ interface WhoopDao : DeviceRegistryDao {
     suspend fun insertEcgWaveform(rows: List<EcgWaveformSampleEntity>): List<Long>
 
     /**
+     * Watch-computed series (v43): stress, Body Battery, SpO2 percent, ... UPSERT on the
+     * (deviceId, kind, ts) key, unlike the IGNORE of the per-second streams above: a watch rewrites a
+     * partial file as the day goes on, so the latest copy of a (kind, second) wins, and an identical
+     * re-ingest still leaves one row. Swift twin: the `ON CONFLICT ... DO UPDATE` in `WhoopStore.insert`.
+     */
+    @Upsert
+    suspend fun upsertDeviceMetric(rows: List<DeviceMetricSampleEntity>)
+
+    /**
      * The remaining 5/MG v18 per-second fields, one compact blob per strap-second. Idempotent by
      * (deviceId, ts) — IGNORE keeps the FIRST-seen row, matching every other per-second stream, so a
      * re-sync cannot duplicate or overwrite. Instrumentation only.

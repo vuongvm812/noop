@@ -451,6 +451,47 @@ public struct EcgWaveformSample: Equatable, Codable, Sendable {
     }
 }
 
+/// What a `DeviceMetricSample` measures. The raw value is the stored `deviceMetricSample.kind` text, so
+/// it is a STORAGE CONTRACT shared with Android: never rename or reuse one. Each name carries its unit
+/// so a reader cannot mistake a percent for a raw count. Kotlin twin: `DeviceMetricKind`.
+///
+/// Only series with no other home are listed. Heart rate, beat intervals and sleep stages go to their
+/// existing streams; see the `v49-garmin-metric-samples` migration for why SpO2 and respiration are here.
+public enum DeviceMetricKind: String, CaseIterable, Codable, Sendable {
+    /// Garmin stress score, 0-100. The watch's negative "unmeasurable" codes are never stored.
+    case stress = "stress"
+    /// Garmin Body Battery, 0-100.
+    case bodyBattery = "body_battery"
+    /// Breathing rate in breaths per minute.
+    case respirationBpm = "respiration_bpm"
+    /// Blood-oxygen saturation in percent, as the watch computed it.
+    case spo2Pct = "spo2_pct"
+    /// Moderate-intensity minutes credited in the sample's interval.
+    case intensityModerateMin = "intensity_moderate_min"
+    /// Vigorous-intensity minutes credited in the sample's interval.
+    case intensityVigorousMin = "intensity_vigorous_min"
+    /// Active calories, kcal.
+    case activeKcal = "active_kcal"
+    /// One HRV value as the watch reports it, in milliseconds.
+    case hrvMs = "hrv_ms"
+    /// The watch's own overall sleep score, 0-100, stamped at the time the watch gives it.
+    case sleepScore = "sleep_score"
+}
+
+/// One time-stamped value of a watch-computed series, persisted to `deviceMetricSample` keyed by
+/// (deviceId, kind, ts). `source` names the record the value came from (for example a FIT message), so a
+/// row can be traced back without a second table. deviceId is attached on insert. The Android
+/// counterpart is `DeviceMetricRow` in WhoopRepository.kt.
+public struct DeviceMetricSample: Equatable, Codable, Sendable {
+    public let ts: Int
+    public let kind: DeviceMetricKind
+    public let value: Double
+    public let source: String
+    public init(ts: Int, kind: DeviceMetricKind, value: Double, source: String) {
+        self.ts = ts; self.kind = kind; self.value = value; self.source = source
+    }
+}
+
 /// One wire slot in the 5/MG v18 auxiliary-field record. The `rawValue` is the slot's bit position in
 /// the persisted presence bitmap, so it is a STORAGE CONTRACT: never reorder, renumber, or reuse a case.
 /// Appending a new case at the end is the only safe evolution (an old reader ignores a bit it has no case
@@ -672,6 +713,9 @@ public struct Streams: Equatable, Codable {
     /// Empty on a WHOOP 4.0, on a WHOOP 5 without an MG's ECG front end, and on every offload from a
     /// strap that has banked no reading. Persisted into `ecgWaveformSample`; nothing scores from it.
     public var ecgWaveform: [EcgWaveformSample]
+    /// Watch-computed series with no stream of their own (stress, Body Battery, SpO2 percent, ...), one
+    /// row per device, kind and second. Empty for every WHOOP. Persisted into `deviceMetricSample`.
+    public var deviceMetric: [DeviceMetricSample]
     /// Every remaining 5/MG v18 per-second field the decoder produces and this funnel used to discard —
     /// carried verbatim for a later census. Empty on WHOOP 4.0 and on the live path. Nothing reads it.
     public var v18Aux: [V18AuxSample]
@@ -798,6 +842,7 @@ public struct Streams: Equatable, Codable {
                 steps: [StepSample] = [], sleepState: [SleepStateSample] = [],
                 ppgHr: [PpgHrSample] = [], ppgWaveform: [PpgWaveformSample] = [],
                 ecgWaveform: [EcgWaveformSample] = [],
+                deviceMetric: [DeviceMetricSample] = [],
                 v18Aux: [V18AuxSample] = [],
                 events: [WhoopEvent] = [], battery: [BatterySample] = []) {
         self.hr = hr; self.rr = rr
@@ -805,6 +850,7 @@ public struct Streams: Equatable, Codable {
         self.steps = steps; self.sleepState = sleepState; self.ppgHr = ppgHr
         self.ppgWaveform = ppgWaveform
         self.ecgWaveform = ecgWaveform
+        self.deviceMetric = deviceMetric
         self.v18Aux = v18Aux
         self.events = events; self.battery = battery
     }
@@ -815,7 +861,8 @@ public struct Streams: Equatable, Codable {
     public var isEmpty: Bool {
         hr.isEmpty && rr.isEmpty && spo2.isEmpty && skinTemp.isEmpty && resp.isEmpty
             && gravity.isEmpty && steps.isEmpty && sleepState.isEmpty && ppgHr.isEmpty
-            && ppgWaveform.isEmpty && ecgWaveform.isEmpty && v18Aux.isEmpty && events.isEmpty
+            && ppgWaveform.isEmpty && ecgWaveform.isEmpty && deviceMetric.isEmpty && v18Aux.isEmpty
+            && events.isEmpty
             && battery.isEmpty
     }
 
@@ -825,6 +872,7 @@ public struct Streams: Equatable, Codable {
         case ppgHr = "ppg_hr"
         case ppgWaveform = "ppg_waveform"
         case ecgWaveform = "ecg_waveform"
+        case deviceMetric = "device_metric"
         case v18Aux = "v18_aux"
         case events, battery
     }
@@ -844,6 +892,7 @@ public struct Streams: Equatable, Codable {
         ppgHr = try c.decodeIfPresent([PpgHrSample].self, forKey: .ppgHr) ?? []
         ppgWaveform = try c.decodeIfPresent([PpgWaveformSample].self, forKey: .ppgWaveform) ?? []
         ecgWaveform = try c.decodeIfPresent([EcgWaveformSample].self, forKey: .ecgWaveform) ?? []
+        deviceMetric = try c.decodeIfPresent([DeviceMetricSample].self, forKey: .deviceMetric) ?? []
         v18Aux = try c.decodeIfPresent([V18AuxSample].self, forKey: .v18Aux) ?? []
         events = try c.decodeIfPresent([WhoopEvent].self, forKey: .events) ?? []
         battery = try c.decodeIfPresent([BatterySample].self, forKey: .battery) ?? []

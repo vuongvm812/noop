@@ -52,6 +52,12 @@ data class StreamBatch(
      */
     val ecgWaveform: List<EcgWaveformRow> = emptyList(),
     /**
+     * Watch-computed series with no stream of their own (stress, Body Battery, SpO2 percent, ...), one
+     * row per device, kind and second. Empty for every WHOOP. Persisted into `deviceMetricSample`. Swift
+     * twin: `Streams.deviceMetric`.
+     */
+    val deviceMetric: List<DeviceMetricRow> = emptyList(),
+    /**
      * Every remaining 5/MG v18 per-second field the decoder produces and the extractor used to discard —
      * carried verbatim for a later census. Empty on a WHOOP 4.0 and on the live path. Nothing reads it.
      */
@@ -119,7 +125,7 @@ data class StreamBatch(
         get() = hr.isEmpty() && rr.isEmpty() && events.isEmpty() && battery.isEmpty() &&
             spo2.isEmpty() && skinTemp.isEmpty() && resp.isEmpty() && gravity.isEmpty() &&
             steps.isEmpty() && sleepState.isEmpty() && ppgHr.isEmpty() && ppgWaveform.isEmpty() &&
-            ecgWaveform.isEmpty() && v18Aux.isEmpty()
+            ecgWaveform.isEmpty() && deviceMetric.isEmpty() && v18Aux.isEmpty()
 }
 
 /**
@@ -358,6 +364,48 @@ data class EcgWaveformRow(
         return result
     }
 }
+
+/**
+ * What a [DeviceMetricRow] measures. [wire] is the stored `deviceMetricSample.kind` text, so it is a
+ * STORAGE CONTRACT shared with Swift: never rename or reuse one. Each name carries its unit so a reader
+ * cannot mistake a percent for a raw count. Swift twin: `DeviceMetricKind`.
+ *
+ * Only series with no other home are listed: heart rate, beat intervals and sleep stages go to their
+ * existing streams. See [DeviceMetricSampleEntity] for why SpO2 and respiration are here.
+ */
+enum class DeviceMetricKind(val wire: String) {
+    /** Garmin stress score, 0-100. The watch's negative "unmeasurable" codes are never stored. */
+    STRESS("stress"),
+    /** Garmin Body Battery, 0-100. */
+    BODY_BATTERY("body_battery"),
+    /** Breathing rate in breaths per minute. */
+    RESPIRATION_BPM("respiration_bpm"),
+    /** Blood-oxygen saturation in percent, as the watch computed it. */
+    SPO2_PCT("spo2_pct"),
+    /** Moderate-intensity minutes credited in the sample's interval. */
+    INTENSITY_MODERATE_MIN("intensity_moderate_min"),
+    /** Vigorous-intensity minutes credited in the sample's interval. */
+    INTENSITY_VIGOROUS_MIN("intensity_vigorous_min"),
+    /** Active calories, kcal. */
+    ACTIVE_KCAL("active_kcal"),
+    /** One HRV value as the watch reports it, in milliseconds. */
+    HRV_MS("hrv_ms"),
+    /** The watch's own overall sleep score, 0-100, stamped at the time the watch gives it. */
+    SLEEP_SCORE("sleep_score"),
+}
+
+/**
+ * One time-stamped value of a watch-computed series, persisted to `deviceMetricSample` keyed by
+ * (deviceId, kind, ts). [source] names the record the value came from (for example a FIT message), so a
+ * row can be traced back without a second table. deviceId is attached on insert. Swift twin:
+ * `DeviceMetricSample`.
+ */
+data class DeviceMetricRow(
+    val ts: Long,
+    val kind: DeviceMetricKind,
+    val value: Double,
+    val source: String,
+)
 
 /** Count of rows ACTUALLY inserted per stream (mirrors WhoopStore.insert return tuple). */
 data class InsertCounts(
@@ -733,6 +781,20 @@ class WhoopRepository(
                     // otherwise swallow, leaving the caller running inside a cancelled coroutine.
                     .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             }
+        }
+
+        // Watch-computed series (v43): stress, Body Battery, SpO2 percent and the rest of
+        // [DeviceMetricKind]. Persist-only like the streams above: not added to InsertCounts. UPSERT
+        // rather than IGNORE (see [WhoopDao.upsertDeviceMetric]).
+        //
+        // A non-finite value is SKIPPED. SQLite stores NaN as NULL, which the NOT NULL column refuses,
+        // and that failure would roll back this whole transaction, every other stream included. Mirrors
+        // the Swift insert's `isFinite` filter.
+        val metricRows = streams.deviceMetric.filter { it.value.isFinite() }
+        if (metricRows.isNotEmpty()) {
+            dao.upsertDeviceMetric(
+                metricRows.map { DeviceMetricSampleEntity(deviceId, it.ts, it.kind.wire, it.value, it.source) },
+            )
         }
 
         // Every remaining v18 slot (v31), one compact blob per strap-second. Persist-only, same as

@@ -1153,6 +1153,56 @@ extension WhoopStore {
                 t.primaryKey(["deviceId", "ts", "sequence"])
             }
         }
+
+        // v49 (Garmin storage): two tables for what a Garmin watch records and NOOP had no home for.
+        // Twin of Room MIGRATION_42_43; same column order and the same primary keys.
+        //
+        // `deviceMetricSample` is ONE narrow table keyed by `kind` for the watch-computed series:
+        // stress, Body Battery, respiration rate, SpO2 percent, intensity minutes, active calories, HRV
+        // samples and the sleep score (`DeviceMetricKind` lists the vocabulary and each unit). One table
+        // rather than one per metric, so a new kind is a new enum case and not a migration.
+        //
+        // What it does NOT hold, because a home already exists: heart rate (`hrSample`), beat intervals
+        // (`rrInterval`) and sleep sessions with their stages (`sleepSession`). SpO2 and respiration DO have
+        // tables, but `spo2Sample` stores raw red/IR optical counts and `respSample` a raw ADC waveform;
+        // the one non-WHOOP owner of those tables (the Oura ring) is told apart by brand at every reader
+        // (`OuraRespScale.isRingRateStream`). A Garmin percent or rate written there would be read as a
+        // WHOOP ADC count by every reader that has not learned Garmin, so those two kinds live here, in
+        // explicit units, until the analytics layer is taught to read them.
+        //
+        // The primary key is the dedup key (deviceId, kind, ts): one value per device, metric and second.
+        // `kind` sits before `ts` so the key also serves the per-kind range read without a second index.
+        // The insert path UPSERTS on it, so re-ingesting a watch file is idempotent and a re-synced file
+        // whose partial values grew since the last pull replaces them rather than being ignored.
+        //
+        // `garminSyncedFile` is the history-sync bookkeeping: which watch files have been ingested. It
+        // REPLACES archiving files on the watch. Garmin Connect therefore still sees every file as new,
+        // because NOOP changes nothing on the device. The key is the whole directory-entry identity, so a
+        // file the watch rewrites (same index, new size or timestamp) reads as a new file. `ingestedAt` is
+        // the first ingest and is deliberately outside the key.
+        //
+        // Both tables are additive: no backfill, no delete, nothing existing touched.
+        migrator.registerMigration("v49-garmin-metric-samples") { db in
+            try db.create(table: "deviceMetricSample") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("ts", .integer).notNull()
+                t.column("kind", .text).notNull()
+                t.column("value", .double).notNull()
+                t.column("source", .text).notNull()
+                t.primaryKey(["deviceId", "kind", "ts"])
+            }
+            try db.create(table: "garminSyncedFile") { t in
+                t.column("deviceId", .text).notNull()
+                t.column("fileIndex", .integer).notNull()
+                t.column("dataType", .integer).notNull()
+                t.column("subType", .integer).notNull()
+                t.column("fileNumber", .integer).notNull()
+                t.column("ts", .integer).notNull()
+                t.column("size", .integer).notNull()
+                t.column("ingestedAt", .integer).notNull()
+                t.primaryKey(["deviceId", "fileIndex", "dataType", "subType", "fileNumber", "ts", "size"])
+            }
+        }
         return migrator
     }
 }

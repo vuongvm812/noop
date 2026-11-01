@@ -482,6 +482,26 @@ extension WhoopStore {
                     ecgWaveformWritten += 1
                 }
             }
+            // Watch-computed series (v49): stress, Body Battery, SpO2 percent and the rest of
+            // `DeviceMetricKind`. Persist-only like the streams above: not added to the 8-field return
+            // tuple. An UPSERT rather than DO NOTHING, unlike the per-second streams: a watch rewrites a
+            // partial file as the day goes on, so the latest copy of a (kind, second) wins, and an
+            // identical re-ingest still leaves exactly one row.
+            //
+            // A non-finite value is SKIPPED. SQLite stores NaN as NULL, which the NOT NULL column refuses,
+            // and that failure would roll back this whole transaction, every other stream included.
+            // Twin of the Kotlin repository's `streams.deviceMetric` filter.
+            if !streams.deviceMetric.isEmpty {
+                let stmt = try db.cachedStatement(sql: """
+                    INSERT INTO deviceMetricSample (deviceId, ts, kind, value, source)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(deviceId, kind, ts) DO UPDATE SET
+                        value = excluded.value, source = excluded.source
+                    """)
+                for s in streams.deviceMetric where s.value.isFinite {
+                    try stmt.execute(arguments: [deviceId, s.ts, s.kind.rawValue, s.value, s.source])
+                }
+            }
             // Every remaining v18 slot (v31), one compact blob per strap-second. Persist-only, same as
             // steps/sleepState/ppgHr/ppgWaveform: not added to the 8-field return tuple. A sample whose
             // slots are all absent packs to empty and is SKIPPED rather than banking a meaningless row —

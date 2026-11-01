@@ -79,7 +79,7 @@
     ],
     "streams": [
       "hr", "rr", "spo2", "skin_temp", "resp", "gravity", "steps", "sleep_state", "ppg_hr",
-      "ppg_waveform", "ecg_waveform", "v18_aux", "events", "battery"
+      "ppg_waveform", "ecg_waveform", "device_metric", "v18_aux", "events", "battery"
     ],
     "non_stream_lists": ["dropped_rtc_events"]
   },
@@ -465,7 +465,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 0, "resp": 0, "gravity": 0,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -481,7 +481,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 1, "rr": 2, "spo2": 1, "skin_temp": 1, "resp": 1, "gravity": 1,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -497,7 +497,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 0, "resp": 0, "gravity": 3,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -513,7 +513,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 2, "rr": 3, "spo2": 0, "skin_temp": 2, "resp": 0, "gravity": 2,
-          "steps": 2, "sleep_state": 2, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 2, "sleep_state": 2, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 2, "events": 0, "battery": 0
         }
       }
@@ -529,7 +529,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 1, "resp": 0, "gravity": 1,
-          "steps": 1, "sleep_state": 1, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 1, "sleep_state": 1, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 1, "events": 0, "battery": 0
         }
       }
@@ -547,7 +547,7 @@
         "dropped_implausible": 2,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 0, "resp": 0, "gravity": 0,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -578,7 +578,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 1, "rr": 2, "spo2": 1, "skin_temp": 1, "resp": 1, "gravity": 1,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -595,7 +595,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 0, "resp": 0, "gravity": 1,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }
@@ -612,7 +612,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 1, "rr": 2, "spo2": 0, "skin_temp": 1, "resp": 0, "gravity": 1,
-          "steps": 1, "sleep_state": 1, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0,
+          "steps": 1, "sleep_state": 1, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 0, "device_metric": 0,
           "v18_aux": 1, "events": 0, "battery": 0
         }
       }
@@ -636,7 +636,7 @@
         "dropped_implausible": 0,
         "counts": {
           "hr": 0, "rr": 0, "spo2": 0, "skin_temp": 0, "resp": 0, "gravity": 0,
-          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 1,
+          "steps": 0, "sleep_state": 0, "ppg_hr": 0, "ppg_waveform": 0, "ecg_waveform": 1, "device_metric": 0,
           "v18_aux": 0, "events": 0, "battery": 0
         }
       }

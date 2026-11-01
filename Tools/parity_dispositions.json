@@ -436,6 +436,54 @@
       "identity_sha256": "6aa52285ae46cf0ae75a690feee01765f9401825b6c9845c146163fdf5b2bb3e",
       "platform": "swift",
       "rationale": "A LOCAL binding inside the private v16 ECG decoder (#2847), not a static constant. The ledger's Swift rule treats any four-space `let` in a file-scope function as a candidate `static let`, which is how it finds file-scope constants without parsing, so a local in a top-level `private func` lands in the inventory. The Kotlin twin's equivalent is a local `val` in its own decodeWhoop5HistoricalV16, which the Kotlin rule never inventories because it matches `const val` only, and a Set-valued or object-valued local cannot be `const` in Kotlin at all. There is nothing to pair and nothing to change in either decoder."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::deleteDeviceMetricFor/1#1",
+      "identity_sha256": "dcdb345a2028cec3cddd6aab5e485719b28ff3f50afc148d09cce53d66cdb73b",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method clearing one device's watch-metric samples (Garmin storage, vuongvm812/noop#4). The Swift store names the table in DeviceRegistryStore.deviceScopedTables and loops over that list, so there is no Swift function to pair with; every sibling delete*For method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::deleteGarminSyncedFilesFor/1#1",
+      "identity_sha256": "65ee38db04ab34a5c164844c4e995565fb8f31f2dcb5fbc94644bd97ad8d0026",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method clearing one device's Garmin history-sync ledger (vuongvm812/noop#4). The Swift store names the table in DeviceRegistryStore.deviceScopedTables and loops over that list, so there is no Swift function to pair with; every sibling delete*For method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::reKeyDeviceMetric/2#1",
+      "identity_sha256": "82e698a4730355032f95878c50a8c3563ee069843f596509722d1890a8c3f3ed",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method re-keying watch-metric samples onto an adopted identity (vuongvm812/noop#4). The Swift store drives the same re-key from its own table list rather than through a DAO, so there is no Swift function to pair with; every sibling reKey* method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::reKeyGarminSyncedFiles/2#1",
+      "identity_sha256": "f5f6ecb75660d26c8f816cf014ce594645e2f407d84a7bf1bc3078b32c5ddd33",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method re-keying the Garmin history-sync ledger onto an adopted identity (vuongvm812/noop#4). The Swift store drives the same re-key from its own table list rather than through a DAO, so there is no Swift function to pair with; every sibling reKey* method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::upsertDeviceMetric/1#1",
+      "identity_sha256": "1d402c265c110c33a8a690f85a41991d4c4a2ef0d8649b5c70bd7c6d3b52dafc",
+      "platform": "kotlin",
+      "rationale": "Room @Upsert DAO method writing watch-metric samples (vuongvm812/noop#4). The Swift store prepares the same INSERT ... ON CONFLICT DO UPDATE inline in StreamStore.insert rather than through a DAO, so there is no Swift function to pair with, exactly as for insertEcgWaveform."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDatabase.kt::migrate/1#41",
+      "identity_sha256": "adaa74b3e05b17f100a3b6f0e11995f084ed0bdea2f6246e68ba823d84a3d1b1",
+      "platform": "kotlin",
+      "rationale": "Room Migration.migrate override of MIGRATION_42_43, the deviceMetricSample and garminSyncedFile tables (vuongvm812/noop#4). GRDB registers each migration as a closure (`v49-garmin-metric-samples`), so there is no Swift function to pair with; the two are paired by the migration identifiers pinned in schema_oracle.json and by the resulting table shapes, which both suites compare against that oracle."
     }
   ]
 }
