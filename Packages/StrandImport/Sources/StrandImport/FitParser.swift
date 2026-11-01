@@ -32,10 +32,10 @@ import Foundation
 //                     total_calories(11), total_ascent(22), avg/max_heart_rate(16/17),
 //                     total_elapsed_time(7).
 //
-// DEFERRED (flagged in the lane risks): developer-defined fields (skipped, not decoded),
-// compressed-timestamp accumulation across records (the offset is honoured within the 32 s window but
-// we don't accumulate a rolling base across many records — rare in modern files), and the long-tail of
-// message types (device_info, event, hrv, monitoring, etc.). Those are skipped gracefully, never fatal.
+// The record walk lives in `FitRecordStream`, shared with the Garmin wellness decoder
+// (`GarminWellness.swift`), which reads the monitoring, sleep, HRV, stress and other health messages
+// from the same files. Here developer-defined fields are skipped, compressed-timestamp headers carry
+// no time into the track, and every other message type is skipped gracefully, never fatal.
 //
 // Conceptually adapted from the public FIT spec and the structure of roznet/FitFileParser,
 // FitnessKit/FitDataProtocol (MIT) and muktihari/fit (BSD); NOOP's own clean implementation — no
@@ -52,71 +52,30 @@ enum FitParser {
     // Semicircles → degrees: value * (180 / 2^31).
     static let semicircleToDegrees = 180.0 / 2_147_483_648.0
 
-    // Caps (DoS): a long activity is tens of thousands of records; these are generous ceilings that
-    // still bound work against a crafted file claiming millions of records or absurd field counts.
-    static let maxRecords = 2_000_000
-    static let maxFieldsPerDef = 255    // a u8 count can't exceed this anyway; keep explicit.
-
     static func parse(data: Data) -> ActivityFileImportResult {
         // Work on a contiguous byte array for cheap random access (the picker handed us a local copy).
-        let bytes = [UInt8](BOM.stripUTF8(data))
-        guard bytes.count >= 12 else {
+        guard let stream = FitRecordStream.open(bytes: [UInt8](BOM.stripUTF8(data))) else {
             return ActivityFileImportResult(activity: nil, kind: .fit, skipped: 0)
         }
+        var decoder = FitDecoder(stream: stream)
+        decoder.run()
 
-        let headerSize = Int(bytes[0])
-        // Signature ".FIT" at offset 8 confirms the format.
-        guard headerSize >= 12, headerSize <= bytes.count,
-              bytes[8] == UInt8(ascii: "."), bytes[9] == UInt8(ascii: "F"),
-              bytes[10] == UInt8(ascii: "I"), bytes[11] == UInt8(ascii: "T") else {
-            return ActivityFileImportResult(activity: nil, kind: .fit, skipped: 0)
+        var result = decoder.buildResult()
+        if result.activity == nil {
+            // No workout: a Garmin wellness file (monitoring, sleep, HRV...) decodes here instead.
+            let wellness = GarminWellnessParser.parse(data: data)
+            result.wellness = wellness.isEmpty ? nil : wellness
         }
-
-        let declaredDataSize = Int(readU32LE(bytes, 4))
-        // Clamp the data window to what's actually in the buffer (minus a possible 2-byte trailing CRC).
-        let dataStart = headerSize
-        let maxAvailable = bytes.count - dataStart
-        let dataSize = min(declaredDataSize, max(0, maxAvailable))
-        let dataEnd = dataStart + dataSize
-        guard dataEnd <= bytes.count, dataStart < dataEnd else {
-            return ActivityFileImportResult(activity: nil, kind: .fit, skipped: 0)
-        }
-
-        var decoder = FitDecoder(bytes: bytes, end: dataEnd)
-        decoder.run(from: dataStart)
-
-        return decoder.buildResult()
-    }
-
-    // MARK: - Little-endian readers (bounds are the caller's responsibility; these assume validity)
-
-    static func readU16LE(_ b: [UInt8], _ i: Int) -> UInt16 {
-        UInt16(b[i]) | (UInt16(b[i + 1]) << 8)
-    }
-    static func readU32LE(_ b: [UInt8], _ i: Int) -> UInt32 {
-        UInt32(b[i]) | (UInt32(b[i + 1]) << 8) | (UInt32(b[i + 2]) << 16) | (UInt32(b[i + 3]) << 24)
-    }
-    static func readU16BE(_ b: [UInt8], _ i: Int) -> UInt16 {
-        (UInt16(b[i]) << 8) | UInt16(b[i + 1])
-    }
-    static func readU32BE(_ b: [UInt8], _ i: Int) -> UInt32 {
-        (UInt32(b[i]) << 24) | (UInt32(b[i + 1]) << 16) | (UInt32(b[i + 2]) << 8) | UInt32(b[i + 3])
+        return result
     }
 }
 
 // MARK: - Decoder
 
 private struct FitDecoder {
-    let bytes: [UInt8]
-    let end: Int
+    typealias Definition = FitRecordStream.Definition
 
-    /// A field's layout within a definition.
-    struct FieldDef { let num: Int; let size: Int; let baseType: UInt8 }
-    /// A local message type's definition: which global message + its fields + byte order.
-    struct Definition { let globalNum: Int; let fields: [FieldDef]; let bigEndian: Bool; let totalSize: Int }
-
-    // Local-type → active definition (FIT reuses 0–15 local IDs, redefining as it goes).
-    private var defs: [Int: Definition] = [:]
+    let stream: FitRecordStream
 
     // Accumulated activity data.
     private var samples: [ActivityFileImporter.TrackSample] = []
@@ -140,96 +99,18 @@ private struct FitDecoder {
     private var lapMaxHr: Int?
 
     private var skipped = 0
-    private var recordCount = 0
 
-    init(bytes: [UInt8], end: Int) {
-        self.bytes = bytes
-        self.end = end
+    init(stream: FitRecordStream) {
+        self.stream = stream
     }
 
-    mutating func run(from start: Int) {
-        var i = start
-        while i < end {
-            if recordCount >= FitParser.maxRecords { break }
-            recordCount += 1
-
-            let header = bytes[i]
-            i += 1
-
-            if header & 0x80 != 0 {
-                // Compressed-timestamp header → always a DATA message; local type in bits 5-6.
-                let localType = Int((header >> 5) & 0x03)
-                guard let def = defs[localType] else { skipped += 1; i = skipBytesUnknown(i); break }
-                guard i + def.totalSize <= end else { break }
-                consumeData(def, at: i)
-                i += def.totalSize
-            } else if header & 0x40 != 0 {
-                // DEFINITION message.
-                let localType = Int(header & 0x0F)
-                let hasDevFields = (header & 0x20) != 0
-                guard let (def, next) = readDefinition(at: i, hasDevFields: hasDevFields) else { break }
-                defs[localType] = def
-                i = next
-            } else {
-                // DATA message.
-                let localType = Int(header & 0x0F)
-                guard let def = defs[localType] else {
-                    // No definition for this local type → we can't know its length. Bail safely.
-                    skipped += 1
-                    break
-                }
-                guard i + def.totalSize <= end else { break }
-                consumeData(def, at: i)
-                i += def.totalSize
-            }
-        }
-    }
-
-    /// When we hit an undecodable compressed record with no known def, we can't advance safely.
-    private func skipBytesUnknown(_ i: Int) -> Int { end }
-
-    // MARK: - Definition parsing
-
-    private func readDefinition(at start: Int, hasDevFields: Bool) -> (Definition, Int)? {
-        // reserved(1) + architecture(1) + globalNum(2) + numFields(1) = 5 bytes minimum.
-        guard start + 5 <= end else { return nil }
-        var i = start
-        i += 1 // reserved
-        let architecture = bytes[i]; i += 1
-        let bigEndian = architecture == 1
-        let globalNum: Int = bigEndian ? Int(FitParser.readU16BE(bytes, i)) : Int(FitParser.readU16LE(bytes, i))
-        i += 2
-        let numFields = Int(bytes[i]); i += 1
-        guard numFields <= FitParser.maxFieldsPerDef else { return nil }
-        guard i + numFields * 3 <= end else { return nil }
-
-        var fields: [FieldDef] = []
-        fields.reserveCapacity(numFields)
-        var total = 0
-        for _ in 0..<numFields {
-            let num = Int(bytes[i]); let size = Int(bytes[i + 1]); let baseType = bytes[i + 2]
-            i += 3
-            // Guard a zero/huge field size that would desync the record stream.
-            guard size > 0, size <= 255 else { return nil }
-            fields.append(FieldDef(num: num, size: size, baseType: baseType))
-            total += size
-        }
-
-        if hasDevFields {
-            // numDevFields(1) then that many × 3 descriptor bytes — we don't decode dev fields, but we
-            // MUST account for their bytes in both the definition and the data record length.
-            guard i < end else { return nil }
-            let numDev = Int(bytes[i]); i += 1
-            guard i + numDev * 3 <= end else { return nil }
-            for _ in 0..<numDev {
-                let size = Int(bytes[i + 1])
-                i += 3
-                guard size > 0, size <= 255 else { return nil }
-                total += size
-            }
-        }
-
-        return (Definition(globalNum: globalNum, fields: fields, bigEndian: bigEndian, totalSize: total), i)
+    /// Kotlin twin: `FitDecoder.decode`.
+    mutating func run() {
+        // The record walk is shared with the Garmin wellness decoder; only data messages reach here.
+        let stream = self.stream
+        let stop = stream.walk(maxRecords: FitRecordStream.maxRecords) { def, offset, _ in consumeData(def, at: offset) }
+        // A data record whose local type was never defined cannot be sized, so the walk stopped there.
+        if stop == .undefinedLocalType { skipped += 1 }
     }
 
     // MARK: - Data parsing
@@ -372,33 +253,12 @@ private struct FitDecoder {
 
     // MARK: - Field readers (bounds-checked)
 
-    /// Read an unsigned little/big-endian integer of `size` bytes at `offset`. Returns nil out of
-    /// bounds or for an unsupported size. The all-0xFF "invalid" sentinel is left to the caller.
     private func uintField(at offset: Int, size: Int, bigEndian: Bool) -> UInt64? {
-        guard offset >= 0, offset + size <= end, size >= 1, size <= 8 else { return nil }
-        var v: UInt64 = 0
-        if bigEndian {
-            for k in 0..<size { v = (v << 8) | UInt64(bytes[offset + k]) }
-        } else {
-            for k in 0..<size { v |= UInt64(bytes[offset + k]) << (8 * k) }
-        }
-        return v
+        stream.uint(at: offset, size: size, bigEndian: bigEndian)
     }
 
-    /// Read a signed integer of `size` bytes (sign-extended). Returns nil out of bounds. The all-0xFF /
-    /// 0x7FFFFFFF "invalid" sentinels are rejected for the typed lat/long callers via the range check
-    /// in `semicircles`/`validCoordinate`.
     private func intField(at offset: Int, size: Int, bigEndian: Bool) -> Int64? {
-        guard let u = uintField(at: offset, size: size, bigEndian: bigEndian) else { return nil }
-        let bits = size * 8
-        if bits >= 64 { return Int64(bitPattern: u) }
-        let signBit: UInt64 = 1 << (bits - 1)
-        if u & signBit != 0 {
-            // Negative: sign-extend.
-            let mask: UInt64 = (1 << bits) - 1
-            return Int64(bitPattern: u | ~mask)
-        }
-        return Int64(u)
+        stream.int(at: offset, size: size, bigEndian: bigEndian)
     }
 
     private func semicircles(_ v: Int64) -> Double? {

@@ -169,11 +169,15 @@ public struct ActivityFileImportResult: Sendable, Equatable {
     public var kind: ActivityFile.Kind
     /// Trackpoints / records dropped: missing time, malformed coordinate, out-of-range value.
     public var skipped: Int
+    /// Garmin wellness data from a FIT file that holds no workout (monitoring, sleep, HRV...); nil
+    /// otherwise. Decoded by `GarminWellnessParser`, not yet persisted by this import path.
+    public var wellness: GarminWellnessSamples?
 
-    public init(activity: ActivityFile?, kind: ActivityFile.Kind, skipped: Int) {
+    public init(activity: ActivityFile?, kind: ActivityFile.Kind, skipped: Int, wellness: GarminWellnessSamples? = nil) {
         self.activity = activity
         self.kind = kind
         self.skipped = skipped
+        self.wellness = wellness
     }
 
     public var hasActivity: Bool { activity != nil }

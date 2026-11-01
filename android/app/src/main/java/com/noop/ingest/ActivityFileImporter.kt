@@ -109,7 +109,16 @@ object ActivityFileImporter {
         }
     }
 
-    data class Result(val activity: Activity?, val kind: Kind, val skipped: Int) {
+    /**
+     * [wellness] carries Garmin wellness data from a FIT file that holds no workout (monitoring,
+     * sleep, HRV...); null otherwise. Decoded by [GarminWellnessParser], not yet persisted here.
+     */
+    data class Result(
+        val activity: Activity?,
+        val kind: Kind,
+        val skipped: Int,
+        val wellness: GarminWellnessSamples? = null,
+    ) {
         val hasActivity: Boolean get() = activity != null
     }
 
@@ -586,25 +595,19 @@ object ActivityFileImporter {
 
 /**
  * Decodes the FIT binary format: a 12/14-byte header, then definition + data records (little- or
- * big-endian). Decodes the common file_id(0) / record(20) / lap(19) / session(18) messages. Every read
- * is bounds-checked; field/record counts are capped. Deferred (see lane risks): developer fields
- * (their bytes are skipped, not decoded), compressed-timestamp accumulation across records, and the
- * long tail of message types (skipped gracefully).
+ * big-endian). Decodes the common file_id(0) / record(20) / lap(19) / session(18) messages. The record
+ * walk lives in [FitRecordStream], shared with [GarminWellnessParser], which reads the health messages
+ * of the same files. Here developer fields are skipped, compressed-timestamp headers carry no time
+ * into the track, and every other message type is skipped gracefully.
  */
-internal class FitDecoder(raw: ByteArray) {
+internal class FitDecoder(private val raw: ByteArray) {
 
-    private val bytes: ByteArray = Bom.stripUtf8(raw)
-    private var end = 0
+    private val stream: FitRecordStream? = FitRecordStream.open(Bom.stripUtf8(raw))
 
-    private data class FieldDef(val num: Int, val size: Int, val baseType: Int)
-    private data class Definition(val globalNum: Int, val fields: List<FieldDef>, val bigEndian: Boolean, val totalSize: Int)
-
-    private val defs = HashMap<Int, Definition>()
     private val samples = ArrayList<ActivityFileImporter.Sample>()
     private var gpsPointCount = 0
     private var hrSampleCount = 0
     private var skipped = 0
-    private var recordCount = 0
 
     private var sessionSport: String? = null
     private var sessionStartS: Long? = null
@@ -623,87 +626,18 @@ internal class FitDecoder(raw: ByteArray) {
     private var lapMaxHr: Int? = null
 
     fun decode(): ActivityFileImporter.Result {
-        if (bytes.size < 12) return ActivityFileImporter.Result(null, ActivityFileImporter.Kind.FIT, 0)
-        val headerSize = bytes[0].toInt() and 0xFF
-        if (headerSize < 12 || headerSize > bytes.size) return fail()
-        // ".FIT" at offset 8.
-        if (!(bytes[8] == '.'.code.toByte() && bytes[9] == 'F'.code.toByte() &&
-                bytes[10] == 'I'.code.toByte() && bytes[11] == 'T'.code.toByte())) return fail()
-
-        val declaredDataSize = u32(4, false).toInt()
-        val dataStart = headerSize
-        val maxAvailable = bytes.size - dataStart
-        val dataSize = minOf(declaredDataSize, maxOf(0, maxAvailable))
-        end = dataStart + dataSize
-        if (end > bytes.size || dataStart >= end) return fail()
-
-        var i = dataStart
-        while (i < end) {
-            if (recordCount >= 2_000_000) break
-            recordCount++
-            val header = bytes[i].toInt() and 0xFF
-            i += 1
-            when {
-                header and 0x80 != 0 -> {  // compressed-timestamp → DATA
-                    val localType = (header shr 5) and 0x03
-                    val def = defs[localType] ?: break
-                    if (i + def.totalSize > end) break
-                    consume(def, i)
-                    i += def.totalSize
-                }
-                header and 0x40 != 0 -> {  // DEFINITION
-                    val localType = header and 0x0F
-                    val hasDev = header and 0x20 != 0
-                    val parsed = readDefinition(i, hasDev) ?: break
-                    defs[localType] = parsed.first
-                    i = parsed.second
-                }
-                else -> {                  // DATA
-                    val localType = header and 0x0F
-                    val def = defs[localType] ?: break
-                    if (i + def.totalSize > end) break
-                    consume(def, i)
-                    i += def.totalSize
-                }
-            }
-        }
-        return build()
+        val stream = stream ?: return fail()
+        stream.walk(FitRecordStream.MAX_RECORDS) { def, offset, _ -> consume(def, offset) }
+        val result = build()
+        if (result.activity != null) return result
+        // No workout: a Garmin wellness file (monitoring, sleep, HRV...) decodes here instead.
+        val wellness = GarminWellnessParser.parse(raw)
+        return if (wellness.isEmpty) result else result.copy(wellness = wellness)
     }
 
     private fun fail() = ActivityFileImporter.Result(null, ActivityFileImporter.Kind.FIT, skipped)
 
-    private fun readDefinition(start: Int, hasDev: Boolean): Pair<Definition, Int>? {
-        if (start + 5 > end) return null
-        var i = start + 1                  // reserved
-        val bigEndian = (bytes[i].toInt() and 0xFF) == 1; i += 1
-        val globalNum = u16(i, bigEndian); i += 2
-        val numFields = bytes[i].toInt() and 0xFF; i += 1
-        if (i + numFields * 3 > end) return null
-        val fields = ArrayList<FieldDef>(numFields)
-        var total = 0
-        repeat(numFields) {
-            val num = bytes[i].toInt() and 0xFF
-            val size = bytes[i + 1].toInt() and 0xFF
-            val baseType = bytes[i + 2].toInt() and 0xFF
-            i += 3
-            if (size <= 0) return null
-            fields.add(FieldDef(num, size, baseType)); total += size
-        }
-        if (hasDev) {
-            if (i >= end) return null
-            val numDev = bytes[i].toInt() and 0xFF; i += 1
-            if (i + numDev * 3 > end) return null
-            repeat(numDev) {
-                val size = bytes[i + 1].toInt() and 0xFF
-                i += 3
-                if (size <= 0) return null
-                total += size
-            }
-        }
-        return Definition(globalNum, fields, bigEndian, total) to i
-    }
-
-    private fun consume(def: Definition, start: Int) {
+    private fun consume(def: FitRecordStream.Definition, start: Int) {
         when (def.globalNum) {
             0 -> { /* file_id — type field; we don't gate on it, parity with Swift */ }
             20 -> consumeRecord(def, start)
@@ -712,7 +646,7 @@ internal class FitDecoder(raw: ByteArray) {
         }
     }
 
-    private fun consumeRecord(def: Definition, start: Int) {
+    private fun consumeRecord(def: FitRecordStream.Definition, start: Int) {
         var off = start
         var lat: Double? = null; var lon: Double? = null
         var ele: Double? = null; var hr: Int? = null; var time: Long? = null
@@ -734,7 +668,7 @@ internal class FitDecoder(raw: ByteArray) {
         samples.add(ActivityFileImporter.Sample(time, point, ele, hr))
     }
 
-    private fun consumeLap(def: Definition, start: Int) {
+    private fun consumeLap(def: FitRecordStream.Definition, start: Int) {
         var off = start
         for (f in def.fields) {
             when (f.num) {
@@ -748,7 +682,7 @@ internal class FitDecoder(raw: ByteArray) {
         }
     }
 
-    private fun consumeSession(def: Definition, start: Int) {
+    private fun consumeSession(def: FitRecordStream.Definition, start: Int) {
         var off = start
         for (f in def.fields) {
             when (f.num) {
@@ -766,25 +700,9 @@ internal class FitDecoder(raw: ByteArray) {
         }
     }
 
-    // Bounds-checked little/big-endian readers.
-    private fun u(off: Int, size: Int, bigEndian: Boolean): Long? {
-        if (off < 0 || off + size > end || size < 1 || size > 8) return null
-        var v = 0L
-        if (bigEndian) for (k in 0 until size) v = (v shl 8) or (bytes[off + k].toLong() and 0xFF)
-        else for (k in 0 until size) v = v or ((bytes[off + k].toLong() and 0xFF) shl (8 * k))
-        return v
-    }
+    private fun u(off: Int, size: Int, bigEndian: Boolean): Long? = stream?.uint(off, size, bigEndian)
 
-    private fun s(off: Int, size: Int, bigEndian: Boolean): Long? {
-        val uval = u(off, size, bigEndian) ?: return null
-        val bits = size * 8
-        if (bits >= 64) return uval
-        val signBit = 1L shl (bits - 1)
-        return if (uval and signBit != 0L) {
-            val mask = (1L shl bits) - 1
-            uval or mask.inv()
-        } else uval
-    }
+    private fun s(off: Int, size: Int, bigEndian: Boolean): Long? = stream?.int(off, size, bigEndian)
 
     private fun semicircles(v: Long): Double? {
         if (v == 0x7FFFFFFFL) return null
@@ -797,20 +715,6 @@ internal class FitDecoder(raw: ByteArray) {
         val unix = v + 631_065_600L
         if (unix <= 631_065_600L || unix >= 4_102_444_800L) return null
         return unix
-    }
-
-    private fun u16(i: Int, bigEndian: Boolean): Int {
-        return if (bigEndian) ((bytes[i].toInt() and 0xFF) shl 8) or (bytes[i + 1].toInt() and 0xFF)
-        else (bytes[i].toInt() and 0xFF) or ((bytes[i + 1].toInt() and 0xFF) shl 8)
-    }
-
-    private fun u32(i: Int, bigEndian: Boolean): Long {
-        return if (bigEndian)
-            ((bytes[i].toLong() and 0xFF) shl 24) or ((bytes[i + 1].toLong() and 0xFF) shl 16) or
-                ((bytes[i + 2].toLong() and 0xFF) shl 8) or (bytes[i + 3].toLong() and 0xFF)
-        else
-            (bytes[i].toLong() and 0xFF) or ((bytes[i + 1].toLong() and 0xFF) shl 8) or
-                ((bytes[i + 2].toLong() and 0xFF) shl 16) or ((bytes[i + 3].toLong() and 0xFF) shl 24)
     }
 
     private fun sportName(v: Long): String? = when (v) {

@@ -106,6 +106,12 @@ numbers.
   (gadgetbridge.org/internals/specifics/garmin-protocol/). Licensed **AGPL-3.0**; NOOP copies **none** of
   its code, tables, test fixtures or literals beyond the wire values themselves, and is not a derivative
   work of it. Every value remains an unvalidated candidate until checked on a real watch.
+- **Garmin wellness FIT messages** (`GarminWellness.swift`, `GarminWellness.kt`): the global message
+  and field numbers, base types, scales and enum values of the monitoring, stress, SpO2, sleep, HRV,
+  respiration, beat-interval and skin-temperature messages were taken as facts from Gadgetbridge's
+  `fit_profile.json` and FIT importer at the same commit. No code or fixtures were copied; NOOP's
+  fixtures are written by its own test builders. Beat intervals (290) and skin temperature (397/398)
+  are not imported upstream either, so they decode only into raw `*Candidate` fields.
 
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
