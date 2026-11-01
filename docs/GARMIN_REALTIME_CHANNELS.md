@@ -39,7 +39,7 @@ garmin-rt availability model=Forerunner 165 fw=29.05 ch8=opened ch10=opened ch13
 
 | Model | Firmware | 8 calories | 10 intensity | 13 stress | Source |
 |---|---|---|---|---|---|
-| Forerunner 165 | 29.05 | opened | opened | opened | NOOP capture, 2026-11-01 (two connects) |
+| Forerunner 165 | 29.05 | opened | opened | opened | NOOP capture, 2026-11-01 (two connects, off-wrist) and 2026-11-02 (worn) |
 | Forerunner 245 | 13.00 | listed | listed | listed | Gadgetbridge docs (service list only, no payloads) |
 
 A model that refuses a channel answers REGISTER with a non-zero status; the line then shows `refused(<status>)`
@@ -81,16 +81,36 @@ Observed (identical on both connects): `172, 26, 73, 357, 0, 150, 0`.
 
 ### 13 stress: 4 bytes, `[level i16][u16]`
 
-Observed only `fc ff 00 00` (level −4) while off-wrist.
+Off-wrist: only `fc ff 00 00` (level −4), sent once on open. Worn (day 1): 781 messages in 46 minutes.
 
-- **Hypothesis:** 0–100 is Garmin's stress score; a negative value means "no reading" (−4 seen off-wrist; the
-  meaning of each sentinel is unknown). Whether the level is an i16 or an i8 plus a pad byte cannot be told
-  until a positive reading arrives.
-- Sent once on open.
+- **Hypothesis:** 0–100 is Garmin's stress score; a negative value means "no reading". The meaning of each
+  sentinel is unknown. Seen so far: −4 off-wrist, −3 for the first few seconds worn, −5 / −2 for about
+  80 s mid-session.
+- Worn, the watch pushes every ~2–5 s, much faster than the stress widget's history. The level and the
+  second word update in alternate messages.
+- The second word is 0 alongside a sentinel and 161–247 otherwise. Its meaning is unknown.
+- i16 and i8 plus a pad byte read identically for every value seen (−5…96).
 - Garmin's 0–100 scale is not NOOP's stress scale. It must never be shown beside NOOP's stress as if the two
   were one number.
 
+## Worn validation, day 1 (2026-11-02 00:08–00:54 local, Forerunner 165 fw 29.05)
+
+The user wore the watch and compared it with the capture readout, then reported (verbatim): **"every metrics
+is the same as what you seen"**. That statement is recorded as given; no per-reading timestamps were noted.
+
+| Ch | Values during the run | Exercised? |
+|---|---|---|
+| 13 stress | level 42–96, every ~2–5 s; sentinels −3 (start), −5 / −2 (≈00:29–00:30) | yes: moved and reported matching |
+| 8 calories | total 11 → 82 (the day had just rolled over), active 0 → 2; active steps at 00:29 and 00:43 each coincide with a +3 total step | yes: moved and reported matching |
+| 10 intensity | one message, `0, 0, 0, 0, 0, 150, 0` (Monday just after midnight; Sunday's capture read 172, consistent with a weekly reset) | **no**: the value never changed |
+
+During the run the watch also sent bursts of protobuf "file access" requests (Smart field 43); the session
+declined each one and the link stayed up.
+
 ## Promotion
+
+Still needed: a **day 2** worn session for stress and calories, and a session where **intensity minutes
+change** (at least 10 minutes in the moderate zone) for channel 10.
 
 A candidate becomes a shipped value only when, **worn**, it matches the watch screen within ±1 across at least
 two sessions where the value changed (AGENTS.md: "validate against the artifact, not one match"), ideally on a
