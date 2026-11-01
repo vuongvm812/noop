@@ -102,6 +102,33 @@ Phone energy, same 24 h windows:
 Before Bluetooth use, take the shared-watch lock (`shlock -f ~/.herdr/garmin-watch.lock -p $$`) and
 remove it afterwards.
 
+### Reading the watch battery
+
+The battery % comes from the watch screen, read by hand at the start and the end of each run. Drain is
+normalised to % per 24 h from the two reading times. The Forerunner 165 (firmware 29.05) offers no
+better source:
+
+- It never sent BATTERY_STATUS (5023) on its own in any session so far.
+- The all-day monitor FIT files carry no battery message. FIT message 104 (battery, every 5 min) appears
+  only inside recorded activity files, and `device_info` in the monitor files has no battery fields.
+- No capability bit advertises a battery query.
+
+Integer screen readings make a 1 % step the resolution, which is why each scenario runs three times.
+
+### Keeping a run clean
+
+- **Watch:** off the charger for the whole run, the same settings as above, and no recorded activities.
+  Idle runs (1, 2a, 2b, 5) keep the watch off-wrist near the host. Scenarios 3 and 4 need it worn during
+  the window, which also costs some battery; this confounder is noted beside their results.
+- **Phone:** Bluetooth off (or Garmin Connect force-stopped) during NOOP runs, so that only one host
+  talks to the watch. Garmin Connect on, and NOOP off, for baseline 1.
+- **One link:** on macOS every process shares one connection to the watch, so another tool using the
+  watch during a run both adds drain and closes or opens handles under the run. The runs log any lock
+  holder other than themselves, and every handle reset or unrequested live handle, and are discarded
+  when either appears.
+- **History sync:** until the history-sync layer lands, scenarios 2a and 2b measure the link and the
+  handshake only, not the FIT download.
+
 ## Targets
 
 - NOOP idle (2a or 2b) adds **no more watch drain than the Garmin Connect baseline**.
@@ -111,10 +138,10 @@ remove it afterwards.
 
 ## Results
 
-**Not measured yet.** The policy and its tests land first, so that the connection, live and
-history-sync layers implement against it. NOOP cannot hold a Garmin session until the connection
-layer lands, and the Forerunner 165 smoke test showed the multi-link channel needs an OS-level bonded
-link (the watch shows a PIN) before any of these runs can start. Until scenario 3 is measured,
+**Not measured yet.** The connection and live layers now hold a session with the Forerunner 165 (bonded,
+handshake about 1.5 s from connect to ready), and short dry runs of every scenario confirm that the
+measured runs do what the protocol says (mode (b) reconnects and disconnects on its floor, the live
+window opens 6 and 12 and closes them, the SpO2 window opens 19). No 24 h run has been done. Until scenario 3 is measured,
 `measuredLiveCostPercentPerHour` stays `nil` and the "continuous live" toggle must say the cost is not
 yet measured instead of showing a guess.
 
