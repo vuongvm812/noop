@@ -95,6 +95,18 @@ own Charge/Rest, and **never** reads or displays Oura's encrypted readiness or s
 documented Oura file-import lane (`Packages/StrandImport/Sources/StrandImport/OuraExportParser.swift`)
 remains available as a fallback.
 
+## Garmin watch protocol (experimental)
+NOOP's Garmin code (`Packages/GarminProtocol/`, `android/.../com/noop/garmin/`) is **original
+clean-room** work written from **protocol facts only**: the multi-link control-frame and MLR header
+layouts, the COBS variant with leading and trailing `0x00`, CRC-16/ARC, the GFDI message frame, message
+ids and payload layouts, service numbers, capability bit positions, and the FileAccess protobuf field
+numbers.
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org): consulted for those facts at commit
+  `edbea98cbe1377001c0b8154ac20cb930e1db7f6` (2026-10-30), together with its Garmin protocol notes
+  (gadgetbridge.org/internals/specifics/garmin-protocol/). Licensed **AGPL-3.0**; NOOP copies **none** of
+  its code, tables, test fixtures or literals beyond the wire values themselves, and is not a derivative
+  work of it. Every value remains an unvalidated candidate until checked on a real watch.
+
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
 - **MarkdownUI** (`gonzalezreal/swift-markdown-ui`) — renders the AI Coach's Markdown

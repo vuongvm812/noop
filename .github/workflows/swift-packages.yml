@@ -21,6 +21,8 @@ on:
       # the guard written for exactly that case. Keep in step with what the tests read.
       - 'android/app/src/test/resources/**'
       - 'Strand/Liquid/LiquidCore.swift'
+      # GarminProtocol's oracle test reads the expected literal out of the Kotlin twin's test source.
+      - 'android/app/src/test/java/com/noop/garmin/**'
   push:
     branches: [main]
     paths:
@@ -34,6 +36,8 @@ on:
       # the guard written for exactly that case. Keep in step with what the tests read.
       - 'android/app/src/test/resources/**'
       - 'Strand/Liquid/LiquidCore.swift'
+      # GarminProtocol's oracle test reads the expected literal out of the Kotlin twin's test source.
+      - 'android/app/src/test/java/com/noop/garmin/**'
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +54,7 @@ jobs:
           - WhoopProtocol
           - OuraProtocol
           - PolarProtocol
+          - GarminProtocol
           - WhoopStore
           - StrandAnalytics
           - StrandImport
