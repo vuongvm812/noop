@@ -62,7 +62,30 @@ sealed class GarminSessionOutput {
     data class Battery(val percent: Int) : GarminSessionOutput()
     class Watch(val info: GarminDeviceInformation) : GarminSessionOutput()
     object PairingEventsSent : GarminSessionOutput()
-    object SyncAnnounced : GarminSessionOutput()
+    /** The watch announced new data; the platform asks `GarminRadioPolicy` and calls [GarminSession.startSync]. */
+    data class SyncAnnounced(val announcement: GarminSyncAnnouncement) : GarminSessionOutput()
+    /** One wanted file downloaded and checked. */
+    class SyncFile(val file: GarminDownloadedFile) : GarminSessionOutput()
+    /** The sync ended (completed, failed or interrupted). */
+    data class SyncFinished(val summary: GarminSyncSummary) : GarminSessionOutput()
+    /** A history transfer started (true) or ended (false): CONNECTION_PRIORITY_HIGH only in between. */
+    data class TransferActive(val active: Boolean) : GarminSessionOutput()
+}
+
+/** How the watch said it has new data. */
+sealed class GarminSyncAnnouncement(val label: String) {
+    /** 5037 SYNCHRONIZATION: the only announcement answered with FILTER before the directory request. */
+    data class Synchronization(val type: Int, val fileTypeMask: Long) :
+        GarminSyncAnnouncement("synchronization type=$type mask=0x${java.lang.Long.toHexString(fileTypeMask)}")
+    /** 5009 FILE_AVAILABLE for one directory entry. */
+    data class FileAvailable(val entry: GarminDirectoryEntry) :
+        GarminSyncAnnouncement("file available ${GarminSyncFileKey(entry).label}")
+    /** FileAccess ItemAddedNotification. */
+    data class ItemAdded(val count: Int) : GarminSyncAnnouncement("item added count=$count")
+    /** FileAccess SyncButtonNotification. */
+    object SyncButton : GarminSyncAnnouncement("sync button")
+
+    val expectsFilter: Boolean get() = this is Synchronization
 }
 
 class GarminSession(val config: GarminSessionConfig, val transport: GarminTransportKind, mtu: Int) {
@@ -87,10 +110,27 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
     private var lifecycleSent: Boolean? = null
     private var pairingSent = false
     private val loggedUnknownTypes = HashSet<Int>()
+    private val sync = GarminHistorySync()
     private val out = ArrayList<GarminSessionOutput>()
 
-    /** The earliest moment [tick] has work: the handshake deadline or an MLR timer. */
-    val nextDeadlineMs: Long? get() = listOfNotNull(handshakeDeadline, mlr?.nextDeadlineMs).minOrNull()
+    /** The earliest moment [tick] has work: the handshake deadline, an MLR timer, or the sync's stall deadline. */
+    val nextDeadlineMs: Long? get() = listOfNotNull(handshakeDeadline, mlr?.nextDeadlineMs, sync.deadlineMs).minOrNull()
+
+    /** A history sync is running. */
+    val isSyncing: Boolean get() = sync.isActive
+
+    /** What an interrupted file transfer could continue from (kept by the platform across a reconnect). */
+    val syncResumePoint: GarminSyncResume? get() = sync.resumePoint
+
+    /** Start one batched, read-only history sync. Ignored (logged) before the handshake or while one runs. */
+    fun startSync(request: GarminSyncRequest, clock: GarminClock): List<GarminSessionOutput> {
+        if (phase != GarminSessionPhase.Ready) {
+            note(true, "sync not started: session is ${phase.label}")
+            return flush()
+        }
+        perform(sync.start(request, clock.nowMs), clock)
+        return flush()
+    }
 
     fun setMtu(mtu: Int) {
         this.mtu = maxOf(23, mtu)
@@ -117,6 +157,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
     }
 
     fun tick(clock: GarminClock): List<GarminSessionOutput> {
+        perform(sync.tick(clock.nowMs), clock)
         val deadline = handshakeDeadline
         if (deadline != null && clock.nowMs >= deadline) {
             handshakeDeadline = null
@@ -144,6 +185,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
             }
             is GarminMultiLink.Route.Plain ->
                 if (route.handle == gfdiHandle) feed(route.payload, clock)
+                else if (routeSync(sync.handlePipeData(route.handle, route.payload, clock.nowMs), clock)) Unit
                 else note(false, "ignored ${route.payload.size} bytes on unregistered handle ${hex8(route.handle)}")
         }
         return flush()
@@ -169,7 +211,9 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                 control(GarminMultiLink.ControlRequest.Register(GarminService.GFDI, false))
             }
             is GarminMultiLink.ControlResponse.HandleClosed -> {
-                if (response.handle == gfdiHandle && response.service == GarminService.GFDI.raw) {
+                if (routeSync(sync.handleClosed(response.service, response.handle, clock.nowMs), clock)) {
+                    note(false, "file-transfer handle ${hex8(response.handle)} closed status=${response.status}")
+                } else if (response.handle == gfdiHandle && response.service == GarminService.GFDI.raw) {
                     note(true, "watch closed GFDI handle ${hex8(response.handle)} status=${response.status}; re-registering")
                     dropGfdi(clock)
                     setPhase(GarminSessionPhase.Registering)
@@ -179,6 +223,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                 }
             }
             is GarminMultiLink.ControlResponse.Registered -> {
+                if (routeSync(sync.handleRegistered(response.service, response.status, response.handle, clock.nowMs), clock)) return
                 if (response.service != GarminService.GFDI.raw || phase != GarminSessionPhase.Registering) {
                     note(false, "registration for service ${response.service} status=${response.status} ignored")
                     return
@@ -197,6 +242,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
     }
 
     private fun dropGfdi(clock: GarminClock) {
+        perform(sync.interrupt("GFDI handle closed by the watch"), clock)
         gfdiHandle = null
         mlr = null
         decoder.reset()
@@ -271,27 +317,58 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                 send(GarminOutbound.Status(type, GarminStatus.ACK), clock)
                 if (message.percent <= 100) out.add(GarminSessionOutput.Battery(message.percent))
             }
-            is GarminInbound.Synchronization, is GarminInbound.FileAvailable -> {
+            is GarminInbound.Synchronization -> {
                 note(false, "$type watch has new data")
                 send(GarminOutbound.Status(type, GarminStatus.ACK), clock)
-                out.add(GarminSessionOutput.SyncAnnounced)
+                out.add(GarminSessionOutput.SyncAnnounced(GarminSyncAnnouncement.Synchronization(message.type, message.fileTypeMask)))
+            }
+            is GarminInbound.FileAvailable -> {
+                note(false, "$type watch has new data")
+                send(GarminOutbound.Status(type, GarminStatus.ACK), clock)
+                out.add(GarminSessionOutput.SyncAnnounced(GarminSyncAnnouncement.FileAvailable(message.entry)))
+            }
+            is GarminInbound.CompressedFileData -> {
+                if (routeSync(sync.handleCompressedChunk(message.sequence, message.flags, message.checkpoint,
+                        message.checkpointCrc, message.data, clock.nowMs), clock)) return
+                if (loggedUnknownTypes.add(type)) note(true, "unsolicited compressed file data ($type)")
+                send(GarminOutbound.Status(type, GarminStatus.UNSUPPORTED), clock)
+            }
+            is GarminInbound.FileTransferData -> {
+                if (routeSync(sync.handleChunk(message.flags, message.runningCrc, message.dataOffset, message.data,
+                        clock.nowMs), clock)) return
+                if (loggedUnknownTypes.add(type)) note(true, "unsolicited file data ($type)")
+                send(GarminOutbound.Status(type, GarminStatus.UNSUPPORTED), clock)
             }
             is GarminInbound.ProtobufRequest -> {
                 val chunk = message.chunk
-                note(true, "refused watch request ${smartServiceName(chunk)} id=${chunk.requestId}")
+                val announcement = if (chunk.isComplete) fileAccessAnnouncement(chunk.data) else null
+                if (announcement != null) {
+                    // A FileAccess notice from the watch: keep it (no reply payload is due) and announce it.
+                    note(false, "watch FileAccess ${announcement.label} id=${chunk.requestId}")
+                    send(GarminOutbound.ProtobufStatus(GarminProtobufDirection.REQUEST, chunk.requestId, chunk.dataOffset,
+                        discard = false, code = 0), clock)
+                    out.add(GarminSessionOutput.SyncAnnounced(announcement))
+                    return
+                }
+                // Other FileAccess notices (a Forerunner 165 sends one after every pull) are declined like
+                // any other request; only the per-connect detail log names them.
+                note(firstFieldNumber(chunk.data) != GarminFileAccessRequest.SMART_FILE_ACCESS_FIELD,
+                    "refused watch request ${smartServiceName(chunk)} id=${chunk.requestId}")
                 send(GarminOutbound.ProtobufStatus(GarminProtobufDirection.REQUEST, chunk.requestId, chunk.dataOffset,
                     discard = true, code = UNKNOWN_REQUEST_ID), clock)
             }
             is GarminInbound.ProtobufResponse -> {
                 val chunk = message.chunk
+                if (routeSync(sync.handleChunkedResponse(chunk, clock.nowMs), clock)) return
                 note(false, "discarded unsolicited protobuf response id=${chunk.requestId}")
                 send(GarminOutbound.ProtobufStatus(GarminProtobufDirection.RESPONSE, chunk.requestId, chunk.dataOffset,
                     discard = true, code = UNKNOWN_REQUEST_ID), clock)
             }
             is GarminInbound.Status ->
-                if (message.status == GarminStatus.ACK.raw) note(false, "watch acked ${message.originalType}")
+                if (routeSync(sync.handleStatus(message.originalType, message.status, message.detail, clock.nowMs), clock)) Unit
+                else if (message.status == GarminStatus.ACK.raw) note(false, "watch acked ${message.originalType}")
                 else note(true, "watch answered ${message.originalType} with status ${message.status}")
-            is GarminInbound.FileTransferData, is GarminInbound.Unknown -> {
+            is GarminInbound.Unknown -> {
                 if (loggedUnknownTypes.add(type)) {
                     note(true, REFUSED_TYPE_NAMES[type]?.let { "refused $it ($type)" } ?: "unsupported message $type")
                 }
@@ -319,6 +396,28 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
         lifecycleSent = foreground
         val event = if (foreground) GarminSafeSystemEvent.HOST_DID_ENTER_FOREGROUND else GarminSafeSystemEvent.HOST_DID_ENTER_BACKGROUND
         send(GarminOutbound.SystemEvent(event, 0), clock)
+    }
+
+    // History sync plumbing
+
+    /** Perform a routed sync result; true when the input belonged to the sync. */
+    private fun routeSync(routed: Pair<Boolean, List<GarminSyncAction>>, clock: GarminClock): Boolean {
+        perform(routed.second, clock)
+        return routed.first
+    }
+
+    private fun perform(actions: List<GarminSyncAction>, clock: GarminClock?) {
+        for (action in actions) {
+            when (action) {
+                is GarminSyncAction.Send -> clock?.let { send(action.message, it) }
+                is GarminSyncAction.Control -> control(action.request)
+                is GarminSyncAction.Pipe -> out.add(GarminSessionOutput.Write(action.request.packet(action.mlHandle)))
+                is GarminSyncAction.Log -> note(action.rare, action.text)
+                is GarminSyncAction.File -> out.add(GarminSessionOutput.SyncFile(action.file))
+                is GarminSyncAction.Finished -> out.add(GarminSessionOutput.SyncFinished(action.summary))
+                is GarminSyncAction.TransferActive -> out.add(GarminSessionOutput.TransferActive(action.active))
+            }
+        }
     }
 
     // Output plumbing
@@ -355,6 +454,7 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
     }
 
     private fun fail(reason: String) {
+        perform(sync.interrupt("session failed"), null)
         handshakeDeadline = null
         note(true, "session failed: $reason")
         setPhase(GarminSessionPhase.Failed(reason))
@@ -409,7 +509,15 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
             return "${SMART_SERVICE_NAMES[field] ?: "service"} (Smart field $field)"
         }
 
-        private fun firstFieldNumber(data: ByteArray): Int? {
+        /** The watch-initiated FileAccess notices that announce new data, else null. */
+        fun fileAccessAnnouncement(smart: ByteArray): GarminSyncAnnouncement? =
+            when (val m = GarminFileAccessMessage.decodeSmart(smart)) {
+                is GarminFileAccessMessage.ItemAdded -> GarminSyncAnnouncement.ItemAdded(m.items.size)
+                is GarminFileAccessMessage.SyncButton -> GarminSyncAnnouncement.SyncButton
+                else -> null
+            }
+
+        internal fun firstFieldNumber(data: ByteArray): Int? {
             var value = 0
             var shift = 0
             for (b in data.take(5)) {

@@ -11,6 +11,12 @@ import Foundation
 //   5052 CurrentTimeRequest referenceId u32
 //   5037 Synchronization    type u8, maskSize u8 (4 or 8), file-type bitmask (maskSize bytes)
 //   5004 FileTransferData   flags u8, runningCrc u16, dataOffset u32, data…
+//   5054 CompressedFileData sequence u8, flags u8 (0x02 = last), checkpoint u32, checkpointCrc u16,
+//                           then the next piece of one zlib stream. OBSERVED on a Forerunner 165, not
+//                           from Gadgetbridge (which names the id only): `checkpoint` is how many
+//                           uncompressed bytes the stream covers and `checkpointCrc` the CRC-16/ARC of
+//                           those bytes (0 / 0 until the first checkpoint; the file size and the whole
+//                           file's CRC on the last piece).
 //   5009 FileAvailable      one 16-byte directory entry
 //   5043/5044 Protobuf      requestId u16, dataOffset u32, totalLength u32, chunkLength u32, chunk…
 //   5000 Status             origType u16, status u8, then per-origType fields (see `GarminStatusDetail`)
@@ -124,6 +130,8 @@ public enum GarminInbound: Equatable, Sendable {
     case currentTimeRequest(referenceId: UInt32)
     case synchronization(type: UInt8, fileTypeMask: UInt64)
     case fileTransferData(flags: UInt8, runningCrc: UInt16, dataOffset: UInt32, data: [UInt8])
+    /// 5054, sent instead of 5004 when the download asked for compression (layout above).
+    case compressedFileData(sequence: UInt8, flags: UInt8, checkpoint: UInt32, checkpointCrc: UInt16, data: [UInt8])
     case fileAvailable(GarminDirectoryEntry)
     case protobufRequest(GarminProtobufChunk)
     case protobufResponse(GarminProtobufChunk)
@@ -174,6 +182,10 @@ public enum GarminInbound: Equatable, Sendable {
         case .fileTransferData:
             guard let flags = r.u8(), let crc = r.u16(), let offset = r.u32() else { return nil }
             return .fileTransferData(flags: flags, runningCrc: crc, dataOffset: offset, data: r.rest())
+        case .compressedFileData:
+            guard let sequence = r.u8(), let flags = r.u8(), let checkpoint = r.u32(), let crc = r.u16() else { return nil }
+            return .compressedFileData(sequence: sequence, flags: flags, checkpoint: checkpoint, checkpointCrc: crc,
+                                       data: r.rest())
         case .batteryStatus:
             guard let status = r.u8(), let volts = r.u8(), let percent = r.u8() else { return nil }
             return .batteryStatus(statusBits: status, centivolts: volts, percent: percent)

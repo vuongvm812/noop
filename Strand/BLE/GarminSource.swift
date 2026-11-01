@@ -15,8 +15,14 @@ import AppKit
 /// allowlisted `GarminOutbound` messages and ML control frames can reach the watch.
 ///
 /// Battery hooks (`GarminRadioPolicy`): never scans in the background, no keep-alive traffic, the minimal
-/// capability set, and the host foreground/background events. Live channels and history sync are later
-/// layers; this type only keeps the link and the handshake.
+/// capability set, and the host foreground/background events.
+///
+/// History sync (read-only): on the watch's own "new data" notices, on connect, on foreground, on the
+/// periodic floor and on "Sync now", each gated by `GarminRadioPolicy.shouldSync`, one batched session
+/// downloads every new FIT file. What counts as "already downloaded" comes from `loadSynced` (the
+/// `garminSyncedFile` ledger); each file goes to `ingest`, which decodes, stores and records it. Nothing
+/// on the watch is archived, flagged or deleted. A transfer cut short by a dropped link is continued from
+/// its last checked offset on the next sync.
 ///
 /// Owns its OWN `CBCentralManager` and never references `BLEManager`, so the WHOOP path cannot regress.
 /// Uses only Foundation, CoreBluetooth and GarminProtocol plus `GarminRadioPolicy`, so it can also be
@@ -40,6 +46,11 @@ final class GarminSource: NSObject, ObservableObject {
     /// Set when the watch offers no transport NOOP speaks. The source stops and does not retry.
     @Published private(set) var unsupportedReason: String?
     @Published private(set) var discovered: [DiscoveredWatch] = []
+    /// A history sync is running.
+    @Published private(set) var syncing = false
+    @Published private(set) var lastSyncSummary: GarminSyncSummary?
+    /// Bytes of the file transfer in flight, nil between files (sync status line, Test Centre).
+    var transferOffset: Int? { session?.syncResumePoint.map { Int($0.offset) } }
 
     private let deviceId: String
     private let isFirstPairing: () -> Bool
@@ -51,6 +62,13 @@ final class GarminSource: NSObject, ObservableObject {
     private let onWatch: (GarminDeviceInformation) -> Void
     private let onSyncAnnounced: () -> Void
     private let nameMatches: (String) -> Bool
+    private let loadSynced: () async -> Set<GarminSyncFileKey>
+    private let ingest: (GarminDownloadedFile) async -> Bool
+    private let onSyncFinished: (GarminSyncSummary) -> Void
+    private let syncFlow: (GarminDeviceInformation?) -> GarminSyncFlow
+    /// DownloadRequest compression; the policy's value unless a caller (a Test Centre toggle, the hardware
+    /// harness) needs uncompressed transfers.
+    private let requestsCompression: Bool
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -72,6 +90,17 @@ final class GarminSource: NSObject, ObservableObject {
     private var failedConnects = 0
     private var foreground = true
 
+    // History sync state. `lastSyncAt` / `emptySyncStreak` persist per device so a relaunch keeps the floor.
+    private var syncPreparing = false
+    private var heldResume: GarminSyncResume?
+    private var periodicTimer: DispatchWorkItem?
+    /// Files are ingested one at a time, in arrival order.
+    private var ingestTail: Task<Void, Never>?
+    private var lastSyncAtKey: String { "noop.garmin.sync.lastAt.\(deviceId)" }
+    private var emptyStreakKey: String { "noop.garmin.sync.emptyStreak.\(deviceId)" }
+    /// The first sync of a watch reaches back this far (the watch keeps weeks of monitor files).
+    static let historyLookbackSeconds: TimeInterval = 14 * 86_400
+
     /// Distinct from the WHOOP (`BLEManager`) and Oura restore ids: each restoring central needs its own.
     private static let restoreID = "com.openwhoop.ble.garmin"
 
@@ -84,6 +113,11 @@ final class GarminSource: NSObject, ObservableObject {
          onWatch: @escaping (GarminDeviceInformation) -> Void = { _ in },
          onSyncAnnounced: @escaping () -> Void = {},
          nameMatches: @escaping (String) -> Bool = { _ in false },
+         loadSynced: @escaping () async -> Set<GarminSyncFileKey> = { [] },
+         ingest: @escaping (GarminDownloadedFile) async -> Bool = { _ in false },
+         onSyncFinished: @escaping (GarminSyncSummary) -> Void = { _ in },
+         syncFlow: @escaping (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(productNumber: $0?.productNumber) },
+         requestsCompression: Bool = GarminRadioPolicy.requestsCompression,
          restoresState: Bool = true) {
         self.deviceId = deviceId
         self.isFirstPairing = isFirstPairing
@@ -94,6 +128,11 @@ final class GarminSource: NSObject, ObservableObject {
         self.onWatch = onWatch
         self.onSyncAnnounced = onSyncAnnounced
         self.nameMatches = nameMatches
+        self.loadSynced = loadSynced
+        self.ingest = ingest
+        self.onSyncFinished = onSyncFinished
+        self.syncFlow = syncFlow
+        self.requestsCompression = requestsCompression
         super.init()
         #if os(iOS)
         // iOS state restoration: CoreBluetooth relaunches the app into the background for this central
@@ -150,6 +189,7 @@ final class GarminSource: NSObject, ObservableObject {
         wantsScan = false
         reconnectTimer?.cancel()
         deadlineTimer?.cancel()
+        periodicTimer?.cancel()
         if central.isScanning { central.stopScan() }
         if let p = peripheral { central.cancelPeripheralConnection(p) }
         endSession()
@@ -163,6 +203,83 @@ final class GarminSource: NSObject, ObservableObject {
         intentionalDisconnect = false
         say(true, "reconnect requested; dropping the link")
         central.cancelPeripheralConnection(p)
+    }
+
+    /// "Sync now": a manual sync, which the floor never holds back.
+    func syncNow() {
+        requestSync(.manual)
+    }
+
+    // MARK: - History sync
+
+    private func requestSync(_ trigger: GarminSyncTrigger, watchInitiated: Bool = false) {
+        guard linkPhase == .ready, let s = session, s.phase == .ready else { return }
+        guard !s.isSyncing, !syncPreparing else {
+            say(false, "sync trigger \(trigger) ignored; a sync is already running")
+            return
+        }
+        let defaults = UserDefaults.standard
+        let now = Date().timeIntervalSince1970
+        let last = defaults.object(forKey: lastSyncAtKey) as? Double
+        let streak = defaults.integer(forKey: emptyStreakKey)
+        guard GarminRadioPolicy.shouldSync(trigger: trigger, now: now, lastSyncAt: last, emptyStreak: streak) else {
+            say(false, "sync trigger \(trigger) held by the floor (last \(last.map { Int(now - $0) } ?? -1) s ago, empty streak \(streak))")
+            return
+        }
+        syncPreparing = true
+        let flow = syncFlow(watch)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let synced = await self.loadSynced()
+            self.syncPreparing = false
+            guard var s = self.session, s.phase == .ready, !s.isSyncing else { return }
+            let request = GarminSyncRequest(
+                flow: flow, synced: synced, resume: self.heldResume,
+                requestCompression: self.requestsCompression,
+                watchInitiated: watchInitiated,
+                notBeforeUnix: Int64(Date().timeIntervalSince1970 - Self.historyLookbackSeconds))
+            self.say(true, "sync (\(trigger)) starting with \(synced.count) files on record")
+            self.heldResume = nil
+            let outputs = s.startSync(request, self.clock())
+            self.session = s
+            self.perform(outputs)
+        }
+    }
+
+    private func syncFinished(_ summary: GarminSyncSummary) {
+        lastSyncSummary = summary
+        telemetry.syncSessionCompleted()
+        let defaults = UserDefaults.standard
+        if case .completed = summary.outcome {
+            defaults.set(Date().timeIntervalSince1970, forKey: lastSyncAtKey)
+            defaults.set(summary.isEmpty ? defaults.integer(forKey: emptyStreakKey) + 1 : 0, forKey: emptyStreakKey)
+        }
+        if let held = session?.syncResumePoint { heldResume = held }
+        onSyncFinished(summary)
+        schedulePeriodicSync()
+    }
+
+    /// Persistent-idle mode: one sync per periodic floor (stretched by the empty streak) while connected.
+    private func schedulePeriodicSync() {
+        periodicTimer?.cancel()
+        guard GarminRadioPolicy.defaultConnectionMode == .persistentIdle else { return }
+        let streak = UserDefaults.standard.integer(forKey: emptyStreakKey)
+        let delay = GarminRadioPolicy.periodicFloorSeconds * GarminRadioPolicy.syncBackoff(emptyStreak: streak)
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.requestSync(.periodic) }
+        }
+        periodicTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func enqueueIngest(_ file: GarminDownloadedFile) {
+        let previous = ingestTail
+        ingestTail = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            let stored = await self.ingest(file)
+            self.say(!stored, stored ? "ingested \(file.key.label)" : "ingest failed for \(file.key.label); it stays new")
+        }
     }
 
     // MARK: - Session plumbing
@@ -201,6 +318,7 @@ final class GarminSource: NSObject, ObservableObject {
                 case .ready:
                     linkPhase = .ready
                     failedConnects = 0
+                    requestSync(.connect)
                 case let .failed(reason):
                     // Drop the link; the reconnect path tries again with backoff.
                     say(true, "dropping the link after a session failure (\(reason))")
@@ -218,8 +336,15 @@ final class GarminSource: NSObject, ObservableObject {
                 onWatch(info)
             case .pairingEventsSent:
                 markPaired()
-            case .syncAnnounced:
+            case let .syncAnnounced(announcement):
                 onSyncAnnounced()
+                requestSync(.watch, watchInitiated: announcement.expectsFilter)
+            case let .syncFile(file):
+                enqueueIngest(file)
+            case let .syncFinished(summary):
+                syncFinished(summary)
+            case let .transferActive(active):
+                syncing = active
             }
         }
         scheduleDeadline()
@@ -258,6 +383,16 @@ final class GarminSource: NSObject, ObservableObject {
     }
 
     private func endSession() {
+        if let held = session?.syncResumePoint {
+            heldResume = held
+            say(true, "link down mid-transfer; holding \(held.key.label) at offset \(held.offset) to resume")
+        }
+        if session?.isSyncing == true {
+            syncing = false
+            telemetry.syncSessionCompleted()
+        }
+        periodicTimer?.cancel()
+        syncPreparing = false
         if session != nil {
             let now = Date().timeIntervalSince1970
             telemetry.linkDown(at: now)
@@ -326,6 +461,7 @@ final class GarminSource: NSObject, ObservableObject {
         let outputs = s.setForeground(isForeground, clock())
         session = s
         perform(outputs)
+        if isForeground { requestSync(.foreground) }
     }
 
     private static func hostIdentity() -> GarminHostIdentity {

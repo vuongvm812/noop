@@ -27,6 +27,13 @@ import android.os.SystemClock
 import com.noop.garmin.GarminAdvertisement
 import com.noop.garmin.GarminClock
 import com.noop.garmin.GarminDeviceInformation
+import com.noop.garmin.GarminDownloadedFile
+import com.noop.garmin.GarminSyncFileKey
+import com.noop.garmin.GarminSyncFlow
+import com.noop.garmin.GarminSyncModelPolicy
+import com.noop.garmin.GarminSyncRequest
+import com.noop.garmin.GarminSyncResume
+import com.noop.garmin.GarminSyncSummary
 import com.noop.garmin.GarminGattService
 import com.noop.garmin.GarminSession
 import com.noop.garmin.GarminSessionConfig
@@ -34,7 +41,14 @@ import com.noop.garmin.GarminSessionOutput
 import com.noop.garmin.GarminSessionPhase
 import com.noop.garmin.GarminTransport
 import com.noop.garmin.GarminTransportSelection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.time.Instant
@@ -52,7 +66,14 @@ import java.util.UUID
  * only allowlisted [com.noop.garmin.GarminOutbound] messages and ML control frames can reach the watch.
  *
  * Battery hooks ([GarminRadioPolicy]): never scans in the background, no keep-alive traffic, the minimal
- * capability set, connection priority LOW_POWER once idle, and the host foreground/background events.
+ * capability set, connection priority LOW_POWER once idle (HIGH only while a history transfer runs), and
+ * the host foreground/background events.
+ *
+ * History sync (read-only): on the watch's own "new data" notices, on connect, on foreground, on the
+ * periodic floor and on [syncNow], each gated by [GarminRadioPolicy.shouldSync], one batched session
+ * downloads every new FIT file. [loadSynced] (the `garminSyncedFile` ledger) says what is already stored;
+ * each file goes to [ingest]. Nothing on the watch is archived, flagged or deleted. A transfer cut short by
+ * a dropped link is continued (or, where the watch restarts it, re-fetched) on the next sync.
  * Runs on the app-scoped [SourceCoordinator], so the existing foreground connection service keeps the
  * process (and this link) alive. Every GATT callback is posted to the main looper, which keeps the
  * session single-threaded. Owns its OWN GATT and never references [WhoopBleClient].
@@ -69,6 +90,12 @@ class GarminSource(
     private val onBattery: (Int) -> Unit = {},
     private val onWatch: (GarminDeviceInformation) -> Unit = {},
     private val onSyncAnnounced: () -> Unit = {},
+    private val loadSynced: suspend () -> Set<GarminSyncFileKey> = { emptySet() },
+    private val ingest: suspend (GarminDownloadedFile) -> Boolean = { false },
+    private val onSyncFinished: (GarminSyncSummary) -> Unit = {},
+    private val syncFlow: (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(it?.productNumber) },
+    /** DownloadRequest compression; the policy's value unless a caller needs uncompressed transfers. */
+    private val requestsCompression: Boolean = GarminRadioPolicy.REQUESTS_COMPRESSION,
 ) : LiveHrSource {
 
     enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
@@ -84,6 +111,13 @@ class GarminSource(
     val unsupportedReason: StateFlow<String?> = _unsupportedReason.asStateFlow()
     private val _discovered = MutableStateFlow<List<DiscoveredWatch>>(emptyList())
     val discovered: StateFlow<List<DiscoveredWatch>> = _discovered.asStateFlow()
+    /** A history sync is running. */
+    private val _syncing = MutableStateFlow(false)
+    val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
+    private val _lastSyncSummary = MutableStateFlow<GarminSyncSummary?>(null)
+    val lastSyncSummary: StateFlow<GarminSyncSummary?> = _lastSyncSummary.asStateFlow()
+    /** Bytes of the file transfer in flight, null between files (sync status line, Test Centre). */
+    val transferOffset: Long? get() = session?.syncResumePoint?.offset
 
     private val appContext = context.applicationContext
     private val adapter: BluetoothAdapter? =
@@ -106,6 +140,17 @@ class GarminSource(
     private var failedConnects = 0
     private var foreground = initialForeground()
     private var startedActivities = 0
+
+    // History sync state. lastSyncAt / emptyStreak persist per device so a relaunch keeps the floor.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val ingestLock = Mutex()
+    private val prefs = appContext.getSharedPreferences("noop_garmin_sync", Context.MODE_PRIVATE)
+    private val lastSyncAtKey = "lastAt.$deviceId"
+    private val emptyStreakKey = "emptyStreak.$deviceId"
+    private var watch: GarminDeviceInformation? = null
+    private var syncPreparing = false
+    private var heldResume: GarminSyncResume? = null
+    private val periodicSync = Runnable { onMain { requestSync(GarminSyncTrigger.PERIODIC) } }
 
     private val deadline = Runnable { onMain { session?.let { perform(it.tick(clock())) } } }
     private val reconnectRunnable = Runnable {
@@ -156,10 +201,13 @@ class GarminSource(
         wantsScan = false
         handler.removeCallbacks(reconnectRunnable)
         handler.removeCallbacks(deadline)
+        handler.removeCallbacks(periodicSync)
         stopScan()
         gatt?.let { runCatching { it.disconnect(); it.close() } }
         gatt = null
         endSession()
+        // Children only: the same source may be connected again, and its scope must still launch.
+        scope.coroutineContext.cancelChildren()
         _linkPhase.value = LinkPhase.DISCONNECTED
         (appContext as? Application)?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
         runCatching { appContext.unregisterReceiver(adapterReceiver) }
@@ -170,6 +218,74 @@ class GarminSource(
         if (targetAddress == null) return
         say(true, "reconnect requested; dropping the link")
         gatt?.disconnect()
+    }
+
+    /** "Sync now": a manual sync, which the floor never holds back. */
+    fun syncNow() = onMain { requestSync(GarminSyncTrigger.MANUAL) }
+
+    // History sync
+
+    private fun requestSync(trigger: GarminSyncTrigger, watchInitiated: Boolean = false) {
+        val s = session ?: return
+        if (_linkPhase.value != LinkPhase.READY || s.phase !is GarminSessionPhase.Ready) return
+        if (s.isSyncing || syncPreparing) {
+            say(false, "sync trigger $trigger ignored; a sync is already running")
+            return
+        }
+        val now = System.currentTimeMillis() / 1000.0
+        val last = if (prefs.contains(lastSyncAtKey)) prefs.getLong(lastSyncAtKey, 0).toDouble() else null
+        val streak = prefs.getInt(emptyStreakKey, 0)
+        if (!GarminRadioPolicy.shouldSync(trigger, now, last, streak)) {
+            say(false, "sync trigger $trigger held by the floor (last ${last?.let { (now - it).toInt() } ?: -1} s ago, empty streak $streak)")
+            return
+        }
+        syncPreparing = true
+        val flow = syncFlow(watch)
+        scope.launch {
+            val synced = runCatching { loadSynced() }.getOrDefault(emptySet())
+            syncPreparing = false
+            val current = session ?: return@launch
+            if (current !== s || current.phase !is GarminSessionPhase.Ready || current.isSyncing) return@launch
+            val request = GarminSyncRequest(
+                flow = flow, synced = synced, resume = heldResume,
+                requestCompression = requestsCompression,
+                watchInitiated = watchInitiated,
+                notBeforeUnix = System.currentTimeMillis() / 1000 - HISTORY_LOOKBACK_SECONDS,
+            )
+            say(true, "sync ($trigger) starting with ${synced.size} files on record")
+            heldResume = null
+            perform(current.startSync(request, clock()))
+        }
+    }
+
+    private fun syncFinished(summary: GarminSyncSummary) {
+        _lastSyncSummary.value = summary
+        telemetry.syncSessionCompleted()
+        if (summary.outcome is GarminSyncSummary.Outcome.Completed) {
+            val streak = if (summary.isEmpty) prefs.getInt(emptyStreakKey, 0) + 1 else 0
+            prefs.edit().putLong(lastSyncAtKey, System.currentTimeMillis() / 1000).putInt(emptyStreakKey, streak).apply()
+        }
+        session?.syncResumePoint?.let { heldResume = it }
+        onSyncFinished(summary)
+        schedulePeriodicSync()
+    }
+
+    /** Persistent-idle mode: one sync per periodic floor (stretched by the empty streak) while connected. */
+    private fun schedulePeriodicSync() {
+        handler.removeCallbacks(periodicSync)
+        if (GarminRadioPolicy.DEFAULT_CONNECTION_MODE != GarminConnectionMode.PERSISTENT_IDLE) return
+        val delay = GarminRadioPolicy.PERIODIC_FLOOR_SECONDS * GarminRadioPolicy.syncBackoff(prefs.getInt(emptyStreakKey, 0))
+        handler.postDelayed(periodicSync, (delay * 1000).toLong())
+    }
+
+    /** Files are stored one at a time, in arrival order. */
+    private fun enqueueIngest(file: GarminDownloadedFile) {
+        scope.launch {
+            ingestLock.withLock {
+                val stored = runCatching { ingest(file) }.getOrDefault(false)
+                say(!stored, if (stored) "ingested ${file.key.label}" else "ingest failed for ${file.key.label}; it stays new")
+            }
+        }
     }
 
     // Session plumbing
@@ -219,6 +335,7 @@ class GarminSource(
                         _linkPhase.value = LinkPhase.READY
                         failedConnects = 0
                         setPriority(GarminRadioPolicy.connectionPriority(GarminLinkActivity.IDLE))
+                        requestSync(GarminSyncTrigger.CONNECT)
                     }
                     is GarminSessionPhase.Failed -> {
                         say(true, "dropping the link after a session failure (${p.reason})")
@@ -231,9 +348,23 @@ class GarminSource(
                     _batteryPct.value = o.percent
                     onBattery(o.percent)
                 }
-                is GarminSessionOutput.Watch -> onWatch(o.info)
+                is GarminSessionOutput.Watch -> {
+                    watch = o.info
+                    onWatch(o.info)
+                }
                 is GarminSessionOutput.PairingEventsSent -> markPaired()
-                is GarminSessionOutput.SyncAnnounced -> onSyncAnnounced()
+                is GarminSessionOutput.SyncAnnounced -> {
+                    onSyncAnnounced()
+                    requestSync(GarminSyncTrigger.WATCH, watchInitiated = o.announcement.expectsFilter)
+                }
+                is GarminSessionOutput.SyncFile -> enqueueIngest(o.file)
+                is GarminSessionOutput.SyncFinished -> syncFinished(o.summary)
+                is GarminSessionOutput.TransferActive -> {
+                    _syncing.value = o.active
+                    // CONNECTION_PRIORITY_HIGH only while files move, then back to low power.
+                    setPriority(GarminRadioPolicy.connectionPriority(
+                        if (o.active) GarminLinkActivity.FILE_TRANSFER else GarminLinkActivity.IDLE))
+                }
             }
         }
         drainWrites()
@@ -282,6 +413,16 @@ class GarminSource(
     }
 
     private fun endSession() {
+        session?.syncResumePoint?.let {
+            heldResume = it
+            say(true, "link down mid-transfer; holding ${it.key.label} at offset ${it.offset} to resume")
+        }
+        if (session?.isSyncing == true) {
+            _syncing.value = false
+            telemetry.syncSessionCompleted()
+        }
+        handler.removeCallbacks(periodicSync)
+        syncPreparing = false
         if (session != null) {
             val now = System.currentTimeMillis() / 1000.0
             telemetry.linkDown(now)
@@ -332,6 +473,7 @@ class GarminSource(
             say(true, "scan stopped - the app went to the background")
         }
         session?.let { perform(it.setForeground(isForeground, clock())) }
+        if (isForeground) requestSync(GarminSyncTrigger.FOREGROUND)
     }
 
     private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
@@ -527,5 +669,7 @@ class GarminSource(
 
     private companion object {
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        /** The first sync of a watch reaches back this far (Swift: `historyLookbackSeconds`). */
+        const val HISTORY_LOOKBACK_SECONDS = 14L * 86_400
     }
 }

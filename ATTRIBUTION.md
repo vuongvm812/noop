@@ -112,6 +112,13 @@ numbers.
   `fit_profile.json` and FIT importer at the same commit. No code or fixtures were copied; NOOP's
   fixtures are written by its own test builders. Beat intervals (290) and skin temperature (397/398)
   are not imported upstream either, so they decode only into raw `*Candidate` fields.
+- **Garmin history sync** (`GarminHistorySync.swift`, `GarminHistorySync.kt`): the legacy directory and
+  DOWNLOAD_REQUEST / FILE_TRANSFER_DATA flow, the FileAccess list / pull flow with its file-transfer
+  pipe start packet and leading acknowledgement, the FIT sub-type numbers and the "uid top 32 bits are
+  the creation time" rule are Gadgetbridge facts at the same commit. The 5054 COMPRESSED_FILE_DATA
+  layout (sequence, last flag, checkpoint, checkpoint CRC, zlib piece), the `FIT_TYPE_<n>` FileAccess
+  names and the watch restarting a file on CONTINUE were OBSERVED on a Forerunner 165 (fw 29.05), not
+  taken from Gadgetbridge, which names id 5054 only. The zlib inflater is written from RFC 1950/1951.
 
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).

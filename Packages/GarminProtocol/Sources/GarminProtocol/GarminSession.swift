@@ -120,8 +120,43 @@ public enum GarminSessionOutput: Equatable, Sendable {
     case watch(GarminDeviceInformation)
     /// PAIR_COMPLETE / SETUP_WIZARD_COMPLETE went out; the platform records that this watch is paired.
     case pairingEventsSent
-    /// The watch announced new data (5037 / 5009). The history-sync layer decides whether to act.
-    case syncAnnounced
+    /// The watch announced new data (5037, 5009, or a FileAccess ItemAdded / SyncButton). The platform
+    /// asks `GarminRadioPolicy` whether to sync and, if so, calls `startSync`.
+    case syncAnnounced(GarminSyncAnnouncement)
+    /// One wanted file downloaded and checked. The platform decodes and stores it, then records its key.
+    case syncFile(GarminDownloadedFile)
+    /// The sync ended (completed, failed or interrupted).
+    case syncFinished(GarminSyncSummary)
+    /// A history transfer started (true) or ended (false); Android holds CONNECTION_PRIORITY_HIGH only
+    /// in between (`GarminRadioPolicy.connectionPriority`).
+    case transferActive(Bool)
+}
+
+/// How the watch said it has new data.
+public enum GarminSyncAnnouncement: Equatable, Sendable {
+    /// 5037 SYNCHRONIZATION. The only announcement answered with FILTER before the directory request.
+    case synchronization(type: UInt8, fileTypeMask: UInt64)
+    /// 5009 FILE_AVAILABLE for one directory entry.
+    case fileAvailable(GarminDirectoryEntry)
+    /// FileAccess ItemAddedNotification.
+    case itemAdded(count: Int)
+    /// FileAccess SyncButtonNotification (the user pressed sync on the watch).
+    case syncButton
+
+    public var label: String {
+        switch self {
+        case let .synchronization(type, mask): return "synchronization type=\(type) mask=0x\(String(mask, radix: 16))"
+        case let .fileAvailable(entry): return "file available \(GarminSyncFileKey(entry).label)"
+        case let .itemAdded(count): return "item added count=\(count)"
+        case .syncButton: return "sync button"
+        }
+    }
+
+    /// True when the sync it triggers must open with FILTER (only 5037).
+    public var expectsFilter: Bool {
+        if case .synchronization = self { return true }
+        return false
+    }
 }
 
 public struct GarminSession {
@@ -144,6 +179,7 @@ public struct GarminSession {
     private var lifecycleSent: Bool?
     private var pairingSent = false
     private var loggedUnknownTypes: Set<UInt16> = []
+    private var sync = GarminHistorySync()
     private var out: [GarminSessionOutput] = []
 
     public init(config: GarminSessionConfig, transport: GarminTransportKind, mtu: Int) {
@@ -152,9 +188,29 @@ public struct GarminSession {
         self.mtu = max(23, mtu)
     }
 
-    /// The earliest moment `tick` has work: the handshake deadline or an MLR retransmit / ack timer.
+    /// The earliest moment `tick` has work: the handshake deadline, an MLR retransmit / ack timer, or the
+    /// history sync's stall deadline.
     public var nextDeadlineMs: Int64? {
-        [handshakeDeadline, mlr?.nextDeadlineMs].compactMap { $0 }.min()
+        [handshakeDeadline, mlr?.nextDeadlineMs, sync.deadlineMs].compactMap { $0 }.min()
+    }
+
+    /// A history sync is running.
+    public var isSyncing: Bool { sync.isActive }
+
+    /// What an interrupted file transfer could continue from. The platform keeps it across a reconnect
+    /// and passes it back in the next `GarminSyncRequest`.
+    public var syncResumePoint: GarminSyncResume? { sync.resumePoint }
+
+    /// Start one batched history sync: list the watch's files, download every wanted file not in
+    /// `request.synced` back to back, then SYNC_COMPLETE. Ignored (logged) before the handshake is done or
+    /// while a sync runs. The caller applies `GarminRadioPolicy.shouldSync` first.
+    public mutating func startSync(_ request: GarminSyncRequest, _ clock: GarminClock) -> [GarminSessionOutput] {
+        guard phase == .ready else {
+            note(true, "sync not started: session is \(phase.label)")
+            return flush()
+        }
+        perform(sync.start(request, nowMs: clock.nowMs), clock)
+        return flush()
     }
 
     public mutating func setMtu(_ mtu: Int) {
@@ -186,6 +242,7 @@ public struct GarminSession {
     }
 
     public mutating func tick(_ clock: GarminClock) -> [GarminSessionOutput] {
+        perform(sync.tick(nowMs: clock.nowMs), clock)
         if let deadline = handshakeDeadline, clock.nowMs >= deadline {
             handshakeDeadline = nil
             fail("handshake timed out in \(phase.label) after \(clock.nowMs - (startedAtMs ?? clock.nowMs)) ms", clock)
@@ -220,6 +277,8 @@ public struct GarminSession {
         case let .plain(handle, payload):
             if handle == gfdiHandle {
                 feed(payload, clock)
+            } else if routeSync(sync.handlePipeData(handle: handle, payload: payload, nowMs: clock.nowMs), clock) {
+                break
             } else {
                 note(false, "ignored \(payload.count) bytes on unregistered handle \(hex8(handle))")
             }
@@ -245,7 +304,9 @@ public struct GarminSession {
             setPhase(.registering)
             control(.register(.gfdi, reliable: false))
         case let .handleClosed(service, handle, status):
-            if handle == gfdiHandle, service == GarminService.gfdi.rawValue {
+            if routeSync(sync.handleClosed(service: service, handle: handle, nowMs: clock.nowMs), clock) {
+                note(false, "file-transfer handle \(hex8(handle)) closed status=\(status)")
+            } else if handle == gfdiHandle, service == GarminService.gfdi.rawValue {
                 note(true, "watch closed GFDI handle \(hex8(handle)) status=\(status); re-registering")
                 dropGfdi(clock)
                 setPhase(.registering)
@@ -254,6 +315,9 @@ public struct GarminSession {
                 note(false, "handle \(hex8(handle)) service=\(service) closed status=\(status)")
             }
         case let .registered(service, status, handle, reliable):
+            if routeSync(sync.handleRegistered(service: service, status: status, handle: handle, nowMs: clock.nowMs), clock) {
+                return
+            }
             guard service == GarminService.gfdi.rawValue, phase == .registering else {
                 note(false, "registration for service \(service) status=\(status) ignored")
                 return
@@ -275,6 +339,7 @@ public struct GarminSession {
     /// The watch dropped GFDI: forget the handle and run the handshake again on the next one, under a
     /// fresh deadline. The pairing events are not repeated; the lifecycle state is re-sent once ready.
     private mutating func dropGfdi(_ clock: GarminClock) {
+        perform(sync.interrupt("GFDI handle closed by the watch"), clock)
         gfdiHandle = nil
         mlr = nil
         decoder.reset()
@@ -344,30 +409,63 @@ public struct GarminSession {
             send(.status(of: type, .ack), clock)
             if percent <= 100 { out.append(.battery(percent: Int(percent))) }
 
-        case .synchronization, .fileAvailable:
+        case let .synchronization(syncType, mask):
             note(false, "\(type) watch has new data")
             send(.status(of: type, .ack), clock)
-            out.append(.syncAnnounced)
+            out.append(.syncAnnounced(.synchronization(type: syncType, fileTypeMask: mask)))
+
+        case let .fileAvailable(entry):
+            note(false, "\(type) watch has new data")
+            send(.status(of: type, .ack), clock)
+            out.append(.syncAnnounced(.fileAvailable(entry)))
+
+        case let .compressedFileData(sequence, flags, checkpoint, crc, data):
+            if routeSync(sync.handleCompressedChunk(sequence: sequence, flags: flags, checkpoint: checkpoint,
+                                                    checkpointCrc: crc, data: data, nowMs: clock.nowMs), clock) { break }
+            if loggedUnknownTypes.insert(type).inserted { note(true, "unsolicited compressed file data (\(type))") }
+            send(.status(of: type, .unsupported), clock)
+
+        case let .fileTransferData(flags, crc, offset, data):
+            if routeSync(sync.handleChunk(flags: flags, runningCrc: crc, offset: offset, data: data,
+                                          nowMs: clock.nowMs), clock) { break }
+            if loggedUnknownTypes.insert(type).inserted { note(true, "unsolicited file data (\(type))") }
+            send(.status(of: type, .unsupported), clock)
 
         case let .protobufRequest(chunk):
-            note(true, "refused watch request \(Self.smartServiceName(chunk)) id=\(chunk.requestId)")
+            if chunk.isComplete, let announcement = Self.fileAccessAnnouncement(chunk.data) {
+                // A FileAccess notice from the watch: keep it (no reply payload is due) and announce it.
+                note(false, "watch FileAccess \(announcement.label) id=\(chunk.requestId)")
+                send(.protobufStatus(of: .request, requestId: chunk.requestId, dataOffset: chunk.dataOffset,
+                                     discard: false, code: 0), clock)
+                out.append(.syncAnnounced(announcement))
+                break
+            }
+            // A FileAccess notice other than ItemAdded / SyncButton (a Forerunner 165 sends one after every
+            // pull, presumably TransferStatusRequest) is declined like any other request: the watch carries on.
+            // Only the per-connect detail log names those; every other refusal is a rare line.
+            note(Self.firstFieldNumber(chunk.data) != GarminFileAccessRequest.smartFileAccessField,
+                 "refused watch request \(Self.smartServiceName(chunk)) id=\(chunk.requestId)")
             send(.protobufStatus(of: .request, requestId: chunk.requestId, dataOffset: chunk.dataOffset,
                                  discard: true, code: Self.unknownRequestId), clock)
 
         case let .protobufResponse(chunk):
-            // NOOP has no protobuf request outstanding in this layer, so any response is unsolicited.
+            if routeSync(sync.handleChunkedResponse(chunk, nowMs: clock.nowMs), clock) { break }
+            // No protobuf request of NOOP's is outstanding, so this response is unsolicited.
             note(false, "discarded unsolicited protobuf response id=\(chunk.requestId)")
             send(.protobufStatus(of: .response, requestId: chunk.requestId, dataOffset: chunk.dataOffset,
                                  discard: true, code: Self.unknownRequestId), clock)
 
-        case let .status(original, status, _):
+        case let .status(original, status, detail):
+            if routeSync(sync.handleStatus(original: original, status: status, detail: detail, nowMs: clock.nowMs), clock) {
+                break
+            }
             if status == GarminStatus.ack.rawValue {
                 note(false, "watch acked \(original)")
             } else {
                 note(true, "watch answered \(original) with status \(status)")
             }
 
-        case .fileTransferData, .unknown:
+        case .unknown:
             if loggedUnknownTypes.insert(type).inserted {
                 note(true, Self.refusedTypeNames[type].map { "refused \($0) (\(type))" } ?? "unsupported message \(type)")
             }
@@ -393,6 +491,38 @@ public struct GarminSession {
         guard config.sendsHostLifecycleEvents, phase == .ready, lifecycleSent != foreground else { return }
         lifecycleSent = foreground
         send(.systemEvent(foreground ? .hostDidEnterForeground : .hostDidEnterBackground, value: 0), clock)
+    }
+
+    // MARK: - History sync plumbing
+
+    /// Perform a routed sync result; true when the input belonged to the sync.
+    private mutating func routeSync(_ routed: (Bool, [GarminSyncAction]), _ clock: GarminClock) -> Bool {
+        perform(routed.1, clock)
+        return routed.0
+    }
+
+    private mutating func perform(_ actions: [GarminSyncAction], _ clock: GarminClock) {
+        for action in actions {
+            switch action {
+            case let .send(message): send(message, clock)
+            case let .control(request): control(request)
+            case let .pipe(request, handle):
+                out.append(.write(request.packet(mlHandle: handle)))
+            case let .log(rare, text): note(rare, text)
+            case let .file(file): out.append(.syncFile(file))
+            case let .finished(summary): out.append(.syncFinished(summary))
+            case let .transferActive(active): out.append(.transferActive(active))
+            }
+        }
+    }
+
+    /// The watch-initiated FileAccess notices that announce new data, else nil.
+    static func fileAccessAnnouncement(_ smart: [UInt8]) -> GarminSyncAnnouncement? {
+        switch GarminFileAccessMessage.decodeSmart(smart) {
+        case let .itemAdded(items)?: return .itemAdded(count: items.count)
+        case .syncButton?: return .syncButton
+        default: return nil
+        }
     }
 
     // MARK: - Output plumbing
@@ -429,6 +559,7 @@ public struct GarminSession {
     }
 
     private mutating func fail(_ reason: String, _ clock: GarminClock) {
+        perform(sync.interrupt("session failed"), clock)
         handshakeDeadline = nil
         note(true, "session failed: \(reason)")
         setPhase(.failed(reason))
@@ -477,7 +608,7 @@ public struct GarminSession {
         return "\(names[field] ?? "service") (Smart field \(field))"
     }
 
-    private static func firstFieldNumber(_ data: [UInt8]) -> Int? {
+    static func firstFieldNumber(_ data: [UInt8]) -> Int? {
         var value = 0
         var shift = 0
         for byte in data.prefix(5) {

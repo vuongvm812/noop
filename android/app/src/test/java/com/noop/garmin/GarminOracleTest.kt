@@ -181,6 +181,8 @@ in sync4 sync type=1 mask=0000000080000021
 in sync8 sync type=0 mask=0000001004000020
 in sync.bad unknown type=5037 payload=00020101
 in chunk chunk flags=0 crc=1f2e offset=512 data=dead00ef
+in compressed compressed seq=1 flags=2 checkpoint=915 crc=0000 data=104f21d4
+in compressed-short unknown type=5054 payload=00000000000000
 in available available {idx=258 dt=128 st=4 num=7 sf=0 ff=16 size=2048 ts=1100000000 unix=1731065600}
 in available.extra available {idx=258 dt=128 st=4 num=7 sf=0 ff=16 size=2048 ts=1100000000 unix=1731065600}
 in compact.available available {idx=258 dt=128 st=4 num=7 sf=0 ff=16 size=2048 ts=1100000000 unix=1731065600}

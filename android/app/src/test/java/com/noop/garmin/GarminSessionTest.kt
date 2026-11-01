@@ -147,7 +147,7 @@ trace ml-full
 @110 log D 5037 watch has new data
 @110 log D -> status 5037 ack
 @110 w 65000209058813ad1303e14a00
-@110 sync
+@110 sync synchronization type=0 mask=0xf
 @120 log R refused weather request (5014)
 @120 log D -> status 5014 unsupported
 @120 w 65000209088813961302114600

@@ -321,8 +321,9 @@ final class SourceCoordinator: ObservableObject {
             polarDebug: { UserDefaults.standard.bool(forKey: AppModel.polarDebugLoggingKey) })
     }
 
-    /// Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`.garmin`). It holds the session
-    /// and the handshake only; battery rides the SAME `LiveState` funnel as the other sources. The
+    /// Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`.garmin`). It holds the session,
+    /// the handshake and the read-only history sync; battery rides the SAME `LiveState` funnel as the other
+    /// sources. The
     /// first-pairing flag is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once.
     /// Per-connect readouts (every message in and out) appear only while the Connection or Sources Test
     /// Centre domain is active; state changes, refusals and failures are always logged.
@@ -338,7 +339,17 @@ final class SourceCoordinator: ObservableObject {
             onWatch: { [registry] info in
                 if !info.bluetoothName.isEmpty { registry.setModel(id, model: info.bluetoothName) }
             },
-            nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin })
+            nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin },
+            // History sync: the local ledger says what is already stored; each downloaded file is decoded
+            // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
+            loadSynced: { [storeHandle] in
+                guard let store = await storeHandle() else { return [] }
+                return await GarminHistoryIngest.syncedKeys(store: store, deviceId: id)
+            },
+            ingest: { [storeHandle, straplog] file in
+                guard let store = await storeHandle() else { return false }
+                return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)
+            })
     }
 
     /// Build the isolated `FTMSSource` for a gym machine `id`. HR (when the machine reports it) rides the

@@ -97,6 +97,7 @@ public enum GarminMessageType: UInt16, CaseIterable, Sendable {
     case protobufRequest = 5043
     case protobufResponse = 5044
     case configuration = 5050
+    case compressedFileData = 5054
     case currentTimeRequest = 5052
     case authNegotiation = 5101
 }

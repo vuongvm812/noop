@@ -166,7 +166,7 @@ class GarminWellnessParserTest {
 
     // MARK: - Fixture builder (twin of Swift `WellnessFit`)
 
-    private class WellnessFit {
+    internal class WellnessFit {
         private val records = ByteArrayOutputStream()
         var bigEndian = false
 
@@ -218,7 +218,7 @@ class GarminWellnessParserTest {
         }
     }
 
-    private companion object {
+    internal companion object {
         /** A FIT time whose low 16 bits sit just below 0xFFFF, so timestamp_16 rolls over (0x4190FFC0). */
         const val T = 1_100_021_696L
         /** +06:00, chosen so the monitoring fixture crosses local midnight. */

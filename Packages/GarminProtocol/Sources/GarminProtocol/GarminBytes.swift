@@ -114,3 +114,9 @@ public func garminHex(_ bytes: [UInt8]) -> String {
     }
     return out
 }
+
+/// 16 lower-case hex digits (diagnostics).
+func garminHex64(_ v: UInt64) -> String {
+    let s = String(v, radix: 16)
+    return String(repeating: "0", count: max(0, 16 - s.count)) + s
+}

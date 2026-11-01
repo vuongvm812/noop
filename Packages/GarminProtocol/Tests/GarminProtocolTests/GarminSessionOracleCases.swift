@@ -42,7 +42,10 @@ func oracleDescribe(_ o: GarminSessionOutput) -> String {
     case let .battery(percent): return "battery \(percent)"
     case let .watch(info): return "watch \(info.bluetoothName) sw=\(info.softwareVersion)"
     case .pairingEventsSent: return "paired"
-    case .syncAnnounced: return "sync"
+    case let .syncAnnounced(a): return "sync \(a.label)"
+    case let .syncFile(f): return "sync-file \(f.key.label)"
+    case let .syncFinished(summary): return "sync-finished \(summary.line)"
+    case let .transferActive(active): return "transfer \(active)"
     }
 }
 

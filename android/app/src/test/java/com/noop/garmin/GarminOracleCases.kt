@@ -67,6 +67,8 @@ internal fun oracleDescribe(m: GarminInbound): String = when (m) {
     is GarminInbound.CurrentTimeRequest -> "time ref=${m.referenceId}"
     is GarminInbound.Synchronization -> "sync type=${m.type} mask=${oracleHex64(m.fileTypeMask)}"
     is GarminInbound.FileTransferData -> "chunk flags=${m.flags} crc=${oracleHex16(m.runningCrc)} offset=${m.dataOffset} data=${garminHex(m.data)}"
+    is GarminInbound.CompressedFileData ->
+        "compressed seq=${m.sequence} flags=${m.flags} checkpoint=${m.checkpoint} crc=${oracleHex16(m.checkpointCrc)} data=${garminHex(m.data)}"
     is GarminInbound.FileAvailable -> "available " + oracleDescribe(m.entry)
     is GarminInbound.ProtobufRequest -> m.chunk.let { c ->
         "pbreq id=${c.requestId} offset=${c.dataOffset} total=${c.totalLength} complete=${c.isComplete} data=${garminHex(c.data)}"
@@ -205,6 +207,9 @@ internal fun oracleInboundFixtures(): List<Pair<String, ByteArray>> {
         "sync8" to oracleFrame(5037, bytes(0, 8) + oracleLE32(0x0400_0020) + oracleLE32(0x10)),
         "sync.bad" to oracleFrame(5037, bytes(0, 2, 1, 1)),
         "chunk" to oracleFrame(5004, bytes(0) + oracleLE16(0x1F2E) + oracleLE32(512) + bytes(0xDE, 0xAD, 0x00, 0xEF)),
+        // 5054 as a Forerunner 165 sends it: the last piece of a 915-byte file (checkpoint = size, CRC 0).
+        "compressed" to oracleFrame(5054, bytes(1, 2) + oracleLE32(915) + oracleLE16(0) + bytes(0x10, 0x4F, 0x21, 0xD4)),
+        "compressed-short" to oracleFrame(5054, bytes(0, 0, 0, 0, 0, 0, 0)),
         "available" to oracleFrame(5009, entry),
         "available.extra" to oracleFrame(5009, entry + bytes(1)),
         "compact.available" to oracleFrame(0x8000 or 0x2A00 or 9, entry),

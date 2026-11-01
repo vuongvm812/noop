@@ -3,6 +3,9 @@ package com.noop.ble
 import android.content.Context
 import android.util.Log
 import com.noop.data.DeviceRegistry
+import com.noop.data.GarminHistoryIngest
+import com.noop.data.GarminSyncStore
+import com.noop.data.WhoopDatabase
 import com.noop.data.PairedDeviceRow
 import com.noop.data.SourceKind
 import com.noop.data.StreamBatch
@@ -482,8 +485,8 @@ class SourceCoordinator(
     }
 
     /**
-     * Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`garmin`). It holds the session and
-     * the handshake only; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
+     * Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`garmin`). It holds the session, the
+     * handshake and the read-only history sync; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
      * is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once. Per-connect readouts
      * appear only while the Connection or Sources Test Centre domain is active; state changes, refusals and
      * failures are always logged. Mirrors macOS `makeGarminSource(id:)`.
@@ -491,6 +494,7 @@ class SourceCoordinator(
     private fun makeGarminSource(id: String, ctx: Context, row: PairedDeviceRow?): GarminSource {
         val prefs = NoopPrefs.of(ctx)
         val pairedKey = "noop.garmin.pairingEventsSent.$id"
+        val syncStore = GarminSyncStore(WhoopDatabase.get(ctx))
         return GarminSource(
             context = ctx,
             deviceId = id,
@@ -506,6 +510,13 @@ class SourceCoordinator(
                 if (info.bluetoothName.isNotBlank() && info.bluetoothName != row?.model) {
                     scope.launch { runCatching { registry.setModel(id, info.bluetoothName) } }
                 }
+            },
+            // History sync: the local ledger says what is already stored; each downloaded file is decoded
+            // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
+            loadSynced = { GarminHistoryIngest.syncedKeys(syncStore, id) },
+            ingest = { file ->
+                val repo = repository
+                repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)
             },
         )
     }

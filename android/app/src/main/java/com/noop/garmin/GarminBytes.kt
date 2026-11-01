@@ -113,3 +113,6 @@ fun garminHex(bytes: ByteArray): String {
     }
     return sb.toString()
 }
+
+/** 16 lower-case hex digits (diagnostics). */
+internal fun garminHex64(v: Long): String = java.lang.Long.toHexString(v).padStart(16, '0')

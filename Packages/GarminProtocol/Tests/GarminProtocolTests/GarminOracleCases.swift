@@ -107,6 +107,8 @@ func oracleDescribe(_ m: GarminInbound) -> String {
         return "sync type=\(type) mask=\(oracleHex64(mask))"
     case let .fileTransferData(flags, crc, offset, data):
         return "chunk flags=\(flags) crc=\(oracleHex16(crc)) offset=\(offset) data=\(garminHex(data))"
+    case let .compressedFileData(seq, flags, checkpoint, crc, data):
+        return "compressed seq=\(seq) flags=\(flags) checkpoint=\(checkpoint) crc=\(oracleHex16(crc)) data=\(garminHex(data))"
     case let .fileAvailable(entry):
         return "available " + oracleDescribe(entry)
     case let .protobufRequest(c):
@@ -266,6 +268,9 @@ func oracleInboundFixtures() -> [(String, [UInt8])] {
         ("sync8", oracleFrame(5037, [0, 8] + oracleLE32(0x0400_0020) + oracleLE32(0x10))),
         ("sync.bad", oracleFrame(5037, [0, 2, 1, 1])),
         ("chunk", oracleFrame(5004, [0] + oracleLE16(0x1F2E) + oracleLE32(512) + [0xDE, 0xAD, 0x00, 0xEF])),
+        // 5054 as a Forerunner 165 sends it: the last piece of a 915-byte file (checkpoint = size, CRC 0).
+        ("compressed", oracleFrame(5054, [1, 2] + oracleLE32(915) + oracleLE16(0) + [0x10, 0x4F, 0x21, 0xD4])),
+        ("compressed-short", oracleFrame(5054, [0, 0, 0, 0, 0, 0, 0])),
         ("available", oracleFrame(5009, entry)),
         ("available.extra", oracleFrame(5009, entry + [1])),
         ("compact.available", oracleFrame(0x8000 | 0x2A00 | 9, entry)),

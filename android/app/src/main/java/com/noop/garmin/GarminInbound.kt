@@ -94,6 +94,9 @@ sealed class GarminInbound {
     data class CurrentTimeRequest(val referenceId: Long) : GarminInbound()
     data class Synchronization(val type: Int, val fileTypeMask: Long) : GarminInbound()
     class FileTransferData(val flags: Int, val runningCrc: Int, val dataOffset: Long, val data: ByteArray) : GarminInbound()
+    /** 5054, sent instead of 5004 when the download asked for compression (layout in GarminInbound.swift). */
+    class CompressedFileData(val sequence: Int, val flags: Int, val checkpoint: Long, val checkpointCrc: Int, val data: ByteArray) :
+        GarminInbound()
     data class FileAvailable(val entry: GarminDirectoryEntry) : GarminInbound()
     class ProtobufRequest(val chunk: GarminProtobufChunk) : GarminInbound()
     class ProtobufResponse(val chunk: GarminProtobufChunk) : GarminInbound()
@@ -157,6 +160,13 @@ sealed class GarminInbound {
                     val crc = r.u16() ?: return null
                     val offset = r.u32() ?: return null
                     FileTransferData(flags, crc, offset, r.rest())
+                }
+                GarminMessageType.COMPRESSED_FILE_DATA -> {
+                    val sequence = r.u8() ?: return null
+                    val flags = r.u8() ?: return null
+                    val checkpoint = r.u32() ?: return null
+                    val crc = r.u16() ?: return null
+                    CompressedFileData(sequence, flags, checkpoint, crc, r.rest())
                 }
                 GarminMessageType.FILE_AVAILABLE -> FileAvailable(GarminDirectoryEntry.read(r) ?: return null)
                 GarminMessageType.PROTOBUF_REQUEST, GarminMessageType.PROTOBUF_RESPONSE -> {

@@ -28,7 +28,10 @@ internal fun oracleDescribe(o: GarminSessionOutput): String = when (o) {
     is GarminSessionOutput.Battery -> "battery ${o.percent}"
     is GarminSessionOutput.Watch -> "watch ${o.info.bluetoothName} sw=${o.info.softwareVersion}"
     is GarminSessionOutput.PairingEventsSent -> "paired"
-    is GarminSessionOutput.SyncAnnounced -> "sync"
+    is GarminSessionOutput.SyncAnnounced -> "sync ${o.announcement.label}"
+    is GarminSessionOutput.SyncFile -> "sync-file ${o.file.key.label}"
+    is GarminSessionOutput.SyncFinished -> "sync-finished ${o.summary.line}"
+    is GarminSessionOutput.TransferActive -> "transfer ${o.active}"
 }
 
 internal fun oracleRunSession(
