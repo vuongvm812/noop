@@ -5,13 +5,13 @@ package com.noop.ble
  *
  * Faithful Kotlin twin of Strand/BLE/GarminBroadcast.swift.
  *
- * HONEST, NON-PROPRIETARY BY DESIGN. Garmin watches do NOT expose a NOOP-readable proprietary live
- * stream. They DO broadcast the STANDARD Bluetooth Heart Rate profile (0x180D / 0x2A37) when the user
- * turns on "Broadcast Heart Rate" on the watch. So Garmin live HR is the EXISTING generic-HR path
- * ([StandardHrSource]) — there is nothing Garmin-proprietary to implement, and we don't pretend there is.
+ * The FALLBACK path. A watch NOOP pairs over its own GFDI protocol runs [GarminSource] (sourceKind
+ * "garmin"). For a model whose protocol NOOP does not speak, the watch can still broadcast the STANDARD
+ * Bluetooth Heart Rate profile (0x180D / 0x2A37) once the user turns on "Broadcast Heart Rate", and that
+ * reaches the EXISTING generic-HR path ([StandardHrSource]).
  *
- * A Garmin device is registered with sourceKind "liveBLE" so the SourceCoordinator already runs it
- * through [StandardHrSource] — no new BLE driver is needed, and the WHOOP/standard paths are untouched.
+ * Such a device is registered with sourceKind "liveBLE", so the SourceCoordinator runs it through
+ * [StandardHrSource] and the WHOOP/standard paths are untouched.
  */
 object GarminBroadcast {
 

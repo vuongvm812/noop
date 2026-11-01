@@ -2,15 +2,15 @@ import Foundation
 
 /// EXPERIMENTAL Garmin support — the in-app "enable Broadcast Heart Rate" hint.
 ///
-/// HONEST, NON-PROPRIETARY BY DESIGN. Garmin watches do NOT expose a NOOP-readable proprietary live
-/// stream. They DO broadcast the STANDARD Bluetooth Heart Rate profile (0x180D / 0x2A37) when the user
-/// turns on "Broadcast Heart Rate" on the watch. So Garmin live HR is the EXISTING generic-HR path
-/// (`StandardHRSource`) — there is nothing Garmin-proprietary to implement, and we don't pretend there is.
+/// The FALLBACK path. A watch NOOP pairs over its own GFDI protocol runs `GarminSource` (`.garmin`). For a
+/// model whose protocol NOOP does not speak, the watch can still broadcast the STANDARD Bluetooth Heart
+/// Rate profile (0x180D / 0x2A37) once the user turns on "Broadcast Heart Rate", and that reaches the
+/// EXISTING generic-HR path (`StandardHRSource`).
 ///
 /// This type carries the user-facing hint to enable Broadcast HR, which makes the watch discoverable
 /// on 0x180D. Advertised-name recognition lives in `ExperimentalBrand`.
-/// A Garmin device is registered with `sourceKind: .liveBLE` so the SourceCoordinator already runs it
-/// through `StandardHRSource` — no new BLE driver is needed, and the WHOOP/standard paths are untouched.
+/// Such a device is registered with `sourceKind: .liveBLE`, so the SourceCoordinator runs it through
+/// `StandardHRSource` and the WHOOP/standard paths are untouched.
 public enum GarminBroadcast {
 
     /// Step-by-step guidance to put a Garmin watch into Broadcast Heart Rate mode so NOOP (and any other

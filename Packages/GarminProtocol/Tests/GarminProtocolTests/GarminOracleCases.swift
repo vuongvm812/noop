@@ -115,6 +115,8 @@ func oracleDescribe(_ m: GarminInbound) -> String {
     case let .protobufResponse(c):
         return "pbresp id=\(c.requestId) offset=\(c.dataOffset) total=\(c.totalLength) complete=\(c.isComplete)"
             + " data=\(garminHex(c.data))"
+    case let .batteryStatus(status, volts, percent):
+        return "battery status=\(status) centivolts=\(volts) percent=\(percent)"
     case let .unknown(type, payload):
         return "unknown type=\(type) payload=\(garminHex(payload))"
     }
@@ -284,6 +286,8 @@ func oracleInboundFixtures() -> [(String, [UInt8])] {
         ("pb.chunked", oracleFrame(5043, oracleLE16(7) + oracleLE32(10) + oracleLE32(40) + oracleLE32(3) + [1, 2, 3])),
         ("pb.overlong", oracleFrame(5043, oracleLE16(7) + oracleLE32(0) + oracleLE32(40) + oracleLE32(30) + [1, 2, 3])),
         ("battery", oracleFrame(5023, [1, 2, 3])),
+        ("battery.full", oracleFrame(5023, [0x10, 0xC8, 87, 0, 0, 0, 0])),
+        ("battery.short", oracleFrame(5023, [1, 2])),
         ("unnamed", oracleFrame(5777, [9])),
     ]
 }

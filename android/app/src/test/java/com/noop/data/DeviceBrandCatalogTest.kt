@@ -56,7 +56,8 @@ class DeviceBrandCatalogTest {
         assertEquals(SourceKind.huami, spec("Amazfit").sourceKind)
         assertEquals(SourceKind.huami, spec("Mi Band").sourceKind)
         assertEquals(SourceKind.oura, spec("Oura").sourceKind)
-        assertEquals(SourceKind.liveBLE, spec("Garmin").sourceKind)
+        assertEquals(SourceKind.garmin, spec("Garmin").sourceKind)
+        assertEquals("garmin", SourceKind.garmin.name)   // stable cross-platform store encoding
         assertEquals(SourceKind.liveBLE, spec("Polar").sourceKind)
 
         assertEquals("huami", spec("Amazfit").idPrefix)

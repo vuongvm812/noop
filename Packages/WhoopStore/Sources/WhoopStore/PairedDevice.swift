@@ -54,7 +54,7 @@ public enum SourceKind: String, Sendable, CaseIterable {
     /// Reads the standard 0x180D HR service when exposed, else the documented Huami custom HR
     /// characteristic, else surfaces an honest "needs pairing we can't do" message. Best-effort, shipped
     /// behind the experimental add-device tier. Additive: only the experimental wizard writes it.
-    /// (Garmin uses `liveBLE` — its live HR is the standard broadcast-HR path, no proprietary protocol.)
+    /// (A Garmin watch paired through the Broadcast Heart Rate fallback stays `liveBLE`; see `garmin`.)
     case huami
     /// Apple Watch streamed via HealthKit (live HealthKit observer + background delivery). Apple-only,
     /// no Android twin. Additive: only the Apple Watch device registration writes it.
@@ -72,6 +72,12 @@ public enum SourceKind: String, Sendable, CaseIterable {
     /// wins ownership only when nothing else has data (a genuinely strap-less day), where its measured HR
     /// lights the day Effort. Additive (no DB migration): only the activity-file importer writes it.
     case activityFile
+    /// An EXPERIMENTAL Garmin watch over its own GFDI protocol (GarminProtocol package, `GarminSource`): one
+    /// low-power session with the clean-room handshake, owning its OWN central/GATT, never the WHOOP path.
+    /// The Broadcast Heart Rate path (`liveBLE` via `StandardHRSource`) stays available for models whose
+    /// protocol NOOP does not speak. Additive (no DB migration): only a Garmin pairing writes it, and an
+    /// older build reading the row falls back to `liveBLE` (`SourceKind(rawValue:) ?? .liveBLE`).
+    case garmin
 }
 
 /// Canonical metric a source can provide. Drives capability-aware UI + the day-owner resolver.

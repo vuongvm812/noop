@@ -20,8 +20,9 @@ enum class ExperimentalBrand(val displayBrand: String) {
     /** Xiaomi Mi Band (Huami-family). Older bands expose HR on a custom char; newer need an auth handshake
      *  we can't do — the driver surfaces that honestly rather than faking it. */
     MI_BAND("Mi Band"),
-    /** Garmin watch. Live HR is the STANDARD broadcast-HR path (0x180D) when the user enables
-     *  "Broadcast Heart Rate" — there is no NOOP-proprietary Garmin protocol. */
+    /** Garmin watch. Paired over the watch's own GFDI protocol it runs [GarminSource] (sourceKind
+     *  `garmin`); the STANDARD broadcast-HR path (0x180D, "Broadcast Heart Rate") stays as the fallback
+     *  for models whose protocol NOOP does not speak. */
     GARMIN("Garmin"),
     /** Oura ring. No open live health stream — proprietary, syncs to Oura's app. The driver makes the
      *  detection attempt, then points honestly at file import. */

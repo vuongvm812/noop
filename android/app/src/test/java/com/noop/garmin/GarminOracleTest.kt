@@ -200,7 +200,9 @@ in pb.added pbreq id=5 offset=0 total=57 complete=true data=da023662340a320a1209
 in pb.sync pbreq id=6 offset=0 total=6 complete=true data=da0203b20100
 in pb.chunked pbreq id=7 offset=10 total=40 complete=false data=010203
 in pb.overlong unknown type=5043 payload=070000000000280000001e000000010203
-in battery unknown type=5023 payload=010203
+in battery battery status=1 centivolts=2 percent=3
+in battery.full battery status=16 centivolts=200 percent=87
+in battery.short unknown type=5023 payload=0102
 in unnamed unknown type=5777 payload=09
 fa pb.itemlist itemList status=0 session=9 next=12 error=- items=[{uid=0000000000000001:0000000000000002 type=3/FIT_TYPE_44/7/- size=2048 flags=- txn=11 urg=- mtime=1100000000},{uid=- type=- size=1 flags=- txn=- urg=- mtime=-}]
 fa pb.pull pull result=0 transport=0 handle=8216 path=/f.fit error=-2

@@ -97,6 +97,8 @@ sealed class GarminInbound {
     data class FileAvailable(val entry: GarminDirectoryEntry) : GarminInbound()
     class ProtobufRequest(val chunk: GarminProtobufChunk) : GarminInbound()
     class ProtobufResponse(val chunk: GarminProtobufChunk) : GarminInbound()
+    /** 5023. [percent] is the watch's charge; [statusBits] and [centivolts] are kept raw (candidates). */
+    data class BatteryStatus(val statusBits: Int, val centivolts: Int, val percent: Int) : GarminInbound()
     /** A valid frame of a type NOOP does not decode, or a known type whose payload was too short. */
     class Unknown(val type: Int, val payload: ByteArray) : GarminInbound()
 
@@ -137,6 +139,11 @@ sealed class GarminInbound {
                     AuthNegotiation(unknown, r.u32() ?: return null)
                 }
                 GarminMessageType.CURRENT_TIME_REQUEST -> CurrentTimeRequest(r.u32() ?: return null)
+                GarminMessageType.BATTERY_STATUS -> {
+                    val status = r.u8() ?: return null
+                    val volts = r.u8() ?: return null
+                    BatteryStatus(status, volts, r.u8() ?: return null)
+                }
                 GarminMessageType.SYNCHRONIZATION -> {
                     val type = r.u8() ?: return null
                     when (r.u8() ?: return null) {

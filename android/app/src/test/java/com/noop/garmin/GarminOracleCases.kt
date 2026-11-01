@@ -74,6 +74,7 @@ internal fun oracleDescribe(m: GarminInbound): String = when (m) {
     is GarminInbound.ProtobufResponse -> m.chunk.let { c ->
         "pbresp id=${c.requestId} offset=${c.dataOffset} total=${c.totalLength} complete=${c.isComplete} data=${garminHex(c.data)}"
     }
+    is GarminInbound.BatteryStatus -> "battery status=${m.statusBits} centivolts=${m.centivolts} percent=${m.percent}"
     is GarminInbound.Unknown -> "unknown type=${m.type} payload=${garminHex(m.payload)}"
 }
 
@@ -224,6 +225,8 @@ internal fun oracleInboundFixtures(): List<Pair<String, ByteArray>> {
         "pb.chunked" to oracleFrame(5043, oracleLE16(7) + oracleLE32(10) + oracleLE32(40) + oracleLE32(3) + bytes(1, 2, 3)),
         "pb.overlong" to oracleFrame(5043, oracleLE16(7) + oracleLE32(0) + oracleLE32(40) + oracleLE32(30) + bytes(1, 2, 3)),
         "battery" to oracleFrame(5023, bytes(1, 2, 3)),
+        "battery.full" to oracleFrame(5023, bytes(0x10, 0xC8, 87, 0, 0, 0, 0)),
+        "battery.short" to oracleFrame(5023, bytes(1, 2)),
         "unnamed" to oracleFrame(5777, bytes(9)),
     )
 }

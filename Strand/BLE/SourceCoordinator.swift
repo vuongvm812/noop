@@ -299,6 +299,7 @@ final class SourceCoordinator: ObservableObject {
         case .ftms:  return makeFTMSSource(id: id)
         case .huami: return makeHuamiSource(id: id)
         case .oura:  return makeOuraSource(id: id)
+        case .garmin: return makeGarminSource(id: id)
         default:     return makeStandardSource(id: id)
         }
     }
@@ -318,6 +319,26 @@ final class SourceCoordinator: ObservableObject {
             // #polar-debug: read the toggle live at connect so a Polar strap logs its identified model
             // (default off; the Test Centre only exposes the toggle when a Polar strap is paired).
             polarDebug: { UserDefaults.standard.bool(forKey: AppModel.polarDebugLoggingKey) })
+    }
+
+    /// Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`.garmin`). It holds the session
+    /// and the handshake only; battery rides the SAME `LiveState` funnel as the other sources. The
+    /// first-pairing flag is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once.
+    /// Per-connect readouts (every message in and out) appear only while the Connection or Sources Test
+    /// Centre domain is active; state changes, refusals and failures are always logged.
+    private func makeGarminSource(id: String) -> any LiveHRSource {
+        let pairedKey = "noop.garmin.pairingEventsSent.\(id)"
+        return GarminSource(
+            deviceId: id,
+            isFirstPairing: { !UserDefaults.standard.bool(forKey: pairedKey) },
+            markPaired: { UserDefaults.standard.set(true, forKey: pairedKey) },
+            log: straplog,
+            detail: { TestCentre.active(.connection) || TestCentre.active(.sources) },
+            onBattery: { [live] pct in live.setBattery(Double(pct)) },
+            onWatch: { [registry] info in
+                if !info.bluetoothName.isEmpty { registry.setModel(id, model: info.bluetoothName) }
+            },
+            nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin })
     }
 
     /// Build the isolated `FTMSSource` for a gym machine `id`. HR (when the machine reports it) rides the
@@ -588,7 +609,7 @@ final class SourceCoordinator: ObservableObject {
 
     /// The registered `sourceKind` for a device id, or nil if the registry doesn't know it. Routes the
     /// non-WHOOP switch to the right isolated source (`.ftms` → FTMSSource, `.huami` → HuamiHRSource,
-    /// `.oura` → OuraLiveSource, anything else → StandardHRSource).
+    /// `.oura` → OuraLiveSource, `.garmin` → GarminSource, anything else → StandardHRSource).
     private func sourceKind(for id: String) -> SourceKind? {
         registry.devices.first(where: { $0.id == id })?.sourceKind
     }

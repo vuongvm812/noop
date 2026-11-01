@@ -19,8 +19,8 @@ data class DeviceBrandSpec(
      *  order (most specific first) so a Huami sub-brand like Mi Band wins over the broader Amazfit tokens. */
     val nameTokens: List<String>,
     /** The routing kind stored on the device (drives `SourceCoordinator.makeSource`). [SourceKind.liveBLE]
-     *  for a brand whose live HR is the standard 0x180D broadcast (generic straps + Garmin); [SourceKind.huami]
-     *  / [SourceKind.oura] for the experimental custom-protocol sources. */
+     *  for a brand whose live HR is the standard 0x180D broadcast (generic straps); [SourceKind.huami]
+     *  / [SourceKind.oura] / [SourceKind.garmin] for the experimental custom-protocol sources. */
     val sourceKind: SourceKind,
     /** The registry id prefix for a device of this brand ("huami", "oura", "garmin", "strap"). */
     val idPrefix: String,
@@ -44,7 +44,7 @@ object DeviceBrandCatalog {
             SourceKind.huami, "huami", canStreamLiveHR = true, isExperimentalTier = true),
         DeviceBrandSpec("Garmin",
             listOf("garmin", "forerunner", "fenix", "vivoactive", "venu", "instinct", "epix", "vivosmart", "hrm"),
-            SourceKind.liveBLE, "garmin", canStreamLiveHR = true, isExperimentalTier = true),
+            SourceKind.garmin, "garmin", canStreamLiveHR = true, isExperimentalTier = true),
         DeviceBrandSpec("Oura", listOf("oura"),
             SourceKind.oura, "oura", canStreamLiveHR = false, isExperimentalTier = true),
         // Shipped generic HR straps — standard 0x180D broadcast, labelled for display only.

@@ -414,7 +414,8 @@ class SourceCoordinator(
      * Build the isolated [LiveHrSource] for a device from its registered `sourceKind` — the ONE place that
      * maps a kind to a concrete driver. An FTMS gym machine runs the FtmsSource; an EXPERIMENTAL Huami
      * device (Amazfit / Zepp / Mi Band) runs the HuamiHrSource; an EXPERIMENTAL Oura ring runs the
-     * OuraLiveSource; everything else is a generic HR strap on StandardHrSource. Adding a brand adds ONE arm
+     * OuraLiveSource; an EXPERIMENTAL Garmin watch runs the GarminSource; everything else is a generic HR
+     * strap on StandardHrSource. Adding a brand adds ONE arm
      * here (plus a conforming source); nothing else in the coordinator changes. Returns the source WITHOUT
      * connecting — the caller ([switchToStrap]) does the connect-by-address-else-scan bring-up. Mirrors
      * macOS `SourceCoordinator.makeSource(for:)`.
@@ -444,6 +445,7 @@ class SourceCoordinator(
                 )
             }
             SourceKind.oura.name -> makeOuraSource(id, ctx, row)
+            SourceKind.garmin.name -> makeGarminSource(id, ctx, row)
             else -> {
                 val repo = requireNotNull(repository) { "SourceCoordinator.repository is required to persist strap samples" }
                 StandardHrSource(
@@ -477,6 +479,35 @@ class SourceCoordinator(
                 )
             }
         }
+    }
+
+    /**
+     * Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`garmin`). It holds the session and
+     * the handshake only; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
+     * is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once. Per-connect readouts
+     * appear only while the Connection or Sources Test Centre domain is active; state changes, refusals and
+     * failures are always logged. Mirrors macOS `makeGarminSource(id:)`.
+     */
+    private fun makeGarminSource(id: String, ctx: Context, row: PairedDeviceRow?): GarminSource {
+        val prefs = NoopPrefs.of(ctx)
+        val pairedKey = "noop.garmin.pairingEventsSent.$id"
+        return GarminSource(
+            context = ctx,
+            deviceId = id,
+            isFirstPairing = { !prefs.getBoolean(pairedKey, false) },
+            markPaired = { prefs.edit().putBoolean(pairedKey, true).apply() },
+            log = straplog,
+            detail = {
+                val tc = com.noop.testcentre.TestCentre.from(ctx)
+                tc.active(com.noop.testcentre.TestDomain.CONNECTION) || tc.active(com.noop.testcentre.TestDomain.SOURCES)
+            },
+            onBattery = batterySink,
+            onWatch = { info ->
+                if (info.bluetoothName.isNotBlank() && info.bluetoothName != row?.model) {
+                    scope.launch { runCatching { registry.setModel(id, info.bluetoothName) } }
+                }
+            },
+        )
     }
 
     /**

@@ -14,6 +14,8 @@ import Foundation
 //   5009 FileAvailable      one 16-byte directory entry
 //   5043/5044 Protobuf      requestId u16, dataOffset u32, totalLength u32, chunkLength u32, chunk…
 //   5000 Status             origType u16, status u8, then per-origType fields (see `GarminStatusDetail`)
+//   5023 BatteryStatus      status u8 (bits 4…6 a coarse level), voltage u8 (hundredths of a volt), percent u8,
+//                           then bytes of unknown meaning
 // A string is a u8 byte count followed by UTF-8. Every decode returns nil for a payload too short for
 // its fixed fields; trailing bytes beyond the known layout are ignored.
 
@@ -125,6 +127,8 @@ public enum GarminInbound: Equatable, Sendable {
     case fileAvailable(GarminDirectoryEntry)
     case protobufRequest(GarminProtobufChunk)
     case protobufResponse(GarminProtobufChunk)
+    /// 5023. `percent` is the watch's charge; `statusBits` and `centivolts` are kept raw (candidates).
+    case batteryStatus(statusBits: UInt8, centivolts: UInt8, percent: UInt8)
     /// A valid frame of a type NOOP does not decode, or a known type whose payload was too short.
     case unknown(type: UInt16, payload: [UInt8])
 
@@ -170,6 +174,9 @@ public enum GarminInbound: Equatable, Sendable {
         case .fileTransferData:
             guard let flags = r.u8(), let crc = r.u16(), let offset = r.u32() else { return nil }
             return .fileTransferData(flags: flags, runningCrc: crc, dataOffset: offset, data: r.rest())
+        case .batteryStatus:
+            guard let status = r.u8(), let volts = r.u8(), let percent = r.u8() else { return nil }
+            return .batteryStatus(statusBits: status, centivolts: volts, percent: percent)
         case .fileAvailable:
             guard let entry = GarminDirectoryEntry.read(&r) else { return nil }
             return .fileAvailable(entry)

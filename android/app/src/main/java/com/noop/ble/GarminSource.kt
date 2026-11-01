@@ -1,0 +1,531 @@
+package com.noop.ble
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.ActivityManager
+import android.app.Application
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattDescriptor
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import com.noop.garmin.GarminAdvertisement
+import com.noop.garmin.GarminClock
+import com.noop.garmin.GarminDeviceInformation
+import com.noop.garmin.GarminGattService
+import com.noop.garmin.GarminSession
+import com.noop.garmin.GarminSessionConfig
+import com.noop.garmin.GarminSessionOutput
+import com.noop.garmin.GarminSessionPhase
+import com.noop.garmin.GarminTransport
+import com.noop.garmin.GarminTransportSelection
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.time.Instant
+import java.time.ZoneId
+import java.util.TimeZone
+import java.util.UUID
+
+/**
+ * EXPERIMENTAL Garmin watch source over the watch's own GFDI protocol (`com.noop.garmin`). Twin of
+ * Strand/BLE/GarminSource.swift.
+ *
+ * Holds one stable, low-power session: connect by stored address, request MTU 515, pick the transport the
+ * watch offers (V2 multi-link, else V1, else V0, else stop and say "unsupported watch protocol"), subscribe,
+ * then let the pure [GarminSession] run the handshake. Every byte written comes out of that session, so
+ * only allowlisted [com.noop.garmin.GarminOutbound] messages and ML control frames can reach the watch.
+ *
+ * Battery hooks ([GarminRadioPolicy]): never scans in the background, no keep-alive traffic, the minimal
+ * capability set, connection priority LOW_POWER once idle, and the host foreground/background events.
+ * Runs on the app-scoped [SourceCoordinator], so the existing foreground connection service keeps the
+ * process (and this link) alive. Every GATT callback is posted to the main looper, which keeps the
+ * session single-threaded. Owns its OWN GATT and never references [WhoopBleClient].
+ */
+@SuppressLint("MissingPermission")
+class GarminSource(
+    context: Context,
+    private val deviceId: String,
+    private val isFirstPairing: () -> Boolean = { false },
+    private val markPaired: () -> Unit = {},
+    private val log: (String) -> Unit = {},
+    /** Per-connect readouts (every message in and out) only while this returns true (a Test Centre domain). */
+    private val detail: () -> Boolean = { false },
+    private val onBattery: (Int) -> Unit = {},
+    private val onWatch: (GarminDeviceInformation) -> Unit = {},
+    private val onSyncAnnounced: () -> Unit = {},
+) : LiveHrSource {
+
+    enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
+
+    data class DiscoveredWatch(val address: String, val name: String, val rssi: Int)
+
+    private val _linkPhase = MutableStateFlow(LinkPhase.DISCONNECTED)
+    val linkPhase: StateFlow<LinkPhase> = _linkPhase.asStateFlow()
+    private val _batteryPct = MutableStateFlow<Int?>(null)
+    val batteryPct: StateFlow<Int?> = _batteryPct.asStateFlow()
+    /** Set when the watch offers no transport NOOP speaks. The source stops and does not retry. */
+    private val _unsupportedReason = MutableStateFlow<String?>(null)
+    val unsupportedReason: StateFlow<String?> = _unsupportedReason.asStateFlow()
+    private val _discovered = MutableStateFlow<List<DiscoveredWatch>>(emptyList())
+    val discovered: StateFlow<List<DiscoveredWatch>> = _discovered.asStateFlow()
+
+    private val appContext = context.applicationContext
+    private val adapter: BluetoothAdapter? =
+        (appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var gatt: BluetoothGatt? = null
+    private var transport: GarminTransport? = null
+    private var notifyChar: BluetoothGattCharacteristic? = null
+    private var writeChar: BluetoothGattCharacteristic? = null
+    private var session: GarminSession? = null
+    private var mtu = 23
+    private val writeQueue = ArrayDeque<ByteArray>()
+    private var writeInFlight = false
+    private val telemetry = GarminRadioTelemetry()
+
+    private var targetAddress: String? = null
+    private var intentionalDisconnect = false
+    private var wantsScan = false
+    private var failedConnects = 0
+    private var foreground = initialForeground()
+    private var startedActivities = 0
+
+    private val deadline = Runnable { onMain { session?.let { perform(it.tick(clock())) } } }
+    private val reconnectRunnable = Runnable {
+        val address = targetAddress
+        if (!intentionalDisconnect && address != null) connect(address)
+    }
+
+    // LiveHrSource
+
+    /** First-pairing discovery only, and only with the app in the foreground ([GarminRadioPolicy]). */
+    override fun scan() {
+        if (GarminRadioPolicy.discoveryAction(foreground, hasStoredIdentifier = false) != GarminDiscoveryAction.SCAN) {
+            say(true, "scan skipped - the app is in the background (never scans in the background)")
+            return
+        }
+        intentionalDisconnect = false
+        wantsScan = true
+        val sc = adapter?.takeIf { it.isEnabled }?.bluetoothLeScanner ?: run {
+            say(true, "scan deferred until Bluetooth is on")
+            return
+        }
+        _discovered.value = emptyList()
+        say(true, "scanning for a Garmin watch (company id 0x0087 or a Garmin name)")
+        runCatching { sc.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback) }
+    }
+
+    override fun connect(address: String) {
+        handler.removeCallbacks(reconnectRunnable)
+        intentionalDisconnect = false
+        targetAddress = address
+        _unsupportedReason.value = null
+        val a = adapter
+        if (a == null || !a.isEnabled) {
+            say(true, "connect deferred until Bluetooth is on")
+            return
+        }
+        val device = runCatching { a.getRemoteDevice(address) }.getOrNull() ?: run {
+            say(true, "invalid watch address; scanning")
+            scan()
+            return
+        }
+        attach(device)
+    }
+
+    override fun stop() {
+        intentionalDisconnect = true
+        targetAddress = null
+        wantsScan = false
+        handler.removeCallbacks(reconnectRunnable)
+        handler.removeCallbacks(deadline)
+        stopScan()
+        gatt?.let { runCatching { it.disconnect(); it.close() } }
+        gatt = null
+        endSession()
+        _linkPhase.value = LinkPhase.DISCONNECTED
+        (appContext as? Application)?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
+        runCatching { appContext.unregisterReceiver(adapterReceiver) }
+    }
+
+    /** Drop the link and let the ordinary reconnect path bring it back (a "Reconnect" affordance). */
+    fun reconnect() {
+        if (targetAddress == null) return
+        say(true, "reconnect requested; dropping the link")
+        gatt?.disconnect()
+    }
+
+    // Session plumbing
+
+    private fun attach(device: BluetoothDevice) {
+        gatt?.let { runCatching { it.disconnect(); it.close() } }
+        _linkPhase.value = LinkPhase.CONNECTING
+        say(false, "connecting to ${device.address}")
+        gatt = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                device.connectGatt(appContext, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
+            } else {
+                @Suppress("DEPRECATION")
+                device.connectGatt(appContext, false, gattCallback)
+            }
+        }.getOrElse {
+            say(true, "connectGatt failed (${it.javaClass.simpleName})")
+            scheduleReconnect()
+            null
+        }
+    }
+
+    private fun clock(): GarminClock {
+        val now = Instant.now()
+        val rules = ZoneId.systemDefault().rules
+        val next = runCatching { rules.nextTransition(now) }.getOrNull()
+        val following = next?.let { runCatching { rules.nextTransition(it.instant) }.getOrNull() }
+        return GarminClock(
+            nowMs = SystemClock.elapsedRealtime(),
+            unixSeconds = now.epochSecond,
+            utcOffsetSeconds = TimeZone.getDefault().getOffset(now.toEpochMilli()) / 1000,
+            nextTransitionUnix = next?.toEpochSecond(),
+            followingTransitionUnix = following?.toEpochSecond(),
+        )
+    }
+
+    private fun perform(outputs: List<GarminSessionOutput>) {
+        for (o in outputs) {
+            when (o) {
+                is GarminSessionOutput.Write -> {
+                    telemetry.recordBytes(outbound = o.bytes.size)
+                    writeQueue.addLast(o.bytes)
+                }
+                is GarminSessionOutput.Log -> say(o.line.rare, o.line.text)
+                is GarminSessionOutput.Phase -> when (val p = o.phase) {
+                    is GarminSessionPhase.Ready -> {
+                        _linkPhase.value = LinkPhase.READY
+                        failedConnects = 0
+                        setPriority(GarminRadioPolicy.connectionPriority(GarminLinkActivity.IDLE))
+                    }
+                    is GarminSessionPhase.Failed -> {
+                        say(true, "dropping the link after a session failure (${p.reason})")
+                        gatt?.disconnect()
+                    }
+                    is GarminSessionPhase.Idle -> Unit
+                    else -> _linkPhase.value = LinkPhase.HANDSHAKING
+                }
+                is GarminSessionOutput.Battery -> {
+                    _batteryPct.value = o.percent
+                    onBattery(o.percent)
+                }
+                is GarminSessionOutput.Watch -> onWatch(o.info)
+                is GarminSessionOutput.PairingEventsSent -> markPaired()
+                is GarminSessionOutput.SyncAnnounced -> onSyncAnnounced()
+            }
+        }
+        drainWrites()
+        scheduleDeadline()
+    }
+
+    private fun drainWrites() {
+        if (writeInFlight) return
+        val g = gatt ?: return
+        val c = writeChar ?: return
+        val next = writeQueue.removeFirstOrNull() ?: return
+        val type = if (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) {
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        } else {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        }
+        writeInFlight = true
+        val started = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeCharacteristic(c, next, type) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            run { c.writeType = type; c.value = next; g.writeCharacteristic(c) }
+        }
+        if (!started) {
+            // The stack is busy; put it back and retry shortly rather than drop a GFDI fragment.
+            writeInFlight = false
+            writeQueue.addFirst(next)
+            handler.postDelayed({ drainWrites() }, 20)
+        }
+    }
+
+    private fun scheduleDeadline() {
+        handler.removeCallbacks(deadline)
+        val at = session?.nextDeadlineMs ?: return
+        handler.postDelayed(deadline, maxOf(0L, at - SystemClock.elapsedRealtime()))
+    }
+
+    private fun setPriority(p: GarminConnectionPriority) {
+        val value = when (p) {
+            GarminConnectionPriority.LOW_POWER -> BluetoothGatt.CONNECTION_PRIORITY_LOW_POWER
+            GarminConnectionPriority.BALANCED -> BluetoothGatt.CONNECTION_PRIORITY_BALANCED
+            GarminConnectionPriority.HIGH -> BluetoothGatt.CONNECTION_PRIORITY_HIGH
+        }
+        runCatching { gatt?.requestConnectionPriority(value) }
+        say(false, "connection priority $p")
+    }
+
+    private fun endSession() {
+        if (session != null) {
+            val now = System.currentTimeMillis() / 1000.0
+            telemetry.linkDown(now)
+            say(false, telemetry.summary(now))
+        }
+        session = null
+        notifyChar = null
+        writeChar = null
+        writeQueue.clear()
+        writeInFlight = false
+        handler.removeCallbacks(deadline)
+    }
+
+    private fun scheduleReconnect() {
+        if (intentionalDisconnect || targetAddress == null || _unsupportedReason.value != null) return
+        failedConnects += 1
+        val delay = ReconnectBackoff.nextDelayMs(failedConnects)
+        say(true, "reconnect attempt $failedConnects in ${delay / 1000} s")
+        handler.removeCallbacks(reconnectRunnable)
+        handler.postDelayed(reconnectRunnable, delay)
+    }
+
+    private fun stopScan() {
+        if (adapter?.isEnabled == true) runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+    }
+
+    private fun say(rare: Boolean, text: String) {
+        if (rare || detail()) log("Garmin: $text")
+    }
+
+    private fun onMain(block: () -> Unit) {
+        handler.post { runCatching(block).onFailure { log("Garmin: callback error (${it.javaClass.simpleName}: ${it.message})") } }
+    }
+
+    // App state (no lifecycle-process dependency: count started activities)
+
+    private fun initialForeground(): Boolean = runCatching {
+        val info = ActivityManager.RunningAppProcessInfo()
+        ActivityManager.getMyMemoryState(info)
+        info.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+    }.getOrDefault(true)
+
+    private fun appStateChanged(isForeground: Boolean) {
+        if (isForeground == foreground) return
+        foreground = isForeground
+        if (!isForeground && wantsScan) {
+            stopScan()
+            say(true, "scan stopped - the app went to the background")
+        }
+        session?.let { perform(it.setForeground(isForeground, clock())) }
+    }
+
+    private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityStarted(activity: Activity) {
+            startedActivities += 1
+            if (startedActivities == 1) appStateChanged(true)
+        }
+        override fun onActivityStopped(activity: Activity) {
+            startedActivities = maxOf(0, startedActivities - 1)
+            if (startedActivities == 0) appStateChanged(false)
+        }
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+        override fun onActivityResumed(activity: Activity) = Unit
+        override fun onActivityPaused(activity: Activity) = Unit
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+        override fun onActivityDestroyed(activity: Activity) = Unit
+    }
+
+    private val adapterReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                BluetoothAdapter.STATE_ON -> onMain {
+                    val address = targetAddress
+                    if (!intentionalDisconnect && address != null && session == null) {
+                        say(true, "Bluetooth on; reconnecting")
+                        connect(address)
+                    }
+                }
+                BluetoothAdapter.STATE_OFF -> onMain {
+                    say(true, "Bluetooth off; link down")
+                    handler.removeCallbacks(reconnectRunnable)
+                    gatt?.let { runCatching { it.close() } }
+                    gatt = null
+                    endSession()
+                    if (_linkPhase.value != LinkPhase.UNSUPPORTED) _linkPhase.value = LinkPhase.DISCONNECTED
+                }
+            }
+        }
+    }
+
+    // Registered after both callbacks above exist (Kotlin initialises properties in declaration order).
+    init {
+        (appContext as? Application)?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
+        runCatching { appContext.registerReceiver(adapterReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)) }
+    }
+
+    // Scan callback
+
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val device = result.device ?: return
+            val record = result.scanRecord
+            val manufacturer = record?.getManufacturerSpecificData(GarminAdvertisement.COMPANY_ID)
+            val name = record?.deviceName ?: runCatching { device.name }.getOrNull() ?: ""
+            val isGarmin = manufacturer != null || ExperimentalBrand.recognise(name) == ExperimentalBrand.GARMIN
+            if (!isGarmin) return
+            onMain {
+                val address = device.address
+                if (_discovered.value.none { it.address == address }) {
+                    _discovered.value = _discovered.value + DiscoveredWatch(address, name.ifBlank { "Garmin watch" }, result.rssi)
+                    say(true, "found ${if (name.isBlank()) "a Garmin watch" else logSafeDeviceName(name)} rssi=${result.rssi}")
+                }
+                // The coordinator's scan fallback (no stored address): take the first watch found.
+                if (targetAddress == null && wantsScan) {
+                    wantsScan = false
+                    stopScan()
+                    targetAddress = address
+                    attach(device)
+                }
+            }
+        }
+    }
+
+    // GATT callback
+
+    private val gattCallback = object : BluetoothGattCallback() {
+        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) = onMain {
+            if (g !== gatt) return@onMain
+            when (newState) {
+                BluetoothProfile.STATE_CONNECTED -> {
+                    handler.removeCallbacks(reconnectRunnable)
+                    telemetry.linkUp(System.currentTimeMillis() / 1000.0)
+                    _linkPhase.value = LinkPhase.DISCOVERING
+                    say(false, "connected; requesting MTU ${GarminRadioPolicy.REQUESTED_MTU}")
+                    setPriority(GarminConnectionPriority.BALANCED)
+                    if (!g.requestMtu(GarminRadioPolicy.REQUESTED_MTU)) g.discoverServices()
+                }
+                BluetoothProfile.STATE_DISCONNECTED -> {
+                    endSession()
+                    runCatching { g.close() }
+                    gatt = null
+                    if (_linkPhase.value != LinkPhase.UNSUPPORTED) _linkPhase.value = LinkPhase.DISCONNECTED
+                    if (intentionalDisconnect || targetAddress == null || _unsupportedReason.value != null) {
+                        say(false, "disconnected (status=$status)")
+                    } else {
+                        say(true, "disconnected (status=$status); reconnecting")
+                        scheduleReconnect()
+                    }
+                }
+            }
+        }
+
+        override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) = onMain {
+            if (g !== gatt) return@onMain
+            mtu = if (status == BluetoothGatt.GATT_SUCCESS) newMtu else 23
+            say(false, "MTU $mtu (status=$status); discovering services")
+            g.discoverServices()
+        }
+
+        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) = onMain {
+            if (g !== gatt) return@onMain
+            val services = g.services.orEmpty().map { s -> GarminGattService(s.uuid.toString(), s.characteristics.map { it.uuid.toString() }) }
+            val choice = GarminTransportSelection.select(services)
+            if (choice == null) {
+                val found = GarminTransportSelection.describe(services)
+                _unsupportedReason.value = "unsupported watch protocol"
+                _linkPhase.value = LinkPhase.UNSUPPORTED
+                say(true, "unsupported watch protocol (no V2/V1/V0 GFDI characteristics; found ${found.ifEmpty { "none" }}); " +
+                    "disconnecting - Broadcast Heart Rate remains available for this watch")
+                intentionalDisconnect = true
+                g.disconnect()
+                return@onMain
+            }
+            val service = g.getService(UUID.fromString(choice.service))
+            notifyChar = service?.getCharacteristic(UUID.fromString(choice.notify))
+            writeChar = service?.getCharacteristic(UUID.fromString(choice.write))
+            transport = choice
+            say(true, "protocol variant ${choice.kind.label} (notify ${choice.notify.take(8)}, write ${choice.write.take(8)})")
+            val n = notifyChar ?: return@onMain
+            _linkPhase.value = LinkPhase.SUBSCRIBING
+            g.setCharacteristicNotification(n, true)
+            val cccd = n.getDescriptor(CCCD) ?: run {
+                say(true, "notify characteristic has no CCCD; disconnecting")
+                g.disconnect()
+                return@onMain
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
+            } else {
+                @Suppress("DEPRECATION")
+                run { cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE; g.writeDescriptor(cccd) }
+            }
+        }
+
+        override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) = onMain {
+            if (g !== gatt || descriptor.uuid != CCCD) return@onMain
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                // The GFDI channel needs an encrypted, bonded link; Android raises its pairing prompt here.
+                say(true, "subscribe failed (status=$status); the watch must be bonded (OS pairing with the watch's PIN)")
+                g.disconnect()
+                return@onMain
+            }
+            val kind = transport?.kind ?: return@onMain
+            val config = GarminSessionConfig(
+                host = GarminSessionConfig.noopHost("Android", 1),
+                firstPairing = isFirstPairing(),
+                sendsHostLifecycleEvents = GarminRadioPolicy.SENDS_HOST_LIFECYCLE_EVENTS,
+            )
+            val s = GarminSession(config, kind, mtu)
+            session = s
+            _linkPhase.value = LinkPhase.HANDSHAKING
+            val c = clock()
+            val outputs = s.start(c).toMutableList()
+            if (!foreground) outputs += s.setForeground(false, c)
+            perform(outputs)
+        }
+
+        @Deprecated("API < 33 path")
+        override fun onCharacteristicChanged(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
+            @Suppress("DEPRECATION")
+            val value = characteristic.value ?: return
+            received(g, characteristic, value.copyOf())
+        }
+
+        override fun onCharacteristicChanged(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+            received(g, characteristic, value.copyOf())
+        }
+
+        override fun onCharacteristicWrite(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) = onMain {
+            if (g !== gatt) return@onMain
+            if (status != BluetoothGatt.GATT_SUCCESS) say(true, "write failed (status=$status)")
+            writeInFlight = false
+            drainWrites()
+        }
+    }
+
+    private fun received(g: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) = onMain {
+        if (g !== gatt || characteristic.uuid != notifyChar?.uuid) return@onMain
+        val s = session ?: return@onMain
+        telemetry.recordBytes(inbound = value.size)
+        perform(s.receive(value, clock()))
+    }
+
+    private companion object {
+        val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+    }
+}

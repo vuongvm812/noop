@@ -84,7 +84,7 @@ class ExperimentalDriversTest {
                             "fenix 7", "fēnix 7", "vívoactive 5", "Venu 3", "Instinct 2", "epix Pro", "vívosmart 5", "HRM-Pro")) {
             val brand = ExperimentalBrand.recognise(name)
             assertEquals(name, ExperimentalBrand.GARMIN, brand)
-            assertEquals(name, SourceKind.liveBLE, brand?.sourceKind)
+            assertEquals(name, SourceKind.garmin, brand?.sourceKind)   // GFDI pairing; Broadcast HR rows stay liveBLE
             assertEquals(name, "garmin", brand?.idPrefix)
             assertEquals(name, true, brand?.canStreamLiveHR)
         }
@@ -150,5 +150,14 @@ class ExperimentalDriversTest {
         val garmin = row("garmin-1", "Garmin", SourceKind.liveBLE)
         assertFalse(SourceCoordinator.isWhoop(garmin))
         assertFalse(SourceCoordinator.isWhoop("garmin-1", listOf(garmin)))
+    }
+
+    /// A watch paired over GFDI carries the `garmin` kind (GarminSource); a Broadcast-HR row keeps `liveBLE`.
+    @Test
+    fun garminGfdiRowIsGarminKindNonWhoop() {
+        val watch = row("garmin-2", "Garmin", SourceKind.garmin)
+        assertFalse(SourceCoordinator.isWhoop(watch))
+        assertFalse(SourceCoordinator.isWhoop("garmin-2", listOf(watch)))
+        assertEquals(SourceKind.garmin, ExperimentalBrand.GARMIN.sourceKind)
     }
 }
