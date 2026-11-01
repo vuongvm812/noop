@@ -646,6 +646,7 @@ private fun strapMetricLabel(m: MetricArbitrationPolicy.MetricKind): String = wh
     MetricArbitrationPolicy.MetricKind.HEART_RATE -> "Heart rate"
     MetricArbitrationPolicy.MetricKind.HRV -> "HRV"
     MetricArbitrationPolicy.MetricKind.SPO2 -> "SpO₂"
+    MetricArbitrationPolicy.MetricKind.RESPIRATION -> "Respiration"
     MetricArbitrationPolicy.MetricKind.SKIN_TEMP -> "Skin temp"
     MetricArbitrationPolicy.MetricKind.STEPS -> "Steps"
     MetricArbitrationPolicy.MetricKind.SLEEP -> "Sleep"

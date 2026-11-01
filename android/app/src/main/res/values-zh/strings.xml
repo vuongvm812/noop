@@ -2140,6 +2140,7 @@
     <string name="today_source_apple_watch">Apple Watch 手表</string>
     <string name="today_source_oura">Oura 戒指</string>
     <string name="today_source_fitbit">Fitbit 设备</string>
+    <string name="today_effort_experimental">负荷（实验性）</string>
     <string name="today_source_garmin">Garmin 手表</string>
     <string name="today_source_workout_files">训练文件</string>
     <string name="today_source_joiner">" + "</string>

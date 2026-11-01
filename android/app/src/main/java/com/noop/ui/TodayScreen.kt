@@ -1240,7 +1240,17 @@ fun TodayScreen(
             usesCarriedRecovery = displayMetric?.recovery == null && lastScoredCharge != null,
         )
     }
-    val heroSourceLabel = heroSourceParts.takeIf { it.isNotEmpty() }?.localizedSourceList()
+    // Garmin child 9: an Effort scored from a Garmin watch's heart rate is labelled experimental until a
+    // multi-day comparison validates it. Mirrors LiquidTodayView.heroSourceLabel.
+    val effortExperimentalLabel = if (heroEffortExperimental(providerByMetric)) {
+        uiString(R.string.today_effort_experimental)
+    } else {
+        null
+    }
+    val heroSourceLabel = listOfNotNull(
+        heroSourceParts.takeIf { it.isNotEmpty() }?.localizedSourceList(),
+        effortExperimentalLabel,
+    ).takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
     // 14-day trailing calendar window ending on the phone's actual local day.
     // Old imports stay in history, but they do not fill the Today trend tiles.

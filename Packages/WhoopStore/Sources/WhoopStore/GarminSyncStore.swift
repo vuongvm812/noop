@@ -96,6 +96,12 @@ extension WhoopStore {
     /// (`GarminSyncStore.MAX_KEYS`); the names match what `WearableImporter` writes for a Garmin export.
     static let garminMaxKeys: Set<String> = ["steps", "distance_m", "energy_kcal", "total_kcal"]
 
+    /// The day's average of the watch's own 0-100 stress score. NOT "stress": that key carries WHOOP's 0-3
+    /// stress series, which the Stress model clamps to 0-3, so a Garmin 72 stored there read as maximum
+    /// stress on Apple and was invisible on Android (Garmin child 9). Kotlin twin:
+    /// `GarminSyncStore.GARMIN_STRESS_KEY`.
+    public static let garminStressKey = "garmin_stress"
+
     /// Every file of this device recorded as ingested. Kotlin twin: `GarminSyncStore.syncedFiles`.
     public func garminSyncedFiles(deviceId: String) async throws -> [GarminSyncedFileRow] {
         try syncRead { db in
@@ -105,6 +111,21 @@ extension WhoopStore {
                 """, arguments: [deviceId]).map {
                 GarminSyncedFileRow(fileIndex: $0["fileIndex"], dataType: $0["dataType"], subType: $0["subType"],
                                     fileNumber: $0["fileNumber"], ts: $0["ts"], size: $0["size"])
+            }
+        }
+    }
+
+    /// One watch-computed series for a device over [from, to] (inclusive, unix seconds), oldest first. The
+    /// analytics pass reads a Garmin-owned night's HRV and respiration values from here (Garmin child 9).
+    /// Kotlin twin: `WhoopRepository.deviceMetricSamples`.
+    public func deviceMetricSamples(deviceId: String, kind: DeviceMetricKind, from: Int, to: Int,
+                                    limit: Int = 50_000) async throws -> [DeviceMetricSample] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT ts, value, source FROM deviceMetricSample
+                WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ? ORDER BY ts LIMIT ?
+                """, arguments: [deviceId, kind.rawValue, from, to, limit]).map {
+                DeviceMetricSample(ts: $0["ts"], kind: kind, value: $0["value"], source: $0["source"])
             }
         }
     }
@@ -215,7 +236,7 @@ extension WhoopStore {
         let points: [(String, Double?)] = [
             ("steps", d.steps.map(Double.init)), ("distance_m", d.distanceM), ("energy_kcal", d.activeKcal),
             ("total_kcal", d.totalKcal), ("rhr", d.restingHr.map(Double.init)), ("hrv", d.avgHrvMs),
-            ("spo2", spo2), ("resp_rate", resp), ("stress", stress),
+            ("spo2", spo2), ("resp_rate", resp), (garminStressKey, stress),
             ("body_battery_min", bbMin), ("body_battery_max", bbMax),
             ("sleep_total_min", d.totalSleepMin), ("sleep_deep_min", d.deepMin),
             ("sleep_light_min", d.lightMin), ("sleep_rem_min", d.remMin), ("sleep_awake_min", d.awakeMin),

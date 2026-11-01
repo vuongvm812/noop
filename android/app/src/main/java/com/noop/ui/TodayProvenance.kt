@@ -21,6 +21,8 @@ internal fun dayOwnerSource(deviceId: String?): FusionSource? = when {
     deviceId.endsWith("-noop") -> FusionSource.NOOP_COMPUTED
     deviceId == WhoopRepository.APPLE_HEALTH_SOURCE -> FusionSource.APPLE_HEALTH
     deviceId == WhoopRepository.HEALTH_CONNECT_SOURCE -> FusionSource.HEALTH_CONNECT
+    // A paired Garmin watch's days are the watch's, never "Whoop" (Garmin child 9).
+    FusionSource.isGarminWatchId(deviceId) -> FusionSource.GARMIN_WATCH
     // The merged Today rows carry the imported strap deviceId ("my-whoop") on days a real WHOOP import
     // covers, and the "-noop" sibling otherwise; any other strap deviceId is still an imported strap day.
     else -> FusionSource.WHOOP_IMPORT
@@ -37,6 +39,7 @@ internal fun provenanceBadgeLabel(owner: FusionSource?): DisplayText? = when (ow
     FusionSource.APPLE_HEALTH -> DisplayText.Resource(R.string.today_source_apple_health)
     FusionSource.HEALTH_CONNECT -> DisplayText.Resource(R.string.today_source_health_connect)
     FusionSource.XIAOMI_BAND -> DisplayText.Resource(R.string.today_source_mi_band)
+    FusionSource.GARMIN_WATCH -> DisplayText.Resource(R.string.today_source_garmin)
     FusionSource.NUTRITION_CSV -> DisplayText.Resource(R.string.today_source_nutrition)
     FusionSource.LOCAL_CACHE -> DisplayText.Resource(R.string.today_source_cached)
     null -> null
@@ -70,6 +73,9 @@ internal fun provenanceDisplayLabel(
         return DisplayText.Resource(R.string.spo2_strap_estimate_caption)
     }
     if (rawSource.endsWith("-noop")) return DisplayText.Resource(R.string.today_source_on_device)
+    // Checked before the active-strap match: a Garmin watch can BE the active device, and its own rows must
+    // read "Garmin", not "Whoop" (Garmin child 9).
+    if (FusionSource.isGarminWatchId(rawSource)) return DisplayText.Resource(R.string.today_source_garmin)
     if (rawSource == deviceId || rawSource == WhoopRepository.WHOOP_SOURCE) return DisplayText.Resource(R.string.today_source_whoop)
     if (rawSource == WhoopRepository.APPLE_HEALTH_SOURCE) return DisplayText.Resource(R.string.today_source_apple_health)
     // Fall back to the FusionSource display name for any other known source; else the raw id verbatim.
@@ -115,7 +121,7 @@ internal fun todayScoreProviderLabel(provider: ScoreInputProvider): DisplayText 
                 brand.equals(FusionSource.WHOOP_IMPORT.displayName, ignoreCase = true) -> DisplayText.Resource(R.string.today_source_whoop)
                 brand.isNotEmpty() -> DisplayText.Dynamic(brand)
                 source == WhoopRepository.WHOOP_SOURCE -> DisplayText.Resource(R.string.today_source_whoop)
-                else -> FusionSource.entries.firstOrNull { it.id == provider.sourceId }
+                else -> FusionSource.forStoredSourceId(provider.sourceId)
                     ?.let { provenanceBadgeLabel(it) }
                     ?: DisplayText.Dynamic(provider.sourceId)
             }
@@ -137,6 +143,16 @@ internal fun heroSourceLabel(
         if (labels.size == 2) break
     }
     return labels.toList()
+}
+
+/**
+ * Garmin child 9: true when the hero's Effort was scored from a provider whose Effort is still experimental
+ * ([com.noop.analytics.GarminScoringInputs.effortIsExperimental]), so the badge says so. Swift twin:
+ * `LiquidTodayView.heroEffortExperimental`.
+ */
+internal fun heroEffortExperimental(providerByMetric: Map<String, ScoreInputProvider>): Boolean {
+    val effort = providerByMetric["strain"] ?: return false
+    return com.noop.analytics.GarminScoringInputs.effortIsExperimental(effort.sourceId, effort.brand)
 }
 
 /**

@@ -520,6 +520,7 @@ private struct DevicesContent: View {
         case .heartRate: return "Heart rate"
         case .hrv:       return "HRV"
         case .spo2:      return "SpO₂"
+        case .respiration: return "Respiration"
         case .skinTemp:  return "Skin temp"
         case .steps:     return "Steps"
         case .sleep:     return "Sleep"

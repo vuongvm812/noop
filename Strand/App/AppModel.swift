@@ -2325,12 +2325,15 @@ final class AppModel: ObservableObject {
         ]
         // Every source that could carry a value, mapped to its stored device id. (FusionSource.rawValue
         // IS the canonical source id, but the strap's real id is `deviceId`/`computed` , map explicitly.)
-        let sources: [(FusionSource, String)] = [
+        var sources: [(FusionSource, String)] = [
             (.whoopImport, deviceId),
             (.noopComputed, deviceId + "-noop"),
             (.appleHealth, appleDeviceId),
             (.xiaomiBand, FusionSource.xiaomiBand.rawValue),
         ]
+        // Garmin child 9: an active Garmin watch is its own fusion source (its rows live under its registry
+        // id), tiered as the watch, never as a WHOOP import. Kotlin twin: `FusionDayAdapter.sourceIds`.
+        if FusionSource.isGarminWatchId(repo.deviceId) { sources.append((.garminWatch, repo.deviceId)) }
 
         let now = Date()
         let fromDay = Repository.dayString(now.addingTimeInterval(-3 * 86_400))

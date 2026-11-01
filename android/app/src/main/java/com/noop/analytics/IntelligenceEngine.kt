@@ -1136,7 +1136,11 @@ object IntelligenceEngine {
                 val stored = repo.sleepSessionsForDevice(owner, from, to, 4000)
                     .mapNotNull { AnalyticsEngine.sleepSessionFromProvided(it) }
                 when {
-                    owner != importedDeviceId && stored.isNotEmpty() -> {
+                    // Garmin child 9: [importedDeviceId] is the ACTIVE device on Android, so an active Garmin
+                    // watch matched the import exclusion and never handed its own night over (found by
+                    // GarminAnalyticsEngineTest). Swift's gate compares to the canonical "my-whoop" instead;
+                    // only the watch is let through here, so every other owner keeps its current behaviour.
+                    (owner != importedDeviceId || FusionSource.isGarminWatchId(owner)) && stored.isNotEmpty() -> {
                         dayDiag(SleepStagerTrace.hrOnlyGateLine(
                             day = day, attempted = false, reason = "stored-hypnogram",
                             gravRows = grav.size, storedNights = stored.size,
@@ -1150,6 +1154,16 @@ object IntelligenceEngine {
                         dayDiag(SleepStagerTrace.hrOnlyGateLine(
                             day = day, attempted = false, reason = "stored-sessions-exist",
                             gravRows = grav.size, storedNights = stored.size,
+                        ))
+                        emptyList()
+                    }
+                    // Garmin child 9: the watch stages its own nights and is primary for sleep, so a day with
+                    // no stored watch night has no night; staging one from its heart rate invented 43-hour
+                    // "nights" from run HR on real Forerunner 165 days. Mirrors Swift.
+                    FusionSource.isGarminWatchId(owner) -> {
+                        dayDiag(SleepStagerTrace.hrOnlyGateLine(
+                            day = day, attempted = false, reason = "watch-stages-its-own-sleep",
+                            gravRows = grav.size, storedNights = 0,
                         ))
                         emptyList()
                     }
@@ -1515,6 +1529,16 @@ object IntelligenceEngine {
             ),
         )
 
+        // Garmin child 9: a day a Garmin watch owns scores from the watch's OWN resting HR, overnight HRV and
+        // respiration, each decided against NOOP's sparse-HR estimate by the one fusion resolver
+        // ([GarminScoringInputs]). Applied before the baselines and pass 2 read the nights, so the baselines,
+        // Charge and the persisted row all carry the value the dashboard shows. Other owners are untouched.
+        // A separate function: this one sits against the JVM method-size ceiling. Mirrors Swift.
+        applyGarminVitals(
+            repo, scoredNights, resolvedScoreOwnerByDay, nightlyHrvByDay, nightlyRhrByDay, nightlyRespByDay,
+            recoveryTraceSink,
+        )
+
         // ── Charge baselines (#2525). Each baseline is folded from the wearer's OWN nights over the last
         // [ChargeBaselines.windowDays] calendar days, counted back from today; imported vendor nights only
         // SEED it until the own nights alone would be trusted, then drop out (see [ChargeBaselines]). This
@@ -1538,10 +1562,8 @@ object IntelligenceEngine {
         // owner, before any re-homing) is the only per-night source this pass knows, and it covers every own
         // night the window holds. The imported rows in `hist` are stored under `importedDeviceId` and are
         // tagged with it, which buckets to WHOOP; the days this engine scores are written under `computedId`,
-        // never into `hist`. Mirrors Swift.
-        val respSourceByDay = HashMap<String, String>()
-        for ((day, owner) in resolvedScoreOwnerByDay) respSourceByDay[day] = owner
-        val respCandidateDays = (hist.map { it.day }.toSet() + nightlyRespByDay.keys).sorted()
+        // never into `hist`. Mirrors Swift. Built in [eraSourceDays], outside this size-capped method.
+        val eraSourceDays = eraSourceDays(hist, nightlyRespByDay, resolvedScoreOwnerByDay, importedDeviceId)
         // Resp baseline: WITHIN one brand it pooled imported (cloud) values with on-device RSA estimates;
         // since #2525 the two meet only while the import seeds. ACROSS brands it is not acceptable: a WHOOP
         // export reports its own measured rate (~16.1 on this history) while an Oura ring reports the rate
@@ -1551,17 +1573,20 @@ object IntelligenceEngine {
         // import, strap, the computed sibling, the Apple/HC riders — buckets to one brand), so a WHOOP-only
         // user is unaffected; `max` with the manual Recalibrate epoch keeps whichever cut is LATER, since
         // both mean "ignore nights before this".
-        val respEraEpoch = Baselines.deviceEraEpoch(
-            respCandidateDays.map { it to (respSourceByDay[it] ?: importedDeviceId) },
-        )
-        val respEpoch = maxOf(recoveryEpoch, respEraEpoch)
+        val respEpoch = maxOf(recoveryEpoch, Baselines.deviceEraEpoch(eraSourceDays))
+        // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
+        // switch to or from one starts a new baseline era for both (#459). 0.0 when no night in the window is
+        // a Garmin night, so every other history folds exactly as before. Mirrors Swift.
+        val garminEraEpoch = GarminScoringInputs.baselineEraEpoch(eraSourceDays)
+        val hrvEpoch = maxOf(baselineEpoch, garminEraEpoch)
+        val rhrEpoch = maxOf(recoveryEpoch, garminEraEpoch)
         // HRV honours noop.hrvBaselineEpoch; rhr/resp/skin honour noop.recoveryBaselineEpoch, so the manual
         // Recalibrate restarts the whole Charge build-up together. A 0.0 epoch drops nothing.
         val hrvHistory = ChargeBaselines.history(
-            importedNights { it.avgHrv }, ownNights(nightlyHrvByDay), newestDay, hrvCfg, baselineEpoch,
+            importedNights { it.avgHrv }, ownNights(nightlyHrvByDay), newestDay, hrvCfg, hrvEpoch,
         )
         val rhrHistory = ChargeBaselines.history(
-            importedNights { it.restingHr?.toDouble() }, ownNights(nightlyRhrByDay), newestDay, rhrCfg, recoveryEpoch,
+            importedNights { it.restingHr?.toDouble() }, ownNights(nightlyRhrByDay), newestDay, rhrCfg, rhrEpoch,
         )
         val respHistory = ChargeBaselines.history(
             importedNights { it.respRateBpm }, ownNights(nightlyRespByDay), newestDay, respCfg, respEpoch,
@@ -1579,9 +1604,9 @@ object IntelligenceEngine {
         // #1614: the per-night HRV fold, traced (see [emitHrvFoldTrace] for scope and why it is a call
         // rather than an inline lambda). Sits immediately above the fold it describes, and takes the SAME
         // baselineEpoch, so the trace can only ever describe the fold the scorer actually performed.
-        emitHrvFoldTrace(recoveryTraceSink, hrvHistory.values, hrvHistory.dayKeys, hrvCfg, baselineEpoch)
-        val hrvBase2 = Baselines.foldHistory(hrvHistory.values, hrvHistory.dayKeys, hrvCfg, baselineEpoch)
-        val rhrBase2 = Baselines.foldHistory(rhrHistory.values, rhrHistory.dayKeys, rhrCfg, recoveryEpoch)
+        emitHrvFoldTrace(recoveryTraceSink, hrvHistory.values, hrvHistory.dayKeys, hrvCfg, hrvEpoch)
+        val hrvBase2 = Baselines.foldHistory(hrvHistory.values, hrvHistory.dayKeys, hrvCfg, hrvEpoch)
+        val rhrBase2 = Baselines.foldHistory(rhrHistory.values, rhrHistory.dayKeys, rhrCfg, rhrEpoch)
         // Gated on `usable` because RecoveryScorer includes the resp term whenever a baseline object is
         // present , a CALIBRATING (<4-night) baseline would let one noisy night move recovery (mirrors the
         // skin-temp use-site gate).
@@ -1907,6 +1932,9 @@ object IntelligenceEngine {
             add(WhoopRepository.APPLE_HEALTH_SOURCE)
             add(WhoopRepository.HEALTH_CONNECT_SOURCE)
             addAll(WEARABLE_IMPORT_SOURCES)
+            // Garmin child 9: a paired Garmin watch's own day rows (resting HR + last-night HRV from its
+            // history sync) fold the same way on a day the raw-HR loop could not score. Mirrors Swift.
+            addAll(garminWatchIds(candidatePriorities))
         }.distinct()
         for (source in importSourceIds) {
             val rows = repo.dailyMetrics(source, oldestDay, newestDay)
@@ -2413,6 +2441,85 @@ object IntelligenceEngine {
 
     /** One day's source-only (daily-aggregate) recovery output, keyed by day. Mirrors Swift WatchScoredDay. */
     data class WatchScoredDay(val day: String, val recovery: Double?, val confidence: ScoreConfidence)
+
+    /**
+     * Garmin child 9: rebuild every Garmin-owned night in [scoredNights] with the watch's own resting HR,
+     * overnight HRV and respiration where the arbitration table prefers them ([GarminScoringInputs.resolve]),
+     * and refresh the nightly maps pass 2 folds. Other owners are untouched. Mirrors the Swift
+     * IntelligenceEngine (Strand/Data): its garminDailyByDay block plus garminResolvedDaily.
+     */
+    private suspend fun applyGarminVitals(
+        repo: WhoopRepository,
+        scoredNights: MutableList<DayResult>,
+        ownerByDay: Map<String, String>,
+        nightlyHrvByDay: MutableMap<String, Double?>,
+        nightlyRhrByDay: MutableMap<String, Double?>,
+        nightlyRespByDay: MutableMap<String, Double?>,
+        recoveryTraceSink: ((String) -> Unit)?,
+    ) {
+        for (i in scoredNights.indices) {
+            val res = scoredNights[i]
+            val day = res.daily.day
+            val owner = ownerByDay[day] ?: continue
+            if (!FusionSource.isGarminWatchId(owner)) continue
+            val nights = if (res.mainNightBlocks.isEmpty()) {
+                res.sleepSessions.map { GarminScoringInputs.Night(it.start, it.end) }
+            } else {
+                res.mainNightBlocks.map { GarminScoringInputs.Night(it.start, it.end) }
+            }
+            val watchRow = repo.dailyMetrics(owner, day, day).firstOrNull()
+            var hrv = emptyList<GarminScoringInputs.Sample>()
+            var resp = emptyList<GarminScoringInputs.Sample>()
+            val lo = nights.minOfOrNull { it.start }
+            val hi = nights.maxOfOrNull { it.end }
+            if (lo != null && hi != null) {
+                hrv = repo.deviceMetricSamples(owner, com.noop.data.DeviceMetricKind.HRV_MS, lo, hi)
+                    .map { GarminScoringInputs.Sample(it.ts, it.value) }
+                resp = repo.deviceMetricSamples(owner, com.noop.data.DeviceMetricKind.RESPIRATION_BPM, lo, hi)
+                    .map { GarminScoringInputs.Sample(it.ts, it.value) }
+            }
+            val r = GarminScoringInputs.resolve(
+                computedRestingHr = res.daily.restingHr,
+                computedHrv = res.daily.avgHrv,
+                computedResp = res.daily.respRateBpm,
+                watch = watchRow?.let { GarminScoringInputs.WatchDay(it.restingHr, it.avgHrv) },
+                hrvSamples = hrv,
+                respSamples = resp,
+                nights = nights,
+            )
+            val daily = res.daily.copy(restingHr = r.restingHr, avgHrv = r.avgHrv, respRateBpm = r.respRateBpm)
+            scoredNights[i] = res.copy(daily = daily)
+            nightlyHrvByDay[day] = daily.avgHrv
+            nightlyRhrByDay[day] = daily.restingHr?.toDouble()
+            nightlyRespByDay[day] = daily.respRateBpm
+            recoveryTraceSink?.invoke(garminVitalsLine(day, r))
+        }
+    }
+
+    /**
+     * The (day, source) pairs the baseline era cuts read (#459): every imported-history day and every night
+     * this pass scored, each tagged with its resolved owner, the imported id when it has none. Feeds both the
+     * respiration era and the Garmin HRV / resting-HR era. Swift: `respCandidateDays` + `respSourceByDay`.
+     */
+    private fun eraSourceDays(
+        hist: List<DailyMetric>,
+        nightlyRespByDay: Map<String, Double?>,
+        ownerByDay: Map<String, String>,
+        importedDeviceId: String,
+    ): List<Pair<String, String>> =
+        (hist.map { it.day }.toSet() + nightlyRespByDay.keys).sorted()
+            .map { it to (ownerByDay[it] ?: importedDeviceId) }
+
+    /** The paired Garmin watches among the registry candidates, sorted. Swift: `garminWatchSources`. */
+    private fun garminWatchIds(candidatePriorities: List<Pair<String, Int>>): List<String> =
+        candidatePriorities.map { it.first }.filter { FusionSource.isGarminWatchId(it) }.sorted()
+
+    /** The Recovery-domain trace line for one Garmin-owned day. Byte-identical to Swift `garminVitalsLine`. */
+    internal fun garminVitalsLine(day: String, r: GarminScoringInputs.Resolution): String {
+        val v = { x: Double? -> x?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "nil" }
+        return "garmin vitals: day=$day rhr=${r.restingHr ?: "nil"}/${r.restingHrSource?.id ?: "nil"}" +
+            " hrv=${v(r.avgHrv)}/${r.hrvBasis.raw} resp=${v(r.respRateBpm)}/${r.respRateSource?.id ?: "nil"}"
+    }
 
     /**
      * Score Charge for daily-aggregate (import-only) days that the raw-HR loop never touched (#823). For

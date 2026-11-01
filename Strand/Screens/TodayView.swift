@@ -938,6 +938,9 @@ struct TodayView: View {
             return String(localized: "strap estimate (unverified)")
         }
         if rawSource.hasSuffix("-noop") { return String(localized: "On-device") }
+        // Checked before the active-strap match: a Garmin watch can BE the active device, and its own rows
+        // must read "Garmin", not "Whoop" (Garmin child 9). Kotlin twin: `provenanceDisplayLabel`.
+        if FusionSource.isGarminWatchId(rawSource) { return "Garmin" }
         if rawSource == deviceId || rawSource == Repository.whoopSource { return Self.whoopBrandName }
         if rawSource == Repository.appleHealthSource { return "Apple Health" }
         // Localize the non-brand source names here rather than exposing the analytics layer's
@@ -945,6 +948,7 @@ struct TodayView: View {
         switch FusionSource(rawValue: rawSource) {
         case .healthConnect: return "Health Connect"
         case .xiaomiBand:    return "Mi Band"
+        case .garminWatch:   return "Garmin"
         case .nutritionCsv:  return String(localized: "Nutrition")
         case .localCache:    return String(localized: "Cached")
         case .whoopImport:   return Self.whoopBrandName
@@ -1014,7 +1018,7 @@ struct TodayView: View {
             return brand.caseInsensitiveCompare("WHOOP") == .orderedSame ? Self.whoopBrandName : brand
         }
         if source == Repository.whoopSource { return Self.whoopBrandName }
-        switch FusionSource(rawValue: sourceId) {
+        switch FusionSource.forStoredSourceId(sourceId) {
         case .nutritionCsv: return String(localized: "Nutrition")
         case .localCache: return String(localized: "Cached")
         case let known?: return known.displayName

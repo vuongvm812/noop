@@ -432,6 +432,8 @@ enum FusionFormat {
             return "\(Int(v.rounded())) ms"
         case .spo2:
             return "\(Int(v.rounded()))%"
+        case .respiration:
+            return String(format: "%.1f rpm", v)
         case .skinTemp:
             // #111/#622: this column is BIMODAL — CSV/Health imports carry an ABSOLUTE wrist °C (~30-35),
             // the live BLE pipeline a signed DEVIATION from baseline. Fusion is the one screen that can

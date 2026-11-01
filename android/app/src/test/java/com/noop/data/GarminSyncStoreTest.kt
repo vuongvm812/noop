@@ -98,7 +98,7 @@ class GarminSyncStoreTest {
         assertEquals("a file without resting HR keeps the stored one", 58, dailyInt("restingHr"))
         assertEquals(420, dailyInt("totalSleepMin"))
         assertEquals(16_532.0, series("steps"))
-        assertEquals("the day's stress average covers every file", 40.0, series("stress"))
+        assertEquals("the day's stress average covers every file", 40.0, series(GarminSyncStore.GARMIN_STRESS_KEY))
         assertEquals(40.0, series("body_battery_min"))
         assertEquals(90.0, series("body_battery_max"))
         assertEquals(3, store.syncedFiles(id).size)

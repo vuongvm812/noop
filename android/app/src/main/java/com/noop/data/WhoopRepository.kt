@@ -2309,6 +2309,19 @@ class WhoopRepository(
         dedupWorkoutsByKey(rawWhoopSourceIds(deviceId).map { "$it-noop" }
             .flatMap { dao.workouts(it, from, to, limit) })
 
+    /**
+     * One watch-computed series for a device over [from, to] (inclusive, unix seconds), oldest first. The
+     * analytics pass reads a Garmin-owned night's HRV and respiration values from here (Garmin child 9).
+     * Mirrors the Swift store read of the same name.
+     */
+    suspend fun deviceMetricSamples(
+        deviceId: String,
+        kind: DeviceMetricKind,
+        from: Long,
+        to: Long,
+        limit: Int = 50_000,
+    ): List<DeviceMetricSampleEntity> = dao.deviceMetricSamples(deviceId, kind.wire, from, to, limit)
+
     /** Cached daily metrics for the inclusive day range [from, to] (YYYY-MM-DD), oldest first. */
     suspend fun dailyMetrics(deviceId: String, from: String, to: String): List<DailyMetric> =
         dao.dailyMetricsRange(deviceId, from, to)

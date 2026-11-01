@@ -2212,6 +2212,7 @@
     <string name="today_source_apple_watch">Apple Watch</string>
     <string name="today_source_oura">Anel Oura</string>
     <string name="today_source_fitbit">Dispositivo Fitbit</string>
+    <string name="today_effort_experimental">Esforço experimental</string>
     <string name="today_source_garmin">Relógio Garmin</string>
     <string name="today_source_workout_files">Ficheiros de treino</string>
     <string name="today_source_joiner">" + "</string>

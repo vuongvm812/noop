@@ -98,7 +98,7 @@ final class GarminSyncStoreTests: XCTestCase {
         XCTAssertEqual(metric?.restingHr, 58, "a file without resting HR keeps the stored one")
         XCTAssertEqual(metric?.totalSleepMin, 420)
         let steps = try await series(store, "steps")
-        let stress = try await series(store, "stress")
+        let stress = try await series(store, WhoopStore.garminStressKey)
         let bbMin = try await series(store, "body_battery_min")
         let bbMax = try await series(store, "body_battery_max")
         XCTAssertEqual(steps, 16_532)
