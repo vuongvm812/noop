@@ -52,7 +52,7 @@
 
 [NOOP](https://github.com/ryanbr/noop) is an excellent open-source, local-first app for WHOOP straps. It pairs over Bluetooth, keeps everything on your device, and computes recovery, strain, HRV and sleep itself.
 
-I don't wear a WHOOP. I wear a **Garmin Forerunner 165**. I forked NOOP so I could get its on-device Charge, Effort, Rest and sleep analysis from my own watch, without giving up Garmin Connect, which still sends my workouts to Strava. I also wanted NOOP to use the history already sitting in my Garmin account, instead of starting over from zero.
+I don't wear a WHOOP. I wear a **Garmin**. I forked NOOP so I could get its on-device Charge, Effort, Rest and sleep analysis from my own watch, without giving up Garmin Connect, which still sends my workouts to Strava. I also wanted NOOP to use the history already sitting in my Garmin account, instead of starting over from zero.
 
 ## What's different from NOOP
 
