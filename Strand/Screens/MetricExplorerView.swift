@@ -335,6 +335,7 @@ func skinTempSourceByDay(_ rows: [SourcedDailyMetric], leadsAbsolute: Bool) -> [
                 case .noopComputed: sources[row.metric.day] = FusionSource.noopComputed.rawValue
                 case .localCache:   sources[row.metric.day] = FusionSource.localCache.rawValue
                 case .appleHealth:  break // Skin-temperature series never includes Apple Health.
+                case .wearableImport: break // Not in this precedence list.
                 }
             }
         }

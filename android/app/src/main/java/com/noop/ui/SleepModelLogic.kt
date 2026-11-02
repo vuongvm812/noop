@@ -350,14 +350,7 @@ internal suspend fun buildHostedSleepModel(
     // does for its `sleeps` (imported-wins, stage-less imports yield to a computed day that has stages),
     // ordered by effective onset.
     val sleeps: List<SleepSession> = runCatching {
-        val imported = repo.sleepSessionsUnion(activeStrapId, 0L, now)
-        val computed = repo.computedSleepSessionsUnion(activeStrapId, 0L, now)
-        fun localEndDay(ts: Long): String {
-            val offsetSec = (java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000).toLong()
-            return AnalyticsEngine.dayString(ts, offsetSec)
-        }
-        WhoopRepository.mergeSleepRichness(imported, computed) { localEndDay(it.endTs) }
-            .sortedBy { it.effectiveStartTs }
+        repo.sleepBrowseSessions(activeStrapId, 0L, now)
     }.getOrDefault(emptyList())
 
     // Learned habitual midsleep (threads the active strap id, as SleepScreen does); null under threshold.

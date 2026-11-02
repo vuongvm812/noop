@@ -259,21 +259,10 @@ fun SleepScreen(
             // union-joined surface moved on (the #1014/#1009 stuck-sleep divergence, in the OTHER
             // direction). Exact-duplicate (startTs, endTs) blocks recorded under both ids are dropped;
             // naps/split blocks survive. Single-device installs collapse to one id, byte-identical.
-            val imported = vm.repo.sleepSessionsUnion(strap, 0L, now)
-            val computed = vm.repo.computedSleepSessionsUnion(strap, 0L, now)
-            // Key by the LOCAL wake-day (#304), matching WhoopRepository.mergeSleep — a UTC key
-            // mis-attributed a UTC+ user's early-morning wake to yesterday. REUSE the existing
-            // dayString(ts, offsetSec) overload; do not add a new one (it clashes on the JVM).
-            fun localEndDay(ts: Long): String {
-                val offsetSec = (java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000).toLong()
-                return AnalyticsEngine.dayString(ts, offsetSec)
-            }
-            // Imported wins per local wake-day, WITH the #241 richness exception (a stage-less import
-            // yields to a computed day that has stages) — the SAME rule the browse/CSV path uses via
-            // WhoopRepository.mergeSleep. Sort by the EFFECTIVE onset so a hand-edited bedtime orders the
-            // night correctly (PR #395).
-            WhoopRepository.mergeSleepRichness(imported, computed) { localEndDay(it.endTs) }
-                .sortedBy { it.effectiveStartTs }
+            // Imported wins per LOCAL wake-day (#304), WITH the #241 richness exception, then the
+            // wearable-export history (#31) on the wake-days still empty, by effective onset (PR #395).
+            // One repository funnel, shared with the reloads below and the hosted Today sleep model.
+            vm.repo.sleepBrowseSessions(strap, 0L, now)
         }.getOrDefault(emptyList())
         kotlinx.coroutines.currentCoroutineContext().ensureActive()
         sleeps = loaded
@@ -630,8 +619,7 @@ fun SleepScreen(
                             // reload can't snap the browse back to a canonical-only night set.
                             sleeps = runCatching {
                                 val now = System.currentTimeMillis() / 1000L
-                                vm.repo.sleepSessionsUnion(vm.activeStrapId, 0L, now) +
-                                    vm.repo.computedSleepSessionsUnion(vm.activeStrapId, 0L, now)
+                                vm.repo.sleepBrowseSessions(vm.activeStrapId, 0L, now)
                             }.getOrDefault(sleeps)
                         }
                     },
@@ -879,15 +867,8 @@ fun SleepScreen(
                             val now = System.currentTimeMillis() / 1000L
                             // Same active∪canonical union as the main loader (#814/#1008), so the
                             // post-nap reload can't snap the browse back to a canonical-only night set.
-                            val importedSessions = vm.repo.sleepSessionsUnion(vm.activeStrapId, 0L, now)
-                            val computed = vm.repo.computedSleepSessionsUnion(vm.activeStrapId, 0L, now)
-                            fun localEndDay(ts: Long): String {
-                                val offsetSec = (java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000).toLong()
-                                return AnalyticsEngine.dayString(ts, offsetSec)
-                            }
-                            // Same imported-wins + #241 richness merge as the main loader.
-                            WhoopRepository.mergeSleepRichness(importedSessions, computed) { localEndDay(it.endTs) }
-                                .sortedBy { it.effectiveStartTs }
+                            // Same funnel as the main loader.
+                            vm.repo.sleepBrowseSessions(vm.activeStrapId, 0L, now)
                         }.getOrDefault(sleeps)
                     }
                 },

@@ -1,0 +1,431 @@
+{
+  "foldCases" : [
+    {
+      "expected" : [
+        "2026-10-20 sleep=420.0 deep=80.0 hrv=55.0 rhr=48 steps=9000",
+        "2026-10-21 sleep=390.0 deep=60.0 hrv=61.0 rhr=50 steps=4000",
+        "2026-10-22 sleep=410.0 deep=70.0 hrv=59.0 rhr=46 steps=7000"
+      ],
+      "history" : [
+        {
+          "avgHrv" : 70,
+          "day" : "2026-10-20",
+          "deepMin" : 40,
+          "restingHr" : 48,
+          "steps" : 100,
+          "totalSleepMin" : 300
+        },
+        {
+          "avgHrv" : 61,
+          "day" : "2026-10-21",
+          "deepMin" : 60,
+          "restingHr" : 47,
+          "steps" : null,
+          "totalSleepMin" : 390
+        },
+        {
+          "avgHrv" : 59,
+          "day" : "2026-10-22",
+          "deepMin" : 70,
+          "restingHr" : 46,
+          "steps" : 7000,
+          "totalSleepMin" : 410
+        }
+      ],
+      "merged" : [
+        {
+          "avgHrv" : 55,
+          "day" : "2026-10-20",
+          "deepMin" : 80,
+          "restingHr" : null,
+          "steps" : 9000,
+          "totalSleepMin" : 420
+        },
+        {
+          "avgHrv" : null,
+          "day" : "2026-10-21",
+          "deepMin" : null,
+          "restingHr" : 50,
+          "steps" : 4000,
+          "totalSleepMin" : null
+        }
+      ],
+      "name" : "active\/computed day keeps its columns, takes only what it left empty; export-only day added whole"
+    },
+    {
+      "expected" : [
+        "2026-10-20 sleep=420.0 deep=nil hrv=nil rhr=nil steps=nil"
+      ],
+      "history" : [
+
+      ],
+      "merged" : [
+        {
+          "avgHrv" : null,
+          "day" : "2026-10-20",
+          "deepMin" : null,
+          "restingHr" : null,
+          "steps" : null,
+          "totalSleepMin" : 420
+        }
+      ],
+      "name" : "no history returns the merge unchanged"
+    }
+  ],
+  "idCases" : [
+    {
+      "activeDeviceId" : "garmin-5f1c0a",
+      "baselineSeedIds" : [
+        "garmin-import"
+      ],
+      "readOrder" : [
+        "garmin-import",
+        "oura-import",
+        "oura-api",
+        "fitbit-import"
+      ]
+    },
+    {
+      "activeDeviceId" : "my-whoop",
+      "baselineSeedIds" : [
+
+      ],
+      "readOrder" : [
+        "garmin-import",
+        "oura-import",
+        "oura-api",
+        "fitbit-import"
+      ]
+    },
+    {
+      "activeDeviceId" : "whoop-9a77",
+      "baselineSeedIds" : [
+
+      ],
+      "readOrder" : [
+        "garmin-import",
+        "oura-import",
+        "oura-api",
+        "fitbit-import"
+      ]
+    },
+    {
+      "activeDeviceId" : "oura-ring-3c",
+      "baselineSeedIds" : [
+        "oura-import",
+        "oura-api"
+      ],
+      "readOrder" : [
+        "oura-import",
+        "oura-api",
+        "garmin-import",
+        "fitbit-import"
+      ]
+    },
+    {
+      "activeDeviceId" : "fitbit-charge",
+      "baselineSeedIds" : [
+        "fitbit-import"
+      ],
+      "readOrder" : [
+        "fitbit-import",
+        "garmin-import",
+        "oura-import",
+        "oura-api"
+      ]
+    },
+    {
+      "activeDeviceId" : "polar-h10-live",
+      "baselineSeedIds" : [
+
+      ],
+      "readOrder" : [
+        "garmin-import",
+        "oura-import",
+        "oura-api",
+        "fitbit-import"
+      ]
+    }
+  ],
+  "seedCases" : [
+    {
+      "anchorDay" : "2026-11-01",
+      "expected" : {
+        "dayKeys" : [
+          "2026-10-25",
+          "2026-10-26",
+          "2026-10-28"
+        ],
+        "importedNights" : 3,
+        "ownValidNights" : 0,
+        "seededByImport" : true,
+        "values" : [
+          "52.0",
+          "48.5",
+          "61.0"
+        ]
+      },
+      "imported" : [
+
+      ],
+      "name" : "garmin wearer with no own nights: the export seeds the whole window",
+      "own" : [
+
+      ],
+      "seed" : [
+        [
+          "2026-10-25",
+          52
+        ],
+        [
+          "2026-10-26",
+          48.5
+        ],
+        [
+          "2026-10-27",
+          null
+        ],
+        [
+          "2026-10-28",
+          61
+        ],
+        [
+          "2026-09-01",
+          40
+        ]
+      ]
+    },
+    {
+      "anchorDay" : "2026-11-01",
+      "expected" : {
+        "dayKeys" : [
+          "2026-10-20",
+          "2026-10-21",
+          "2026-10-22",
+          "2026-10-23",
+          "2026-10-24"
+        ],
+        "importedNights" : 4,
+        "ownValidNights" : 2,
+        "seededByImport" : true,
+        "values" : [
+          "70.0",
+          "66.0",
+          "55.0",
+          "64.0",
+          "57.0"
+        ]
+      },
+      "imported" : [
+        [
+          "2026-10-20",
+          70
+        ],
+        [
+          "2026-10-21",
+          null
+        ]
+      ],
+      "name" : "own and WHOOP-import nights win their days; a seed fills only open days, first listed wins",
+      "own" : [
+        [
+          "2026-10-21",
+          66
+        ],
+        [
+          "2026-10-22",
+          null
+        ],
+        [
+          "2026-10-23",
+          64
+        ]
+      ],
+      "seed" : [
+        [
+          "2026-10-20",
+          90
+        ],
+        [
+          "2026-10-21",
+          91
+        ],
+        [
+          "2026-10-22",
+          55
+        ],
+        [
+          "2026-10-22",
+          99
+        ],
+        [
+          "2026-10-23",
+          92
+        ],
+        [
+          "2026-10-24",
+          57
+        ]
+      ]
+    },
+    {
+      "anchorDay" : "2026-11-01",
+      "expected" : {
+        "dayKeys" : [
+          "2026-10-12",
+          "2026-10-13",
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16",
+          "2026-10-17",
+          "2026-10-18",
+          "2026-10-19",
+          "2026-10-20",
+          "2026-10-21",
+          "2026-10-22",
+          "2026-10-23",
+          "2026-10-24",
+          "2026-10-25",
+          "2026-10-26"
+        ],
+        "importedNights" : 0,
+        "ownValidNights" : 15,
+        "seededByImport" : false,
+        "values" : [
+          "60.0",
+          "61.0",
+          "62.0",
+          "63.0",
+          "64.0",
+          "65.0",
+          "66.0",
+          "67.0",
+          "68.0",
+          "69.0",
+          "70.0",
+          "71.0",
+          "72.0",
+          "73.0",
+          "74.0"
+        ]
+      },
+      "imported" : [
+
+      ],
+      "name" : "trusted own nights hand off: the seed drops out like an import",
+      "own" : [
+        [
+          "2026-10-12",
+          60
+        ],
+        [
+          "2026-10-13",
+          61
+        ],
+        [
+          "2026-10-14",
+          62
+        ],
+        [
+          "2026-10-15",
+          63
+        ],
+        [
+          "2026-10-16",
+          64
+        ],
+        [
+          "2026-10-17",
+          65
+        ],
+        [
+          "2026-10-18",
+          66
+        ],
+        [
+          "2026-10-19",
+          67
+        ],
+        [
+          "2026-10-20",
+          68
+        ],
+        [
+          "2026-10-21",
+          69
+        ],
+        [
+          "2026-10-22",
+          70
+        ],
+        [
+          "2026-10-23",
+          71
+        ],
+        [
+          "2026-10-24",
+          72
+        ],
+        [
+          "2026-10-25",
+          73
+        ],
+        [
+          "2026-10-26",
+          74
+        ]
+      ],
+      "seed" : [
+        [
+          "2026-10-30",
+          50
+        ]
+      ]
+    }
+  ],
+  "sleepGapCases" : [
+    {
+      "base" : [
+        {
+          "deviceId" : "my-whoop",
+          "endTs" : 894000,
+          "startTs" : 867600
+        }
+      ],
+      "expected" : [
+        "my-whoop@867600-894000",
+        "garmin-import@953400-978400",
+        "garmin-import@1000400-1003400",
+        "oura-import@1038800-1063800"
+      ],
+      "history" : [
+        {
+          "deviceId" : "garmin-import",
+          "endTs" : 893000,
+          "startTs" : 867000
+        },
+        {
+          "deviceId" : "garmin-import",
+          "endTs" : 978400,
+          "startTs" : 953400
+        },
+        {
+          "deviceId" : "garmin-import",
+          "endTs" : 1003400,
+          "startTs" : 1000400
+        },
+        {
+          "deviceId" : "oura-import",
+          "endTs" : 977400,
+          "startTs" : 952400
+        },
+        {
+          "deviceId" : "oura-import",
+          "endTs" : 1063800,
+          "startTs" : 1038800
+        }
+      ],
+      "name" : "export night only on an empty wake-day; first export source owns a shared day"
+    }
+  ]
+}

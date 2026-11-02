@@ -6593,7 +6593,11 @@ private fun HeartRateTrendCard(
             // #1304/#512: union across the active strap (like the hrBucketsUnion read just above) — a 2nd
             // strap's night is banked under "whoop-<uuid>" and a raw "my-whoop" read misses it, so the
             // hero showed no sleep band. Single-WHOOP collapses to "my-whoop", byte-identical.
-            val overlapping = viewModel.repo.sleepSessionsUnion(viewModel.activeStrapId, start - 18 * 3600L, end)
+            // #31: a wearable-export night fills the band when no strap night covers its wake-day.
+            val overlapping = WhoopRepository.fillSleepGaps(
+                viewModel.repo.sleepSessionsUnion(viewModel.activeStrapId, start - 18 * 3600L, end),
+                viewModel.repo.historySleepSessions(viewModel.activeStrapId, start - 18 * 3600L, end),
+            )
                 .filter { it.startTs <= end && it.endTs >= start }   // overlaps the window
             val habitualMidsleepSec = viewModel.repo.habitualMidsleepSec(viewModel.activeStrapId)
             mainSleepSpan(overlapping, habitualMidsleepSec)?.let { (spanStart, spanEnd) ->
