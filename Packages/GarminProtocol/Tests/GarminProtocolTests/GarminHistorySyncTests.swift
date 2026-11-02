@@ -64,6 +64,11 @@ final class GarminHistorySyncTests: XCTestCase {
         XCTAssertEqual(summary.alreadySynced, 2)          // the ledger's METRICS file and the empty HRV file
         XCTAssertEqual(summary.skippedOld, 1)
         XCTAssertEqual(summary.downloaded, 2)
+        // The Test Centre list: every wanted FIT file the watch listed, sorted, whatever happened to it.
+        XCTAssertEqual(summary.onWatch.count, summary.wanted)
+        XCTAssertEqual(summary.onWatch, summary.onWatch.sorted())
+        XCTAssertTrue(Set(r.files.map(\.key)).isSubset(of: Set(summary.onWatch)))
+        XCTAssertTrue(synced.isSubset(of: Set(summary.onWatch)), "already-ingested files are still on the list")
         XCTAssertTrue(watch.seen.contains("rx filter 3"), "a watch-initiated sync opens with FILTER only-new")
         XCTAssertTrue(watch.seen.contains("rx chunk reply status=3 next=0"), "a bad chunk CRC is asked for again")
         XCTAssertTrue(watch.seen.contains("rx system event 0"), "SYNC_COMPLETE ends the session")
@@ -155,6 +160,7 @@ final class GarminHistorySyncTests: XCTestCase {
         XCTAssertEqual(r.files.map(\.bytes), [oracleZlibPlain()])
         XCTAssertEqual(r.files.first?.fitType, .monitor)
         XCTAssertEqual(r.files.first?.key.garminTimestamp, 0x4567_0000, "no modified time: the uid's creation time")
+        XCTAssertEqual(r.summaries.last?.onWatch, r.files.map(\.key), "only the FIT item is listed, not the watch app")
         XCTAssertEqual(watch.seen.filter { $0.hasPrefix("rx item list") }.count, 2)
         XCTAssertFalse(watch.seen.contains { $0.hasPrefix("rx download") }, "no legacy flush when the model skips it")
         XCTAssertTrue(watch.seen.contains("ml register service=8216"))

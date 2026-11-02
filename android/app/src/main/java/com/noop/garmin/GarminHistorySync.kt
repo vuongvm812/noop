@@ -144,6 +144,8 @@ data class GarminSyncSummary(
     var failed: Int = 0,
     var resumed: Int = 0,
     var bytes: Int = 0,
+    /** Every listed wanted FIT file (the entries [wanted] counts), sorted ascending. Not part of [line]. */
+    var onWatch: List<GarminSyncFileKey> = emptyList(),
 ) {
     sealed class Outcome(val label: String) {
         object Completed : Outcome("completed")
@@ -691,6 +693,7 @@ internal class GarminHistorySync {
             if (entry.dataType != GarminFitFileType.FIT_DATA_TYPE || entry.subType !in GarminFitFileType.WANTED_SUB_TYPES) continue
             summary.wanted += 1
             val key = GarminSyncFileKey(entry)
+            summary.onWatch = summary.onWatch + key
             if (key in request.synced) { summary.alreadySynced += 1; continue }
             if (entry.fileSize == 0L) { summary.alreadySynced += 1; continue }
             val floor = request.notBeforeUnix
@@ -796,6 +799,7 @@ internal class GarminHistorySync {
             if (sub !in GarminFitFileType.WANTED_SUB_TYPES) continue
             val key = GarminSyncFileKey.fileAccess(item, name) ?: continue
             summary.wanted += 1
+            summary.onWatch = summary.onWatch + key
             if (key in request.synced) { summary.alreadySynced += 1; continue }
             val floor = request.notBeforeUnix
             if (floor != null && key.garminTimestamp != 0L && GarminGfdi.unixTime(key.garminTimestamp) < floor) {
@@ -850,6 +854,7 @@ internal class GarminHistorySync {
 
     private fun finish(outcome: GarminSyncSummary.Outcome, sendComplete: Boolean = true) {
         summary.outcome = outcome
+        summary.onWatch = summary.onWatch.sorted()
         if (sendComplete) send(GarminOutbound.SystemEvent(GarminSafeSystemEvent.SYNC_COMPLETE, 0))
         note(true, summary.line)
         actions.add(GarminSyncAction.Finished(summary.copy()))

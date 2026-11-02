@@ -418,10 +418,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
     // `spacedBy(20.dp)`, which the LazyColumn reproduces), so spacing is byte-identical. Only the on-screen
     // cards now compose + get accessibility-walked on scroll — this list of 11 source cards is long. The
     // confirm dialogs below the scaffold are untouched.
+    // An active Garmin watch gets its panel at the top of the sources.
+    val garminSource by vm.garminSource.collectAsStateWithLifecycle()
     LazyScreenScaffold(
         title = uiString(R.string.l10n_data_sources_screen_data_sources_5e43d6bb),
         subtitle = "Everything stays on this phone. Bring your history in once, then it's yours.",
     ) {
+        // --- Garmin watch (active GFDI source) ---
+        if (garminSource != null) {
+            item { GarminWatchPanel(vm) }
+        }
+
         // --- WHOOP data (cached history) ---
         item {
         SourceCard(

@@ -75,6 +75,12 @@ final class SourceCoordinator: ObservableObject {
     /// `tearDownNonWhoopSource`. The coordinator's lifecycle logic uses `activeSource`; this is only the
     /// published UI handle.
     @Published private(set) var ouraSource: OuraLiveSource?
+    /// The live Garmin source, TYPED, kept alongside `activeSource` so the wizard, Devices, Live and Test
+    /// Centre can observe its link phase, watch info and sync state. Same lifecycle as `ouraSource`.
+    @Published private(set) var garminSource: GarminSource?
+    /// A Garmin history sync stored new files. `AppModel` re-scores and refreshes the dashboard, the
+    /// same as after a completed WHOOP offload, so a first sync populates Today and Sleep at once.
+    var onGarminHistoryStored: (() -> Void)?
     /// The deviceId for which the user has granted explicit adopt consent (the wizard's irreversible gate +
     /// "Take over this ring?" confirm). The NEXT `makeOuraSource` for THIS id builds its live source with
     /// `adoptIntent == true`, so the dangerous `0x24` key install can run for exactly that adopt session and
@@ -360,9 +366,13 @@ final class SourceCoordinator: ObservableObject {
                 guard let store = await storeHandle() else { return false }
                 return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)
             },
+            onSyncFinished: { [weak self] summary in
+                if summary.downloaded > 0 { self?.onGarminHistoryStored?() }
+            },
             undecodedCapture: { UserDefaults.standard.bool(forKey: AppModel.garminRealtimeCaptureKey) })
         // Whoever is already watching (the Live screen open while the user switches to the watch).
         source.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
+        garminSource = source
         return source
     }
 
@@ -563,6 +573,7 @@ final class SourceCoordinator: ObservableObject {
         activeSource?.stop()
         activeSource = nil
         ouraSource = nil
+        garminSource = nil
     }
 
     // MARK: - Identity adoption

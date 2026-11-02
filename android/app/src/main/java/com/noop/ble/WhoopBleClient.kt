@@ -3192,6 +3192,12 @@ class WhoopBleClient(
         schedulePostBackfillAnalysis()
     }
 
+    /**
+     * Another source (a Garmin watch's history sync) stored new history: run the same debounced post-offload
+     * scoring pass a completed WHOOP backfill schedules.
+     */
+    fun requestPostSyncAnalysis() = schedulePostBackfillAnalysis()
+
     private fun schedulePostBackfillAnalysis() {
         if (!analyzeAfterBackfillScheduled.compareAndSet(false, true)) {
             // A later chunk arrived while the debounce or scoring pass was already active. Remember it:

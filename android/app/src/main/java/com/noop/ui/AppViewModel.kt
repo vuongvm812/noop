@@ -394,6 +394,74 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val ouraAdoptPhase: StateFlow<com.noop.ble.OuraLiveSource.AdoptPhase> =
         noopApp.sourceCoordinator.ouraAdoptPhase
 
+    /** The active Garmin watch source (null unless a Garmin watch is the active device). The wizard's Connect
+     *  step, the Garmin watch panel, the Live screen section and the Test Centre read its flows. */
+    val garminSource: StateFlow<com.noop.ble.GarminSource?> = noopApp.sourceCoordinator.garminSource
+
+    private val _garminContinuousLive = MutableStateFlow(NoopPrefs.garminContinuousLive(app.applicationContext))
+    val garminContinuousLive: StateFlow<Boolean> = _garminContinuousLive.asStateFlow()
+
+    /** True while an explicit SpO2 reading is pending (the 60 s window after "Measure SpO2"). */
+    private val _garminSpO2Requested = MutableStateFlow(false)
+    val garminSpO2Requested: StateFlow<Boolean> = _garminSpO2Requested.asStateFlow()
+    private var garminSpO2Job: kotlinx.coroutines.Job? = null
+
+    /** The "Continuous live" toggle on the Garmin watch panel. */
+    fun setGarminContinuousLive(enabled: Boolean) {
+        NoopPrefs.setGarminContinuousLive(appContext, enabled)
+        _garminContinuousLive.value = enabled
+        noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(continuousLiveEnabled = enabled) }
+    }
+
+    /** Optional Garmin channels whose cards are on screen (the Live screen's Garmin section). */
+    fun setGarminOnScreenChannels(channels: Set<com.noop.ble.GarminLiveChannel>) {
+        noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(onScreenChannels = channels) }
+    }
+
+    /** "Measure SpO2": the only way the SpO2 channel opens. Held for 60 s, then released. */
+    fun requestGarminSpO2() {
+        garminSpO2Job?.cancel()
+        _garminSpO2Requested.value = true
+        noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(explicitChannels = setOf(com.noop.ble.GarminLiveChannel.SPO2)) }
+        garminSpO2Job = viewModelScope.launch {
+            kotlinx.coroutines.delay(GARMIN_SPO2_REQUEST_MS)
+            noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(explicitChannels = emptySet()) }
+            _garminSpO2Requested.value = false
+        }
+    }
+
+    /** "Sync now" on the Garmin watch panel. */
+    fun garminSyncNow() {
+        garminSource.value?.syncNow()
+    }
+
+    /** The ingested-file ledger keys for one Garmin watch (Test Centre sync readout). */
+    suspend fun garminIngestedKeys(deviceId: String): Set<com.noop.garmin.GarminSyncFileKey> =
+        runCatching {
+            com.noop.data.GarminHistoryIngest.syncedKeys(
+                com.noop.data.GarminSyncStore(com.noop.data.WhoopDatabase.get(appContext)), deviceId,
+            )
+        }.getOrDefault(emptySet())
+
+    /**
+     * The wizard's Broadcast Heart Rate fallback: archive the Garmin watch it just added (any data it already
+     * gave is kept, as on Swift) and, when another device was active before, make that one active again so
+     * the GFDI source stops.
+     */
+    suspend fun removeGarminDevice(id: String, restoreActive: String?) {
+        archivePairedDevice(id)
+        if (restoreActive != null) setActiveDevice(restoreActive)
+    }
+
+    /** A discovery-only Garmin scanner for the wizard: lists watches, never connects, persists nothing. */
+    fun makeGarminScanner(): com.noop.ble.GarminSource =
+        com.noop.ble.GarminSource(
+            context = appContext,
+            deviceId = "scan-preview",
+            log = { ble.externalLog(it) },
+            discoveryOnly = true,
+        )
+
     /** The active Oura ring's honest needs-pairing message (null when none), mirrored from the
      *  [com.noop.ble.SourceCoordinator]. The wizard treats a non-null value during Adopting as an honest
      *  failure too. Mirrors Swift `AppModel.ouraNeedsPairing`. */
@@ -2714,13 +2782,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun syncGarminLiveDemand() {
         val visible = realtimeWanters > 0
         val workout = _activeWorkout.value != null
-        noopApp.sourceCoordinator.updateGarminLiveDemand { it.copy(liveScreenVisible = visible, workoutActive = workout) }
+        val continuous = _garminContinuousLive.value
+        noopApp.sourceCoordinator.updateGarminLiveDemand {
+            it.copy(liveScreenVisible = visible, workoutActive = workout, continuousLiveEnabled = continuous)
+        }
     }
 
     private var lastGarminWorkout = false
 
     /** Re-sync the Garmin live demand whenever a workout starts or ends (from any of its entry points). */
     private val garminWorkoutDemand = viewModelScope.launch {
+        // The persisted "Continuous live" toggle reaches the coordinator before any screen asks.
+        syncGarminLiveDemand()
         _activeWorkout.collect { w -> if ((w != null) != lastGarminWorkout) { lastGarminWorkout = w != null; syncGarminLiveDemand() } }
     }
 
@@ -3255,6 +3328,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private companion object {
         /** Grace before the first scoring pass, letting the first BLE offload land. */
         const val FIRST_OFFLOAD_GRACE_MS = 6_000L
+        /** How long an explicit Garmin SpO2 request holds the channel open. */
+        const val GARMIN_SPO2_REQUEST_MS = 60_000L
         /**
          * On-device BACKSTOP scoring cadence — 30 min (#836 battery). This loop's watermark gate can't
          * skip while the strap is connected and streaming live HR, because the HR fingerprint

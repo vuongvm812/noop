@@ -103,6 +103,8 @@ class SourceCoordinator(
     private val clearExternalLiveHr: () -> Unit = {},
     /** An EXPERIMENTAL Garmin watch's live snapshot (Body Battery, respiration, SpO2, …); null clears it. */
     private val garminLiveSink: (com.noop.garmin.GarminLiveSnapshot?) -> Unit = {},
+    /** A Garmin history sync stored new files: run the same refresh + analysis a completed WHOOP offload runs. */
+    private val onGarminHistoryStored: () -> Unit = {},
     /** Push the latest instantaneous speed/cadence/power from a connected standard fitness sensor
      *  (RSC/CSC/CPS), read ADDITIVELY alongside HR by [StandardHrSource], into the live state the in-workout
      *  UI observes (wired at the composition root to `ble::publishExternalSensorMetrics`). PURE ADDITIVE — it
@@ -135,6 +137,11 @@ class SourceCoordinator(
      *  no strap source is live, so a stale readout can't outlive the link. Never carries HR / scoring. */
     private val _sensorMetrics = MutableStateFlow(StandardHrSource.SensorMetrics())
     val sensorMetrics: StateFlow<StandardHrSource.SensorMetrics> = _sensorMetrics.asStateFlow()
+
+    /** The active Garmin watch source, for the wizard, the Garmin watch panel, Live and the Test Centre.
+     *  null whenever the active source is not a GarminSource. Mirrors macOS `SourceCoordinator.garminSource`. */
+    private val _garminSource = MutableStateFlow<GarminSource?>(null)
+    val garminSource: StateFlow<GarminSource?> = _garminSource.asStateFlow()
 
     /** The active Oura source's live adopt outcome, mirrored so the Add-Oura wizard can leave its Adopting
      *  step (success -> close, failed -> the honest Failed step). [AdoptPhase.Idle] whenever no Oura source
@@ -413,6 +420,7 @@ class SourceCoordinator(
         // when the registry row has no address.
         if (!address.isNullOrEmpty()) source.connect(address) else source.scan()
         activeSource = source
+        _garminSource.value = source as? GarminSource
         activeStrapId = id
         onStrap = true
     }
@@ -537,6 +545,7 @@ class SourceCoordinator(
                 val repo = repository
                 repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)
             },
+            onSyncFinished = { summary -> if (garminSyncStoredHistory(summary)) onGarminHistoryStored() },
             onLive = feed::handle,
             undecodedCapture = { NoopPrefs.garminRealtimeCapture(ctx) },
             capturePrefs = prefs,
@@ -739,6 +748,7 @@ class SourceCoordinator(
     private fun tearDownNonWhoopSource() {
         activeSource?.stop()
         activeSource = null
+        _garminSource.value = null
         // Stop mirroring the (now torn-down) Oura source and clear the mirrors so a stale adopt outcome /
         // needs-pairing message never outlives the source or drives a later wizard transition.
         ouraStateJob?.cancel(); ouraStateJob = null
@@ -754,6 +764,9 @@ class SourceCoordinator(
     }
 
     companion object {
+        /** Whether a finished Garmin sync stored anything new (only then does it trigger a re-analysis). */
+        fun garminSyncStoredHistory(summary: com.noop.garmin.GarminSyncSummary): Boolean = summary.downloaded > 0
+
         /**
          * Classify a device id as WHOOP vs a generic strap. WHOOP if the id is the canonical "my-whoop",
          * the registry row's `brand` is "WHOOP" (case-insensitive), OR the id is unknown — unknown ids

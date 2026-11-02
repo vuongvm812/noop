@@ -126,6 +126,11 @@ numbers.
   u32 after each beat interval are undecoded upstream and stay logged-only candidates in NOOP. Checked on a
   Forerunner 165 (firmware 29.05): every layout's length and the unknown codes 0x7F (Body Battery), -2
   (respiration) and -1 (SpO2) as sent off the wrist.
+- **Garmin pairing, onboarding and UI** (Add Device wizard, Devices / Data Sources panel, Live and Test
+  Centre sections, [docs/GARMIN.md](docs/GARMIN.md)): written for NOOP. The pairing steps follow the
+  watch's own "Pair Phone" menu; the supported-model table, coexistence guidance and battery figures come
+  from NOOP's own runs on a Forerunner 165. Nothing from Gadgetbridge beyond the protocol facts above, at
+  the same pinned commit.
 
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).

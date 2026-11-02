@@ -92,7 +92,9 @@ private enum class DeviceType {
     Whoop5MG, Whoop4, HrStrap, GymEquipment,
     // EXPERIMENTAL tier - best-effort, clean-room, can't be hardware-verified here. Each fails to an
     // honest message and never fabricates data.
-    Amazfit, MiBand, Garmin, Oura;
+    // Garmin is the watch's own GFDI protocol (history sync + live channels); GarminBroadcast is the
+    // standard Broadcast Heart Rate fallback, reached from the Garmin flow.
+    Amazfit, MiBand, Garmin, GarminBroadcast, Oura;
 
     val isWhoop: Boolean get() = this == Whoop4 || this == Whoop5MG
     val whoopModel: WhoopModel?
@@ -103,7 +105,7 @@ private enum class DeviceType {
         }
 
     /** True for the EXPERIMENTAL tier (shown under a clearly-labelled "Experimental" heading). */
-    val isExperimental: Boolean get() = this == Amazfit || this == MiBand || this == Garmin || this == Oura
+    val isExperimental: Boolean get() = this == Amazfit || this == MiBand || this == Garmin || this == GarminBroadcast || this == Oura
 
     /** The experimental-tier brand this type registers as, or null for the non-experimental types
      *  (WHOOP / generic strap / gym). Bridges the type picker to the [com.noop.data.DeviceBrandCatalog]
@@ -112,7 +114,7 @@ private enum class DeviceType {
         get() = when (this) {
             Amazfit -> ExperimentalBrand.AMAZFIT
             MiBand -> ExperimentalBrand.MI_BAND
-            Garmin -> ExperimentalBrand.GARMIN
+            Garmin, GarminBroadcast -> ExperimentalBrand.GARMIN
             Oura -> ExperimentalBrand.OURA
             else -> null
         }
@@ -125,12 +127,16 @@ private enum class DeviceType {
             GymEquipment -> "Gym equipment"
             Amazfit -> "Amazfit / Zepp"
             MiBand -> "Xiaomi Mi Band"
-            Garmin -> "Garmin watch"
+            Garmin, GarminBroadcast -> uiString(R.string.l10n_add_device_wizard_garmin_watch_a866104a)
             Oura -> "Oura ring"
         }
 }
 
-private enum class WizardStep { Type, Prep, Pick, Confirm }
+/** [Connect] is the Garmin (GFDI) flow's last step: it watches the active GarminSource reach ready. */
+private enum class WizardStep { Type, Prep, Pick, Confirm, Connect }
+
+/** What the Garmin Connect step shows. */
+private enum class GarminConnectFace { Progress, Success, Unsupported, Slow }
 
 /**
  * The Oura factory-reset-and-adopt sub-flow (section 2 of the onboarding UX spec). The Oura type does NOT
@@ -194,6 +200,14 @@ fun AddDeviceWizard(
     // GATT, never the WHOOP client; no-op persist/live, null key). The wizard reads only its `discovered` /
     // `scanning` flows; the SourceCoordinator owns the real connect once the adopted ring becomes active.
     val ouraScanner = remember { viewModel.makeOuraScanner() }
+    // Discovery-only Garmin (GFDI) scanner: lists advertising and OS-known watches, never attaches.
+    val garminScanner = remember { viewModel.makeGarminScanner() }
+    // The Garmin watch just registered, and the device that was active before it (restored if the user
+    // falls back to Broadcast Heart Rate).
+    var garminAddedId by remember { mutableStateOf<String?>(null) }
+    var garminPrevActive by remember { mutableStateOf<String?>(null) }
+    var garminSlow by remember { mutableStateOf(false) }
+    var garminTimerEpoch by remember { mutableStateOf(0) }
 
     fun startScan(t: DeviceType) {
         when {
@@ -201,7 +215,8 @@ fun AddDeviceWizard(
             t == DeviceType.GymEquipment -> ftmsScanner.scan()
             t == DeviceType.Amazfit || t == DeviceType.MiBand -> huamiScanner.scan()
             t == DeviceType.Oura -> ouraScanner.scan()
-            else -> hrScanner.scan()   // HrStrap AND Garmin (Broadcast HR is the standard 0x180D path)
+            t == DeviceType.Garmin -> garminScanner.scan()
+            else -> hrScanner.scan()   // HrStrap AND GarminBroadcast (Broadcast HR is the standard 0x180D path)
         }
     }
 
@@ -211,10 +226,12 @@ fun AddDeviceWizard(
         ftmsScanner.stopScan()
         huamiScanner.stopScan()
         ouraScanner.stop()
+        garminScanner.stopScan()
     }
 
-    // Belt-and-braces: stop whichever scan is live whenever the wizard leaves composition.
-    DisposableEffect(Unit) { onDispose { stopAllScans() } }
+    // Belt-and-braces: stop whichever scan is live whenever the wizard leaves composition. The Garmin
+    // scanner is also fully stopped so its lifecycle and adapter listeners are released.
+    DisposableEffect(Unit) { onDispose { stopAllScans(); garminScanner.stop() } }
 
     fun goBack() {
         // The Oura type runs its own step machine; back walks that, falling out to the type list from Gate.
@@ -241,6 +258,8 @@ fun AddDeviceWizard(
             WizardStep.Type -> Unit
             WizardStep.Prep -> step = WizardStep.Type
             WizardStep.Pick -> { stopAllScans(); step = WizardStep.Prep }
+            // The watch is registered by now; the Connect step has no back.
+            WizardStep.Connect -> Unit
             WizardStep.Confirm -> {
                 // Re-enter the pick step and restart its scan so the user can choose a different device.
                 type?.let { startScan(it) }
@@ -263,7 +282,7 @@ fun AddDeviceWizard(
         type == DeviceType.GymEquipment -> "Gym equipment"
         // Experimental non-Oura types (Amazfit / Mi Band / Garmin) take their stored brand string from the
         // catalog via the type->brand bridge. Oura confirms with its detected generation label elsewhere.
-        type == DeviceType.Amazfit || type == DeviceType.MiBand || type == DeviceType.Garmin ->
+        type == DeviceType.Amazfit || type == DeviceType.MiBand || type == DeviceType.GarminBroadcast ->
             type!!.experimentalBrand!!.displayBrand
         pickedStrap != null -> brandGuess(pickedStrap!!.name)
         else -> "Heart-rate strap"
@@ -277,7 +296,7 @@ fun AddDeviceWizard(
         val ps = pickedStrap
         val pm = pickedMachine
         val ph = pickedHuami
-        val isGarmin = type == DeviceType.Garmin
+        val isGarmin = type == DeviceType.GarminBroadcast
         val device: PairedDeviceRow? = when {
             pw != null && type?.whoopModel != null -> {
                 // WHOOP: honest live capability set (no calibrated SpO₂ % — import-only; #548);
@@ -358,6 +377,48 @@ fun AddDeviceWizard(
     }
 
     /**
+     * Register a Garmin watch picked from the GFDI scan and make it active at once (no make-active prompt:
+     * the prep step said so). The coordinator builds its GarminSource; the Connect step watches it.
+     */
+    fun finishAddGarmin(watch: com.noop.ble.GarminSource.DiscoveredWatch) {
+        stopAllScans()
+        val now = System.currentTimeMillis() / 1000
+        val garmin = ExperimentalBrand.GARMIN
+        val device = PairedDeviceRow(
+            id = "${garmin.idPrefix}-${watch.address}",
+            brand = garmin.displayBrand,
+            model = watch.name,
+            nickname = null,
+            peripheralId = watch.address,
+            sourceKind = SourceKind.garmin.name,
+            capabilities = "hr,hrv,sleep,steps,spo2",
+            status = DeviceStatus.paired.name,
+            addedAt = now,
+            lastSeenAt = now,
+        )
+        garminAddedId = device.id
+        garminSlow = false
+        garminTimerEpoch += 1
+        step = WizardStep.Connect
+        scope.launch {
+            garminPrevActive = runCatching { viewModel.pairedDevices() }.getOrDefault(emptyList())
+                .firstOrNull { it.status == DeviceStatus.active.name && it.id != device.id }?.id
+            viewModel.registerDevice(device, makeActive = true)
+        }
+    }
+
+    /** Leave the GFDI flow for Broadcast Heart Rate: forget the just-added watch and open that prep step. */
+    fun garminFallBackToBroadcast() {
+        val id = garminAddedId
+        val previous = garminPrevActive
+        garminAddedId = null
+        if (id != null) scope.launch { viewModel.removeGarminDevice(id, restoreActive = previous) }
+        type = DeviceType.GarminBroadcast
+        nameDraft = ""
+        step = WizardStep.Prep
+    }
+
+    /**
      * Register an adopted (or Advanced-key) Oura ring. Builds the oura [PairedDeviceRow] - id
      * "oura-<address>", model = the picked generation's display name (the row recovers the gen via
      * OuraRingGen.from(model)), sourceKind "oura" (routes the SourceCoordinator to [OuraLiveSource]),
@@ -420,17 +481,40 @@ fun AddDeviceWizard(
     // The Adopting->Failed observer (the LaunchedEffect below) reads the SAME value.
     val adoptNeedsPairing by viewModel.ouraNeedsPairing.collectAsStateWithLifecycle()
 
+    // The Garmin Connect step follows the coordinator's active GarminSource.
+    val garminSource by viewModel.garminSource.collectAsStateWithLifecycle()
+    val garminPhase = garminSource?.linkPhase?.collectAsStateWithLifecycle()?.value
+        ?: com.noop.ble.GarminSource.LinkPhase.DISCONNECTED
+    val garminFace = when {
+        garminPhase == com.noop.ble.GarminSource.LinkPhase.READY -> GarminConnectFace.Success
+        garminPhase == com.noop.ble.GarminSource.LinkPhase.UNSUPPORTED -> GarminConnectFace.Unsupported
+        garminSlow -> GarminConnectFace.Slow
+        else -> GarminConnectFace.Progress
+    }
+    // No ready link within 45 s shows the Slow face; "Keep waiting" restarts the timer.
+    LaunchedEffect(step, garminTimerEpoch) {
+        garminSlow = false
+        if (step != WizardStep.Connect) return@LaunchedEffect
+        kotlinx.coroutines.delay(GarminWatchUi.CONNECT_TIMEOUT_MS)
+        garminSlow = true
+    }
+
     AlertDialog(
         onDismissRequest = { stopAllScans(); onClose() },
         containerColor = Palette.surfaceOverlay,
         title = {
             // The Oura type drives its own titled step machine; otherwise the generic step titles apply.
             val isOura = type == DeviceType.Oura
-            val hTitle = if (isOura) ouraHeaderTitle(ouraStep, ouraAdvanced) else headerTitle(step, type)
+            val hTitle = when {
+                isOura -> ouraHeaderTitle(ouraStep, ouraAdvanced)
+                step == WizardStep.Connect -> garminConnectHeader(garminFace)
+                else -> headerTitle(step, type)
+            }
             val hSub = if (isOura) ouraHeaderSubtitle(ouraStep, ouraAdvanced) else headerSubtitle(step)
             // Back is offered on every step except the very first (the type list). The Adopting progress
-            // step hides back so the user can't interrupt the key install mid-flight.
-            val showBack = if (isOura) ouraStep != OuraStep.Adopting else step != WizardStep.Type
+            // step hides back so the user can't interrupt the key install mid-flight; the Garmin Connect
+            // step hides it because the watch is already registered.
+            val showBack = if (isOura) ouraStep != OuraStep.Adopting else step != WizardStep.Type && step != WizardStep.Connect
             Row(verticalAlignment = Alignment.Top) {
                 if (showBack) {
                     IconButton(onClick = { goBack() }, modifier = Modifier.size(28.dp)) {
@@ -516,7 +600,14 @@ fun AddDeviceWizard(
                         }
                     })
                     WizardStep.Prep -> type?.let { t ->
-                        PrepStep(t, onScan = { startScan(t); step = WizardStep.Pick })
+                        if (t == DeviceType.Garmin) {
+                            GarminPrepStep(
+                                onScan = { startScan(t); step = WizardStep.Pick },
+                                onUseBroadcast = { type = DeviceType.GarminBroadcast },
+                            )
+                        } else {
+                            PrepStep(t, onScan = { startScan(t); step = WizardStep.Pick })
+                        }
                     }
                     WizardStep.Pick -> type?.let { t ->
                         when {
@@ -552,8 +643,13 @@ fun AddDeviceWizard(
                                 },
                                 onRescan = { huamiScanner.scan() },
                             )
+                            t == DeviceType.Garmin -> GarminPickStep(
+                                scanner = garminScanner,
+                                onSelect = { watch -> finishAddGarmin(watch) },
+                                onRescan = { garminScanner.scan() },
+                            )
                             else -> HrPickStep(
-                                // Heart-rate strap AND Garmin (Broadcast HR is the standard 0x180D path).
+                                // Heart-rate strap AND GarminBroadcast (Broadcast HR is the standard 0x180D path).
                                 scanner = hrScanner,
                                 onSelect = { strap ->
                                     pickedStrap = strap
@@ -573,6 +669,13 @@ fun AddDeviceWizard(
                         name = nameDraft,
                         onName = { nameDraft = it },
                         onAdd = { askMakeActive = true },
+                    )
+                    WizardStep.Connect -> GarminConnectStep(
+                        source = garminSource,
+                        face = garminFace,
+                        onDone = { stopAllScans(); onClose() },
+                        onUseBroadcast = { garminFallBackToBroadcast() },
+                        onKeepWaiting = { garminTimerEpoch += 1 },
                     )
                 }
             }
@@ -665,6 +768,14 @@ private fun headerTitle(step: WizardStep, type: DeviceType?): String = when (ste
     WizardStep.Prep -> type?.title ?: "Add a device"
     WizardStep.Pick -> "Pick your device"
     WizardStep.Confirm -> "Name & confirm"
+    WizardStep.Connect -> uiString(R.string.l10n_add_device_wizard_connecting_c1f3b71f)
+}
+
+private fun garminConnectHeader(face: GarminConnectFace): String = when (face) {
+    GarminConnectFace.Progress -> uiString(R.string.l10n_add_device_wizard_connecting_c1f3b71f)
+    GarminConnectFace.Success -> uiString(R.string.l10n_add_device_wizard_watch_connected_e76e742c)
+    GarminConnectFace.Unsupported -> uiString(R.string.l10n_add_device_wizard_not_supported_yet_3437f2a4)
+    GarminConnectFace.Slow -> uiString(R.string.l10n_add_device_wizard_still_connecting_47da164b)
 }
 
 private fun headerSubtitle(step: WizardStep): String? = when (step) {
@@ -672,6 +783,7 @@ private fun headerSubtitle(step: WizardStep): String? = when (step) {
     WizardStep.Prep -> "Get it ready, then scan."
     WizardStep.Pick -> "Tap the one that's yours."
     WizardStep.Confirm -> null
+    WizardStep.Connect -> null
 }
 
 // MARK: - Oura header titles (the adopt sub-flow's own steps)
@@ -725,7 +837,7 @@ private fun TypeStep(onPick: (DeviceType) -> Unit) {
         TypeRow(Icons.Filled.GraphicEq, DeviceType.MiBand.title, "Live heart rate on bands that don't need pairing. Help us test.") {
             onPick(DeviceType.MiBand)
         }
-        TypeRow(Icons.Filled.Watch, DeviceType.Garmin.title, "Uses the watch's Broadcast Heart Rate. We'll show you how.") {
+        TypeRow(Icons.Filled.Watch, DeviceType.Garmin.title, uiString(R.string.l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690)) {
             onPick(DeviceType.Garmin)
         }
 
@@ -844,7 +956,7 @@ private fun PrepStep(type: DeviceType, onScan: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 when {
-                    type.isWhoop || type == DeviceType.Garmin -> Icons.Filled.Watch
+                    type.isWhoop || type == DeviceType.Garmin || type == DeviceType.GarminBroadcast -> Icons.Filled.Watch
                     type == DeviceType.GymEquipment -> Icons.AutoMirrored.Filled.DirectionsRun
                     type == DeviceType.Amazfit || type == DeviceType.MiBand -> Icons.Filled.GraphicEq
                     type == DeviceType.Oura -> Icons.Filled.FileDownload
@@ -946,7 +1058,9 @@ private fun prepInstructions(type: DeviceType): List<String> = when (type) {
         "NOOP reads live heart rate on bands that don't require pairing. Newer bands need an auth handshake we can't do yet.",
         "Experimental: if your band needs pairing, we'll tell you honestly rather than show a fake reading.",
     )
-    DeviceType.Garmin -> com.noop.ble.GarminBroadcast.broadcastHint
+    DeviceType.GarminBroadcast -> com.noop.ble.GarminBroadcast.broadcastHint
+    // Garmin (GFDI) has its own prep step (GarminPrepStep); kept for the exhaustive when.
+    DeviceType.Garmin -> garminPrepInstructions()
     // Oura runs the factory-reset-and-adopt prep inside OuraFlow (ouraPrepInstructions), so this generic
     // branch is unreached for Oura; kept for the exhaustive when.
     DeviceType.Oura -> ouraPrepInstructions
@@ -1583,6 +1697,8 @@ private fun PickList(
     searching: Boolean,
     isEmpty: Boolean,
     onRescan: () -> Unit,
+    emptyHint: String? = null,
+    rescanLabel: String? = null,
     rows: @Composable () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
@@ -1594,7 +1710,7 @@ private fun PickList(
             )
             Spacer(Modifier.weight(1f))
             TextButton(onClick = onRescan) {
-                Text(uiString(R.string.l10n_add_device_wizard_rescan_84661f6a), style = NoopType.subhead, color = Palette.accent)
+                Text(rescanLabel ?: uiString(R.string.l10n_add_device_wizard_rescan_84661f6a), style = NoopType.subhead, color = Palette.accent)
             }
         }
         if (isEmpty) {
@@ -1609,7 +1725,7 @@ private fun PickList(
                 CircularProgressIndicator(color = Palette.accent, modifier = Modifier.size(22.dp))
                 Text(uiString(R.string.l10n_add_device_wizard_searching_1a6a5ba8), style = NoopType.body, color = Palette.textPrimary)
                 Text(
-                    uiString(R.string.l10n_add_device_wizard_make_sure_it_s_awake_and_8c40e59f),
+                    emptyHint ?: uiString(R.string.l10n_add_device_wizard_make_sure_it_s_awake_and_8c40e59f),
                     style = NoopType.subhead,
                     color = Palette.textSecondary,
                 )
@@ -1714,3 +1830,207 @@ private fun wizardFieldColors() = OutlinedTextFieldDefaults.colors(
     focusedContainerColor = Palette.surfaceInset,
     unfocusedContainerColor = Palette.surfaceInset,
 )
+
+// MARK: - Garmin watch (GFDI) flow: prep, pick, connect
+
+/** The Garmin prep checklist. Copy matches the Apple wizard word for word. */
+private fun garminPrepInstructions(): List<String> = listOf(
+    uiString(R.string.l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606),
+    uiString(R.string.l10n_add_device_wizard_keep_the_watch_close_and_awake_480e2c09),
+    uiString(R.string.l10n_add_device_wizard_noop_only_reads_from_the_watch_6177a179),
+    uiString(R.string.l10n_add_device_wizard_adding_the_watch_makes_it_your_b1b24fd9),
+)
+
+/** Garmin Connect on another phone can hold the watch or take its files first. Shown on prep and success. */
+@Composable
+private fun GarminCoexistenceCard() {
+    OuraAmberPanel(
+        title = uiString(R.string.l10n_add_device_wizard_garmin_connect_on_another_phone_7c799d03),
+        body = uiString(R.string.l10n_add_device_wizard_noop_was_tested_with_garmin_connect_c365d5af),
+    )
+}
+
+@Composable
+private fun GarminPrepStep(onScan: () -> Unit, onUseBroadcast: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space16)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space14), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Watch, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(28.dp))
+            Text(DeviceType.Garmin.title, style = NoopType.title2, color = Palette.textPrimary)
+        }
+        ExperimentalTierNote()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.space14))
+                .frostedCardSurface(cornerRadius = Metrics.space14)
+                .padding(Metrics.space16),
+            verticalArrangement = Arrangement.spacedBy(Metrics.space12),
+        ) {
+            garminPrepInstructions().forEach { line ->
+                Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space10), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(Metrics.iconSmall))
+                    Text(line, style = NoopType.body, color = Palette.textSecondary)
+                }
+            }
+        }
+        GarminCoexistenceCard()
+        TextButton(
+            onClick = onScan,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cornerSm))
+                .background(Palette.accent),
+        ) {
+            Text(uiString(R.string.l10n_add_device_wizard_scan_28cba55d), style = NoopType.headline, color = Palette.goldDeepText)
+        }
+        TextButton(onClick = onUseBroadcast, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                uiString(R.string.l10n_add_device_wizard_use_broadcast_heart_rate_instead_6523c836),
+                style = NoopType.subhead,
+                color = Palette.accent,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GarminPickStep(
+    scanner: com.noop.ble.GarminSource,
+    onSelect: (com.noop.ble.GarminSource.DiscoveredWatch) -> Unit,
+    onRescan: () -> Unit,
+) {
+    val discovered by scanner.discovered.collectAsStateWithLifecycle()
+    PickList(
+        searching = true,
+        isEmpty = discovered.isEmpty(),
+        onRescan = onRescan,
+        emptyHint = uiString(R.string.l10n_add_device_wizard_no_garmin_watch_found_yet_choose_0d4002f6),
+        rescanLabel = uiString(R.string.l10n_add_device_wizard_scan_again_f6ab55dd),
+    ) {
+        discovered.sortedByDescending { it.rssi }.forEach { watch ->
+            DiscoveredRow(
+                name = watch.name,
+                subtitle = if (watch.connected) uiString(R.string.l10n_add_device_wizard_connected_to_this_device_755ed69e)
+                else uiString(R.string.l10n_add_device_wizard_experimental_b718f8c3),
+                rssi = watch.rssi,
+                onTap = { onSelect(watch) },
+            )
+        }
+    }
+}
+
+/** One "label  value" row on the Success face. */
+@Composable
+private fun GarminInfoRow(name: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Metrics.space12)) {
+        Text(name, style = NoopType.subhead, color = Palette.textTertiary)
+        Spacer(Modifier.weight(1f))
+        Text(value, style = NoopType.subhead, color = Palette.textPrimary)
+    }
+}
+
+@Composable
+private fun GarminConnectStep(
+    source: com.noop.ble.GarminSource?,
+    face: GarminConnectFace,
+    onDone: () -> Unit,
+    onUseBroadcast: () -> Unit,
+    onKeepWaiting: () -> Unit,
+) {
+    val phase = source?.linkPhase?.collectAsStateWithLifecycle()?.value ?: com.noop.ble.GarminSource.LinkPhase.DISCONNECTED
+    val watch = source?.watch?.collectAsStateWithLifecycle()?.value
+    val transport = source?.transportKind?.collectAsStateWithLifecycle()?.value
+    val readout = source?.connectReadout?.collectAsStateWithLifecycle()?.value
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space16)) {
+        when (face) {
+            GarminConnectFace.Progress -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space12), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(color = Palette.accent, modifier = Modifier.size(22.dp))
+                    Text(
+                        uiString(GarminWatchUi.connectProgressRes(phase) ?: R.string.l10n_add_device_wizard_connecting_to_the_watch_7acf3bc9),
+                        style = NoopType.body,
+                        color = Palette.textPrimary,
+                    )
+                }
+                Text(
+                    uiString(R.string.l10n_add_device_wizard_if_this_device_shows_a_pairing_b0a14b99),
+                    style = NoopType.subhead,
+                    color = Palette.textSecondary,
+                )
+            }
+            GarminConnectFace.Success -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Metrics.space14))
+                        .frostedCardSurface(cornerRadius = Metrics.space14)
+                        .padding(Metrics.space16),
+                    verticalArrangement = Arrangement.spacedBy(Metrics.space8),
+                ) {
+                    GarminInfoRow(uiString(R.string.l10n_add_device_wizard_model_68c2cc7f), watch?.let { GarminWatchUi.modelName(it) } ?: "-")
+                    GarminInfoRow(uiString(R.string.l10n_add_device_wizard_firmware_0dc5f6c7), watch?.let { GarminWatchUi.firmware(it.softwareVersion) } ?: "-")
+                    GarminInfoRow(uiString(R.string.l10n_add_device_wizard_protocol_1ed77c3f), GarminWatchUi.protocolLine(transport, watch))
+                }
+                Text(
+                    uiString(R.string.l10n_add_device_wizard_the_first_history_sync_has_started_8478c04b),
+                    style = NoopType.subhead,
+                    color = Palette.textSecondary,
+                )
+                GarminCoexistenceCard()
+                NoopButton(
+                    text = uiString(R.string.l10n_add_device_wizard_done_e9b450d1),
+                    fullWidth = true,
+                    onClick = onDone,
+                )
+            }
+            GarminConnectFace.Unsupported -> {
+                Text(
+                    uiString(R.string.l10n_add_device_wizard_this_watch_uses_a_protocol_noop_3a1a0b17),
+                    style = NoopType.body,
+                    color = Palette.textPrimary,
+                )
+                NoopButton(
+                    text = uiString(R.string.l10n_add_device_wizard_use_broadcast_heart_rate_6e408335),
+                    fullWidth = true,
+                    onClick = onUseBroadcast,
+                )
+                NoopButton(
+                    text = uiString(R.string.l10n_add_device_wizard_close_bbfa773e),
+                    kind = NoopButtonKind.Secondary,
+                    fullWidth = true,
+                    onClick = onDone,
+                )
+            }
+            GarminConnectFace.Slow -> {
+                Text(
+                    uiString(R.string.l10n_add_device_wizard_the_watch_hasn_t_answered_yet_8aa1c3cd),
+                    style = NoopType.headline,
+                    color = Palette.textPrimary,
+                )
+                Text(
+                    uiString(R.string.l10n_add_device_wizard_check_that_the_watch_is_bonded_c016cfa0),
+                    style = NoopType.subhead,
+                    color = Palette.textSecondary,
+                )
+                readout?.lastFailure?.let { failure ->
+                    Text(
+                        uiString(R.string.l10n_add_device_wizard_last_error_ee28d44b, failure),
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                    )
+                }
+                NoopButton(
+                    text = uiString(R.string.l10n_add_device_wizard_keep_waiting_9be1abba),
+                    fullWidth = true,
+                    onClick = onKeepWaiting,
+                )
+                NoopButton(
+                    text = uiString(R.string.l10n_add_device_wizard_use_broadcast_heart_rate_6e408335),
+                    kind = NoopButtonKind.Secondary,
+                    fullWidth = true,
+                    onClick = onUseBroadcast,
+                )
+            }
+        }
+    }
+}

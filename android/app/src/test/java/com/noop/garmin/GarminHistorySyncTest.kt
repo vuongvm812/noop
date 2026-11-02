@@ -78,6 +78,28 @@ class GarminHistorySyncTest {
     }
 
     @Test
+    fun onWatchListsEveryWantedEntrySortedInBothFlows() {
+        val legacy = run(oracleStandardWatch(), listOf(connect, sync(GarminSyncRequest(synced = synced, notBeforeUnix = ORACLE_NOT_BEFORE))))
+        val s = legacy.summaries.last()
+        assertEquals(s.wanted, s.onWatch.size)
+        assertEquals(s.onWatch.sorted(), s.onWatch)
+        assertTrue(synced.all { it in s.onWatch })
+        assertTrue(legacy.files.all { it.key in s.onWatch })
+        assertFalse(s.line.contains("onWatch"))
+
+        val watch = oracleStandardWatch()
+        val item = GarminItemReference(uid = GarminUid(0x4567_0000_0000_0001L, 0xA1),
+            dataType = GarminItemDataType(format = 3, typeName = "FIT_TYPE_32", typeNameKey = 32), dataSize = 416)
+        val app = GarminItemReference(uid = GarminUid(1, 0xA3), dataType = GarminItemDataType(typeName = "IQWatchApps"), dataSize = 5_000)
+        watch.itemPages = listOf(listOf(app), listOf(item))
+        watch.pullHandles = hashMapOf(0xA1L to 7)
+        watch.pipeFiles = hashMapOf(7 to oracleZlibStream())
+        val fa = run(watch, listOf(connect, sync(GarminSyncRequest(flow = GarminSyncFlow.FileAccess(legacyFlush = false))))).summaries.last()
+        assertEquals(1, fa.wanted)
+        assertEquals(listOf(0x4567_0000L), fa.onWatch.map { it.garminTimestamp })
+    }
+
+    @Test
     fun phoneStartedSyncSkipsTheFilter() {
         val watch = oracleStandardWatch()
         run(watch, listOf(connect, sync(GarminSyncRequest(synced = synced, notBeforeUnix = ORACLE_NOT_BEFORE))))

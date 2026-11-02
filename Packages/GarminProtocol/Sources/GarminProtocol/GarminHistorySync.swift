@@ -251,6 +251,11 @@ public struct GarminSyncSummary: Equatable, Sendable {
     public var resumed = 0
     /// File bytes received over the air (after a resume, only the new part).
     public var bytes = 0
+    /// Every listed file of a wanted FIT type (the entries `wanted` counts), sorted. The Test Centre's
+    /// "on the watch vs ingested" list. Not part of `line`.
+    public var onWatch: [GarminSyncFileKey] = []
+
+    public init() {}
 
     /// True when nothing new arrived: the empty-sync backoff counts these.
     public var isEmpty: Bool { downloaded == 0 }
@@ -816,6 +821,7 @@ struct GarminHistorySync {
                   GarminFitFileType.wantedSubTypes.contains(entry.subType) else { continue }
             summary.wanted += 1
             let key = GarminSyncFileKey(entry)
+            summary.onWatch.append(key)
             if request.synced.contains(key) { summary.alreadySynced += 1; continue }
             if entry.fileSize == 0 { summary.alreadySynced += 1; continue }
             if let floor = request.notBeforeUnix, let unix = entry.unixTime, unix < floor, request.resume?.key != key {
@@ -913,6 +919,7 @@ struct GarminHistorySync {
                 continue
             }
             summary.wanted += 1
+            summary.onWatch.append(key)
             if request.synced.contains(key) { summary.alreadySynced += 1; continue }
             if let floor = request.notBeforeUnix, key.garminTimestamp != 0,
                GarminGfdi.unixTime(fromGarmin: key.garminTimestamp) < floor { summary.skippedOld += 1; continue }
@@ -960,6 +967,7 @@ struct GarminHistorySync {
 
     private mutating func finish(_ outcome: GarminSyncSummary.Outcome, sendComplete: Bool = true) {
         summary.outcome = outcome
+        summary.onWatch.sort()
         if sendComplete { send(.systemEvent(.syncComplete, value: 0)) }
         note(true, summary.line)
         actions.append(.finished(summary))

@@ -37,7 +37,8 @@ struct AddDeviceWizard: View {
         // honest message and never fabricates data.
         case amazfit       // Amazfit / Zepp incl. Helio (Huami custom or standard HR)
         case miBand        // Xiaomi Mi Band (Huami; no-auth live HR path, honest message if auth needed)
-        case garmin        // Garmin watch (standard Broadcast HR path + an enable hint)
+        case garmin        // Garmin watch over its own GFDI protocol (GarminSource: history sync + live)
+        case garminBroadcast // Garmin watch over the standard Broadcast Heart Rate fallback (0x180D)
         case oura          // Oura ring (factory-reset-and-adopt: NOOP installs its own key, becomes owner)
         var id: Self { self }
 
@@ -53,7 +54,7 @@ struct AddDeviceWizard: View {
         /// True for the EXPERIMENTAL tier (shown under a clearly-labelled "Experimental" heading).
         var isExperimental: Bool {
             switch self {
-            case .amazfit, .miBand, .garmin, .oura: return true
+            case .amazfit, .miBand, .garmin, .garminBroadcast, .oura: return true
             default:                                return false
             }
         }
@@ -65,14 +66,16 @@ struct AddDeviceWizard: View {
             switch self {
             case .amazfit: return .amazfit
             case .miBand:  return .miBand
-            case .garmin:  return .garmin
+            case .garmin, .garminBroadcast: return .garmin
             case .oura:    return .oura
             default:       return nil
             }
         }
     }
 
-    enum Step { case type, prep, pick, confirm }
+    /// `garminConnect` is the Garmin GFDI flow's last step: the watch is registered and active, and the
+    /// step follows the live source's handshake to success, "not supported" or "still connecting".
+    enum Step { case type, prep, pick, confirm, garminConnect }
 
     /// The Oura factory-reset-and-adopt sub-flow's own step machine (section 2 of the onboarding UX spec).
     /// The Oura type does NOT use the generic prep/pick/confirm shape: it owns this machine, entered from the
@@ -107,6 +110,15 @@ struct AddDeviceWizard: View {
     /// (best-effort from the advertised name; the user confirms by picking). The `gen` here defaults to
     /// `.gen3` when the scan couldn't guess one, so the registered command set is always usable.
     @State private var pickedOura: (ring: OuraLiveSource.DiscoveredRing, gen: OuraRingGen)?
+    /// The Garmin watch registered by the GFDI flow (its registry id), for the connect step's fallback.
+    @State private var garminDeviceId: String?
+    /// The device that was active before the Garmin watch took over, restored by the Broadcast fallback.
+    @State private var garminPreviousActiveId: String?
+    /// The connect step waited `garminSlowSeconds` without a ready session.
+    @State private var garminSlow = false
+    /// Bumped to restart the connect step's wait ("Keep waiting").
+    @State private var garminWaitToken = 0
+    static let garminSlowSeconds: UInt64 = 45
 
     @State private var nameDraft = ""
     /// After registering, ask whether to make the new device active.
@@ -137,6 +149,9 @@ struct AddDeviceWizard: View {
     /// its `@Published discovered` / `scanning` / `needsPairing` while scanning. The chosen ring is adopted
     /// for real on `finishAdd`, where the registered `PairedDevice` carries the ring generation. Built once.
     @StateObject private var ouraScanner: OuraLiveSource
+    /// Discovery-only Garmin scanner: lists watches (advertising, or already connected to this device by
+    /// the OS) and never connects. The chosen watch is connected for real by the coordinator.
+    @StateObject private var garminScanner: GarminSource
 
     /// - Parameter startAt: DEBUG-only deep-link into a specific (type, step) so a seeded simulator build
     ///   can screenshot one wizard step deterministically (e.g. the Oura onboarding gate) without tapping
@@ -172,6 +187,10 @@ struct AddDeviceWizard: View {
         _ouraScanner = StateObject(wrappedValue: OuraLiveSource(
             live: live, deviceId: "scan-preview", ringGen: .gen3, authKey: { nil },
             persist: { _ in }, log: wizardLog, feedsLive: false))
+        _garminScanner = StateObject(wrappedValue: GarminSource(
+            deviceId: "scan-preview", log: wizardLog,
+            nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin },
+            discoveryOnly: true, restoresState: false))
     }
 
     var body: some View {
@@ -190,6 +209,7 @@ struct AddDeviceWizard: View {
                         case .prep:    prepStep
                         case .pick:    pickStep
                         case .confirm: confirmStep
+                        case .garminConnect: garminConnectStep
                         }
                     }
                 }
@@ -301,6 +321,10 @@ struct AddDeviceWizard: View {
         case .prep:    return LocalizedStringKey(type.map(typeTitle) ?? String(localized: "Add a device"))
         case .pick:    return "Pick your device"
         case .confirm: return "Name & confirm"
+        case .garminConnect:
+            if model.garminSource?.linkPhase == .ready { return "Watch connected" }
+            if model.garminSource?.linkPhase == .unsupported { return "Not supported yet" }
+            return garminSlow ? "Still connecting" : "Connecting"
         }
     }
 
@@ -317,7 +341,7 @@ struct AddDeviceWizard: View {
         case .type:    return "What are you adding?"
         case .prep:    return "Get it ready, then scan."
         case .pick:    return "Tap the one that's yours."
-        case .confirm: return nil
+        case .confirm, .garminConnect: return nil
         }
     }
 
@@ -353,7 +377,7 @@ struct AddDeviceWizard: View {
                     subtitle: String(localized: "Live heart rate on bands that don't need pairing. Help us test."))
             typeRow(.garmin, icon: "applewatch",
                     title: String(localized: "Garmin watch"),
-                    subtitle: String(localized: "Uses the watch's Broadcast Heart Rate. We'll show you how."))
+                    subtitle: String(localized: "Pairs over the watch's own protocol: history sync and live data, read-only. Help us test."))
 
             whoopFirstNote
         }
@@ -431,6 +455,9 @@ struct AddDeviceWizard: View {
                 if type.isWhoop {
                     singleConnectionWarning
                 }
+                if type == .garmin {
+                    garminCoexistenceCard
+                }
 
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(Array(prepInstructions(type).enumerated()), id: \.offset) { _, line in
@@ -462,6 +489,13 @@ struct AddDeviceWizard: View {
                 .buttonStyle(.borderedProminent)
                 .tint(StrandPalette.accent)
                 .accessibilityLabel("Scan for \(typeTitle(type))")
+
+                if type == .garmin {
+                    Button("Use Broadcast Heart Rate instead") { switchToGarminBroadcast() }
+                        .font(StrandFont.subhead)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(StrandPalette.accent)
+                }
             }
         }
     }
@@ -506,6 +540,13 @@ struct AddDeviceWizard: View {
                 String(localized: "Experimental: if your band needs pairing, we'll tell you honestly rather than show a fake reading."),
             ]
         case .garmin:
+            return [
+                String(localized: "On the watch, open Settings, then Phone (or Connectivity), and choose Pair Phone. You can ignore any QR code the watch shows."),
+                String(localized: "Keep the watch close and awake. If this device asks to pair, check that the PIN matches the watch and accept."),
+                String(localized: "NOOP only reads from the watch. It never deletes, archives or changes anything on it."),
+                String(localized: "Adding the watch makes it your active device."),
+            ]
+        case .garminBroadcast:
             return GarminBroadcast.broadcastHint
         case .oura:
             // The factory-reset-and-adopt checklist, shown only AFTER the irreversible-consent gate. NOOP
@@ -1037,7 +1078,7 @@ struct AddDeviceWizard: View {
         case .gymEquipment:      return "figure.run.treadmill"
         case .amazfit:           return "waveform.path.ecg.rectangle"
         case .miBand:            return "waveform.path.ecg"
-        case .garmin:            return "applewatch"
+        case .garmin, .garminBroadcast: return "applewatch"
         case .oura:              return "circle.circle"
         }
     }
@@ -1070,6 +1111,13 @@ struct AddDeviceWizard: View {
                 } onRescan: {
                     ftmsScanner.scan()
                 }
+            } else if type == .garmin {
+                GarminPickList(scanner: garminScanner) { watch in
+                    garminScanner.stopScan()
+                    registerGarminWatch(watch)
+                } onRescan: {
+                    garminScanner.scan()
+                }
             } else if type == .amazfit || type == .miBand {
                 // EXPERIMENTAL Huami pick list (Amazfit / Zepp / Mi Band).
                 HuamiPickList(scanner: huamiScanner) { dev in
@@ -1101,7 +1149,7 @@ struct AddDeviceWizard: View {
     private func clearOtherPicks(except keep: DeviceType) {
         if keep.isWhoop == false { pickedWhoop = nil }
         switch keep {
-        case .hrStrap, .garmin:    pickedHuami = nil; pickedMachine = nil; pickedOura = nil
+        case .hrStrap, .garminBroadcast: pickedHuami = nil; pickedMachine = nil; pickedOura = nil
         case .gymEquipment:        pickedStrap = nil; pickedHuami = nil; pickedOura = nil
         case .amazfit, .miBand:    pickedStrap = nil; pickedMachine = nil; pickedOura = nil
         case .oura:                pickedStrap = nil; pickedMachine = nil; pickedHuami = nil
@@ -1188,6 +1236,9 @@ struct AddDeviceWizard: View {
         case .type:    break
         case .prep:    step = .type
         case .pick:    stopAllScans(); step = .prep
+        case .garminConnect:
+            // The watch stays registered; back returns to the type list.
+            step = .type
         case .confirm:
             // Re-enter the pick step and restart its scan so the user can choose a different device.
             if let type { startScan(for: type) }
@@ -1234,8 +1285,9 @@ struct AddDeviceWizard: View {
         case .gymEquipment:      ftmsScanner.scan()
         case .amazfit, .miBand:  huamiScanner.scan()
         case .oura:              ouraScanner.scan()
-        // Heart-rate strap AND Garmin both use the standard 0x180D scanner (Garmin Broadcast HR).
-        case .hrStrap, .garmin:  hrScanner.scan()
+        // Heart-rate strap AND Garmin Broadcast HR both use the standard 0x180D scanner.
+        case .hrStrap, .garminBroadcast: hrScanner.scan()
+        case .garmin:            garminScanner.scan()
         }
     }
 
@@ -1245,6 +1297,7 @@ struct AddDeviceWizard: View {
         ftmsScanner.stopScan()
         huamiScanner.stopScan()
         ouraScanner.stop()
+        garminScanner.stopScan()
     }
 
     /// Build the right `PairedDevice` for the chosen path, register it, optionally activate, then close.
@@ -1273,7 +1326,7 @@ struct AddDeviceWizard: View {
             // the catalog (via the type→brand bridge); it still stores `.liveBLE` (its live HR IS the
             // standard 0x180D path). A non-Garmin strap keeps the advertised-name brand guess + "strap"
             // prefix. Both are HR + HRV.
-            let garmin = (type == .garmin) ? ExperimentalBrand.garmin : nil
+            let garmin = (type == .garminBroadcast) ? ExperimentalBrand.garmin : nil
             device = PairedDevice(
                 id: "\(garmin?.idPrefix ?? "strap")-\(pickedStrap.id.uuidString)",
                 brand: garmin?.displayBrand ?? brandGuess(from: pickedStrap.name),
@@ -1392,6 +1445,85 @@ struct AddDeviceWizard: View {
         return caps
     }
 
+    // MARK: Garmin watch (GFDI) flow
+
+    /// Register the picked watch as a `.garmin` device and make it active at once (the coordinator only
+    /// runs the active source, and the connect step follows that live session), then wait for it.
+    private func registerGarminWatch(_ watch: GarminSource.DiscoveredWatch) {
+        let now = Int(Date().timeIntervalSince1970)
+        let garmin = ExperimentalBrand.garmin
+        let device = PairedDevice(
+            id: "\(garmin.idPrefix)-\(watch.id.uuidString)",
+            brand: garmin.displayBrand,
+            model: watch.name,
+            nickname: nil,
+            peripheralId: watch.id.uuidString,
+            sourceKind: .garmin,
+            capabilities: [.hr, .hrv, .sleep, .steps, .spo2],
+            status: .paired,
+            addedAt: now, lastSeenAt: now)
+        garminPreviousActiveId = model.deviceRegistry?.activeDeviceId
+        model.registerDevice(device, makeActive: true)
+        garminDeviceId = device.id
+        garminSlow = false
+        garminWaitToken += 1
+        step = .garminConnect
+    }
+
+    /// The Broadcast Heart Rate fallback: archive a watch the GFDI flow just added (its data, if any, is
+    /// kept), make the previously active device active again so the GFDI source stops, and run the
+    /// standard-HR steps for the watch instead. Kotlin twin: `AppViewModel.removeGarminDevice`.
+    private func switchToGarminBroadcast() {
+        stopAllScans()
+        if let id = garminDeviceId {
+            model.deviceRegistry?.archive(id)
+            if let previous = garminPreviousActiveId, previous != id { model.deviceRegistry?.setActive(previous) }
+        }
+        garminDeviceId = nil
+        garminPreviousActiveId = nil
+        type = .garminBroadcast
+        step = .prep
+    }
+
+    @ViewBuilder private var garminConnectStep: some View {
+        GarminConnectFace(source: model.garminSource, slow: garminSlow,
+                          coexistence: garminCoexistenceCard,
+                          onKeepWaiting: { garminSlow = false; garminWaitToken += 1 },
+                          onBroadcast: { switchToGarminBroadcast() },
+                          onDone: { stopAllScans(); onClose() })
+            .task(id: garminWaitToken) {
+                try? await Task.sleep(nanoseconds: Self.garminSlowSeconds * 1_000_000_000)
+                guard !Task.isCancelled, step == .garminConnect else { return }
+                let phase = model.garminSource?.linkPhase
+                if phase != .ready && phase != .unsupported { garminSlow = true }
+            }
+    }
+
+    /// Coexistence with Garmin Connect, from the GarminSource hardware runs: NOOP was verified with Garmin
+    /// Connect off; a refused GFDI registration is the expected symptom when it holds the watch.
+    private var garminCoexistenceCard: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(StrandPalette.statusWarning)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Garmin Connect on another phone")
+                    .font(StrandFont.subhead)
+                    .foregroundStyle(StrandPalette.statusWarning)
+                Text("NOOP was tested with Garmin Connect switched off. If the watch refuses NOOP, close Garmin Connect or turn off Bluetooth on that phone, then try again. If Garmin Connect syncs first, it can take today's files off the watch before NOOP reads them.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.statusWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StrandPalette.statusWarning.opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
     // MARK: Copy / helpers
 
     private func typeTitle(_ t: DeviceType) -> String {
@@ -1403,6 +1535,7 @@ struct AddDeviceWizard: View {
         case .amazfit:      return "Amazfit / Zepp"
         case .miBand:       return "Xiaomi Mi Band"
         case .garmin:       return String(localized: "Garmin watch")
+        case .garminBroadcast: return String(localized: "Garmin (Broadcast Heart Rate)")
         case .oura:         return String(localized: "Oura ring")
         }
     }
@@ -1544,6 +1677,231 @@ private struct HRPickList: View {
 
     private func brandGuess(from name: String) -> String {
         DeviceBrandCatalog.spec(forAdvertisedName: name)?.brand ?? String(localized: "Heart-rate strap")
+    }
+}
+
+// MARK: - Garmin watch pick list + connect face (GFDI flow)
+
+/// The Garmin pick step. Observes the discovery-only `GarminSource`; a watch the OS already holds
+/// connected (bonded watches often stop advertising) is listed with "Connected to this device".
+private struct GarminPickList: View {
+    @ObservedObject var scanner: GarminSource
+    let onSelect: (GarminSource.DiscoveredWatch) -> Void
+    let onRescan: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+            ScanStatusBar(searching: scanner.scanning, onRescan: onRescan)
+            if scanner.discovered.isEmpty {
+                SearchingCard()
+                Text("No Garmin watch found yet. Choose Pair Phone on the watch and keep it close.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(scanner.discovered.sorted { ($0.systemConnected ? 1 : 0, $0.rssi) > ($1.systemConnected ? 1 : 0, $1.rssi) }) { watch in
+                    DiscoveredRow(name: watch.name,
+                                  subtitle: watch.systemConnected
+                                    ? String(localized: "Connected to this device")
+                                    : String(localized: "Experimental"),
+                                  rssi: watch.systemConnected ? -50 : watch.rssi) {
+                        onSelect(watch)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The Garmin connect step: follows the coordinator's live `GarminSource` through the handshake to a
+/// success face (model, firmware, protocol variant), the honest "not supported" face, or "still
+/// connecting" after the wizard's wait. `source` is nil until the coordinator has built it.
+private struct GarminConnectFace<Coexistence: View>: View {
+    let source: GarminSource?
+    let slow: Bool
+    let coexistence: Coexistence
+    let onKeepWaiting: () -> Void
+    let onBroadcast: () -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        if let source {
+            Observed(source: source, slow: slow, coexistence: coexistence,
+                     onKeepWaiting: onKeepWaiting, onBroadcast: onBroadcast, onDone: onDone)
+        } else {
+            GarminConnectProgress(phase: .connecting)
+        }
+    }
+
+    private struct Observed: View {
+        @ObservedObject var source: GarminSource
+        let slow: Bool
+        let coexistence: Coexistence
+        let onKeepWaiting: () -> Void
+        let onBroadcast: () -> Void
+        let onDone: () -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                switch source.linkPhase {
+                case .ready:
+                    success
+                case .unsupported:
+                    unsupported
+                default:
+                    GarminConnectProgress(phase: source.linkPhase)
+                    if slow { slowCard }
+                }
+            }
+        }
+
+        private var success: some View {
+            VStack(alignment: .leading, spacing: 16) {
+                StrandCard(padding: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(StrandFont.title2)
+                                .foregroundStyle(StrandPalette.statusPositive)
+                                .accessibilityHidden(true)
+                            Text(source.watch.map(GarminWatchFacts.modelName) ?? String(localized: "Garmin watch"))
+                                .font(StrandFont.headline)
+                                .foregroundStyle(StrandPalette.textPrimary)
+                            Spacer()
+                            StatePill("Experimental", tone: .warning, showsDot: false)
+                        }
+                        factRow("Model", source.watch.map(GarminWatchFacts.modelName) ?? "-")
+                        factRow("Firmware", source.watch.map { GarminWatchFacts.firmware($0.softwareVersion) } ?? "-")
+                        factRow("Protocol", GarminWatchFacts.protocolLine(transport: source.transport, watch: source.watch))
+                    }
+                }
+                Text("The first history sync has started. It reads up to two weeks of the watch's files and can take a few minutes. You can close this.")
+                    .font(StrandFont.subhead)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                coexistence
+                Button(action: onDone) {
+                    Text("Done")
+                        .font(StrandFont.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(StrandPalette.accent)
+            }
+        }
+
+        private var unsupported: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("This watch uses a protocol NOOP doesn't support yet. You can still use Broadcast Heart Rate.")
+                    .font(StrandFont.headline)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Button(action: onBroadcast) {
+                        Text("Use Broadcast Heart Rate")
+                            .font(StrandFont.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(StrandPalette.accent)
+                    Button(action: onDone) {
+                        Text("Close")
+                            .font(StrandFont.headline)
+                            .foregroundStyle(StrandPalette.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(StrandPalette.surfaceInset,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frostedCardSurface(cornerRadius: 14)
+        }
+
+        private var slowCard: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("The watch hasn't answered yet.")
+                    .font(StrandFont.headline)
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text("Check that the watch is bonded to this device (Pair Phone on the watch, then accept the PIN) and that Garmin Connect isn't holding it. NOOP keeps trying in the background.")
+                    .font(StrandFont.subhead)
+                    .foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let failure = source.connectReadout.lastFailure {
+                    Text("Last error: \(failure)")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.statusWarning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(spacing: 10) {
+                    Button(action: onKeepWaiting) {
+                        Text("Keep waiting")
+                            .font(StrandFont.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(StrandPalette.accent)
+                    Button(action: onBroadcast) {
+                        Text("Use Broadcast Heart Rate")
+                            .font(StrandFont.headline)
+                            .foregroundStyle(StrandPalette.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(StrandPalette.surfaceInset,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frostedCardSurface(cornerRadius: 14)
+        }
+
+        private func factRow(_ label: LocalizedStringKey, _ value: String) -> some View {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label).font(StrandFont.subhead).foregroundStyle(StrandPalette.textTertiary)
+                Spacer()
+                Text(value).font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+    }
+}
+
+/// The handshake progress card: one honest line per link phase.
+private struct GarminConnectProgress: View {
+    let phase: GarminSource.LinkPhase
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ProgressView().tint(StrandPalette.accent)
+                Text(line)
+                    .font(StrandFont.headline)
+                    .foregroundStyle(StrandPalette.textPrimary)
+            }
+            Text("If this device shows a pairing prompt, accept it.")
+                .font(StrandFont.subhead)
+                .foregroundStyle(StrandPalette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frostedCardSurface(cornerRadius: 14)
+    }
+
+    private var line: LocalizedStringKey {
+        switch phase {
+        case .discovering, .subscribing: return "Checking which protocol the watch speaks…"
+        case .handshaking:               return "Saying hello to the watch…"
+        default:                         return "Connecting to the watch…"
+        }
     }
 }
 

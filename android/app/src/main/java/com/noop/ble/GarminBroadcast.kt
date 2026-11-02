@@ -12,6 +12,10 @@ package com.noop.ble
  *
  * Such a device is registered with sourceKind "liveBLE", so the SourceCoordinator runs it through
  * [StandardHrSource] and the WHOOP/standard paths are untouched.
+ *
+ * The Add Device wizard reaches it from the Garmin flow: "Use Broadcast Heart Rate instead" on the first
+ * step, and the "not supported yet" / "still connecting" faces when the GFDI handshake cannot complete
+ * (docs/GARMIN.md).
  */
 object GarminBroadcast {
 

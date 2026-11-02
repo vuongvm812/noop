@@ -227,6 +227,8 @@ fun TestCentreScreen(vm: AppViewModel, onOpenGroundTruthCollector: () -> Unit = 
         // --- Section 2: Diagnostic tools ---
         DiagnosticToolsCard(vm)
 
+        GarminTestCentreCard(vm)
+
         SettingsSectionTC(
             icon = Icons.AutoMirrored.Filled.DirectionsWalk,
             title = stringResource(R.string.ground_truth_title),
@@ -804,6 +806,107 @@ private fun rememberActiveLogSnapshot(ble: WhoopBleClient): TestCentreLogSnapsho
     }
 }
 
+/**
+ * The Garmin section, shown only when a Garmin watch is paired over GFDI: the connection readout, the radio
+ * counters (refreshed every second), the realtime-capture toggle, and the sync file list against the ingest
+ * ledger. Readout values are literal protocol data; labels are translated.
+ */
+@Composable
+private fun GarminTestCentreCard(vm: AppViewModel) {
+    val context = LocalContext.current
+    var garminDeviceId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        val paired = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
+            .filter { isGarminWatch(it) && it.status != com.noop.data.DeviceStatus.archived.name }
+        garminDeviceId = (paired.firstOrNull { it.status == com.noop.data.DeviceStatus.active.name } ?: paired.firstOrNull())?.id
+    }
+    val deviceId = garminDeviceId ?: return
+    val source by vm.garminSource.collectAsStateWithLifecycle()
+    val s = source
+    val phase = s?.linkPhase?.collectAsStateWithLifecycle()?.value ?: com.noop.ble.GarminSource.LinkPhase.DISCONNECTED
+    val watch = s?.watch?.collectAsStateWithLifecycle()?.value
+    val transport = s?.transportKind?.collectAsStateWithLifecycle()?.value
+    val readout = s?.connectReadout?.collectAsStateWithLifecycle()?.value ?: com.noop.ble.GarminConnectReadout()
+    val openChannels = s?.openLiveChannels?.collectAsStateWithLifecycle()?.value ?: emptySet()
+    val summary = s?.lastSyncSummary?.collectAsStateWithLifecycle()?.value
+    var radioLine by remember { mutableStateOf("") }
+    LaunchedEffect(s) {
+        while (true) {
+            radioLine = s?.telemetrySummary() ?: ""
+            kotlinx.coroutines.delay(1_000)
+        }
+    }
+    var ingested by remember { mutableStateOf<Set<com.noop.garmin.GarminSyncFileKey>>(emptySet()) }
+    LaunchedEffect(deviceId, summary) { ingested = vm.garminIngestedKeys(deviceId) }
+    var realtimeCapture by remember { mutableStateOf(NoopPrefs.garminRealtimeCapture(context)) }
+    val none = uiString(R.string.l10n_test_centre_screen_none_71f8e797)
+
+    NoopCard(padding = 20.dp, tint = Palette.accent) {
+        Column(verticalArrangement = Arrangement.spacedBy(Metrics.space12)) {
+            Overline(uiString(R.string.l10n_test_centre_screen_garmin_b5ff8d93))
+            Text(uiString(R.string.l10n_test_centre_screen_connection_6512ee15), style = NoopType.headline, color = Palette.textPrimary)
+            Column(verticalArrangement = Arrangement.spacedBy(Metrics.space4)) {
+                GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_link_d0517071), phase.name.lowercase())
+                GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_watch_d91ebf58), watch?.let { GarminWatchUi.watchLine(it) } ?: "-")
+                GarminReadoutRow(uiString(R.string.l10n_add_device_wizard_firmware_0dc5f6c7), watch?.let { GarminWatchUi.firmware(it.softwareVersion) } ?: "-")
+                GarminReadoutRow(uiString(R.string.l10n_add_device_wizard_protocol_1ed77c3f), GarminWatchUi.testCentreProtocolLine(transport, watch))
+                GarminReadoutRow("MTU", readout.mtu?.toString() ?: "-")
+                GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_handshake_76ccff91), readout.handshakeMs?.let { "$it ms" } ?: "-")
+                GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_sessions_e11e37a9), readout.connects.toString())
+                GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_last_failure_d11afcf4), readout.lastFailure ?: none)
+            }
+            Text(uiString(R.string.l10n_test_centre_screen_radio_counters_c2ee1487), style = NoopType.headline, color = Palette.textPrimary)
+            Text(radioLine.ifEmpty { "-" }, style = NoopType.footnote, color = Palette.textSecondary)
+            GarminReadoutRow(uiString(R.string.l10n_test_centre_screen_open_channels_63645307), GarminWatchUi.openChannelIds(openChannels) ?: none)
+            // Garmin 6/10: capture mode for channels 8 / 10 / 13. The readings are candidates only.
+            ToggleRowTC(
+                title = uiString(R.string.l10n_test_centre_screen_garmin_realtime_capture_a3a664b8),
+                description = uiString(R.string.l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f),
+                checked = realtimeCapture,
+                onCheckedChange = { realtimeCapture = it; vm.setGarminRealtimeCapture(it) },
+            )
+            Text(uiString(R.string.l10n_test_centre_screen_sync_files_2e3c4e67), style = NoopType.headline, color = Palette.textPrimary)
+            summary?.let { sum ->
+                Text(
+                    uiString(
+                        R.string.l10n_test_centre_screen_on_the_watch_fit_files_in_20f67e86,
+                        sum.wanted, GarminWatchUi.inNoopCount(sum.onWatch, ingested),
+                    ),
+                    style = NoopType.subhead,
+                    color = Palette.textSecondary,
+                )
+                val ingestedLabel = uiString(R.string.l10n_test_centre_screen_ingested_f72a79a5)
+                val pendingLabel = uiString(R.string.l10n_test_centre_screen_not_yet_3a230353)
+                Column(verticalArrangement = Arrangement.spacedBy(Metrics.space2)) {
+                    GarminWatchUi.syncFileRows(sum.onWatch, ingested).forEach { (key, stored) ->
+                        GarminReadoutRow(key.label, if (stored) ingestedLabel else pendingLabel)
+                    }
+                }
+            }
+            Text(
+                uiString(R.string.l10n_test_centre_screen_ingested_in_noop_files_290626fd, ingested.size),
+                style = NoopType.subhead,
+                color = Palette.textSecondary,
+            )
+            Text(
+                uiString(R.string.l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1),
+                style = NoopType.footnote,
+                color = Palette.textTertiary,
+            )
+        }
+    }
+}
+
+/** One "label  value" readout line in the Garmin section. */
+@Composable
+private fun GarminReadoutRow(name: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Metrics.space12)) {
+        Text(name, style = NoopType.caption, color = Palette.textTertiary)
+        Spacer(Modifier.weight(1f))
+        Text(value, style = NoopType.caption, color = Palette.textPrimary)
+    }
+}
+
 @Composable
 private fun DiagnosticToolsCard(vm: AppViewModel) {
     val context = LocalContext.current
@@ -818,16 +921,12 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
     var polarDebugLogging by remember { mutableStateOf(NoopPrefs.polarDebugLogging(context)) }
     // #1284 residual 3: the experimental Oura onset-keying toggle, shown only when an Oura ring is paired.
     var ouraPaired by remember { mutableStateOf(false) }
-    // Garmin 6/10: raw capture of the undecoded realtime channels, only when a Garmin watch is paired over GFDI.
-    var garminPaired by remember { mutableStateOf(false) }
-    var garminRealtimeCapture by remember { mutableStateOf(NoopPrefs.garminRealtimeCapture(context)) }
     var ouraOnsetKeying by remember { mutableStateOf(NoopPrefs.ouraOnsetKeying(context)) }
     var ouraNotifyMaskFull by remember { mutableStateOf(NoopPrefs.ouraNotifyMaskFull(context)) }
     LaunchedEffect(Unit) {
         val paired = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
         polarIdentity = PolarModel.debugIdentification(paired.firstOrNull { PolarModel.isPolar(it.model) }?.model)
         ouraPaired = paired.any { it.brand.equals("Oura", ignoreCase = true) }
-        garminPaired = paired.any { it.sourceKind == com.noop.data.SourceKind.garmin.name }
     }
     var detailedCapture by remember { mutableStateOf(NoopPrefs.detailedCapture(context)) }
     var captureShareBusy by remember { mutableStateOf(false) }
@@ -903,15 +1002,6 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
                         "so a Polar bug report shows the model NOOP resolved your strap to.",
                     checked = polarDebugLogging,
                     onCheckedChange = { polarDebugLogging = it; vm.setPolarDebugLogging(it) },
-                )
-            }
-            // Garmin 6/10: capture mode for channels 8 / 10 / 13. The readings are candidates only.
-            if (garminPaired) {
-                ToggleRowTC(
-                    title = uiString(R.string.l10n_test_centre_screen_garmin_realtime_capture_a3a664b8),
-                    description = uiString(R.string.l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f),
-                    checked = garminRealtimeCapture,
-                    onCheckedChange = { garminRealtimeCapture = it; vm.setGarminRealtimeCapture(it) },
                 )
             }
             // #1284 residual 3: experimental Oura 0x49-onset keying, only when an Oura ring is paired.

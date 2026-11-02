@@ -134,6 +134,13 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
         viewModel.requestRealtimeHr()
         onDispose { viewModel.releaseRealtimeHr() }
     }
+    // A Garmin watch opens its Body Battery / respiration / steps / floors channels only while this screen is up.
+    DisposableEffect(Unit) {
+        viewModel.setGarminOnScreenChannels(GarminWatchUi.liveScreenChannels)
+        onDispose { viewModel.setGarminOnScreenChannels(emptySet()) }
+    }
+    val garminSource by viewModel.garminSource.collectAsStateWithLifecycle()
+    val garminSpo2Requested by viewModel.garminSpO2Requested.collectAsStateWithLifecycle()
     LaunchedEffect(live.bonded) {
         if (live.bonded) viewModel.getBattery()
     }
@@ -362,6 +369,17 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
         item {
         SignalTrustRail(live = live, bpm = bpm, activeConnection = activeConnection,
             activeIsWhoop = activeIsWhoop, ouraBatteryPct = ouraBatteryPct)
+        }
+
+        // From the active Garmin watch: its own live channels beyond HR and R-R.
+        if (garminSource != null) {
+            item {
+            GarminLiveSection(
+                snapshot = live.garminLive,
+                spo2Requested = garminSpo2Requested,
+                onMeasureSpo2 = { viewModel.requestGarminSpO2() },
+            )
+            }
         }
 
         // Max HR + the top-zone entry threshold (read-only; manage coaching in Automations).

@@ -352,6 +352,10 @@ fun DevicesScreen(
                     TestCentre.from(context).active(TestDomain.CONNECTION)
                 ) { { deviceConfigProbeTarget = device } } else null,
             )
+            // The Garmin watch panel sits under the active Garmin watch's card.
+            if (device.status == DeviceStatus.active.name && isGarminWatch(device)) {
+                GarminWatchPanel(viewModel, modifier = Modifier.padding(top = Metrics.gap))
+            }
         }
 
         // Prominent "+ Add a device" button.
@@ -1738,6 +1742,7 @@ private fun deviceIcon(device: PairedDeviceRow): ImageVector = when {
     device.sourceKind == SourceKind.ftms.name -> Icons.AutoMirrored.Filled.DirectionsRun
     device.sourceKind == SourceKind.huami.name -> Icons.Filled.GraphicEq
     device.sourceKind == SourceKind.oura.name -> Icons.Filled.Circle
+    isGarminWatch(device) -> Icons.Filled.Watch
     SourceCoordinator.isWhoop(device) -> Icons.Filled.Watch
     else -> Icons.Filled.FavoriteBorder
 }
@@ -1756,7 +1761,19 @@ private data class DeviceCapabilityProfile(
     val footnote: String,      // one short honest caveat line ("*" estimates + the SpO₂/steps notes)
 )
 
+/** A Garmin watch paired over its own GFDI protocol (not one added through Broadcast Heart Rate). */
+internal fun isGarminWatch(device: PairedDeviceRow): Boolean = device.sourceKind == SourceKind.garmin.name
+
 private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
+    // EXPERIMENTAL Garmin watch over GFDI: history files + live channels, read-only.
+    if (isGarminWatch(device)) {
+        return DeviceCapabilityProfile(
+            displayModel = uiString(R.string.l10n_devices_screen_experimental_4340debb, device.model),
+            captures = uiString(R.string.l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee),
+            powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896),
+            footnote = uiString(R.string.l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff),
+        )
+    }
     // FTMS gym machine: a live machine + (when reported) HR session, recorded via the existing
     // live-workout path. Effort-scored only when the machine actually reports heart rate.
     if (device.sourceKind == SourceKind.ftms.name) {

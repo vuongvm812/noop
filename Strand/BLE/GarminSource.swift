@@ -15,6 +15,17 @@ enum GarminLiveEvent: Equatable {
     case linkDown
 }
 
+/// What the Test Centre shows about the current (or last) connect. Kotlin twin: `GarminConnectReadout`.
+struct GarminConnectReadout: Equatable {
+    var mtu: Int?
+    /// Session start to the handshake's `ready`.
+    var handshakeMs: Int?
+    /// GFDI sessions started by this source (the first connect plus every reconnect).
+    var sessions = 0
+    /// The last session failure, connect failure or subscribe failure, as logged.
+    var lastFailure: String?
+}
+
 /// EXPERIMENTAL Garmin watch source over the watch's own GFDI protocol (the `GarminProtocol` package).
 ///
 /// Holds one stable, low-power session: connect by stored identifier, pick the transport the watch offers
@@ -52,6 +63,9 @@ final class GarminSource: NSObject, ObservableObject {
         let id: UUID
         let name: String
         let rssi: Int
+        /// Already connected to this device by the OS (a bonded watch often stops advertising), so it was
+        /// found through the system's connected list rather than a scan; `rssi` is then not a reading.
+        var systemConnected = false
     }
 
     @Published private(set) var linkPhase: LinkPhase = .disconnected
@@ -61,6 +75,8 @@ final class GarminSource: NSObject, ObservableObject {
     /// Set when the watch offers no transport NOOP speaks. The source stops and does not retry.
     @Published private(set) var unsupportedReason: String?
     @Published private(set) var discovered: [DiscoveredWatch] = []
+    /// A discovery scan is running.
+    @Published private(set) var scanning = false
     /// A history sync is running.
     @Published private(set) var syncing = false
     @Published private(set) var lastSyncSummary: GarminSyncSummary?
@@ -68,6 +84,10 @@ final class GarminSource: NSObject, ObservableObject {
     var transferOffset: Int? { session?.syncResumePoint.map { Int($0.offset) } }
     /// Live channels whose handle is open on the watch right now (the watch confirmed the registration).
     @Published private(set) var openLiveChannels: Set<GarminLiveChannel> = []
+    /// When the last completed sync finished (unix seconds), from the persisted per-device value.
+    @Published private(set) var lastSyncAt: TimeInterval?
+    /// Facts about the current (or last) connect, for the Test Centre readout.
+    @Published private(set) var connectReadout = GarminConnectReadout()
 
     private let deviceId: String
     private let isFirstPairing: () -> Bool
@@ -91,6 +111,9 @@ final class GarminSource: NSObject, ObservableObject {
     /// foreground, the policy opens HR + R-R + calories / intensity / stress and every 8 / 10 / 13 payload
     /// is logged raw.
     private let undecodedCapture: () -> Bool
+    /// The Add Device wizard's scanner: lists watches into `discovered` and never connects.
+    private let discoveryOnly: Bool
+    private var sessionStartedMs: Int64?
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -157,6 +180,7 @@ final class GarminSource: NSObject, ObservableObject {
          syncFlow: @escaping (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(productNumber: $0?.productNumber) },
          requestsCompression: Bool = GarminRadioPolicy.requestsCompression,
          undecodedCapture: @escaping () -> Bool = { false },
+         discoveryOnly: Bool = false,
          restoresState: Bool = true) {
         self.deviceId = deviceId
         self.isFirstPairing = isFirstPairing
@@ -174,11 +198,13 @@ final class GarminSource: NSObject, ObservableObject {
         self.syncFlow = syncFlow
         self.requestsCompression = requestsCompression
         self.undecodedCapture = undecodedCapture
+        self.discoveryOnly = discoveryOnly
         super.init()
+        lastSyncAt = UserDefaults.standard.object(forKey: lastSyncAtKey) as? Double
         #if os(iOS)
         // iOS state restoration: CoreBluetooth relaunches the app into the background for this central
         // after a suspend-then-jettison, so the watch session resumes without the user opening NOOP.
-        if restoresState {
+        if restoresState && !discoveryOnly {
             central = CBCentralManager(delegate: self, queue: nil,
                                        options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreID])
         } else {
@@ -202,11 +228,39 @@ final class GarminSource: NSObject, ObservableObject {
         wantsScan = true
         guard central.state == .poweredOn else { return }
         discovered = []
+        scanning = true
+        if discoveryOnly { listSystemConnectedWatches() }
         say(true, "scanning for a Garmin watch (company id 0x0087 or a Garmin name)")
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
 
+    /// Stop a discovery scan (the wizard's pick step). Leaves any link alone.
+    func stopScan() {
+        wantsScan = false
+        scanning = false
+        if central.isScanning { central.stopScan() }
+    }
+
+    /// A watch bonded to this device may be held connected by the OS and stop advertising. List the ones
+    /// the system already has connected with a Garmin GFDI service, so the wizard can still offer them.
+    private func listSystemConnectedWatches() {
+        let services = GarminTransportSelection.servicesOfInterest.map { CBUUID(string: $0) }
+        for p in central.retrieveConnectedPeripherals(withServices: services)
+        where !discovered.contains(where: { $0.id == p.identifier }) {
+            let name = p.name ?? ""
+            discovered.append(DiscoveredWatch(id: p.identifier, name: name.isEmpty ? "Garmin watch" : name,
+                                              rssi: 0, systemConnected: true))
+            say(true, "found \(name.isEmpty ? "a Garmin watch" : name) \(p.identifier) already connected to this device")
+        }
+    }
+
+    /// The radio counters line (connected time, bytes, syncs, channel opens) for the Test Centre.
+    func telemetrySummary() -> String {
+        telemetry.summary(now: Date().timeIntervalSince1970)
+    }
+
     func connect(_ id: UUID) {
+        guard !discoveryOnly else { return }
         intentionalDisconnect = false
         reconnectID = id
         unsupportedReason = nil
@@ -228,6 +282,7 @@ final class GarminSource: NSObject, ObservableObject {
         reconnectID = nil
         pendingConnectID = nil
         wantsScan = false
+        scanning = false
         reconnectTimer?.cancel()
         deadlineTimer?.cancel()
         periodicTimer?.cancel()
@@ -293,11 +348,19 @@ final class GarminSource: NSObject, ObservableObject {
         telemetry.syncSessionCompleted()
         let defaults = UserDefaults.standard
         if case .completed = summary.outcome {
-            defaults.set(Date().timeIntervalSince1970, forKey: lastSyncAtKey)
+            let now = Date().timeIntervalSince1970
+            defaults.set(now, forKey: lastSyncAtKey)
+            lastSyncAt = now
             defaults.set(summary.isEmpty ? defaults.integer(forKey: emptyStreakKey) + 1 : 0, forKey: emptyStreakKey)
         }
         if let held = session?.syncResumePoint { heldResume = held }
-        onSyncFinished(summary)
+        // Reported once every downloaded file has been ingested (files are stored one at a time, after
+        // the transfer), so a caller that re-scores on it sees the whole sync.
+        let tail = ingestTail
+        Task { @MainActor [weak self] in
+            await tail?.value
+            self?.onSyncFinished(summary)
+        }
         schedulePeriodicSync()
     }
 
@@ -419,10 +482,15 @@ final class GarminSource: NSObject, ObservableObject {
                 case .ready:
                     linkPhase = .ready
                     failedConnects = 0
+                    if let started = sessionStartedMs {
+                        connectReadout.handshakeMs = Int(clock().nowMs - started)
+                        sessionStartedMs = nil
+                    }
                     requestSync(.connect)
                 case let .failed(reason):
                     // Drop the link; the reconnect path tries again with backoff.
                     say(true, "dropping the link after a session failure (\(reason))")
+                    connectReadout.lastFailure = reason
                     if let p = peripheral { central.cancelPeripheralConnection(p) }
                 case .closingAll, .registering, .awaitingDeviceInformation, .handshaking:
                     linkPhase = .handshaking
@@ -679,7 +747,7 @@ extension GarminSource: CBCentralManagerDelegate {
                 say(true, "found \(name.isEmpty ? "a Garmin watch" : name) \(peripheral.identifier) rssi=\(RSSI.intValue)")
             }
             // The coordinator's scan fallback (no stored identifier): take the first watch found.
-            if reconnectID == nil, wantsScan {
+            if reconnectID == nil, wantsScan, !discoveryOnly {
                 central.stopScan()
                 wantsScan = false
                 reconnectID = peripheral.identifier
@@ -703,6 +771,7 @@ extension GarminSource: CBCentralManagerDelegate {
         let message = error?.localizedDescription ?? "unknown"
         MainActor.assumeIsolated {
             say(true, "connect failed: \(message)")
+            connectReadout.lastFailure = message
             linkPhase = .disconnected
             scheduleReconnect()
         }
@@ -782,6 +851,7 @@ extension GarminSource: CBPeripheralDelegate {
             if let message {
                 // The GFDI channel needs an encrypted, bonded link; the OS shows its pairing prompt here.
                 say(true, "subscribe failed (\(message)); the watch must be bonded (OS pairing with the watch's PIN)")
+                connectReadout.lastFailure = message
                 central.cancelPeripheralConnection(peripheral)
                 return
             }
@@ -798,6 +868,10 @@ extension GarminSource: CBPeripheralDelegate {
             outputs += s.setLiveChannels(wantedLive, c)
             session = s
             linkPhase = .handshaking
+            sessionStartedMs = c.nowMs
+            connectReadout.mtu = mtu
+            connectReadout.sessions += 1
+            connectReadout.handshakeMs = nil
             perform(outputs)
         }
     }

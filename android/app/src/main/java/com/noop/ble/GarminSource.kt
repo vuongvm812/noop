@@ -44,9 +44,11 @@ import com.noop.garmin.GarminSessionOutput
 import com.noop.garmin.GarminService
 import com.noop.garmin.GarminSessionPhase
 import com.noop.garmin.GarminTransport
+import com.noop.garmin.GarminTransportKind
 import com.noop.garmin.GarminTransportSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -116,11 +118,14 @@ class GarminSource(
     /** The preferences holding that toggle and its key, so a change applies to the open session at once. */
     private val capturePrefs: SharedPreferences? = null,
     private val captureKey: String? = null,
+    /** Wizard scanner: [scan] only lists watches into [discovered] and never attaches. */
+    private val discoveryOnly: Boolean = false,
 ) : LiveHrSource {
 
     enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
 
-    data class DiscoveredWatch(val address: String, val name: String, val rssi: Int)
+    /** [connected]: listed from the OS's bonded / connected devices rather than an advertisement. */
+    data class DiscoveredWatch(val address: String, val name: String, val rssi: Int, val connected: Boolean = false)
 
     private val _linkPhase = MutableStateFlow(LinkPhase.DISCONNECTED)
     val linkPhase: StateFlow<LinkPhase> = _linkPhase.asStateFlow()
@@ -141,6 +146,17 @@ class GarminSource(
     /** Live channels whose handle is open on the watch right now (the watch confirmed the registration). */
     private val _openLiveChannels = MutableStateFlow<Set<GarminLiveChannel>>(emptySet())
     val openLiveChannels: StateFlow<Set<GarminLiveChannel>> = _openLiveChannels.asStateFlow()
+    /** The watch's DeviceInformation once the handshake delivered it. */
+    private val _watch = MutableStateFlow<GarminDeviceInformation?>(null)
+    val watch: StateFlow<GarminDeviceInformation?> = _watch.asStateFlow()
+    /** The GFDI transport chosen for the current link. */
+    private val _transportKind = MutableStateFlow<GarminTransportKind?>(null)
+    val transportKind: StateFlow<GarminTransportKind?> = _transportKind.asStateFlow()
+    /** Unix seconds of the last completed sync (persisted per device). */
+    private val _lastSyncAt = MutableStateFlow<Long?>(null)
+    val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
+    private val _connectReadout = MutableStateFlow(GarminConnectReadout())
+    val connectReadout: StateFlow<GarminConnectReadout> = _connectReadout.asStateFlow()
 
     private val appContext = context.applicationContext
     private val adapter: BluetoothAdapter? =
@@ -185,10 +201,13 @@ class GarminSource(
     // History sync state. lastSyncAt / emptyStreak persist per device so a relaunch keeps the floor.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val ingestLock = Mutex()
+    /** The last queued ingest; the lock is fair, so it finishes after every earlier one. */
+    private var ingestTail: Job? = null
     private val prefs = appContext.getSharedPreferences("noop_garmin_sync", Context.MODE_PRIVATE)
     private val lastSyncAtKey = "lastAt.$deviceId"
     private val emptyStreakKey = "emptyStreak.$deviceId"
-    private var watch: GarminDeviceInformation? = null
+    private val watchInfo: GarminDeviceInformation? get() = _watch.value
+    private var handshakeStartedMs: Long? = null
     private var syncPreparing = false
     private var heldResume: GarminSyncResume? = null
     private val periodicSync = Runnable { onMain { requestSync(GarminSyncTrigger.PERIODIC) } }
@@ -213,7 +232,7 @@ class GarminSource(
             say(true, "scan deferred until Bluetooth is on")
             return
         }
-        _discovered.value = emptyList()
+        _discovered.value = if (discoveryOnly) systemWatches() else emptyList()
         say(true, "scanning for a Garmin watch (company id 0x0087 or a Garmin name)")
         runCatching { sc.startScan(null, ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback) }
     }
@@ -283,7 +302,7 @@ class GarminSource(
             return
         }
         syncPreparing = true
-        val flow = syncFlow(watch)
+        val flow = syncFlow(watchInfo)
         scope.launch {
             val synced = runCatching { loadSynced() }.getOrDefault(emptySet())
             syncPreparing = false
@@ -306,10 +325,17 @@ class GarminSource(
         telemetry.syncSessionCompleted()
         if (summary.outcome is GarminSyncSummary.Outcome.Completed) {
             val streak = if (summary.isEmpty) prefs.getInt(emptyStreakKey, 0) + 1 else 0
-            prefs.edit().putLong(lastSyncAtKey, System.currentTimeMillis() / 1000).putInt(emptyStreakKey, streak).apply()
+            val at = System.currentTimeMillis() / 1000
+            prefs.edit().putLong(lastSyncAtKey, at).putInt(emptyStreakKey, streak).apply()
+            _lastSyncAt.value = at
         }
         session?.syncResumePoint?.let { heldResume = it }
-        onSyncFinished(summary)
+        // Reported once every file of this sync is stored, so a re-analysis sees all of them.
+        val tail = ingestTail
+        scope.launch {
+            tail?.join()
+            onSyncFinished(summary)
+        }
         schedulePeriodicSync()
     }
 
@@ -323,7 +349,7 @@ class GarminSource(
 
     /** Files are stored one at a time, in arrival order. */
     private fun enqueueIngest(file: GarminDownloadedFile) {
-        scope.launch {
+        ingestTail = scope.launch {
             ingestLock.withLock {
                 val stored = runCatching { ingest(file) }.getOrDefault(false)
                 say(!stored, if (stored) "ingested ${file.key.label}" else "ingest failed for ${file.key.label}; it stays new")
@@ -397,6 +423,7 @@ class GarminSource(
             }
         }.getOrElse {
             say(true, "connectGatt failed (${it.javaClass.simpleName})")
+            noteFailure("connectGatt failed (${it.javaClass.simpleName})")
             scheduleReconnect()
             null
         }
@@ -427,11 +454,16 @@ class GarminSource(
                 is GarminSessionOutput.Phase -> when (val p = o.phase) {
                     is GarminSessionPhase.Ready -> {
                         _linkPhase.value = LinkPhase.READY
+                        handshakeStartedMs?.let { started ->
+                            _connectReadout.value = _connectReadout.value.copy(handshakeMs = (SystemClock.elapsedRealtime() - started).toInt())
+                        }
+                        handshakeStartedMs = null
                         failedConnects = 0
                         setPriority(GarminRadioPolicy.connectionPriority(GarminLinkActivity.IDLE))
                         requestSync(GarminSyncTrigger.CONNECT)
                     }
                     is GarminSessionPhase.Failed -> {
+                        noteFailure(p.reason)
                         say(true, "dropping the link after a session failure (${p.reason})")
                         gatt?.disconnect()
                     }
@@ -443,7 +475,7 @@ class GarminSource(
                     onBattery(o.percent)
                 }
                 is GarminSessionOutput.Watch -> {
-                    watch = o.info
+                    _watch.value = o.info
                     onWatch(o.info)
                 }
                 is GarminSessionOutput.PairingEventsSent -> markPaired()
@@ -495,7 +527,7 @@ class GarminSource(
     private fun channelAnswered(service: GarminService, answer: String) {
         if (service !in GarminRealtimeCapture.undecodedChannels) return
         channelAnswers[service.raw] = answer
-        val info = watch ?: return
+        val info = watchInfo ?: return
         if (availabilityLogged || GarminRealtimeCapture.undecodedChannels.any { channelAnswers[it.raw] == null }) return
         availabilityLogged = true
         say(true, GarminRealtimeCapture.availabilityLine(info.bluetoothName, info.softwareVersion, channelAnswers))
@@ -580,8 +612,40 @@ class GarminSource(
         handler.postDelayed(reconnectRunnable, delay)
     }
 
-    private fun stopScan() {
+    /** Stop a running scan (the wizard leaving its pick list). The link, if any, is untouched. */
+    fun stopScan() {
+        wantsScan = false
+        haltScan()
+    }
+
+    private fun haltScan() {
         if (adapter?.isEnabled == true) runCatching { adapter?.bluetoothLeScanner?.stopScan(scanCallback) }
+    }
+
+    /**
+     * Garmin watches the OS already knows (bonded, or connected over GATT by any app). A bonded watch may not
+     * advertise, so the wizard lists these too. Discovery only: nothing here connects.
+     */
+    private fun systemWatches(): List<DiscoveredWatch> {
+        val manager = appContext.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val connected = runCatching { manager?.getConnectedDevices(BluetoothProfile.GATT).orEmpty() }.getOrDefault(emptyList())
+        val bonded = runCatching { adapter?.bondedDevices.orEmpty().toList() }.getOrDefault(emptyList())
+        val out = LinkedHashMap<String, DiscoveredWatch>()
+        for (device in connected + bonded) {
+            val name = runCatching { device.name }.getOrNull() ?: continue
+            if (ExperimentalBrand.recognise(name) != ExperimentalBrand.GARMIN) continue
+            if (runCatching { device.type }.getOrNull() == BluetoothDevice.DEVICE_TYPE_CLASSIC) continue
+            out.getOrPut(device.address) { DiscoveredWatch(device.address, name, SYSTEM_WATCH_RSSI, connected = true) }
+        }
+        if (out.isNotEmpty()) say(true, "${out.size} Garmin watch(es) already known to this device")
+        return out.values.toList()
+    }
+
+    /** Radio counters for the Test Centre (one line, refreshed by the caller). */
+    fun telemetrySummary(): String = telemetry.summary(System.currentTimeMillis() / 1000.0)
+
+    private fun noteFailure(text: String) {
+        _connectReadout.value = _connectReadout.value.copy(lastFailure = text)
     }
 
     private fun say(rare: Boolean, text: String) {
@@ -604,7 +668,7 @@ class GarminSource(
         if (isForeground == foreground) return
         foreground = isForeground
         if (!isForeground && wantsScan) {
-            stopScan()
+            haltScan()
             say(true, "scan stopped - the app went to the background")
         }
         session?.let { perform(it.setForeground(isForeground, clock())) }
@@ -653,6 +717,7 @@ class GarminSource(
 
     // Registered after both callbacks above exist (Kotlin initialises properties in declaration order).
     init {
+        if (prefs.contains(lastSyncAtKey)) _lastSyncAt.value = prefs.getLong(lastSyncAtKey, 0)
         (appContext as? Application)?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
         runCatching { appContext.registerReceiver(adapterReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)) }
         capturePrefs?.registerOnSharedPreferenceChangeListener(captureListener)
@@ -675,7 +740,7 @@ class GarminSource(
                     say(true, "found ${if (name.isBlank()) "a Garmin watch" else logSafeDeviceName(name)} rssi=${result.rssi}")
                 }
                 // The coordinator's scan fallback (no stored address): take the first watch found.
-                if (targetAddress == null && wantsScan) {
+                if (!discoveryOnly && targetAddress == null && wantsScan) {
                     wantsScan = false
                     stopScan()
                     targetAddress = address
@@ -717,6 +782,7 @@ class GarminSource(
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) = onMain {
             if (g !== gatt) return@onMain
             mtu = if (status == BluetoothGatt.GATT_SUCCESS) newMtu else 23
+            _connectReadout.value = _connectReadout.value.copy(mtu = mtu)
             say(false, "MTU $mtu (status=$status); discovering services")
             g.discoverServices()
         }
@@ -728,6 +794,7 @@ class GarminSource(
             if (choice == null) {
                 val found = GarminTransportSelection.describe(services)
                 _unsupportedReason.value = "unsupported watch protocol"
+                noteFailure("unsupported watch protocol")
                 _linkPhase.value = LinkPhase.UNSUPPORTED
                 say(true, "unsupported watch protocol (no V2/V1/V0 GFDI characteristics; found ${found.ifEmpty { "none" }}); " +
                     "disconnecting - Broadcast Heart Rate remains available for this watch")
@@ -739,12 +806,14 @@ class GarminSource(
             notifyChar = service?.getCharacteristic(UUID.fromString(choice.notify))
             writeChar = service?.getCharacteristic(UUID.fromString(choice.write))
             transport = choice
+            _transportKind.value = choice.kind
             say(true, "protocol variant ${choice.kind.label} (notify ${choice.notify.take(8)}, write ${choice.write.take(8)})")
             val n = notifyChar ?: return@onMain
             _linkPhase.value = LinkPhase.SUBSCRIBING
             g.setCharacteristicNotification(n, true)
             val cccd = n.getDescriptor(CCCD) ?: run {
                 say(true, "notify characteristic has no CCCD; disconnecting")
+                noteFailure("notify characteristic has no CCCD")
                 g.disconnect()
                 return@onMain
             }
@@ -761,6 +830,7 @@ class GarminSource(
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 // The GFDI channel needs an encrypted, bonded link; Android raises its pairing prompt here.
                 say(true, "subscribe failed (status=$status); the watch must be bonded (OS pairing with the watch's PIN)")
+                noteFailure("subscribe failed (status=$status)")
                 g.disconnect()
                 return@onMain
             }
@@ -772,6 +842,8 @@ class GarminSource(
             )
             val s = GarminSession(config, kind, mtu)
             session = s
+            handshakeStartedMs = SystemClock.elapsedRealtime()
+            _connectReadout.value = _connectReadout.value.copy(connects = _connectReadout.value.connects + 1)
             _linkPhase.value = LinkPhase.HANDSHAKING
             val c = clock()
             val outputs = s.start(c).toMutableList()
@@ -812,5 +884,7 @@ class GarminSource(
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         /** The first sync of a watch reaches back this far (Swift: `historyLookbackSeconds`). */
         const val HISTORY_LOOKBACK_SECONDS = 14L * 86_400
+        /** Signal level shown for a watch listed from the OS rather than a scan (no RSSI available). */
+        const val SYSTEM_WATCH_RSSI = -60
     }
 }
