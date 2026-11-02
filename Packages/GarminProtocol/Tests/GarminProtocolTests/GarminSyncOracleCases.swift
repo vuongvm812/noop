@@ -35,6 +35,9 @@ final class OracleFakeWatch {
     var compressedFiles: [UInt16: [UInt8]] = [:]
     var compressedPieceSize = 60
     var refuseDirectory = false
+    /// After this chunk (counted over the watch's life), also send the watch's answer refusing GFDI to
+    /// another app on the phone (client 7): NOOP then yields GFDI once its sync ends.
+    var otherAppRefusedAfterChunk: Int?
     /// Ignore DOWNLOAD_REQUEST entirely (the stall-timeout path).
     var silent = false
     /// FileAccess pages; every page but the last carries a session id.
@@ -195,7 +198,10 @@ final class OracleFakeWatch {
         var crc = GarminCRC.crc16(chunk, seed: GarminCRC.crc16(Array(data[0..<offset])))
         if corruptChunks.remove(chunksSent) != nil { crc ^= 0xFFFF }
         chunksSent += 1
-        return [gfdi(5004, [0] + oracleLE16(Int(crc)) + oracleLE32(offset) + chunk)]
+        let reply = [gfdi(5004, [0] + oracleLE16(Int(crc)) + oracleLE32(offset) + chunk)]
+        guard otherAppRefusedAfterChunk == chunksSent else { return reply }
+        seen.append("other app refused gfdi")
+        return reply + [oracleOtherControl(7, 1, oracleLE16(1) + [3, 0, 0])]
     }
 
     private func fileAccess(_ payload: [UInt8]) -> [[UInt8]] {
@@ -532,6 +538,14 @@ func garminSyncOracleLines() -> [String] {
     out += oracleRunSync("legacy-continue-restarted", m, [
         .connect,
         .sync(GarminSyncRequest(synced: synced, resume: partialM, notBeforeUnix: oracleNotBefore)),
+    ]).0
+
+    // I: another app is refused GFDI mid-sync: NOOP finishes the sync, then closes its own GFDI handle.
+    let y = oracleStandardWatch()
+    y.otherAppRefusedAfterChunk = 2
+    out += oracleRunSync("yield-after-sync", y, [
+        .connect,
+        .sync(GarminSyncRequest(synced: synced, notBeforeUnix: oracleNotBefore)),
     ]).0
 
     // H: a sync before the handshake is refused.

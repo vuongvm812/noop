@@ -32,6 +32,7 @@ ANDROID_HOME_FILES = {
     "android/app/src/main/java/com/noop/ui/TodayScoring.kt",
     "android/app/src/main/java/com/noop/ui/AutoWorkoutNudge.kt",
     "android/app/src/main/java/com/noop/ui/JournalReminder.kt",
+    "android/app/src/main/java/com/noop/ui/SupplementsToday.kt",
     "android/app/src/main/java/com/noop/ui/CycleTrackerDialog.kt",
     "android/app/src/main/java/com/noop/ui/KeyMetricPrefs.kt",
     "android/app/src/main/java/com/noop/ui/DashboardCards.kt",
@@ -52,6 +53,7 @@ APPLE_HOME_FILES = {
     "StrandiOS/System/HomeScreenQuickActions.swift",
     "Strand/Screens/AutoWorkoutCard.swift",
     "Strand/Screens/JournalReminderCard.swift",
+    "Strand/Screens/SupplementsTodayCard.swift",
     "Strand/Screens/SkinTempCardsView.swift",
     "Strand/Screens/HealthAlertBanner.swift",
 }
@@ -119,7 +121,7 @@ ANDROID_TODAY_RUNTIME_COPY = {
 ANDROID_HELPER_NON_UI_LITERALS = {
     # TodayLayoutPrefs stable backup/persistence wire values.
     "hero", "liveSession", "synthesis", "keyMetrics", "workouts", "heartRate",
-    "recoveryVitals", "yourCards", "menstrualCycle", "journal", "addedCards",
+    "recoveryVitals", "yourCards", "menstrualCycle", "journal", "supplements", "addedCards",
     "today.sectionOrder", "today.hiddenSections",
     # TodayScoring parse/default formats.
     "9999-12-31", "d MMM", "24h", "12h", "6h", "3h", "1h",

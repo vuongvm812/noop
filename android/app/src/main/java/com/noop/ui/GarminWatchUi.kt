@@ -39,11 +39,14 @@ internal object GarminWatchUi {
         phase == LinkPhase.READY && syncing -> R.string.l10n_garmin_watch_panel_syncing_history_03ec192e
         phase == LinkPhase.READY -> R.string.l10n_garmin_watch_panel_connected_c2f9b7b4
         phase == LinkPhase.DISCONNECTED -> R.string.l10n_garmin_watch_panel_not_connected_8b02f3de
+        phase == LinkPhase.BUSY -> R.string.l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45
         else -> R.string.l10n_garmin_watch_panel_connecting_fd3e7969
     }
 
-    /** "Sync now" is offered only on a ready link with no sync running. */
-    fun canSyncNow(phase: LinkPhase, syncing: Boolean): Boolean = phase == LinkPhase.READY && !syncing
+    /** "Sync now" is offered on a ready link with no sync running, and while another app holds the watch
+     *  (there it asks the watch again). */
+    fun canSyncNow(phase: LinkPhase, syncing: Boolean): Boolean =
+        (phase == LinkPhase.READY || phase == LinkPhase.BUSY) && !syncing
 
     /** The wizard Connect step's progress line, or null once the link is ready or unsupported. */
     @StringRes
@@ -51,6 +54,7 @@ internal object GarminWatchUi {
         LinkPhase.DISCONNECTED, LinkPhase.CONNECTING -> R.string.l10n_add_device_wizard_connecting_to_the_watch_7acf3bc9
         LinkPhase.DISCOVERING, LinkPhase.SUBSCRIBING -> R.string.l10n_add_device_wizard_checking_which_protocol_the_watch_speaks_9a308e09
         LinkPhase.HANDSHAKING -> R.string.l10n_add_device_wizard_saying_hello_to_the_watch_4e06cb80
+        LinkPhase.BUSY -> R.string.l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45
         LinkPhase.READY, LinkPhase.UNSUPPORTED -> null
     }
 

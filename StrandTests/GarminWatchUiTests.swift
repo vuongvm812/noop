@@ -34,9 +34,19 @@ final class GarminWatchUiTests: XCTestCase {
         XCTAssertEqual(GarminWatchFacts.statusLine(phase: .ready, syncing: false), "Connected")
         XCTAssertEqual(GarminWatchFacts.statusLine(phase: .unsupported, syncing: false), "Protocol not supported")
         XCTAssertEqual(GarminWatchFacts.statusLine(phase: .disconnected, syncing: false), "Not connected")
+        XCTAssertEqual(GarminWatchFacts.statusLine(phase: .busy, syncing: false), "Watch busy with another app")
         for phase: GarminSource.LinkPhase in [.connecting, .discovering, .subscribing, .handshaking] {
             XCTAssertEqual(GarminWatchFacts.statusLine(phase: phase, syncing: false), "Connecting…")
         }
+    }
+
+    /// "Sync now" stays available while another app holds the watch: there it asks the watch again.
+    func testSyncNowIsOfferedWhenReadyOrBusy() {
+        XCTAssertTrue(GarminWatchFacts.canSyncNow(phase: .ready, syncing: false))
+        XCTAssertTrue(GarminWatchFacts.canSyncNow(phase: .busy, syncing: false))
+        XCTAssertFalse(GarminWatchFacts.canSyncNow(phase: .ready, syncing: true))
+        XCTAssertFalse(GarminWatchFacts.canSyncNow(phase: .handshaking, syncing: false))
+        XCTAssertFalse(GarminWatchFacts.canSyncNow(phase: .disconnected, syncing: false))
     }
 
     func testSummaryLineCountsTheLastSync() {

@@ -33,6 +33,10 @@ enum TodaySection: String, CaseIterable, Identifiable {
     case yourCards
     case menstrualCycle
     case journal
+    /// Today's supplement intake (#33): the Journal's Supplements-group questions, answered in place on
+    /// Today. Same stored journal entries as the Journal, so What Moves You and the correlations are
+    /// unchanged. Placed after the journal widget; `decodeOrder` inserts it there for saved orders.
+    case supplements
     /// Cards hosted from the Trends / Sleep tabs (#today-hosted-cards). Renders the `HostedCardPrefs`
     /// selection in order; empty (and effectively invisible) until the user adds a card in Customise.
     /// Appended LAST so `decodeOrder`'s back-fill lands it predictably for existing saved orders.
@@ -53,6 +57,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
         case .yourCards:      return String(localized: "Your Cards")
         case .menstrualCycle: return String(localized: "Menstrual Cycle")
         case .journal:        return String(localized: "Journal")
+        case .supplements:    return String(localized: "Supplements")
         case .addedCards:     return String(localized: "Added Cards")
         }
     }
@@ -61,7 +66,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
     /// widget (#656) is last by default, where it was first added, above the data-sources card.
     static let defaultOrder: [TodaySection] = [
         .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .recoveryVitals, .yourCards,
-        .menstrualCycle, .journal, .addedCards,
+        .menstrualCycle, .journal, .supplements, .addedCards,
     ]
 }
 

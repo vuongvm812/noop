@@ -18,6 +18,9 @@ internal class OracleFakeWatch {
     var compressedFiles: MutableMap<Int, ByteArray> = HashMap()
     var compressedPieceSize = 60
     var refuseDirectory = false
+    /** After this chunk (counted over the watch's life), also send the watch's answer refusing GFDI to another
+     *  app on the phone (client 7): NOOP then yields GFDI once its sync ends. */
+    var otherAppRefusedAfterChunk: Int? = null
     var silent = false
     var itemPages: List<List<GarminItemReference>> = emptyList()
     var pipeFiles: MutableMap<Int, ByteArray> = HashMap()
@@ -168,7 +171,10 @@ internal class OracleFakeWatch {
         var crc = GarminCrc.crc16(chunk, GarminCrc.crc16(data.copyOfRange(0, offset)))
         if (corruptChunks.remove(chunksSent)) crc = crc xor 0xFFFF
         chunksSent += 1
-        return listOf(gfdi(5004, bytes(0) + oracleLE16(crc) + oracleLE32(offset.toLong()) + chunk))
+        val reply = listOf(gfdi(5004, bytes(0) + oracleLE16(crc) + oracleLE32(offset.toLong()) + chunk))
+        if (otherAppRefusedAfterChunk != chunksSent) return reply
+        seen.add("other app refused gfdi")
+        return reply + listOf(oracleOtherControl(7, 1, oracleLE16(1) + bytes(3, 0, 0)))
     }
 
     private fun fileAccess(payload: ByteArray): List<ByteArray> {
@@ -486,6 +492,13 @@ internal fun garminSyncOracleLines(): List<String> {
     val partialM = GarminSyncResume(GarminSyncFileKey(m.directory[0]), partialMData, GarminCrc.crc16(partialMData))
     out += oracleRunSync("legacy-continue-restarted", m, listOf(
         connect, sync(GarminSyncRequest(synced = synced, resume = partialM, notBeforeUnix = ORACLE_NOT_BEFORE)),
+    )).first
+
+    // I: another app is refused GFDI mid-sync: NOOP finishes the sync, then closes its own GFDI handle.
+    val y = oracleStandardWatch()
+    y.otherAppRefusedAfterChunk = 2
+    out += oracleRunSync("yield-after-sync", y, listOf(
+        connect, sync(GarminSyncRequest(synced = synced, notBeforeUnix = ORACLE_NOT_BEFORE)),
     )).first
 
     // H

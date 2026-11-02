@@ -106,7 +106,11 @@ fun CoupledScreen(
             val imported = vm.repo.sleepSessionsUnion(vm.activeStrapId, 0L, now)
             val computed = vm.repo.computedSleepSessionsUnion(vm.activeStrapId, 0L, now)
             val importedEnds = imported.map { it.endTs }.toHashSet()
-            (imported + computed.filter { it.endTs !in importedEnds }).sortedBy { it.effectiveStartTs }
+            // #31: wearable-export nights on the wake-days neither bucket holds.
+            com.noop.data.WhoopRepository.fillSleepGaps(
+                imported + computed.filter { it.endTs !in importedEnds },
+                vm.repo.historySleepSessions(vm.activeStrapId, 0L, now),
+            ).sortedBy { it.effectiveStartTs }
         }.getOrDefault(emptyList())
     }
 

@@ -37,9 +37,13 @@ class GarminWatchUiTest {
         }
         assertEquals(R.string.l10n_garmin_watch_panel_protocol_not_supported_05ba63ff, GarminWatchUi.panelStatusRes(LinkPhase.UNSUPPORTED, false))
         assertEquals(R.string.l10n_garmin_watch_panel_not_connected_8b02f3de, GarminWatchUi.panelStatusRes(LinkPhase.DISCONNECTED, false))
+        assertEquals(R.string.l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45,
+            GarminWatchUi.panelStatusRes(LinkPhase.BUSY, false))
         assertTrue(GarminWatchUi.canSyncNow(LinkPhase.READY, false))
+        assertTrue(GarminWatchUi.canSyncNow(LinkPhase.BUSY, false))
         assertFalse(GarminWatchUi.canSyncNow(LinkPhase.READY, true))
         assertFalse(GarminWatchUi.canSyncNow(LinkPhase.HANDSHAKING, false))
+        assertFalse(GarminWatchUi.canSyncNow(LinkPhase.DISCONNECTED, false))
     }
 
     @Test
@@ -49,6 +53,8 @@ class GarminWatchUiTest {
         assertEquals(R.string.l10n_add_device_wizard_checking_which_protocol_the_watch_speaks_9a308e09, GarminWatchUi.connectProgressRes(LinkPhase.DISCOVERING))
         assertEquals(R.string.l10n_add_device_wizard_checking_which_protocol_the_watch_speaks_9a308e09, GarminWatchUi.connectProgressRes(LinkPhase.SUBSCRIBING))
         assertEquals(R.string.l10n_add_device_wizard_saying_hello_to_the_watch_4e06cb80, GarminWatchUi.connectProgressRes(LinkPhase.HANDSHAKING))
+        assertEquals(R.string.l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45,
+            GarminWatchUi.connectProgressRes(LinkPhase.BUSY))
         assertNull(GarminWatchUi.connectProgressRes(LinkPhase.READY))
         assertNull(GarminWatchUi.connectProgressRes(LinkPhase.UNSUPPORTED))
     }

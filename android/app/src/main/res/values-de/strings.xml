@@ -2211,6 +2211,12 @@
     <string name="today_section_your_cards">Deine Karten</string>
     <string name="today_section_menstrual_cycle">Menstruationszyklus</string>
     <string name="today_section_journal">Tagebuch</string>
+    <string name="today_section_supplements">Nahrungsergänzung</string>
+    <string name="supplements_today_empty">Noch keine Fragen zu Nahrungsergänzung.</string>
+    <string name="supplements_today_add_link">Im Journal hinzufügen</string>
+    <string name="journal_supplements_on_today_hint">Nahrungsergänzungen werden auf der Heute-Karte erfasst. Tippe auf „Bearbeiten“, um sie zu verwalten.</string>
+    <string name="journal_answer_yes">Ja</string>
+    <string name="journal_answer_no">Nein</string>
     <string name="today_section_added_cards">Hinzugefügte Karten</string>
     <string name="today_hr_window_today">Heute</string>
     <string name="today_hr_window_24h">24 Std.</string>
@@ -2917,6 +2923,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Verbinde…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">Protokoll nicht unterstützt</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">Nicht verbunden</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">Uhr wird von einer anderen App genutzt</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">Akku %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">Akku: von dieser Uhr nicht gemeldet</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">Letzte Synchronisierung %1$s</string>

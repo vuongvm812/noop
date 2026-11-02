@@ -2196,6 +2196,12 @@
     <string name="today_section_your_cards">Twoje karty</string>
     <string name="today_section_menstrual_cycle">Cykl menstruacyjny</string>
     <string name="today_section_journal">Dziennik</string>
+    <string name="today_section_supplements">Suplementy</string>
+    <string name="supplements_today_empty">Brak pytań o suplementy.</string>
+    <string name="supplements_today_add_link">Dodaj w dzienniku</string>
+    <string name="journal_supplements_on_today_hint">Suplementy zapisujesz na karcie Dziś. Stuknij Edytuj, aby nimi zarządzać.</string>
+    <string name="journal_answer_yes">Tak</string>
+    <string name="journal_answer_no">Nie</string>
     <string name="today_section_added_cards">Dodane karty</string>
     <string name="today_hr_window_today">Dzisiaj</string>
     <string name="today_hr_window_24h">24 godz.</string>
@@ -2920,6 +2926,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Łączenie…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">Protokół nieobsługiwany</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">Brak połączenia</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">Zegarek zajęty przez inną aplikację</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">Bateria %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">Bateria: ten zegarek jej nie podaje</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">Ostatnia synchronizacja %1$s</string>

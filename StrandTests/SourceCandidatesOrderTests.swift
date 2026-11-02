@@ -13,7 +13,8 @@ final class SourceCandidatesOrderTests: XCTestCase {
         let cs = Repository.sourceCandidates(forKey: "rhr", preferredSource: "my-whoop",
                                              actualWhoopSource: "whoop-4A0B")
         XCTAssertEqual(cs.map(\.source),
-                       ["whoop-4A0B", "my-whoop", "whoop-4A0B-noop", "my-whoop-noop", "apple-health"],
+                       ["whoop-4A0B", "my-whoop", "whoop-4A0B-noop", "my-whoop-noop", "apple-health",
+                        "garmin-import", "oura-import", "oura-api", "fitbit-import"],
                        "canonical import must be tried before ANY computed sibling")
     }
 
@@ -27,13 +28,13 @@ final class SourceCandidatesOrderTests: XCTestCase {
         // active == canonical: `uniqued` collapses the pairs; path stays byte-identical to pre-fix.
         let cs = Repository.sourceCandidates(forKey: "rhr", preferredSource: "my-whoop",
                                              actualWhoopSource: "my-whoop")
-        XCTAssertEqual(cs.map(\.source), ["my-whoop", "my-whoop-noop", "apple-health"])
+        XCTAssertEqual(cs.map(\.source), ["my-whoop", "my-whoop-noop", "apple-health", "garmin-import", "oura-import", "oura-api", "fitbit-import"])
     }
 
     func testAppleFallbackKeepsCompatibleKeyMapping() {
         let cs = Repository.sourceCandidates(forKey: "rhr", preferredSource: "my-whoop",
                                              actualWhoopSource: "whoop-4A0B")
-        XCTAssertEqual(cs.last, MetricSourceCandidate(source: "apple-health", key: "resting_hr"))
+        XCTAssertEqual(cs.first { $0.source == "apple-health" }, MetricSourceCandidate(source: "apple-health", key: "resting_hr"))
     }
 
     func testNonVitalKeyHasNoAppleFallback() {

@@ -57,7 +57,9 @@ struct GarminConnectReadout: Equatable {
 @MainActor
 final class GarminSource: NSObject, ObservableObject {
 
-    enum LinkPhase: String { case disconnected, connecting, discovering, subscribing, handshaking, ready, unsupported }
+    /// `busy`: the link is up but another app (Garmin Connect) holds the watch's GFDI service; the session
+    /// asks again on its backoff, on foreground and on "Sync now" (GarminCoexistence).
+    enum LinkPhase: String { case disconnected, connecting, discovering, subscribing, handshaking, busy, ready, unsupported }
 
     struct DiscoveredWatch: Identifiable, Equatable {
         let id: UUID
@@ -302,9 +304,19 @@ final class GarminSource: NSObject, ObservableObject {
         central.cancelPeripheralConnection(p)
     }
 
-    /// "Sync now": a manual sync, which the floor never holds back.
+    /// "Sync now": a manual sync, which the floor never holds back. While another app holds GFDI it asks
+    /// the watch for GFDI again instead; the sync runs on connect once the handshake completes.
     func syncNow() {
+        retryGfdi()
         requestSync(.manual)
+    }
+
+    /// A `busy` session asks for GFDI again now (the session skips it when it asked moments ago).
+    private func retryGfdi() {
+        guard var s = session, s.phase == .busy else { return }
+        let outputs = s.retryGfdi(clock())
+        session = s
+        perform(outputs)
     }
 
     // MARK: - History sync
@@ -487,6 +499,10 @@ final class GarminSource: NSObject, ObservableObject {
                         sessionStartedMs = nil
                     }
                     requestSync(.connect)
+                case .busy:
+                    // The link works; only GFDI is held elsewhere. No drop, no reconnect.
+                    linkPhase = .busy
+                    failedConnects = 0
                 case let .failed(reason):
                     // Drop the link; the reconnect path tries again with backoff.
                     say(true, "dropping the link after a session failure (\(reason))")
@@ -678,7 +694,10 @@ final class GarminSource: NSObject, ObservableObject {
             session = s
             perform(outputs)
         }
-        if isForeground { requestSync(.foreground) }
+        if isForeground {
+            retryGfdi()
+            requestSync(.foreground)
+        }
         // Backgrounding closes every live channel at once (no linger), except an active workout's HR + RR.
         applyLiveDemand()
     }

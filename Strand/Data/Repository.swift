@@ -73,14 +73,17 @@ enum DailyMetricSource: Equatable {
     case whoopImport
     case noopComputed
     case appleHealth
+    /// A wearable-export row (#31), carrying its provider's name ("Garmin"). Lowest real precedence.
+    case wearableImport(brand: String)
     case localCache
 
     var vitalPriority: Int {
         switch self {
-        case .whoopImport:  return 0
-        case .noopComputed: return 1
-        case .appleHealth:  return 2
-        case .localCache:   return 3
+        case .whoopImport:    return 0
+        case .noopComputed:   return 1
+        case .appleHealth:    return 2
+        case .wearableImport: return 3
+        case .localCache:     return 4
         }
     }
 }
@@ -169,7 +172,19 @@ final class Repository: ObservableObject {
     /// Sleep-tab row must resolve its owner against this same union the reads use — otherwise a
     /// historical night sitting under the CANONICAL source (after a strap re-add) looks editable but its
     /// save silently matches nothing.
-    private var sleepOwnerIds: [String] { computedReadIds + importedReadIds }
+    ///
+    /// The wearable-export namespaces (#31) come last: an imported Garmin/Oura night is shown on the Sleep
+    /// tab once nothing else covers its day, so an edit or delete of it must reach the row it came from,
+    /// exactly as one of an imported WHOOP night reaches "my-whoop".
+    private var sleepOwnerIds: [String] { computedReadIds + importedReadIds + historyReadIds }
+
+    /// The wearable-export namespaces a history read adds UNDER every other source (#31), in
+    /// `WearableHistory.readOrder` for the active device. Never part of `importedReadIds`: workouts, raw
+    /// streams, ownership sets and exports keep reading the device and WHOOP namespaces only.
+    var historyReadIds: [String] { WearableHistory.readOrder(activeDeviceId: deviceId) }
+    /// The subset of `historyReadIds` whose nights may seed the Charge baselines: the active device's own
+    /// brand only (#459). The engine reads the same list, so the readouts and the score fold one history.
+    var baselineSeedIds: [String] { WearableHistory.baselineSeedIds(activeDeviceId: deviceId) }
 
     /// True when the ACTIVE strap is an Oura ring, resolved from its registry id prefix against the canonical
     /// brand table (`DeviceBrandCatalog.idPrefix`) rather than an ad-hoc "oura" literal. The device registry
@@ -345,11 +360,25 @@ final class Repository: ObservableObject {
     /// winning over the canonical import (a live/measured row beats an imported one for the same day). The
     /// single returned row per day feeds the existing imported-vs-computed `mergeDaily` unchanged.
     private func unionDailyMetrics(store: WhoopStore, from: String, to: String) async -> [DailyMetric] {
+        await unionDailyMetrics(store: store, ids: importedReadIds, from: from, to: to)
+    }
+
+    /// The same per-day column coalesce over an explicit id list, earlier ids winning. Feeds the wearable-
+    /// export history bucket (#31) as well as the imported one.
+    private func unionDailyMetrics(store: WhoopStore, ids: [String], from: String, to: String) async -> [DailyMetric] {
+        var lists: [[DailyMetric]] = []
+        for id in ids {   // active strap FIRST → it claims each column, canonical fills its gaps
+            lists.append((try? await store.dailyMetrics(deviceId: id, from: from, to: to)) ?? [])
+        }
+        return Self.coalesceUnion(lists)
+    }
+
+    /// One row per day across per-source lists in precedence order, folded with `coalesceDay` (the earlier
+    /// list keeps each column it carries). Sorted by day. Kotlin twin: `WhoopRepository.unionByDay`.
+    nonisolated static func coalesceUnion(_ lists: [[DailyMetric]]) -> [DailyMetric] {
         var byDay: [String: DailyMetric] = [:]
-        for id in importedReadIds {   // active strap FIRST → it claims each column, canonical fills its gaps
-            for m in (try? await store.dailyMetrics(deviceId: id, from: from, to: to)) ?? [] {
-                byDay[m.day] = byDay[m.day].map { Self.coalesceDay($0, m) } ?? m
-            }
+        for list in lists {
+            for m in list { byDay[m.day] = byDay[m.day].map { coalesceDay($0, m) } ?? m }
         }
         return byDay.values.sorted { $0.day < $1.day }
     }
@@ -459,11 +488,29 @@ final class Repository: ObservableObject {
         )
     }
 
+    /// Fold wearable-export history rows (#31) under an already-merged daily list, at the LOWEST precedence.
+    /// A day the merge already holds keeps every column it carries and takes only what it left nil, by
+    /// `coalesceDay`'s column groups (so a sleep total never sits beside another source's stage minutes); a
+    /// day only the export covers is added whole. `history` is already one row per day (`unionDailyMetrics`
+    /// over `WearableHistory.readOrder`). Sorted by day. Kotlin twin: `WhoopRepository.foldWearableHistory`.
+    nonisolated static func foldWearableHistory(_ merged: [DailyMetric], history: [DailyMetric]) -> [DailyMetric] {
+        guard !history.isEmpty else { return merged }
+        var byDay = Dictionary(merged.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
+        for h in history {
+            byDay[h.day] = byDay[h.day].map { coalesceDay($0, h) } ?? h
+        }
+        return byDay.values.sorted { $0.day < $1.day }
+    }
+
     /// metricSeries points across the imported union for a key + day range, DEDUPED per day with the active
     /// strap winning (same precedence as `unionDailyMetrics`).
+    ///
+    /// The wearable-export namespaces (#31) fill the days left open, except for a brand's own reference
+    /// scores (`WearableHistory.seriesKeyAllowed`), which stay reference values.
     private func unionMetricSeries(store: WhoopStore, key: String, from: String, to: String) async -> [MetricPoint] {
         var byDay: [String: MetricPoint] = [:]
-        for id in importedReadIds {
+        let ids = importedReadIds + (WearableHistory.seriesKeyAllowed(key) ? historyReadIds : [])
+        for id in ids {
             for p in (try? await store.metricSeries(deviceId: id, key: key, from: from, to: to)) ?? [] where byDay[p.day] == nil {
                 byDay[p.day] = p
             }
@@ -494,6 +541,13 @@ final class Repository: ObservableObject {
     /// and collapsing near-identical nights recorded under different computed siblings.
     private func unionComputedSleepSessions(store: WhoopStore, from: Int, to: Int, limit: Int = 4000) async -> [CachedSleepSession] {
         Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawComputedReadIds(store: store), from: from, to: to, limit: limit))
+    }
+
+    /// Wearable-export sleep sessions (#31) for a ts range, in `historyReadIds` order with near-identical
+    /// nights across two exports collapsed (the earlier source keeps its copy). Lowest precedence: callers
+    /// add them only through `SleepMerge.fillingGaps`.
+    private func historySleepSessions(store: WhoopStore, from: Int, to: Int, limit: Int = 4000) async -> [CachedSleepSession] {
+        Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: historyReadIds, from: from, to: to, limit: limit))
     }
 
     /// ALL sleep blocks across `ids` for a ts range, concatenated (NOT collapsed to one per day, used by
@@ -602,11 +656,25 @@ final class Repository: ObservableObject {
     /// on. The `$0.day < carriedKey` bound (`carriedKey` = today's own key) mirrors
     /// `TodayView.lastScoredRecoveryDay` + its #547 future-day guard, so a stale or stray future-dated
     /// scored row can never re-surface AS today.
+    ///
+    /// #34: when NO day up to today carries a Charge (a Garmin-only wearer whose Charge is still
+    /// calibrating), the anchor falls back to the freshest day up to and including today that carries any
+    /// other widget value (`hasWidgetValue`), so Effort and Rest still have a day to describe instead of
+    /// every cell reading "–". The fallback is only reached when the scored carry finds nothing, so a
+    /// wearer with any Charge keeps the #911 behaviour unchanged. Byte-twin of the Kotlin `widgetAnchorRow`.
     nonisolated static func widgetAnchor(days: [DailyMetric], logicalKey: String, localKey: String) -> DailyMetric? {
         let todayRow = resolveToday(days: days, logicalKey: logicalKey, localKey: localKey)
         if todayRow?.recovery != nil { return todayRow }
         let carriedKey = todayRow?.day ?? logicalKey
-        return days.last(where: { $0.recovery != nil && $0.day < carriedKey })
+        if let scored = days.last(where: { $0.recovery != nil && $0.day < carriedKey }) { return scored }
+        return days.last(where: { hasWidgetValue($0) && $0.day <= carriedKey })
+    }
+
+    /// A row the #34 anchor fallback may describe: it carries an Effort, a night (Rest) or an overnight
+    /// vital. Charge is not listed because the fallback only runs when no row has one. Byte-twin of the
+    /// Kotlin `hasWidgetValue`.
+    nonisolated static func hasWidgetValue(_ row: DailyMetric) -> Bool {
+        row.strain != nil || row.totalSleepMin != nil || row.avgHrv != nil || row.restingHr != nil
     }
 
     /// Live-clock convenience over the pure `widgetAnchor`: resolves the anchor for `now` (defaults to the
@@ -617,6 +685,25 @@ final class Repository: ObservableObject {
     /// MainActor. Tests call the pure 3-arg overload above instead.
     static func widgetAnchor(days: [DailyMetric], now: Date = Date()) -> DailyMetric? {
         widgetAnchor(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now))
+    }
+
+    /// #34: the HRV and resting HR the off-dashboard surfaces show, resolved exactly the way Today reads
+    /// them: today's own row first, then the per-field carry (`lastHrvDay` / `lastRestingHrDay`) bounded
+    /// at today's key. They are deliberately NOT read off `widgetAnchor`, which is Charge-gated: a night
+    /// with real HRV but no Charge (every night for a wearer still calibrating) must still reach the
+    /// widget, and the widget must never show a different HRV than the Today tile beside it.
+    nonisolated static func widgetVitals(days: [DailyMetric], logicalKey: String, localKey: String)
+        -> (hrv: Double?, restingHr: Int?) {
+        let todayRow = resolveToday(days: days, logicalKey: logicalKey, localKey: localKey)
+        let todayKey = todayRow?.day ?? logicalKey
+        return (todayRow?.avgHrv ?? lastHrvDay(days: days, todayKey: todayKey)?.avgHrv,
+                todayRow?.restingHr ?? lastRestingHrDay(days: days, todayKey: todayKey)?.restingHr)
+    }
+
+    /// Live-clock convenience over the pure `widgetVitals`, MainActor for the same reason as
+    /// `widgetAnchor(days:now:)`.
+    static func widgetVitals(days: [DailyMetric], now: Date = Date()) -> (hrv: Double?, restingHr: Int?) {
+        widgetVitals(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now))
     }
 
     /// #1051-shaped memo for the anchor resolve on the high-frequency live surfaces. Not @Published — pure
@@ -960,6 +1047,20 @@ final class Repository: ObservableObject {
         let activityFile = (try? await store.dailyMetrics(deviceId: Self.activityFileSource, from: fromDay, to: toDay)) ?? []
         let impSleep = await unionSleepSessions(store: store, from: lo, to: hi)
         let compSleep = await unionComputedSleepSessions(store: store, from: lo, to: hi)
+        // #31: the wearable-export history bucket, folded UNDER the merge below, and its same-brand subset
+        // that seeds the Charge baselines.
+        var historyById: [(id: String, rows: [DailyMetric])] = []
+        for id in historyReadIds {
+            historyById.append((id, (try? await store.dailyMetrics(deviceId: id, from: fromDay, to: toDay)) ?? []))
+        }
+        let history = Self.coalesceUnion(historyById.map(\.rows))
+        let seedIds = Set(baselineSeedIds)
+        let seed = Self.coalesceUnion(historyById.filter { seedIds.contains($0.id) }.map(\.rows))
+        let historySourced = historyById.flatMap { entry in
+            entry.rows.map { SourcedDailyMetric(metric: $0, source: .wearableImport(
+                brand: WearableHistory.brandName(for: entry.id) ?? entry.id)) }
+        }
+        let histSleep = await historySleepSessions(store: store, from: lo, to: hi)
 
         // #2525: the Charge baselines' inputs, read on the main actor before detaching: today's local day
         // (the same local-calendar key the engine anchors its fold on) and the two recalibration epochs the
@@ -992,16 +1093,19 @@ final class Repository: ObservableObject {
             return MergedCaches(
                 importedSleep: fig,
                 days: Self.mergeActivityFileSteps(
-                    into: Self.mergeDaily(imported: imported, computed: computed, userEditedDays: editedDays),
+                    into: Self.foldWearableHistory(
+                        Self.mergeDaily(imported: imported, computed: computed, userEditedDays: editedDays),
+                        history: history),
                     activityFile
                 ),
                 // From the two buckets BEFORE `mergeDaily` blends them: the rule needs to know which nights
                 // are imported and which are the wearer's own.
-                chargeBaselines: ChargeBaselines.resolve(imported: imported, own: computed,
+                chargeBaselines: ChargeBaselines.resolveWithSeed(imported: imported, own: computed, seed: seed,
                                                          anchorDay: chargeAnchorDay,
                                                          hrvEpoch: hrvEpoch, recoveryEpoch: recoveryEpoch),
-                sleeps: Self.mergeSleep(imported: impSleep, computed: compSleep),
-                vitalRows: Self.sourceRows(imported: imported, computed: computed, apple: apple),
+                sleeps: Self.mergeSleep(imported: impSleep, computed: compSleep, history: histSleep),
+                vitalRows: Self.sourceRows(imported: imported, computed: computed, apple: apple,
+                                           history: historySourced),
                 freshness: Self.computeFreshness(imported: imported, computed: computed, apple: apple,
                                                  importedSleeps: impSleep, computedSleeps: compSleep))
         }.value
@@ -1147,10 +1251,11 @@ final class Repository: ObservableObject {
     /// > Apple); ordered by day, then source priority, so a stable list reaches the UI.
     /// `nonisolated` (FIX 3) so `refresh()`'s detached merge task can call it off the main actor.
     nonisolated private static func sourceRows(imported: [DailyMetric], computed: [DailyMetric],
-                                   apple: [DailyMetric]) -> [SourcedDailyMetric] {
+                                   apple: [DailyMetric], history: [SourcedDailyMetric] = []) -> [SourcedDailyMetric] {
         (imported.map { SourcedDailyMetric(metric: $0, source: .whoopImport) }
             + computed.map { SourcedDailyMetric(metric: $0, source: .noopComputed) }
-            + apple.map { SourcedDailyMetric(metric: $0, source: .appleHealth) })
+            + apple.map { SourcedDailyMetric(metric: $0, source: .appleHealth) }
+            + history)
             .sorted { lhs, rhs in
                 if lhs.metric.day == rhs.metric.day {
                     return lhs.source.vitalPriority < rhs.source.vitalPriority
@@ -1165,7 +1270,9 @@ final class Repository: ObservableObject {
     /// in whatever the live device zone is and so disagreed with the engine's cached-offset attribution
     /// across a midnight boundary for non-UTC users (the Swift half of #406; mirrors the Android #304 fix
     /// pinned by MergeSleepLocalDayTest).
-    nonisolated private static func mergeSleep(imported: [CachedSleepSession], computed: [CachedSleepSession]) -> [CachedSleepSession] {
+    /// `history` (#31) is the wearable-export sessions, added under the merge on the end-days it left empty.
+    nonisolated private static func mergeSleep(imported: [CachedSleepSession], computed: [CachedSleepSession],
+                                               history: [CachedSleepSession] = []) -> [CachedSleepSession] {
         func endDay(_ s: CachedSleepSession) -> String {
             let offsetSec = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(s.endTs)))
             return AnalyticsEngine.dayString(s.endTs, offsetSec: offsetSec)
@@ -1173,14 +1280,18 @@ final class Repository: ObservableObject {
         // #715, preserve EVERY session (a day with a main night + a nap must keep both); imported still
         // wins per end-day. Shared, unit-tested grouping (WhoopStore.SleepMerge / SleepMergeTests) replaces
         // the old per-day dictionary that silently dropped a second same-day session.
-        return SleepMerge.merge(imported: imported, computed: computed, endDay: endDay)
+        return SleepMerge.fillingGaps(SleepMerge.merge(imported: imported, computed: computed, endDay: endDay),
+                                      history: history, endDay: endDay)
     }
 
     // MARK: - Detail passthroughs
 
+    /// The imported union for a day range with the wearable-export history (#31) folded under it.
     func dailyMetrics(fromDay: String, toDay: String) async -> [DailyMetric] {
         guard let store = await ensureStore() else { return [] }
-        return await unionDailyMetrics(store: store, from: fromDay, to: toDay)
+        return Self.foldWearableHistory(
+            await unionDailyMetrics(store: store, from: fromDay, to: toDay),
+            history: await unionDailyMetrics(store: store, ids: historyReadIds, from: fromDay, to: toDay))
     }
 
     /// #856: the same dedup over an EXPLICIT id list, so a workout's zone minutes bin the rows its own
@@ -1357,9 +1468,18 @@ final class Repository: ObservableObject {
         return bestClass
     }
 
+    /// The imported union for a ts range, with wearable-export nights (#31) on the end-days it leaves empty.
     func sleepSessions(from: Int, to: Int, limit: Int = 100) async -> [CachedSleepSession] {
         guard let store = await ensureStore() else { return [] }
-        return await unionSleepSessions(store: store, from: from, to: to, limit: limit)
+        return SleepMerge.fillingGaps(await unionSleepSessions(store: store, from: from, to: to, limit: limit),
+                                      history: await historySleepSessions(store: store, from: from, to: to, limit: limit),
+                                      endDay: Self.localEndDayKey)
+    }
+
+    /// The local wake-day a session is keyed by, as `mergeSleep` keys it.
+    nonisolated static func localEndDayKey(_ s: CachedSleepSession) -> String {
+        let offsetSec = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(s.endTs)))
+        return AnalyticsEngine.dayString(s.endTs, offsetSec: offsetSec)
     }
 
     /// Computed ("-noop") sleep sessions for a ts range, oldest→newest by onset — the funnel/diagnostic
@@ -1404,7 +1524,11 @@ final class Repository: ObservableObject {
         var importedDays = Set<Date>()
         for s in imported { importedDays.insert(endDay(s)) }
         let computedKept = computed.filter { !importedDays.contains(endDay($0)) }
-        return (imported + computedKept).sorted { $0.effectiveStartTs < $1.effectiveStartTs }
+        // #31: wearable-export nights on the end-days neither bucket holds, keyed the same way.
+        let history = await historySleepSessions(store: store, from: lo, to: hi)
+        return SleepMerge.fillingGaps(imported + computedKept, history: history,
+                                      endDay: { String(endDay($0).timeIntervalSince1970) })
+            .sorted { $0.effectiveStartTs < $1.effectiveStartTs }
     }
 
     /// The persisted per-epoch MOTION series for each of `starts` (detected session start keys), keyed by
@@ -1515,8 +1639,13 @@ final class Repository: ObservableObject {
         let rawComputedIds = rawComputedReadIds(store: store)
         let imported = Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawIds, from: lo, to: hi))
         let computed = Self.dedupBlocks(await unionRawSleepBlocks(store: store, ids: rawComputedIds, from: lo, to: hi))
+        // #31: wearable-export nights count as history on the end-days nothing else covers, by the same
+        // fill `IntelligenceEngine.computeHabitualSleep` applies.
         let offsetSec = TimeZone.current.secondsFromGMT()
-        let blocks = (imported + computed).compactMap { s -> SleepStageTotals.HistoryBlock? in
+        let all = SleepMerge.fillingGaps(imported + computed,
+                                         history: await historySleepSessions(store: store, from: lo, to: hi),
+                                         endDay: { AnalyticsEngine.dayString($0.endTs, offsetSec: offsetSec) })
+        let blocks = all.compactMap { s -> SleepStageTotals.HistoryBlock? in
             let start = s.effectiveStartTs, end = s.endTs
             guard end > start else { return nil }
             let mid = start + (end - start) / 2
@@ -2382,6 +2511,11 @@ final class Repository: ObservableObject {
             if let appleKey = appleCompatibleKey(forWhoopKey: key) {
                 candidates.append(MetricSourceCandidate(source: appleHealthSource, key: appleKey))
             }
+            // #31: the wearable-export history last, never for a brand's own reference score.
+            if WearableHistory.seriesKeyAllowed(key) {
+                candidates += WearableHistory.readOrder(activeDeviceId: actualWhoopSource)
+                    .map { MetricSourceCandidate(source: $0, key: key) }
+            }
             return uniqued(candidates)
         }
         if preferredSource == appleHealthSource {
@@ -2455,6 +2589,14 @@ final class Repository: ObservableObject {
         // imported ∪ computed daily cache (parameter `days` is the lookback window, not this).
         for d in self.days where byDay[d.day] == nil {
             if let v = Self.dailyColumn(key: key, day: d) { byDay[d.day] = v }
+        }
+        // Layer 3b: wearable-export series (#31) on the days still open, for keys with no daily column
+        // (VO2 max, distance). A brand's own reference scores are skipped.
+        if WearableHistory.seriesKeyAllowed(key) {
+            for id in historyReadIds {
+                for p in (try? await store.metricSeries(deviceId: id, key: key, from: from, to: to)) ?? []
+                    where byDay[p.day] == nil { byDay[p.day] = p.value }
+            }
         }
         // Layer 2: computed metricSeries (covers sleep_performance, which has no daily column). UNION the
         // active strap's computed sibling + the canonical computed sibling (canonical first so the active
@@ -2607,6 +2749,11 @@ final class Repository: ObservableObject {
             if source == canonicalDeviceId {
                 for id in importedReadIds + computedReadIds {
                     keys.formUnion((try? await store.metricKeys(deviceId: id)) ?? [])
+                }
+                // #31: the export namespaces `exploreSeries` layers in, minus the reference scores.
+                for id in historyReadIds {
+                    keys.formUnion(((try? await store.metricKeys(deviceId: id)) ?? [])
+                        .filter(WearableHistory.seriesKeyAllowed))
                 }
             } else {
                 keys.formUnion((try? await store.metricKeys(deviceId: source)) ?? [])

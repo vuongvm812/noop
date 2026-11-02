@@ -2118,6 +2118,12 @@
     <string name="today_section_your_cards">你的卡片</string>
     <string name="today_section_menstrual_cycle">月经周期</string>
     <string name="today_section_journal">日志</string>
+    <string name="today_section_supplements">补充剂</string>
+    <string name="supplements_today_empty">还没有补充剂问题。</string>
+    <string name="supplements_today_add_link">在日志中添加</string>
+    <string name="journal_supplements_on_today_hint">补充剂在“今天”卡片上记录。轻点“编辑”进行管理。</string>
+    <string name="journal_answer_yes">是</string>
+    <string name="journal_answer_no">否</string>
     <string name="today_section_added_cards">已添加的卡片</string>
     <string name="today_hr_window_today">今天</string>
     <string name="today_hr_window_24h">24 小时</string>
@@ -2874,6 +2880,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">正在连接…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">协议不受支持</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">未连接</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">手表正被其他应用占用</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">电量 %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">电量：此手表不提供</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">上次同步 %1$s</string>

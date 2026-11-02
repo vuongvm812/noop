@@ -206,7 +206,9 @@ class RawTimelineRepositoryDaoTest {
         val habitual = repo.habitualMidsleepSec("whoop-new", days = 30)
 
         assertEquals(
-            listOf("whoop-new", "whoop-old", "my-whoop", "whoop-new-noop", "whoop-old-noop", "my-whoop-noop"),
+            // #31: the wearable-export namespaces are read last, as lowest-precedence history.
+            listOf("whoop-new", "whoop-old", "my-whoop", "whoop-new-noop", "whoop-old-noop", "my-whoop-noop",
+                "garmin-import", "oura-import", "oura-api", "fitbit-import"),
             queried,
         )
         org.junit.Assert.assertNotNull(habitual)

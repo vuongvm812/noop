@@ -725,7 +725,10 @@ object IntelligenceEngine {
         // (SleepStager + AnalyticsEngine), so we harvest them to SEED the baseline and
         // re-score in pass 2. Collected oldest-first to match foldHistory's replay order.
         // foldHistory winsorizes outliers. days() is oldest-first (Swift ascending).
-        val hist = repo.days(importedDeviceId)
+        // #31: read beside it, in the same call, the active device's same-brand export rows that seed the
+        // Charge baselines (see [chargeHistories]).
+        val baselineImports = baselineImports(repo, ownerSource, importedDeviceId)
+        val hist = baselineImports.first
         // CAPTURE-B: per-day resolved read owner + HR-row count, captured in pass 1, consumed by pass 2's
         // universal dayOwner emit (which reuses the SAME importedWhoopDays / appleHealthDays sets pass 2
         // builds for daySourceToken, so there is no extra read). Only populated when the universal sink is
@@ -784,7 +787,7 @@ object IntelligenceEngine {
         // below stays on the overnight-band bonus. The same value threads into both seams so analytics and
         // the Sleep tab resolve to the identical block. Mirrors Swift. (#547)
         val (habitualMidsleepSec, nightlyHours) = computeHabitualSleep(
-            repo, importedDeviceId, computedId,
+            repo, importedDeviceId, computedId, ownerSource,
             nowLocalMidnight - maxDays * SECONDS_PER_DAY - StreamReadCap.LOOKBACK_SECONDS, nowSeconds,
             finishedBefore = nowLocalMidnight, offsetSec = tzOffsetSeconds,
         )
@@ -1554,7 +1557,6 @@ object IntelligenceEngine {
             nowLocalMidnight - (maxDays - 1) * SECONDS_PER_DAY, tzOffsetSeconds,
         )
         val newestDay = AnalyticsEngine.dayString(nowLocalMidnight, tzOffsetSeconds)
-        val importedNights = { value: (DailyMetric) -> Double? -> hist.map { it.day to value(it) } }
         val ownNights = { byDay: Map<String, Double?> -> byDay.entries.map { it.key to it.value } }
 
         // Which SOURCE measured each night's respiration — the input `Baselines.deviceEraEpoch` (#459)
@@ -1563,34 +1565,20 @@ object IntelligenceEngine {
         // night the window holds. The imported rows in `hist` are stored under `importedDeviceId` and are
         // tagged with it, which buckets to WHOOP; the days this engine scores are written under `computedId`,
         // never into `hist`. Mirrors Swift. Built in [eraSourceDays], outside this size-capped method.
-        val eraSourceDays = eraSourceDays(hist, nightlyRespByDay, resolvedScoreOwnerByDay, importedDeviceId)
-        // Resp baseline: WITHIN one brand it pooled imported (cloud) values with on-device RSA estimates;
-        // since #2525 the two meet only while the import seeds. ACROSS brands it is not acceptable: a WHOOP
-        // export reports its own measured rate (~16.1 on this history) while an Oura ring reports the rate
-        // its firmware measured (~14.6), so pooling them turns a strap SWITCH into a ~3 sigma illness-ward
-        // step against a ~0.52 bpm spread — a device artifact scored as physiology, the same failure #459
-        // named for HRV. `deviceEraEpoch` returns 0.0 for a single-brand history (every WHOOP-origin id —
-        // import, strap, the computed sibling, the Apple/HC riders — buckets to one brand), so a WHOOP-only
-        // user is unaffected; `max` with the manual Recalibrate epoch keeps whichever cut is LATER, since
-        // both mean "ignore nights before this".
-        val respEpoch = maxOf(recoveryEpoch, Baselines.deviceEraEpoch(eraSourceDays))
-        // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
-        // switch to or from one starts a new baseline era for both (#459). 0.0 when no night in the window is
-        // a Garmin night, so every other history folds exactly as before. Mirrors Swift.
-        val garminEraEpoch = GarminScoringInputs.baselineEraEpoch(eraSourceDays)
-        val hrvEpoch = maxOf(baselineEpoch, garminEraEpoch)
-        val rhrEpoch = maxOf(recoveryEpoch, garminEraEpoch)
-        // HRV honours noop.hrvBaselineEpoch; rhr/resp/skin honour noop.recoveryBaselineEpoch, so the manual
-        // Recalibrate restarts the whole Charge build-up together. A 0.0 epoch drops nothing.
-        val hrvHistory = ChargeBaselines.history(
-            importedNights { it.avgHrv }, ownNights(nightlyHrvByDay), newestDay, hrvCfg, hrvEpoch,
+        // #31 + #459: the era cuts and the three seeded Charge histories, built in [chargeHistories] (outside
+        // this size-budgeted method). Same rule as before for a WHOOP wearer; a Garmin wearer's same-brand
+        // export nights seed at the lowest precedence and share the Garmin era.
+        val charge = chargeHistories(
+            baselineImports.second, importedDeviceId, newestDay, hist, resolvedScoreOwnerByDay,
+            nightlyHrvByDay, nightlyRhrByDay, nightlyRespByDay, baselineEpoch, recoveryEpoch,
+            hrvCfg, rhrCfg, respCfg,
         )
-        val rhrHistory = ChargeBaselines.history(
-            importedNights { it.restingHr?.toDouble() }, ownNights(nightlyRhrByDay), newestDay, rhrCfg, rhrEpoch,
-        )
-        val respHistory = ChargeBaselines.history(
-            importedNights { it.respRateBpm }, ownNights(nightlyRespByDay), newestDay, respCfg, respEpoch,
-        )
+        val hrvHistory = charge.hrv
+        val rhrHistory = charge.rhr
+        val respHistory = charge.resp
+        val hrvEpoch = charge.hrvEpoch
+        val rhrEpoch = charge.rhrEpoch
+        val respEpoch = charge.respEpoch
         // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
         // so its history is the own nights alone. (PR #85)
         val skinHistory = ChargeBaselines.history(
@@ -2506,9 +2494,128 @@ object IntelligenceEngine {
         nightlyRespByDay: Map<String, Double?>,
         ownerByDay: Map<String, String>,
         importedDeviceId: String,
-    ): List<Pair<String, String>> =
-        (hist.map { it.day }.toSet() + nightlyRespByDay.keys).sorted()
-            .map { it to (ownerByDay[it] ?: importedDeviceId) }
+        seedSourceByDay: Map<String, String> = emptyMap(),
+    ): List<Pair<String, String>> {
+        val histDays = hist.map { it.day }.toSet()
+        // A seeded export night keeps its own source unless an owner or the WHOOP import holds that day.
+        return (histDays + nightlyRespByDay.keys + seedSourceByDay.keys).sorted()
+            .map { day ->
+                day to (ownerByDay[day] ?: seedSourceByDay[day]?.takeIf { day !in histDays } ?: importedDeviceId)
+            }
+    }
+
+    /** The era-cut epochs and the HRV / resting-HR / respiration Charge histories for one pass (#2525,
+     *  #459, #31). Moved out of [analyzeRecentOnCpu], which is size-budgeted; the logic is unchanged apart
+     *  from the same-brand export seed. Swift builds the same values inline. */
+    internal class ChargeHistories(
+        val hrv: ChargeBaselines.History,
+        val rhr: ChargeBaselines.History,
+        val resp: ChargeBaselines.History,
+        val hrvEpoch: Double,
+        val rhrEpoch: Double,
+        val respEpoch: Double,
+    )
+
+    private fun chargeHistories(
+        seed: Pair<List<DailyMetric>, Map<String, String>>,
+        importedDeviceId: String,
+        newestDay: String,
+        hist: List<DailyMetric>,
+        resolvedScoreOwnerByDay: Map<String, String>,
+        nightlyHrvByDay: Map<String, Double?>,
+        nightlyRhrByDay: Map<String, Double?>,
+        nightlyRespByDay: Map<String, Double?>,
+        baselineEpoch: Double,
+        recoveryEpoch: Double,
+        hrvCfg: MetricCfg,
+        rhrCfg: MetricCfg,
+        respCfg: MetricCfg,
+    ): ChargeHistories {
+            // #31: the active device's own-brand wearable-export nights seed at the lowest precedence, through
+            // the same seed ids and rule as the dashboard's ChargeBaselines.resolve, each tagged with its export
+            // source so the era cut reads it as the brand it is (a `garmin-import` night and a `garmin-<uuid>`
+            // night share one era). A WHOOP wearer has no seed ids, so their fold is unchanged. Mirrors Swift.
+                val eraSourceDays = eraSourceDays(
+                hist, nightlyRespByDay, resolvedScoreOwnerByDay, importedDeviceId, seed.second,
+            )
+            // Resp baseline: WITHIN one brand it pooled imported (cloud) values with on-device RSA estimates;
+            // since #2525 the two meet only while the import seeds. ACROSS brands it is not acceptable: a WHOOP
+            // export reports its own measured rate (~16.1 on this history) while an Oura ring reports the rate
+            // its firmware measured (~14.6), so pooling them turns a strap SWITCH into a ~3 sigma illness-ward
+            // step against a ~0.52 bpm spread — a device artifact scored as physiology, the same failure #459
+            // named for HRV. `deviceEraEpoch` returns 0.0 for a single-brand history (every WHOOP-origin id —
+            // import, strap, the computed sibling, the Apple/HC riders — buckets to one brand), so a WHOOP-only
+            // user is unaffected; `max` with the manual Recalibrate epoch keeps whichever cut is LATER, since
+            // both mean "ignore nights before this".
+            val respEpoch = maxOf(recoveryEpoch, Baselines.deviceEraEpoch(eraSourceDays))
+            // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
+            // switch to or from one starts a new baseline era for both (#459). 0.0 when no night in the window is
+            // a Garmin night, so every other history folds exactly as before. Mirrors Swift.
+            val garminEraEpoch = GarminScoringInputs.baselineEraEpoch(eraSourceDays)
+            val hrvEpoch = maxOf(baselineEpoch, garminEraEpoch)
+            val rhrEpoch = maxOf(recoveryEpoch, garminEraEpoch)
+            // HRV honours noop.hrvBaselineEpoch; rhr/resp/skin honour noop.recoveryBaselineEpoch, so the manual
+            // Recalibrate restarts the whole Charge build-up together. A 0.0 epoch drops nothing.
+            val hrvHistory = seededHistory(hist, seed.first, nightlyHrvByDay, newestDay, hrvCfg, hrvEpoch) { it.avgHrv }
+            val rhrHistory = seededHistory(hist, seed.first, nightlyRhrByDay, newestDay, rhrCfg, rhrEpoch) {
+                it.restingHr?.toDouble()
+            }
+            val respHistory = seededHistory(hist, seed.first, nightlyRespByDay, newestDay, respCfg, respEpoch) {
+                it.respRateBpm
+            }
+        return ChargeHistories(hrvHistory, rhrHistory, respHistory, hrvEpoch, rhrEpoch, respEpoch)
+    }
+
+    /** One metric's Charge history: the WHOOP-import nights, this pass's own nights, and the same-brand
+     *  export seed (#31), through [ChargeBaselines.history]. Kept out of the size-budgeted
+     *  [analyzeRecentOnCpu]. Swift calls `ChargeBaselines.history` inline. */
+    private fun seededHistory(
+        hist: List<DailyMetric>,
+        seedRows: List<DailyMetric>,
+        own: Map<String, Double?>,
+        anchorDay: String,
+        cfg: MetricCfg,
+        epoch: Double,
+        value: (DailyMetric) -> Double?,
+    ): ChargeBaselines.History = ChargeBaselines.historyWithSeed(
+        hist.map { it.day to value(it) }, own.entries.map { it.key to it.value }, anchorDay, cfg, epoch,
+        seed = seedRows.map { it.day to value(it) },
+    )
+
+    /** The active device whose brand picks the wearable-export history and seed ids (#31). Swift reads
+     *  `registry.activeDeviceId()` (`regActiveId`); a null ownerSource falls back to the imported id. */
+    private suspend fun historyActiveId(ownerSource: DayOwnerSource?, importedDeviceId: String): String =
+        ownerSource?.activeWriteId() ?: importedDeviceId
+
+    /** The same-brand wearable-export seed rows (one per day) and the export source each seeded day is
+     *  tagged with (#31). Kept out of [analyzeRecentOnCpu], which is size-budgeted. */
+    private suspend fun wearableBaselineSeed(
+        repo: WhoopRepository,
+        ownerSource: DayOwnerSource?,
+        importedDeviceId: String,
+    ): Pair<List<DailyMetric>, Map<String, String>> {
+        val seedIds = WearableHistory.baselineSeedIds(historyActiveId(ownerSource, importedDeviceId))
+        if (seedIds.isEmpty()) return emptyList<DailyMetric>() to emptyMap()
+        val seedLists = seedIds.map { repo.days(it) }
+        return WhoopRepository.unionByDay(seedLists).sortedBy { it.day } to seedSourceByDay(seedIds, seedLists)
+    }
+
+    /** The imported WHOOP rows the baselines read (`hist`) and the same-brand export seed (#31), in one
+     *  call so the size-budgeted [analyzeRecentOnCpu] gains no suspension point. */
+    private suspend fun baselineImports(
+        repo: WhoopRepository,
+        ownerSource: DayOwnerSource?,
+        importedDeviceId: String,
+    ): Pair<List<DailyMetric>, Pair<List<DailyMetric>, Map<String, String>>> =
+        repo.days(importedDeviceId) to wearableBaselineSeed(repo, ownerSource, importedDeviceId)
+
+    /** The export source each seeded day is tagged with: the first [seedIds] entry holding a row for it.
+     *  Swift builds the same map inline (`respSourceByDay`). */
+    internal fun seedSourceByDay(seedIds: List<String>, seedLists: List<List<DailyMetric>>): Map<String, String> {
+        val out = HashMap<String, String>()
+        seedIds.forEachIndexed { i, id -> for (row in seedLists[i]) out.putIfAbsent(row.day, id) }
+        return out
+    }
 
     /** The paired Garmin watches among the registry candidates, sorted. Swift: `garminWatchSources`. */
     private fun garminWatchIds(candidatePriorities: List<Pair<String, Int>>): List<String> =
@@ -2676,20 +2783,31 @@ object IntelligenceEngine {
         repo: WhoopRepository,
         importedId: String,
         computedId: String,
+        ownerSource: DayOwnerSource?,
         windowStart: Long,
         windowEnd: Long,
         finishedBefore: Long,
         offsetSec: Long,
     ): Pair<Long?, List<Double>> {
         val imported = repo.sleepSessionsForDevice(importedId, windowStart, windowEnd, 4000)
-        val computed = repo.sleepSessionsForDevice(computedId, windowStart, windowEnd, 4000)
+        val ownComputed = repo.sleepSessionsForDevice(computedId, windowStart, windowEnd, 4000)
+        // #31: wearable-export nights are history for the midsleep learner, sleep need and regularity, on
+        // the end-days the import and NOOP's own detection leave empty (`WhoopRepository.habitualMidsleepSec`
+        // applies the same fill). Mirrors Swift.
+        val historyIds = WearableHistory.readOrder(historyActiveId(ownerSource, importedId))
+        val history = WhoopRepository.dedupSleepBlocks(
+            historyIds.flatMap { repo.sleepSessionsForDevice(it, windowStart, windowEnd, 4000) },
+        )
+        val all = WhoopRepository.fillSleepGaps(imported + ownComputed, history) {
+            AnalyticsEngine.dayString(it.endTs, offsetSec)
+        }
         // #899: collapse overlapping timebase-shifted duplicates BEFORE the learner sees the history.
         // A stale re-banked copy of a night lands on a DIFFERENT day key, so the per-day longest-block
         // de-dup below never caught it and the learned midsleep drifted toward the stale timing, which
         // then steered the main-night pick (day assignment) to the stale block. The same collapse also
         // covers an imported night and its computed twin (the longest capture wins, exactly what the
         // per-day length rule chose anyway). Mirrors Swift.
-        val merged = finishedSessions(SleepSessionDedup.dedupe(imported + computed).kept, finishedBefore)
+        val merged = finishedSessions(SleepSessionDedup.dedupe(all).kept, finishedBefore)
         // Longest block per LOCAL day (naps drop out), chosen by in-bed SPAN — reused for BOTH the
         // midsleep learner and the per-night durations (Wave 0 · SL1/T1), so the two can never read a
         // different history. For the DURATIONS we keep TST (span × efficiency), NOT the in-bed span:

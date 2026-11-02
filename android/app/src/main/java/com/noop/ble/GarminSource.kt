@@ -122,7 +122,9 @@ class GarminSource(
     private val discoveryOnly: Boolean = false,
 ) : LiveHrSource {
 
-    enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
+    /** BUSY: the link is up but another app (Garmin Connect) holds the watch's GFDI service; the session asks
+     *  again on its backoff, on foreground and on "Sync now" (GarminCoexistence). */
+    enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, BUSY, READY, UNSUPPORTED }
 
     /** [connected]: listed from the OS's bonded / connected devices rather than an advertisement. */
     data class DiscoveredWatch(val address: String, val name: String, val rssi: Int, val connected: Boolean = false)
@@ -282,8 +284,19 @@ class GarminSource(
         gatt?.disconnect()
     }
 
-    /** "Sync now": a manual sync, which the floor never holds back. */
-    fun syncNow() = onMain { requestSync(GarminSyncTrigger.MANUAL) }
+    /** "Sync now": a manual sync, which the floor never holds back. While another app holds GFDI it asks the
+     *  watch for GFDI again instead; the sync runs on connect once the handshake completes. */
+    fun syncNow() = onMain {
+        retryGfdi()
+        requestSync(GarminSyncTrigger.MANUAL)
+    }
+
+    /** A BUSY session asks for GFDI again now (the session skips it when it asked moments ago). */
+    private fun retryGfdi() {
+        val s = session ?: return
+        if (s.phase != GarminSessionPhase.Busy) return
+        perform(s.retryGfdi(clock()))
+    }
 
     // History sync
 
@@ -461,6 +474,11 @@ class GarminSource(
                         failedConnects = 0
                         setPriority(GarminRadioPolicy.connectionPriority(GarminLinkActivity.IDLE))
                         requestSync(GarminSyncTrigger.CONNECT)
+                    }
+                    is GarminSessionPhase.Busy -> {
+                        // The link works; only GFDI is held elsewhere. No drop, no reconnect.
+                        _linkPhase.value = LinkPhase.BUSY
+                        failedConnects = 0
                     }
                     is GarminSessionPhase.Failed -> {
                         noteFailure(p.reason)
@@ -672,7 +690,10 @@ class GarminSource(
             say(true, "scan stopped - the app went to the background")
         }
         session?.let { perform(it.setForeground(isForeground, clock())) }
-        if (isForeground) requestSync(GarminSyncTrigger.FOREGROUND)
+        if (isForeground) {
+            retryGfdi()
+            requestSync(GarminSyncTrigger.FOREGROUND)
+        }
         // Backgrounding closes every live channel at once (no linger), except an active workout's HR + RR.
         applyLiveDemand()
     }

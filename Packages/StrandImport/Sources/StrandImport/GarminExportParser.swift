@@ -13,6 +13,12 @@ import Foundation
 //   *_UserBioMetricProfileData.json / daily summary — array of days carrying restingHeartRate,
 //                        minHeartRate / maxHeartRate, steps / totalSteps, totalDistanceMeters,
 //                        averageStressLevel, calendarDate.
+//   DI-Connect-Aggregator/UDSFile_*.json — the daily summaries in newer exports (same day fields; stress
+//                        under allDayStress.aggregatorList TOTAL).
+//   *_healthStatusData.json — per day, a `metrics` list whose HRV entry is the overnight HRV.
+//
+// Newer exports name the folders with hyphens (DI-Connect-Wellness) and write zoneless GMT times with a
+// fractional second; both spellings are accepted.
 //
 // Garmin's GDPR JSON sometimes uses an `*InSeconds` health-API variant of the same field; we read
 // both spellings. A field absent in the export stays nil (honest).
@@ -53,7 +59,11 @@ enum GarminExportParser {
                     row.steps = WearableJSON.posInt(d, "totalSteps") ?? WearableJSON.posInt(d, "steps") ?? row.steps
                     row.distanceM = WearableJSON.posDbl(d, "totalDistanceMeters") ?? WearableJSON.posDbl(d, "totalDistanceInMeters") ?? row.distanceM
                     row.activeKcal = WearableJSON.posDbl(d, "activeKilocalories") ?? WearableJSON.posDbl(d, "activeCalories") ?? row.activeKcal
-                    row.avgStress = WearableJSON.posInt(d, "averageStressLevel") ?? WearableJSON.posInt(d, "avgStressLevel") ?? row.avgStress
+                    row.avgStress = WearableJSON.posInt(d, "averageStressLevel") ?? WearableJSON.posInt(d, "avgStressLevel")
+                        ?? totalStress(d) ?? row.avgStress
+                    // healthStatusData: the overnight HRV sits in a `metrics` list. No other Garmin file
+                    // carries a day HRV, so file order cannot change which value wins.
+                    row.avgHrvMs = metricValue(d, "HRV") ?? row.avgHrvMs
                     byDay[key] = row
                 }
             }
@@ -107,11 +117,39 @@ enum GarminExportParser {
             stages: [])   // GDPR sleepData carries durations, not a per-segment timeline we trust to map
     }
 
-    /// `overallSleepScore` is sometimes nested under `sleepScores.overall.value`.
+    /// `overallSleepScore` is sometimes nested under `sleepScores.overall.value`, and in newer exports
+    /// under `sleepScores.overallScore`.
     private static func sleepScoreNested(_ s: [String: Any]) -> Int? {
-        guard let scores = s["sleepScores"] as? [String: Any],
-              let overall = scores["overall"] as? [String: Any] else { return nil }
-        return WearableJSON.posInt(overall, "value")
+        guard let scores = s["sleepScores"] as? [String: Any] else { return nil }
+        if let overall = scores["overall"] as? [String: Any], let v = WearableJSON.posInt(overall, "value") { return v }
+        return WearableJSON.posInt(scores, "overallScore")
+    }
+
+    /// The day's average stress from a daily summary's `allDayStress.aggregatorList` TOTAL entry.
+    /// Kotlin twin: `WearableExportImporter.garminTotalStress`.
+    private static func totalStress(_ d: [String: Any]) -> Int? {
+        guard let stress = d["allDayStress"] as? [String: Any],
+              let list = stress["aggregatorList"] as? [[String: Any]],
+              let total = list.first(where: { WearableJSON.str($0, "type") == "TOTAL" }) else { return nil }
+        return WearableJSON.posInt(total, "averageStressLevel")
+    }
+
+    /// The `value` of the entry of `type` in a healthStatusData `metrics` list.
+    /// Kotlin twin: `WearableExportImporter.garminMetricValue`.
+    private static func metricValue(_ d: [String: Any], _ type: String) -> Double? {
+        guard let metrics = d["metrics"] as? [[String: Any]],
+              let m = metrics.first(where: { WearableJSON.str($0, "type") == type }) else { return nil }
+        return WearableJSON.posDbl(m, "value")
+    }
+
+    /// Newer exports write zoneless GMT times with a fractional second ("2026-07-26T18:59:17.0"), which
+    /// the shared timestamp parser rejects. Drop the fraction so the whole-second form parses.
+    /// Kotlin twin: `WearableExportImporter.trimZonelessFraction`.
+    static func trimZonelessFraction(_ s: String) -> String {
+        guard let dot = s.lastIndex(of: "."), s.count >= 19 else { return s }
+        let tail = s[s.index(after: dot)...]
+        guard !tail.isEmpty, tail.allSatisfy({ $0.isASCII && $0.isNumber }) else { return s }
+        return String(s[..<dot])
     }
 
     private static func sleepDayKey(_ s: [String: Any], _ session: WearableSleepSession) -> String? {
@@ -125,7 +163,10 @@ enum GarminExportParser {
             // Heuristic: a value ≥ 1e11 is epoch-millis (≈ year 2001+); smaller is epoch-seconds.
             return Date(timeIntervalSince1970: ms >= 1e11 ? ms / 1000.0 : ms)
         }
-        if let s = WearableJSON.str(v, msKey), let d = WhoopTime.parse(s, offsetMinutes: 0) { return d }
+        if let s = WearableJSON.str(v, msKey),
+           let d = WhoopTime.parse(s, offsetMinutes: 0) ?? WhoopTime.parse(trimZonelessFraction(s), offsetMinutes: 0) {
+            return d
+        }
         if let secs = WearableJSON.dbl(v, secKey) { return Date(timeIntervalSince1970: secs) }
         return nil
     }

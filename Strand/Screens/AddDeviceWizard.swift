@@ -1900,6 +1900,7 @@ private struct GarminConnectProgress: View {
         switch phase {
         case .discovering, .subscribing: return "Checking which protocol the watch speaks…"
         case .handshaking:               return "Saying hello to the watch…"
+        case .busy:                      return "Watch busy with another app"
         default:                         return "Connecting to the watch…"
         }
     }

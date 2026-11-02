@@ -68,12 +68,37 @@ and 2.6 s after Bluetooth comes back on.
 
 ## Coexistence with Garmin Connect
 
-Tested only with Garmin Connect **not** connected (its phone was away). The multi-link registration
-returned status 0 on every connect; the "already in use" answer has never been seen. Until simultaneous
-use is measured:
+Every app on the phone talks to the watch over the same multi-link characteristics, each under its own
+client id. What a Forerunner 165 (fw 29.05) did with Garmin Connect on the same iPhone (NOOP strap logs,
+2026-11-02):
 
-- If NOOP reports a refused registration, close Garmin Connect or turn off Bluetooth on that phone, then
-  reconnect.
+- **One GFDI client at a time.** While Garmin Connect held GFDI, NOOP's registration was refused with
+  status 3 on every attempt.
+- **NOOP's CLOSE_ALL does not release Garmin Connect's GFDI.** It was answered and the registration
+  after it was still refused, consistent with CLOSE_ALL being scoped to the sender's client id. NOOP
+  keeps sending it on connect to clear its own stale handles.
+- **A registration appears to outlive its app while the link stays up.** After Garmin Connect's
+  Bluetooth was turned off, NOOP was still refused across relaunches; the first connect after the
+  phone's Bluetooth was toggled registered at once.
+
+How NOOP behaves (`GarminCoexistence`, both platforms):
+
+- A refused registration no longer drops the link. The watch panel shows **Watch busy with another app**;
+  NOOP asks again after 30 s, doubling to 10 minutes, and at once on foreground or **Sync now**.
+- NOOP sees the watch's answers to the other app. When they show it released GFDI, NOOP asks again 5 s
+  later. When they show it was refused GFDI while NOOP holds it, NOOP finishes any running sync and then
+  closes its own GFDI handle, so Garmin Connect can sync (and upload to Strava); NOOP asks again 2 minutes
+  later.
+- If the watch closes NOOP's GFDI handle unasked, NOOP asks again after 5 s instead of at once.
+- Live channels may open while another app holds GFDI; history sync waits for GFDI.
+- NOOP never sends a frame under another app's client id, and every ML control line in and out (both
+  apps' answers, registration statuses, handle closes) is in the strap log without a test mode.
+
+Still to measure on hardware: whether Garmin Connect lets go of GFDI after its sync, how it reacts to
+NOOP holding GFDI, and whether live channels open while it holds GFDI. Until then:
+
+- If NOOP stays "busy" after Garmin Connect is closed or its Bluetooth is off, toggle the phone's Bluetooth
+  to clear the stale registration.
 - The watch keeps only today's monitoring files, which suggests Garmin Connect removes them after
   uploading. **If Garmin Connect syncs first, NOOP may never see those files.**
 

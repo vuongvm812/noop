@@ -2161,6 +2161,12 @@
     <string name="today_section_your_cards">ВАШИ КАРТОЧКИ</string>
     <string name="today_section_menstrual_cycle">Менструальный цикл</string>
     <string name="today_section_journal">Журнал</string>
+    <string name="today_section_supplements">Добавки</string>
+    <string name="supplements_today_empty">Вопросов о добавках пока нет.</string>
+    <string name="supplements_today_add_link">Добавить в журнале</string>
+    <string name="journal_supplements_on_today_hint">Добавки отмечаются на карточке «Сегодня». Нажмите «Изменить», чтобы управлять ими.</string>
+    <string name="journal_answer_yes">Да</string>
+    <string name="journal_answer_no">Нет</string>
     <string name="today_section_added_cards">Добавленные карточки</string>
     <string name="today_hr_window_today">Сегодня</string>
     <string name="today_hr_window_24h">24ч</string>
@@ -2799,6 +2805,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Подключение…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">Протокол не поддерживается</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">Не подключено</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">Часы заняты другим приложением</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">Батарея %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">Батарея: эти часы её не сообщают</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">Последняя синхронизация %1$s</string>

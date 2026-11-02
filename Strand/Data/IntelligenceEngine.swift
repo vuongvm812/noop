@@ -987,6 +987,7 @@ final class IntelligenceEngine: ObservableObject {
         // and the Sleep tab resolve to the identical block. (#547)
         let (habitualMidsleepSec, nightlyHours) = await Self.computeHabitualSleep(
             store: store, importedId: deviceId, computedId: deviceId + "-noop",
+            historyIds: WearableHistory.readOrder(activeDeviceId: regActiveId),
             windowStart: nowLocalMidnight - maxDays * 86_400 - StreamReadCap.lookbackSeconds,
             windowEnd: now, finishedBefore: nowLocalMidnight, offsetSec: tzOffset)
         // Wave 0 (SL1/T1): personal sleep REGULARITY + population-anchored NEED, computed ONCE from the
@@ -2042,7 +2043,25 @@ final class IntelligenceEngine: ObservableObject {
         // engine scores are written under `computedId`, never into `hist`.
         var respSourceByDay: [String: String] = [:]
         for (day, owner) in resolvedScoreOwnerByDay { respSourceByDay[day] = owner }
-        let respCandidateDays = Set(hist.map(\.day)).union(nightlyRespByDay.keys).sorted()
+        // #31: the active device's own-brand wearable-export nights (a Garmin wearer's Garmin Connect
+        // export) seed the baselines at the lowest precedence, through the SAME seed ids and rule the
+        // dashboard's `ChargeBaselines.resolve` uses. Each seeded night is tagged with its export source so
+        // the era cut below reads it as the brand it is: a `garmin-import` night and a `garmin-<uuid>`
+        // night share one era, so the Garmin cut no longer drops the history that predates pairing. A WHOOP
+        // wearer gets no seed ids, so their fold is unchanged.
+        let seedIds = WearableHistory.baselineSeedIds(activeDeviceId: regActiveId)
+        var seedLists: [[DailyMetric]] = []
+        let histDays = Set(hist.map(\.day))
+        for id in seedIds {
+            let rows = (try? await store.dailyMetrics(deviceId: id, from: "0000-01-01", to: newestDay)) ?? []
+            seedLists.append(rows)
+            for row in rows where respSourceByDay[row.day] == nil && !histDays.contains(row.day) {
+                respSourceByDay[row.day] = id
+            }
+        }
+        let seedRows = Repository.coalesceUnion(seedLists)
+        let respCandidateDays = Set(hist.map(\.day)).union(nightlyRespByDay.keys)
+            .union(seedRows.map(\.day)).sorted()
         // rhr/resp/skin honour the Charge-wide recalibration epoch (noop.recoveryBaselineEpoch); 0 = no-op,
         // so the manual Recalibrate re-anchors the whole Charge build-up (HRV + resting HR + resp + skin)
         // together. The respiration baseline is additionally scoped to the CURRENT device era.
@@ -2067,12 +2086,18 @@ final class IntelligenceEngine: ObservableObject {
             respCandidateDays.map { (day: $0, sourceId: respSourceByDay[$0] ?? deviceId) })
         let hrvEpoch = max(Baselines.hrvBaselineEpoch(), garminEraEpoch)
         let rhrEpoch = max(recoveryEpoch, garminEraEpoch)
-        let hrvHistory = ChargeBaselines.history(imported: importedNights { $0.avgHrv }, own: ownNights(nightlyHrvByDay),
+        func seedNights(_ value: (DailyMetric) -> Double?) -> [(day: String, value: Double?)] {
+            seedRows.map { (day: $0.day, value: value($0)) }
+        }
+        let hrvHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.avgHrv }, own: ownNights(nightlyHrvByDay),
+                                                 seed: seedNights { $0.avgHrv },
                                                  anchorDay: newestDay, cfg: hrvCfg, baselineEpoch: hrvEpoch)
-        let rhrHistory = ChargeBaselines.history(imported: importedNights { $0.restingHr.map(Double.init) },
+        let rhrHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.restingHr.map(Double.init) },
                                                  own: ownNights(nightlyRhrByDay),
+                                                 seed: seedNights { $0.restingHr.map(Double.init) },
                                                  anchorDay: newestDay, cfg: rhrCfg, baselineEpoch: rhrEpoch)
-        let respHistory = ChargeBaselines.history(imported: importedNights { $0.respRateBpm }, own: ownNights(nightlyRespByDay),
+        let respHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.respRateBpm }, own: ownNights(nightlyRespByDay),
+                                                  seed: seedNights { $0.respRateBpm },
                                                   anchorDay: newestDay, cfg: respCfg, baselineEpoch: respEpoch)
         // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
         // so its history is the own nights alone.
@@ -3537,20 +3562,30 @@ final class IntelligenceEngine: ObservableObject {
     ///
     /// Internal rather than private only so a test can drive the `finishedBefore` cutoff directly.
     static func computeHabitualSleep(
-        store: WhoopStore, importedId: String, computedId: String,
+        store: WhoopStore, importedId: String, computedId: String, historyIds: [String] = [],
         windowStart: Int, windowEnd: Int, finishedBefore: Int, offsetSec: Int
     ) async -> (midsleepSec: Int?, nightlyHours: [Double]) {
         let imported = (try? await store.sleepSessions(deviceId: importedId, from: windowStart,
                                                        to: windowEnd, limit: 4000)) ?? []
-        let computed = (try? await store.sleepSessions(deviceId: computedId, from: windowStart,
-                                                       to: windowEnd, limit: 4000)) ?? []
+        let ownComputed = (try? await store.sleepSessions(deviceId: computedId, from: windowStart,
+                                                          to: windowEnd, limit: 4000)) ?? []
+        // #31: wearable-export nights are history for the midsleep learner, sleep need and regularity,
+        // on the end-days the import and NOOP's own detection leave empty (`Repository.habitualMidsleepSec`
+        // applies the same fill, so the Sleep tab and the rollup still pick the same block).
+        var history: [CachedSleepSession] = []
+        for id in historyIds {
+            history += (try? await store.sleepSessions(deviceId: id, from: windowStart, to: windowEnd,
+                                                       limit: 4000)) ?? []
+        }
+        let all = SleepMerge.fillingGaps(imported + ownComputed, history: Repository.dedupBlocks(history),
+                                         endDay: { AnalyticsEngine.dayString($0.endTs, offsetSec: offsetSec) })
         // #899: collapse overlapping timebase-shifted duplicates BEFORE the learner sees the history.
         // A stale re-banked copy of a night lands on a DIFFERENT day key, so the per-day longest-block
         // de-dup below never caught it and the learned midsleep drifted toward the stale timing, which
         // then steered the main-night pick (day assignment) to the stale block. The same collapse also
         // covers an imported night and its computed twin (the longest capture wins, exactly what the
         // per-day length rule chose anyway).
-        let merged = SleepSessionDedup.dedupe(imported + computed).kept.filter { $0.endTs < finishedBefore }
+        let merged = SleepSessionDedup.dedupe(all).kept.filter { $0.endTs < finishedBefore }
         // Longest block per LOCAL day (naps drop out), chosen by in-bed SPAN — reused for BOTH the
         // midsleep learner and the per-night durations (Wave 0 · SL1/T1), so the two can never read a
         // different history. For the DURATIONS we keep TST (span × efficiency), NOT the in-bed span:
