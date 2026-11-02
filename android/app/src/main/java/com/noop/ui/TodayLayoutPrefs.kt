@@ -34,6 +34,11 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
     MENSTRUAL_CYCLE("menstrualCycle", R.string.today_section_menstrual_cycle),
     JOURNAL("journal", R.string.today_section_journal),
 
+    /** Today's supplement intake (#33): the Journal's Supplements-group questions, answered in place on
+     *  Today. Same stored journal entries as the Journal, so What Moves You and the correlations are
+     *  unchanged. Placed after the journal widget; [decodeOrder] inserts it there for saved orders. */
+    SUPPLEMENTS("supplements", R.string.today_section_supplements),
+
     /** Cards hosted from the Trends / Sleep tabs (#today-hosted-cards). Renders the [HostedCardPrefs]
      *  selection in order; empty (and effectively invisible) until the user adds a card in Customise.
      *  Appended LAST so [decodeOrder]'s back-fill lands it predictably for existing saved orders. */
@@ -46,7 +51,7 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
          *  journal widget (#656) is last by default, where it was first added, above the data-sources card. */
         val defaultOrder: List<TodaySection> = listOf(
             HERO, LIVE_SESSION, SYNTHESIS, KEY_METRICS, WORKOUTS, HEART_RATE, RECOVERY_VITALS, YOUR_CARDS,
-            MENSTRUAL_CYCLE, JOURNAL, ADDED_CARDS,
+            MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
         )
     }
 }

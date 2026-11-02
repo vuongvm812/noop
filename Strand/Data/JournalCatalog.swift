@@ -201,6 +201,22 @@ final class JournalCatalogStore: ObservableObject {
         return out
     }
 
+    /// The rows of the Today Supplements card (#33): every visible item in the Supplements group, in
+    /// the Journal's order. Imported questions are not re-read from the database here: an imported
+    /// question only lands in Supplements after the user regroups it, which saves it into `items`, so
+    /// the saved non-custom canonicals stand in for the imported list. Mirrors Android
+    /// `supplementJournalItems`.
+    func supplementItems() -> [JournalCatalogItem] {
+        Self.supplementItems(
+            from: resolvedItems(imported: items.filter { !$0.custom }.map(\.canonical)))
+    }
+
+    /// Filter a resolved catalog to the visible Supplements items, ordered by sortIndex then display.
+    nonisolated static func supplementItems(from resolved: [JournalCatalogItem]) -> [JournalCatalogItem] {
+        resolved.filter { $0.group == .supplements && !$0.hidden }
+            .sorted { ($0.sortIndex, $0.display) < ($1.sortIndex, $1.display) }
+    }
+
     // MARK: - Item lookup / edits (v2)
 
     /// The saved item for a canonical key, if the user has customised it.
@@ -310,6 +326,14 @@ enum JournalGroup: String, CaseIterable, Codable {
 
     /// Fixed display order (matches Android). Groups render in this order; empty ones hide outside edit.
     static let displayOrder: [JournalGroup] = [.nutrition, .supplements, .lifestyle, .health, .behaviour, .other]
+
+    /// The groups the Journal log card renders (#33). Supplements are logged from the Today Supplements
+    /// card, so the Journal leaves that group out while answering and shows it only in edit mode, where
+    /// supplement questions are still added, renamed, regrouped and removed. Mirrors Android
+    /// `journalLogGroups`.
+    static func journalLogGroups(editing: Bool) -> [JournalGroup] {
+        editing ? displayOrder : displayOrder.filter { $0 != .supplements }
+    }
 
     var title: String {
         switch self {

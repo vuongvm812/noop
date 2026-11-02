@@ -2263,6 +2263,12 @@
     <string name="today_section_your_cards">Le tue schede</string>
     <string name="today_section_menstrual_cycle">Ciclo mestruale</string>
     <string name="today_section_journal">Diario</string>
+    <string name="today_section_supplements">Integratori</string>
+    <string name="supplements_today_empty">Ancora nessuna domanda sugli integratori.</string>
+    <string name="supplements_today_add_link">Aggiungine una nel diario</string>
+    <string name="journal_supplements_on_today_hint">Gli integratori si registrano nella scheda Oggi. Tocca Modifica per gestirli.</string>
+    <string name="journal_answer_yes">Sì</string>
+    <string name="journal_answer_no">No</string>
     <string name="today_section_added_cards">Schede aggiunte</string>
     <string name="today_hr_window_today">Oggi</string>
     <string name="today_hr_window_24h">24h</string>

@@ -121,8 +121,16 @@ struct JournalLogCard: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    ForEach(JournalGroup.displayOrder, id: \.self) { group in
+                    ForEach(JournalGroup.journalLogGroups(editing: editing), id: \.self) { group in
                         groupBlock(group)
+                    }
+                    // #33: supplements are answered on the Today Supplements card, so their group is
+                    // left out here. Edit mode still lists it for adding, renaming and removing.
+                    if !editing {
+                        Text("Supplements are logged on the Today card. Tap Edit to manage them.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Divider().overlay(StrandPalette.hairline)
@@ -177,64 +185,43 @@ struct JournalLogCard: View {
             if editing {
                 editControls(item)
             } else if item.kind.isNumeric {
-                numericField(item)
+                JournalNumericControl(
+                    item: item,
+                    value: numericAnswers[item.canonical],
+                    onCommit: { commitNumeric(item.canonical, value: $0) },
+                    onClear: { clearAnswer(item.canonical) })
             } else {
-                answerPill("Yes", q: item.canonical, value: true)
-                answerPill("No", q: item.canonical, value: false)
-            }
-        }
-    }
-
-    // MARK: - Numeric field
-
-    private func numericField(_ item: JournalCatalogItem) -> some View {
-        let current = numericAnswers[item.canonical]
-        return HStack(spacing: 6) {
-            stepperButton("minus", q: item.canonical, current: current)
-            NumericLogField(
-                value: current,
-                placeholder: "—",
-                onCommit: { v in commitNumeric(item.canonical, value: v) })
-            .frame(width: 64)
-            if let unit = item.kind.unitLabel, !unit.isEmpty {
-                Text(verbatim: unit)
-                    .font(StrandFont.footnote)
-                    .foregroundStyle(StrandPalette.textTertiary)
-            }
-            stepperButton("plus", q: item.canonical, current: current)
-            if current != nil {
-                Button {
-                    Task { await repo.clearJournalAnswer(day: dayKey, question: item.canonical); onChanged() }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(StrandFont.footnote)
-                        .foregroundStyle(StrandPalette.textTertiary)
+                JournalAnswerPills(answer: answers[item.canonical]) { answer in
+                    commitAnswer(item.canonical, answer: answer)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear \(item.display)")
             }
         }
     }
 
-    private func stepperButton(_ symbol: String, q: String, current: Double?) -> some View {
-        Button {
-            let base = current ?? 0
-            let next = max(0, symbol == "plus" ? base + 1 : base - 1)
-            commitNumeric(q, value: next)
-        } label: {
-            Image(systemName: "\(symbol).circle")
-                .font(StrandFont.body)
-                .foregroundStyle(StrandPalette.textSecondary)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(symbol == "plus" ? "Increase" : "Decrease")
-    }
+    // MARK: - Writes
 
     private func commitNumeric(_ q: String, value: Double) {
         Task {
             await repo.saveJournalNumeric(day: dayKey, question: q, value: value)
             onChanged()
         }
+    }
+
+    /// Yes/no write. `nil` is the tri-state clear (natural-key delete scoped to "noop-journal", so
+    /// imported rows can never be removed this way).
+    private func commitAnswer(_ q: String, answer: Bool?) {
+        Task {
+            if let answer {
+                await repo.saveJournalAnswer(day: dayKey, question: q, answeredYes: answer)
+            } else {
+                await repo.clearJournalAnswer(day: dayKey, question: q)
+            }
+            onChanged()
+        }
+    }
+
+    private func clearAnswer(_ q: String) {
+        Task { await repo.clearJournalAnswer(day: dayKey, question: q); onChanged() }
     }
 
     // MARK: - Edit-mode controls
@@ -370,24 +357,24 @@ struct JournalLogCard: View {
         }
     }
 
-    private func answerPill(_ label: LocalizedStringKey, q: String, value: Bool) -> some View {
-        let selected = answers[q] == value
-        return pillButton(label, selected: selected) {
-            Task {
-                // Tri-state: re-tapping the filled chip clears the answer (natural-key delete,
-                // scoped to "noop-journal", imported rows can never be removed this way).
-                if selected {
-                    await repo.clearJournalAnswer(day: dayKey, question: q)
-                } else {
-                    await repo.saveJournalAnswer(day: dayKey, question: q, answeredYes: value)
-                }
-                onChanged()
-            }
-        }
-    }
-
     private func pillButton(_ label: LocalizedStringKey, selected: Bool,
                             action: @escaping () -> Void) -> some View {
+        JournalPill(label: label, selected: selected, action: action)
+    }
+}
+
+// MARK: - Shared row controls (#33)
+//
+// The answer controls for one journal item, shared by the Journal log card and the Today Supplements
+// card so both surfaces log identically. They only render and report; the host owns the write.
+
+/// A pill button, filled with the rest colour when selected and hairline-bordered otherwise.
+struct JournalPill: View {
+    let label: LocalizedStringKey
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
         Button(action: action) {
             Text(label)
                 .font(StrandFont.footnote)
@@ -400,6 +387,69 @@ struct JournalLogCard: View {
                                           lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Yes / No pills for a yes/no journal item. Tri-state: re-tapping the selected pill reports `nil`
+/// (clear the answer); tapping the other pill reports its value.
+struct JournalAnswerPills: View {
+    let answer: Bool?
+    let onSelect: (Bool?) -> Void
+
+    var body: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            JournalPill(label: "Yes", selected: answer == true) {
+                onSelect(answer == true ? nil : true)
+            }
+            JournalPill(label: "No", selected: answer == false) {
+                onSelect(answer == false ? nil : false)
+            }
+        }
+    }
+}
+
+/// The numeric control for a numeric journal item: − / value field / unit / + plus a clear button
+/// once a value is logged. Steps by 1 and never goes below 0.
+struct JournalNumericControl: View {
+    let item: JournalCatalogItem
+    let value: Double?
+    let onCommit: (Double) -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            stepperButton("minus")
+            NumericLogField(value: value, placeholder: "—", onCommit: onCommit)
+                .frame(width: 64)
+            if let unit = item.kind.unitLabel, !unit.isEmpty {
+                Text(verbatim: unit)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+            stepperButton("plus")
+            if value != nil {
+                Button(action: onClear) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear \(item.display)")
+            }
+        }
+    }
+
+    private func stepperButton(_ symbol: String) -> some View {
+        Button {
+            let base = value ?? 0
+            onCommit(max(0, symbol == "plus" ? base + 1 : base - 1))
+        } label: {
+            Image(systemName: "\(symbol).circle")
+                .font(StrandFont.body)
+                .foregroundStyle(StrandPalette.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(symbol == "plus" ? "Increase" : "Decrease")
     }
 }
 
