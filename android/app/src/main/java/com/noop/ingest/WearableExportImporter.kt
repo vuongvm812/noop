@@ -661,7 +661,11 @@ object WearableExportImporter {
                     d.steps = rec.posInt("totalSteps") ?: rec.posInt("steps") ?: d.steps
                     d.distanceM = rec.posDbl("totalDistanceMeters") ?: rec.posDbl("totalDistanceInMeters") ?: d.distanceM
                     d.activeKcal = rec.posDbl("activeKilocalories") ?: rec.posDbl("activeCalories") ?: d.activeKcal
-                    d.avgStress = rec.posInt("averageStressLevel") ?: rec.posInt("avgStressLevel") ?: d.avgStress
+                    d.avgStress = rec.posInt("averageStressLevel") ?: rec.posInt("avgStressLevel")
+                        ?: garminTotalStress(rec) ?: d.avgStress
+                    // healthStatusData: the overnight HRV sits in a `metrics` list. No other Garmin file
+                    // carries a day HRV, so file order cannot change which value wins.
+                    d.avgHrvMs = garminMetricValue(rec, "HRV") ?: d.avgHrvMs
                 }
             }
         }
@@ -693,6 +697,7 @@ object WearableExportImporter {
         val total = listOfNotNull(deep, light, rem).sum()
         val score = s.posInt("overallSleepScore")
             ?: s.optJSONObject("sleepScores")?.optJSONObject("overall")?.posInt("value")
+            ?: s.optJSONObject("sleepScores")?.posInt("overallScore")
         return SleepAcc(
             startTs = start, endTs = end,
             deepMin = deep, lightMin = light, remMin = rem, awakeMin = awake,
@@ -704,10 +709,46 @@ object WearableExportImporter {
         )
     }
 
+    /** The day's average stress from a daily summary's `allDayStress.aggregatorList` TOTAL entry. Swift twin: `GarminExportParser.totalStress`. */
+    private fun garminTotalStress(rec: JSONObject): Int? {
+        val list = rec.optJSONObject("allDayStress")?.optJSONArray("aggregatorList") ?: return null
+        for (i in 0 until list.length()) {
+            val e = list.optJSONObject(i) ?: continue
+            if (e.strOpt("type") == "TOTAL") return e.posInt("averageStressLevel")
+        }
+        return null
+    }
+
+    /** The `value` of the entry of [type] in a healthStatusData `metrics` list. Swift twin: `GarminExportParser.metricValue`. */
+    private fun garminMetricValue(rec: JSONObject, type: String): Double? {
+        val metrics = rec.optJSONArray("metrics") ?: return null
+        for (i in 0 until metrics.length()) {
+            val m = metrics.optJSONObject(i) ?: continue
+            if (m.strOpt("type") == type) return m.posDbl("value")
+        }
+        return null
+    }
+
+    /**
+     * Newer exports write zoneless GMT times with a fractional second ("2026-07-26T18:59:17.0"), which
+     * the shared timestamp parser rejects. Drop the fraction so the whole-second form parses.
+     * Swift twin: `GarminExportParser.trimZonelessFraction`.
+     */
+    internal fun trimZonelessFraction(s: String): String {
+        val dot = s.lastIndexOf('.')
+        if (dot < 0 || s.length < 19) return s
+        val tail = s.substring(dot + 1)
+        if (tail.isEmpty() || !tail.all { it in '0'..'9' }) return s
+        return s.substring(0, dot)
+    }
+
     /** A Garmin timestamp may be epoch MILLIS (number), epoch SECONDS, or an ISO string. */
     private fun garminInstant(v: JSONObject, msKey: String, secKey: String): Long? {
         v.dblOpt(msKey)?.let { return if (it >= 1e11) (it / 1000.0).toLong() else it.toLong() }
-        v.strOpt(msKey)?.let { WhoopTime.parseEpochSeconds(it, 0)?.let { s -> return s } }
+        v.strOpt(msKey)?.let {
+            (WhoopTime.parseEpochSeconds(it, 0) ?: WhoopTime.parseEpochSeconds(trimZonelessFraction(it), 0))
+                ?.let { s -> return s }
+        }
         v.dblOpt(secKey)?.let { return it.toLong() }
         return null
     }
@@ -860,7 +901,9 @@ object WearableExportImporter {
         }
         if (!name.endsWith(".json")) return false
         val hints = listOf("sleep", "heart", "rate", "step", "stress", "activit", "readiness", "wellness",
-            "rhr", "oura", "calorie", "spo2", "respiration", "temperature", "biometric", "summarizedactivities", "di_connect")
+            "rhr", "oura", "calorie", "spo2", "respiration", "temperature", "biometric", "summarizedactivities", "di_connect",
+            // Garmin's newer export: daily summaries (UDSFile) and overnight HRV (healthStatusData).
+            "udsfile", "healthstatus")
         return hints.any { name.contains(it) }
     }
 

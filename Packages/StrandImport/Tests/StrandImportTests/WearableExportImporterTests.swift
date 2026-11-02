@@ -416,6 +416,72 @@ final class WearableExportImporterTests: XCTestCase {
         XCTAssertEqual(d.avgStress, 31)
     }
 
+    func testGarminNewerExportLayout() {
+        // The current export: hyphenated folders, zoneless GMT times with a fractional second, the
+        // score under sleepScores.overallScore, daily summaries in DI-Connect-Aggregator/UDSFile_*,
+        // stress under allDayStress TOTAL, and the overnight HRV in healthStatusData `metrics`.
+        let sleepData = """
+        [ { "calendarDate": "2026-06-01", "sleepStartTimestampGMT": "2026-05-31T22:30:00.0",
+            "sleepEndTimestampGMT": "2026-06-01T05:30:00.0",
+            "deepSleepSeconds": 4800, "lightSleepSeconds": 14400, "remSleepSeconds": 5400,
+            "awakeSleepSeconds": 600, "averageRespiration": 15.5,
+            "sleepScores": { "overallScore": 71, "qualityScore": 88 } } ]
+        """
+        let uds = """
+        [ { "calendarDate": "2026-06-01", "restingHeartRate": 58, "totalSteps": 6400,
+            "totalDistanceMeters": 5100, "activeKilocalories": 320.0,
+            "allDayStress": { "calendarDate": "2026-06-01", "aggregatorList": [
+              { "type": "AWAKE", "averageStressLevel": 40 },
+              { "type": "TOTAL", "averageStressLevel": 33 } ] } } ]
+        """
+        let health = """
+        [ { "calendarDate": "2026-06-01", "metrics": [
+            { "type": "HR", "value": 57.0 }, { "type": "HRV", "value": 74.0 },
+            { "type": "SPO2" }, { "type": "RESPIRATION", "value": 17.2 } ] } ]
+        """
+        let names = [
+            "DI_CONNECT/DI-Connect-Wellness/2026-05-31_2026-08-29_1_sleepData.json",
+            "DI_CONNECT/DI-Connect-Aggregator/UDSFile_2026-05-31_2026-08-29.json",
+            "DI_CONNECT/DI-Connect-Wellness/2026-05-31_2026-08-29_1_healthStatusData.json",
+        ]
+        for n in names {
+            XCTAssertTrue(WearableExportImporter.isWellnessFile((n.lowercased() as NSString).lastPathComponent, data: Data()), n)
+        }
+        let files = [
+            names[0].lowercased(): bytes(sleepData),
+            names[1].lowercased(): bytes(uds),
+            names[2].lowercased(): bytes(health),
+        ]
+        XCTAssertEqual(WearableExportImporter.detectBrand(files), .garmin)
+        let r = WearableExportImporter.parse(brand: .garmin, files: files)
+
+        XCTAssertEqual(r.sleeps.count, 1)
+        let s = r.sleeps[0]
+        XCTAssertEqual(s.start.timeIntervalSince1970, 1_780_266_600)   // 2026-05-31 22:30:00Z
+        XCTAssertEqual(s.end.timeIntervalSince1970, 1_780_291_800)     // 2026-06-01 05:30:00Z
+        XCTAssertEqual(s.totalSleepMin!, 410, accuracy: 1e-6)
+        XCTAssertEqual(s.sleepScore, 71)
+
+        XCTAssertEqual(r.days.count, 1)
+        let d = r.days[0]
+        XCTAssertEqual(d.day, "2026-06-01")
+        XCTAssertEqual(d.restingHr, 58)                 // the daily summary, not healthStatus HR
+        XCTAssertEqual(d.steps, 6400)
+        XCTAssertEqual(d.avgStress, 33)                 // the TOTAL entry
+        XCTAssertEqual(d.avgHrvMs!, 74, accuracy: 1e-6)
+        XCTAssertEqual(d.respRateBpm!, 15.5, accuracy: 1e-6)   // the night's, not healthStatus
+        XCTAssertEqual(d.sleepScore, 71)
+    }
+
+    func testGarminZonelessFractionTrim() {
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.0"), "2026-07-26T18:59:17")
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.186"), "2026-07-26T18:59:17")
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.0Z"), "2026-07-26T18:59:17.0Z")
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17"), "2026-07-26T18:59:17")
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("1.5"), "1.5")
+        XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17."), "2026-07-26T18:59:17.")
+    }
+
     // MARK: - Safety / honesty
 
     func testJunkAndZeroValuesAreRejectedSafely() {

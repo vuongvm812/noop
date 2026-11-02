@@ -505,6 +505,74 @@ class WearableExportImporterTest {
             13.7, d.respRateBpm!!, 1e-6)
     }
 
+    @Test
+    fun garminNewerExportLayout() {
+        // The current export: hyphenated folders, zoneless GMT times with a fractional second, the
+        // score under sleepScores.overallScore, daily summaries in DI-Connect-Aggregator/UDSFile_*,
+        // stress under allDayStress TOTAL, and the overnight HRV in healthStatusData `metrics`.
+        val sleepData = """
+            [ { "calendarDate": "2026-06-01", "sleepStartTimestampGMT": "2026-05-31T22:30:00.0",
+                "sleepEndTimestampGMT": "2026-06-01T05:30:00.0",
+                "deepSleepSeconds": 4800, "lightSleepSeconds": 14400, "remSleepSeconds": 5400,
+                "awakeSleepSeconds": 600, "averageRespiration": 15.5,
+                "sleepScores": { "overallScore": 71, "qualityScore": 88 } } ]
+        """
+        val uds = """
+            [ { "calendarDate": "2026-06-01", "restingHeartRate": 58, "totalSteps": 6400,
+                "totalDistanceMeters": 5100, "activeKilocalories": 320.0,
+                "allDayStress": { "calendarDate": "2026-06-01", "aggregatorList": [
+                  { "type": "AWAKE", "averageStressLevel": 40 },
+                  { "type": "TOTAL", "averageStressLevel": 33 } ] } } ]
+        """
+        val health = """
+            [ { "calendarDate": "2026-06-01", "metrics": [
+                { "type": "HR", "value": 57.0 }, { "type": "HRV", "value": 74.0 },
+                { "type": "SPO2" }, { "type": "RESPIRATION", "value": 17.2 } ] } ]
+        """
+        val names = listOf(
+            "DI_CONNECT/DI-Connect-Wellness/2026-05-31_2026-08-29_1_sleepData.json",
+            "DI_CONNECT/DI-Connect-Aggregator/UDSFile_2026-05-31_2026-08-29.json",
+            "DI_CONNECT/DI-Connect-Wellness/2026-05-31_2026-08-29_1_healthStatusData.json",
+        )
+        for (n in names) {
+            assertTrue(n, WearableExportImporter.isWellnessFile(n.lowercase().substringAfterLast('/'), ByteArray(0)))
+        }
+        val files = mapOf(
+            names[0].lowercase() to bytes(sleepData),
+            names[1].lowercase() to bytes(uds),
+            names[2].lowercase() to bytes(health),
+        )
+        assertEquals(WearableExportImporter.Brand.GARMIN, WearableExportImporter.detectBrand(files))
+        val p = WearableExportImporter.parseGarmin(files)
+
+        assertEquals(1, p.sleeps.size)
+        val s = p.sleeps[0]
+        assertEquals(1_780_266_600L, s.startTs)        // 2026-05-31 22:30:00Z
+        assertEquals(1_780_291_800L, s.endTs)          // 2026-06-01 05:30:00Z
+        assertEquals(410.0, s.totalSleepMin!!, 1e-6)
+        assertEquals(71, s.sleepScore)
+
+        assertEquals(1, p.days.size)
+        val d = p.days[0]
+        assertEquals("2026-06-01", d.day)
+        assertEquals(58, d.restingHr)                  // the daily summary, not healthStatus HR
+        assertEquals(6400, d.steps)
+        assertEquals(33, d.avgStress)                  // the TOTAL entry
+        assertEquals(74.0, d.avgHrvMs!!, 1e-6)
+        assertEquals(15.5, d.respRateBpm!!, 1e-6)      // the night's, not healthStatus
+        assertEquals(71, d.sleepScore)
+    }
+
+    @Test
+    fun garminZonelessFractionTrim() {
+        assertEquals("2026-07-26T18:59:17", WearableExportImporter.trimZonelessFraction("2026-07-26T18:59:17.0"))
+        assertEquals("2026-07-26T18:59:17", WearableExportImporter.trimZonelessFraction("2026-07-26T18:59:17.186"))
+        assertEquals("2026-07-26T18:59:17.0Z", WearableExportImporter.trimZonelessFraction("2026-07-26T18:59:17.0Z"))
+        assertEquals("2026-07-26T18:59:17", WearableExportImporter.trimZonelessFraction("2026-07-26T18:59:17"))
+        assertEquals("1.5", WearableExportImporter.trimZonelessFraction("1.5"))
+        assertEquals("2026-07-26T18:59:17.", WearableExportImporter.trimZonelessFraction("2026-07-26T18:59:17."))
+    }
+
     // ---------------- Date formatter caching (PR #583) ----------------
     //
     // The Fitbit/dayKey formatters were hoisted to cached fields; these pin that the parse behaviour —
