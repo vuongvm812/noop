@@ -155,14 +155,14 @@ class GarminAnalyticsEngineTest {
     }
 
     @Test
-    fun effortVariesAndIsLabelledExperimentalAndStressStaysOnItsOwnScale() = runBlocking {
+    fun effortVariesWithNoExperimentalLabelAndStressStaysOnItsOwnScale() = runBlocking {
         seed(9)
         val strains = repo.dailyMetrics(computed, "0000-01-01", "9999-12-31").mapNotNull { it.strain }
         assertTrue("rest / easy / hard days must not all score the same Effort",
             strains.map { Math.round(it * 10) }.toSet().size > 1)
         val key = dayKey(todayMidnight - 86_400L)
         assertEquals(watch, repo.scoreInputSource(computed, key, "strain"))
-        assertTrue(heroEffortExperimental(mapOf("strain" to ScoreInputProvider(watch, "Garmin"))))
+        assertFalse(heroEffortExperimental(mapOf("strain" to ScoreInputProvider(watch, "Garmin"))))
         assertEquals(DisplayText.Resource(R.string.today_source_garmin), provenanceDisplayLabel(watch, watch))
         assertTrue("Garmin stress must not land in the 0-3 stress series",
             repo.metricSeries(watch, "stress", "0000-01-01", "9999-12-31").isEmpty())

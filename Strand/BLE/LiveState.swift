@@ -55,7 +55,7 @@ public final class LiveState: ObservableObject {
     /// radio-off / connect-fail / disconnect). Twin of the Android LiveState.streamingLiveHR.
     @Published public var streamingLiveHR: Bool = false
     @Published public var heartRate: Int? = nil
-    /// The latest live values an EXPERIMENTAL Garmin watch reported on its realtime channels (Body Battery,
+    /// The latest live values a Garmin watch reported on its realtime channels (Body Battery,
     /// respiration, SpO2, steps, floors, resting HR). nil when no Garmin is streaming; a field is nil when its
     /// channel is closed or the watch sent its "unknown" code. Kotlin twin: `LiveState.garminLive`.
     @Published public var garminLive: GarminLiveSnapshot? = nil

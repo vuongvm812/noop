@@ -1765,13 +1765,13 @@ private data class DeviceCapabilityProfile(
 internal fun isGarminWatch(device: PairedDeviceRow): Boolean = device.sourceKind == SourceKind.garmin.name
 
 private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
-    // EXPERIMENTAL Garmin watch over GFDI: history files + live channels, read-only.
+    // Garmin watch over GFDI: history files + live channels, read-only.
     if (isGarminWatch(device)) {
         return DeviceCapabilityProfile(
-            displayModel = uiString(R.string.l10n_devices_screen_experimental_4340debb, device.model),
+            displayModel = device.model,
             captures = uiString(R.string.l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee),
-            powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896),
-            footnote = uiString(R.string.l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff),
+            powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2),
+            footnote = uiString(R.string.l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd),
         )
     }
     // FTMS gym machine: a live machine + (when reported) HR session, recorded via the existing

@@ -1,10 +1,11 @@
-# Garmin watches (experimental)
+# Garmin watches
 
 NOOP can pair a Garmin watch over the watch's own Bluetooth protocol (GFDI) and read its data on the
 device: the watch's history files (sleep, heart rate, steps, stress, Body Battery, SpO2, respiration,
-HRV) and live channels on demand. It is **experimental**: one model has been tested on hardware, and
-several pieces are still being validated (listed below). Nothing leaves the device, no Garmin account is
-used, and NOOP never pretends to be Garmin Connect.
+HRV) and live channels on demand. Garmin is a supported device (#43) and pairs from the normal Add a
+device flow. One model has been tested on hardware, and several pieces are still being validated
+(listed below). Nothing leaves the device, no Garmin account is used, and NOOP never pretends to be
+Garmin Connect.
 
 The Broadcast Heart Rate fallback (the watch's standard heart-rate broadcast, `GarminBroadcast`) stays
 available for any watch NOOP cannot pair this way.
@@ -58,8 +59,8 @@ and 2.6 s after Bluetooth comes back on.
 - **Live:** heart rate and R-R in the usual live console, plus Body Battery, respiration, steps, floors
   and an on-request SpO2 reading ("Measure SpO₂", 60 s).
 - **Today, Sleep, Trends:** the watch's own resting heart rate, HRV, sleep stages, SpO2, respiration and
-  steps, with Charge, Effort and Rest computed by NOOP from them. Effort from a Garmin day is labelled
-  experimental until it has been compared with Garmin's own numbers.
+  steps, with Charge, Effort and Rest computed by NOOP from them. Effort shows "calibrating" while its
+  baselines are not yet usable, the same as for WHOOP.
 - **Test Centre → Garmin** (shown when a Garmin watch is paired): the current connect (link, watch,
   firmware, protocol, MTU, handshake time, sessions, last failure), the radio counters, the realtime
   capture toggle for channels 8 / 10 / 13, and the sync-file list (every FIT file the watch listed at the

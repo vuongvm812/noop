@@ -1,6 +1,6 @@
 import Foundation
 
-/// EXPERIMENTAL Garmin support — the in-app "enable Broadcast Heart Rate" hint.
+/// Garmin support — the in-app "enable Broadcast Heart Rate" hint.
 ///
 /// The FALLBACK path. A watch NOOP pairs over its own GFDI protocol runs `GarminSource` (`.garmin`). For a
 /// model whose protocol NOOP does not speak, the watch can still broadcast the STANDARD Bluetooth Heart

@@ -1240,8 +1240,9 @@ fun TodayScreen(
             usesCarriedRecovery = displayMetric?.recovery == null && lastScoredCharge != null,
         )
     }
-    // Garmin child 9: an Effort scored from a Garmin watch's heart rate is labelled experimental until a
-    // multi-day comparison validates it. Mirrors LiquidTodayView.heroSourceLabel.
+    // Garmin child 9: the "Effort experimental" suffix follows GarminScoringInputs.effortIsExperimental. Garmin
+    // is official (#43, EFFORT_VALIDATED), so a Garmin-scored Effort carries no label. Mirrors
+    // LiquidTodayView.heroSourceLabel.
     val effortExperimentalLabel = if (heroEffortExperimental(providerByMetric)) {
         uiString(R.string.today_effort_experimental)
     } else {

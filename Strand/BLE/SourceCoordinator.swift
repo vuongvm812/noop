@@ -327,7 +327,7 @@ final class SourceCoordinator: ObservableObject {
             polarDebug: { UserDefaults.standard.bool(forKey: AppModel.polarDebugLoggingKey) })
     }
 
-    /// Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`.garmin`). It holds the session,
+    /// Build the Garmin source for a watch paired over GFDI (`.garmin`). It holds the session,
     /// the handshake and the read-only history sync; battery rides the SAME `LiveState` funnel as the other
     /// sources. The
     /// first-pairing flag is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once.

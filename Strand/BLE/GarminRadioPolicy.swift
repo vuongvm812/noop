@@ -37,7 +37,7 @@ struct GarminRadioInputs: Equatable {
     var liveScreenVisible: Bool = false
     /// A NOOP workout is recording. The only demand that survives the app going to the background.
     var workoutActive: Bool = false
-    /// The experimental "continuous live" toggle (off by default, shown with a battery warning).
+    /// The "continuous live" toggle (off by default, shown with a battery warning).
     var continuousLiveEnabled: Bool = false
     /// The user is asleep. Unattended demand (continuous live) stops; sleep comes from history files.
     var asleep: Bool = false

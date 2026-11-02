@@ -56,14 +56,17 @@ final class GarminWatchUiTests: XCTestCase {
         XCTAssertEqual(GarminWatchFacts.summaryLine(s), "42 new files, 0 already in NOOP, 65 on the watch")
     }
 
-    func testGarminDeviceProfileIsExperimentalAndReadOnly() {
+    func testGarminDeviceProfileIsReadOnlyWithNoExperimentalLabel() {
         let device = PairedDevice(id: "garmin-1", brand: "Garmin", model: "Forerunner 165", nickname: nil,
                                   peripheralId: "1", sourceKind: .garmin, capabilities: [.hr],
                                   status: .active, addedAt: 0, lastSeenAt: 0)
         let p = DeviceCapabilityProfile.make(for: device)
-        XCTAssertEqual(p.displayModel, "Forerunner 165 (experimental)")
+        XCTAssertEqual(p.displayModel, "Forerunner 165")
         XCTAssertTrue(p.captures.contains("Body Battery"))
         XCTAssertTrue(p.footnote.contains("Read-only"))
+        for text in [p.displayModel, p.powers, p.footnote] {
+            XCTAssertFalse(text.lowercased().contains("experimental"), text)
+        }
         // A Broadcast Heart Rate Garmin (liveBLE) keeps the generic strap profile.
         let broadcast = PairedDevice(id: "garmin-2", brand: "Garmin", model: "Forerunner 165", nickname: nil,
                                      peripheralId: "2", sourceKind: .liveBLE, capabilities: [.hr, .hrv],

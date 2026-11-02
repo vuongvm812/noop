@@ -188,7 +188,7 @@ class NoopApplication : Application() {
             straplog = { ble.externalLog(it) },
             // A generic strap's standard battery (0x180F) → the same live battery field the WHOOP uses.
             batterySink = { pct -> ble.publishExternalBattery(pct) },
-            // An EXPERIMENTAL Garmin watch's live channels: blank HR when its channel closes, and its live
+            // A Garmin watch's live channels: blank HR when its channel closes, and its live
             // Body Battery / respiration / SpO2 / steps / floors snapshot.
             clearExternalLiveHr = { ble.clearExternalLiveHr() },
             garminLiveSink = { snapshot -> ble.publishExternalGarminLive(snapshot) },

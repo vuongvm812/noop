@@ -2840,7 +2840,7 @@
     <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Garmin 实时采集</string>
     <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">NOOP 打开时，监听手表的实时卡路里、强度分钟和压力通道，并将每条消息连同未经验证的读数写入手环日志。其他功能都不会使用这些数值。开启期间会额外消耗手表电量。</string>
     <string name="l10n_add_device_wizard_garmin_watch_a866104a">Garmin 手表</string>
-    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690">通过手表自有协议配对：历史同步和实时数据，只读。欢迎帮我们测试。</string>
+    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb">通过手表自有协议配对：历史同步和实时数据，只读。</string>
     <string name="l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606">在手表上打开设置，然后进入手机（或连接），选择配对手机。手表显示的二维码可以忽略。</string>
     <string name="l10n_add_device_wizard_keep_the_watch_close_and_awake_480e2c09">让手表靠近并保持唤醒。如果本设备请求配对，请确认 PIN 与手表一致后接受。</string>
     <string name="l10n_add_device_wizard_noop_only_reads_from_the_watch_6177a179">NOOP 只从手表读取数据，绝不删除、归档或更改手表上的任何内容。</string>
@@ -2870,11 +2870,9 @@
     <string name="l10n_add_device_wizard_last_error_ee28d44b">上次错误：%1$s</string>
     <string name="l10n_add_device_wizard_keep_waiting_9be1abba">继续等待</string>
     <string name="l10n_add_device_wizard_connected_to_this_device_755ed69e">已连接到本设备</string>
-    <string name="l10n_add_device_wizard_experimental_b718f8c3">实验性</string>
-    <string name="l10n_devices_screen_experimental_4340debb">%1$s（实验性）</string>
     <string name="l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee">心率 · R-R · 睡眠 · 步数 · SpO₂ · 呼吸 · 压力 · 身体电量 · HRV</string>
-    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896">用手表自己的数据计算充能、负荷与恢复。负荷为实验性</string>
-    <string name="l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff">实验性。只读：NOOP 下载手表的文件，绝不删除或更改它们。Garmin 的压力和身体电量按 Garmin 报告的数值显示。</string>
+    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2">用手表自己的数据计算充能、负荷与恢复。</string>
+    <string name="l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd">只读：NOOP 下载手表的文件，绝不删除或更改它们。Garmin 的压力和身体电量按 Garmin 报告的数值显示。</string>
     <string name="l10n_garmin_watch_panel_connected_c2f9b7b4">已连接</string>
     <string name="l10n_garmin_watch_panel_syncing_history_03ec192e">正在同步历史…</string>
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">正在连接…</string>

@@ -37,7 +37,7 @@ data class GarminRadioInputs(
     val liveScreenVisible: Boolean = false,
     /** A NOOP workout is recording. The only demand that survives the app going to the background. */
     val workoutActive: Boolean = false,
-    /** The experimental "continuous live" toggle (off by default, shown with a battery warning). */
+    /** The "continuous live" toggle (off by default, shown with a battery warning). */
     val continuousLiveEnabled: Boolean = false,
     /** The user is asleep. Unattended demand (continuous live) stops; sleep comes from history files. */
     val asleep: Boolean = false,

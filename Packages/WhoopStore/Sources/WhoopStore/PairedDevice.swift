@@ -72,7 +72,7 @@ public enum SourceKind: String, Sendable, CaseIterable {
     /// wins ownership only when nothing else has data (a genuinely strap-less day), where its measured HR
     /// lights the day Effort. Additive (no DB migration): only the activity-file importer writes it.
     case activityFile
-    /// An EXPERIMENTAL Garmin watch over its own GFDI protocol (GarminProtocol package, `GarminSource`): one
+    /// A Garmin watch over its own GFDI protocol (GarminProtocol package, `GarminSource`): one
     /// low-power session with the clean-room handshake, owning its OWN central/GATT, never the WHOOP path.
     /// The Broadcast Heart Rate path (`liveBLE` via `StandardHRSource`) stays available for models whose
     /// protocol NOOP does not speak. Additive (no DB migration): only a Garmin pairing writes it, and an

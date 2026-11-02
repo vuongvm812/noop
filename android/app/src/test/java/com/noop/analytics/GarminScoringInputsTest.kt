@@ -145,8 +145,8 @@ class GarminScoringInputsTest {
     fun storedIdsAndEffortLabel() {
         assertEquals(FusionSource.GARMIN_WATCH, FusionSource.forStoredSourceId("garmin-AA:BB"))
         assertNull(FusionSource.forStoredSourceId("garmin-import"))
-        assertFalse(GarminScoringInputs.EFFORT_VALIDATED)
-        assertTrue(GarminScoringInputs.effortIsExperimental("garmin-AA:BB", "Garmin"))
+        assertTrue("Garmin is official (#43)", GarminScoringInputs.EFFORT_VALIDATED)
+        assertFalse(GarminScoringInputs.effortIsExperimental("garmin-AA:BB", "Garmin"))
         assertFalse(GarminScoringInputs.effortIsExperimental("my-whoop", "WHOOP"))
     }
 
@@ -521,9 +521,9 @@ class GarminScoringInputsTest {
             era 5 0.0000
             era 6 1790899200.0000
             era 7 1790899200.0000
-            effort garmin-A Garmin true
-            effort garmin-A nil true
-            effort strap-1 Garmin true
+            effort garmin-A Garmin false
+            effort garmin-A nil false
+            effort strap-1 Garmin false
             effort strap-1 Polar false
             effort garmin-import Garmin false
             effort my-whoop nil false

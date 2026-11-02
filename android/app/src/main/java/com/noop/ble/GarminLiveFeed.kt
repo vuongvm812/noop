@@ -21,7 +21,7 @@ sealed class GarminLiveEvent {
 }
 
 /**
- * Feeds an EXPERIMENTAL Garmin watch's live channels into NOOP's shared live state and store through the same
+ * Feeds a Garmin watch's live channels into NOOP's shared live state and store through the same
  * funnels every other source uses. Twin of Strand/BLE/GarminLiveFeed.swift:
  *   - heart rate -> [liveSink] (the live HR seam) and an hrSample row per reading;
  *   - beat intervals -> [liveSink]'s R-R list (the intake the live HRV, strain and stress math reads) and

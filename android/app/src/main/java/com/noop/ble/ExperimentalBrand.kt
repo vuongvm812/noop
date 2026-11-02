@@ -4,13 +4,14 @@ import com.noop.data.DeviceBrandCatalog
 import com.noop.data.SourceKind
 
 /**
- * CLEAN-ROOM best-effort recognition of the EXPERIMENTAL band families from an advertised device name.
+ * CLEAN-ROOM best-effort recognition of the custom-protocol band families from an advertised device name.
  *
  * Faithful Kotlin twin of Strand/BLE/ExperimentalBrand.swift. A thin TYPED VIEW over [DeviceBrandCatalog]
  * (the pure, JVM-unit-tested single source of truth in com.noop.data): the advertised-name tokens and
- * capability facts live there once, and this enum only names the four experimental families so the drivers
- * can switch on them. Deliberately conservative: an unrecognised name returns null rather than a wrong
- * guess. NOTHING here fabricates data — it only labels a discovered peripheral so the experimental
+ * capability facts live there once, and this enum only names the four custom-protocol families so the
+ * drivers can switch on them. Amazfit, Mi Band and Oura are the experimental tier; Garmin is supported
+ * (#43). The type keeps its historical name. Deliberately conservative: an unrecognised name returns null
+ * rather than a wrong guess. NOTHING here fabricates data — it only labels a discovered peripheral so the
  * add-device flow can show the honest per-brand guidance. US English throughout.
  */
 enum class ExperimentalBrand(val displayBrand: String) {
@@ -46,11 +47,10 @@ enum class ExperimentalBrand(val displayBrand: String) {
 
     companion object {
         /** Best-effort brand from an advertised name. Returns null for an unrecognised name, OR for a name
-         *  the catalog recognises as a NON-experimental generic strap (Polar / Wahoo / …). All token
-         *  matching lives in [DeviceBrandCatalog]. */
+         *  the catalog recognises as a generic standard-HR strap (Polar / Wahoo / …). All token matching
+         *  lives in [DeviceBrandCatalog]. */
         fun recognise(name: String): ExperimentalBrand? {
             val spec = DeviceBrandCatalog.specForAdvertisedName(name) ?: return null
-            if (!spec.isExperimentalTier) return null
             return values().firstOrNull { it.displayBrand == spec.brand }
         }
     }

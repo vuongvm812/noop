@@ -106,10 +106,10 @@ final class GarminScoringInputsTests: XCTestCase {
 
     // MARK: Effort label
 
-    func testGarminEffortIsExperimentalUntilValidated() {
-        XCTAssertFalse(GarminScoringInputs.effortValidated)
-        XCTAssertTrue(GarminScoringInputs.effortIsExperimental(sourceId: "garmin-AAA", brand: "Garmin"))
-        XCTAssertTrue(GarminScoringInputs.effortIsExperimental(sourceId: "strap-x", brand: "garmin"))
+    func testGarminEffortCarriesNoExperimentalLabel() {
+        XCTAssertTrue(GarminScoringInputs.effortValidated, "Garmin is official (#43)")
+        XCTAssertFalse(GarminScoringInputs.effortIsExperimental(sourceId: "garmin-AAA", brand: "Garmin"))
+        XCTAssertFalse(GarminScoringInputs.effortIsExperimental(sourceId: "strap-x", brand: "garmin"))
         XCTAssertFalse(GarminScoringInputs.effortIsExperimental(sourceId: "my-whoop", brand: "WHOOP"))
         XCTAssertFalse(GarminScoringInputs.effortIsExperimental(sourceId: "garmin-import", brand: nil))
     }
@@ -574,9 +574,9 @@ final class GarminScoringInputsTests: XCTestCase {
     era 5 0.0000
     era 6 1790899200.0000
     era 7 1790899200.0000
-    effort garmin-A Garmin true
-    effort garmin-A nil true
-    effort strap-1 Garmin true
+    effort garmin-A Garmin false
+    effort garmin-A nil false
+    effort strap-1 Garmin false
     effort strap-1 Polar false
     effort garmin-import Garmin false
     effort my-whoop nil false

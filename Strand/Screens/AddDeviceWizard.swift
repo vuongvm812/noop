@@ -33,12 +33,12 @@ struct AddDeviceWizard: View {
         case whoop4
         case hrStrap
         case gymEquipment
+        case garmin        // Garmin watch over its own GFDI protocol (GarminSource: history sync + live)
+        case garminBroadcast // Garmin watch over the standard Broadcast Heart Rate fallback (0x180D)
         // EXPERIMENTAL tier — best-effort, clean-room, can't be hardware-verified here. Each fails to an
         // honest message and never fabricates data.
         case amazfit       // Amazfit / Zepp incl. Helio (Huami custom or standard HR)
         case miBand        // Xiaomi Mi Band (Huami; no-auth live HR path, honest message if auth needed)
-        case garmin        // Garmin watch over its own GFDI protocol (GarminSource: history sync + live)
-        case garminBroadcast // Garmin watch over the standard Broadcast Heart Rate fallback (0x180D)
         case oura          // Oura ring (factory-reset-and-adopt: NOOP installs its own key, becomes owner)
         var id: Self { self }
 
@@ -54,13 +54,13 @@ struct AddDeviceWizard: View {
         /// True for the EXPERIMENTAL tier (shown under a clearly-labelled "Experimental" heading).
         var isExperimental: Bool {
             switch self {
-            case .amazfit, .miBand, .garmin, .garminBroadcast, .oura: return true
-            default:                                return false
+            case .amazfit, .miBand, .oura: return true
+            default:                        return false
             }
         }
 
-        /// The experimental-tier brand this type registers as, or nil for the non-experimental types
-        /// (WHOOP / generic strap / gym). Bridges the wizard's type picker to the `DeviceBrandCatalog`
+        /// The custom-protocol brand this type registers as (Garmin, or an experimental-tier brand), or nil
+        /// for WHOOP / generic strap / gym. Bridges the wizard's type picker to the `DeviceBrandCatalog`
         /// facts (stored brand string, `sourceKind`, id prefix) so those are no longer hardcoded per branch.
         var experimentalBrand: ExperimentalBrand? {
             switch self {
@@ -361,6 +361,9 @@ struct AddDeviceWizard: View {
             typeRow(.gymEquipment, icon: "figure.run.treadmill",
                     title: String(localized: "Gym equipment"),
                     subtitle: String(localized: "Treadmill, indoor bike, rower or cross-trainer (Bluetooth FTMS)"))
+            typeRow(.garmin, icon: "applewatch",
+                    title: String(localized: "Garmin watch"),
+                    subtitle: String(localized: "Pairs over the watch's own protocol: history sync and live data, read-only."))
 
             // EXPERIMENTAL tier — clearly labelled, opt-in, best-effort. Each is honest about what it can
             // actually read; none fabricates data.
@@ -375,9 +378,6 @@ struct AddDeviceWizard: View {
             typeRow(.miBand, icon: "waveform.path.ecg",
                     title: "Xiaomi Mi Band",
                     subtitle: String(localized: "Live heart rate on bands that don't need pairing. Help us test."))
-            typeRow(.garmin, icon: "applewatch",
-                    title: String(localized: "Garmin watch"),
-                    subtitle: String(localized: "Pairs over the watch's own protocol: history sync and live data, read-only. Help us test."))
 
             whoopFirstNote
         }
@@ -1211,7 +1211,7 @@ struct AddDeviceWizard: View {
     private var confirmBrand: String {
         if type?.isWhoop == true { return "WHOOP" }
         if type == .gymEquipment { return String(localized: "Gym equipment") }
-        // Experimental non-Oura types (Amazfit / Mi Band / Garmin) take their stored brand string straight
+        // Custom-protocol non-Oura types (Amazfit / Mi Band / Garmin) take their stored brand string straight
         // from the catalog via the type→brand bridge. Oura falls through to its detected-generation label.
         if let brand = type?.experimentalBrand, brand != .oura { return brand.displayBrand }
         // Oura confirms with the detected generation name + a Beta marker so the user sees what NOOP
@@ -1703,7 +1703,7 @@ private struct GarminPickList: View {
                     DiscoveredRow(name: watch.name,
                                   subtitle: watch.systemConnected
                                     ? String(localized: "Connected to this device")
-                                    : String(localized: "Experimental"),
+                                    : String(localized: "Garmin watch"),
                                   rssi: watch.systemConnected ? -50 : watch.rssi) {
                         onSelect(watch)
                     }
@@ -1768,7 +1768,6 @@ private struct GarminConnectFace<Coexistence: View>: View {
                                 .font(StrandFont.headline)
                                 .foregroundStyle(StrandPalette.textPrimary)
                             Spacer()
-                            StatePill("Experimental", tone: .warning, showsDot: false)
                         }
                         factRow("Model", source.watch.map(GarminWatchFacts.modelName) ?? "-")
                         factRow("Firmware", source.watch.map { GarminWatchFacts.firmware($0.softwareVersion) } ?? "-")

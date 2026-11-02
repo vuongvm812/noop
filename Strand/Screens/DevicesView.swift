@@ -1241,14 +1241,14 @@ struct DeviceCapabilityProfile {
                 powers: powers,
                 footnote: String(localized: "Beta. * is an on-device estimate. Skin temp is a trend versus your own baseline, and HRV needs you to be still. No Oura Readiness or SpO₂ percentage comes off the ring (import an Oura file for those)."))
         }
-        // EXPERIMENTAL Garmin watch over its own GFDI protocol: the watch's own history files plus live
-        // channels on demand. Read-only. Effort from a Garmin day is still labelled experimental.
+        // Garmin watch over its own GFDI protocol: the watch's own history files plus live channels on
+        // demand. Read-only.
         if d.sourceKind == .garmin {
             return DeviceCapabilityProfile(
-                displayModel: String(localized: "\(d.model) (experimental)"),
+                displayModel: d.model,
                 captures: String(localized: "Heart rate · R-R · Sleep · Steps · SpO₂ · Respiration · Stress · Body Battery · HRV"),
-                powers: String(localized: "Powers Charge, Effort and Rest from the watch's own data. Effort is experimental"),
-                footnote: String(localized: "Experimental. Read-only: NOOP downloads the watch's files and never deletes or changes them. Garmin's stress and Body Battery are shown as Garmin reports them."))
+                powers: String(localized: "Powers Charge, Effort and Rest from the watch's own data."),
+                footnote: String(localized: "Read-only: NOOP downloads the watch's files and never deletes or changes them. Garmin's stress and Body Battery are shown as Garmin reports them."))
         }
         // Apple Watch (live HealthKit source). UNLIKE the WHOOP/strap branches, the watch's stored
         // capability `Set` is already the honest per-model trim (AppleWatchDevice only adds a metric

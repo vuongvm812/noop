@@ -1433,7 +1433,7 @@ final class AppModel: ObservableObject {
         syncGarminLiveDemand()
     }
 
-    /// An EXPERIMENTAL Garmin watch opens its live channels only while someone is watching: a live-HR
+    /// A Garmin watch opens its live channels only while someone is watching: a live-HR
     /// surface is on screen, or a workout is recording (the one demand that survives backgrounding). The
     /// coordinator forwards this to the Garmin source, whose `GarminRadioPolicy` decides the channels.
     func syncGarminLiveDemand() {
@@ -1453,7 +1453,7 @@ final class AppModel: ObservableObject {
 
     // MARK: Garmin watch (UI glue)
 
-    /// The experimental "continuous live" toggle on the Garmin watch panel. Off by default. Twin of
+    /// The "continuous live" toggle on the Garmin watch panel. Off by default. Twin of
     /// Android `NoopPrefs.KEY_GARMIN_CONTINUOUS_LIVE`.
     static let garminContinuousLiveKey = "noopGarminContinuousLive"
     /// How long an explicit "Measure SpO2" request holds the SpO2 channel open.

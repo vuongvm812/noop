@@ -64,9 +64,9 @@ final class DeviceBrandCatalogTests: XCTestCase {
         XCTAssertTrue(spec("Amazfit").canStreamLiveHR)
         XCTAssertTrue(spec("Garmin").canStreamLiveHR)
         XCTAssertTrue(spec("Polar").canStreamLiveHR)
-        // Tier: the four experimental brands are the opt-in tier; generic straps are not.
-        for b in ["Amazfit", "Mi Band", "Garmin", "Oura"] { XCTAssertTrue(spec(b).isExperimentalTier, b) }
-        for b in ["Polar", "Wahoo", "Coospo", "Scosche", "Magene"] { XCTAssertFalse(spec(b).isExperimentalTier, b) }
+        // Tier: Amazfit / Mi Band / Oura are the opt-in experimental tier; Garmin (#43) and generic straps are not.
+        for b in ["Amazfit", "Mi Band", "Oura"] { XCTAssertTrue(spec(b).isExperimentalTier, b) }
+        for b in ["Garmin", "Polar", "Wahoo", "Coospo", "Scosche", "Magene"] { XCTAssertFalse(spec(b).isExperimentalTier, b) }
     }
 
     /// Brand strings are unique (the reverse lookup `spec(forBrand:)` and the `ExperimentalBrand` bridge
