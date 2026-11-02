@@ -16,8 +16,9 @@ import Foundation
 //   20 Body Battery [value u8]                                  0x7F = unknown
 //   21 respiration  [breaths/min i8]                            negative = unknown
 //
-// Channels 8 (calories), 10 (intensity) and 13 (stress) are undecoded upstream and have their own issue;
-// 16 (accelerometer) has no consumer in NOOP. None of them is opened by this layer.
+// Channels 8 (calories), 10 (intensity) and 13 (stress) are undecoded upstream: they open only in the Test
+// Centre capture mode and reach the app raw (GarminRealtimeCapture), never through this decoder. 16
+// (accelerometer) has no consumer in NOOP and never opens.
 
 /// One decoded realtime notification. An "unknown" sentinel decodes to nil, never to a number.
 public enum GarminRealtimeReading: Equatable, Sendable {
@@ -42,7 +43,8 @@ public enum GarminRealtimeReading: Equatable, Sendable {
 public enum GarminRealtime {
 
     /// The realtime services this layer can decode and therefore may open. Anything else asked for is
-    /// refused before a byte goes out (the accelerometer and the undecoded 8 / 10 / 13 in particular).
+    /// refused before a byte goes out (the accelerometer in particular; the undecoded 8 / 10 / 13 pass only
+    /// while capture mode is on, see GarminLiveChannelTable.setCapture).
     public static let decodableServices: Set<GarminService> = [
         .realtimeHeartRate, .realtimeSteps, .realtimeFloors, .realtimeHrv,
         .realtimeSpo2, .realtimeBodyBattery, .realtimeRespiration,

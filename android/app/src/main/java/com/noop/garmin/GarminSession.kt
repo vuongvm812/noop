@@ -74,6 +74,10 @@ sealed class GarminSessionOutput {
     data class Live(val reading: GarminRealtimeReading) : GarminSessionOutput()
     /** A live channel's handle opened or closed on the watch. */
     data class LiveChannel(val service: GarminService, val open: Boolean) : GarminSessionOutput()
+    /** The watch refused a live channel's registration with this status (not retried this demand). */
+    data class LiveRefused(val service: GarminService, val status: Int) : GarminSessionOutput()
+    /** One raw payload from an undecoded capture channel (8 / 10 / 13), handle byte stripped. Test Centre only. */
+    class LiveRaw(val service: GarminService, val payload: ByteArray) : GarminSessionOutput()
 }
 
 /** How the watch said it has new data. */
@@ -176,6 +180,12 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
             return flush()
         }
         emit(live.setDesired(services, phase == GarminSessionPhase.Ready))
+        return flush()
+    }
+
+    /** Test Centre capture: allow the undecoded channels 8 / 10 / 13 in [setLiveChannels]. Off closes any open. */
+    fun setUndecodedCapture(on: Boolean, clock: GarminClock): List<GarminSessionOutput> {
+        emit(live.setCapture(on, phase == GarminSessionPhase.Ready && transport == GarminTransportKind.MULTI_LINK_V2))
         return flush()
     }
 
@@ -494,6 +504,8 @@ class GarminSession(val config: GarminSessionConfig, val transport: GarminTransp
                 is GarminLiveChannelEvent.Opened -> out.add(GarminSessionOutput.LiveChannel(e.service, true))
                 is GarminLiveChannelEvent.Closed -> out.add(GarminSessionOutput.LiveChannel(e.service, false))
                 is GarminLiveChannelEvent.Reading -> out.add(GarminSessionOutput.Live(e.reading))
+                is GarminLiveChannelEvent.Raw -> out.add(GarminSessionOutput.LiveRaw(e.service, e.payload))
+                is GarminLiveChannelEvent.Refused -> out.add(GarminSessionOutput.LiveRefused(e.service, e.status))
             }
         }
     }

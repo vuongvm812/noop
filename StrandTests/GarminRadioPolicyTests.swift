@@ -1,4 +1,5 @@
 import XCTest
+import GarminProtocol
 @testable import Strand
 
 /// `GarminRadioPolicy`: the Garmin battery policy. Radio-idle by default, live channels only while
@@ -112,5 +113,34 @@ final class GarminRadioPolicyTests: XCTestCase {
         t.linkDown(at: 200)  // closes the still-open HR handle too
         XCTAssertEqual(t.summary(now: 9999),
                        "garmin radio: connected=100s bytes_in=4096 bytes_out=120 syncs=1 handles=6:1x/90s,12:1x/30s")
+    }
+
+    /// Each policy channel is the protocol's ML service of the same meaning. Guards the 8 / 10 / 13 mix-up
+    /// (calories 8, intensity 10, stress 13; Garmin 6/10) and any future renumbering on one side only.
+    func testChannelNumbersMatchTheProtocolServices() {
+        let pairs: [(GarminLiveChannel, GarminService)] = [
+            (.heartRate, .realtimeHeartRate), (.steps, .realtimeSteps), (.calories, .realtimeCalories),
+            (.floors, .realtimeFloors), (.intensity, .realtimeIntensity), (.rrIntervals, .realtimeHrv),
+            (.stress, .realtimeStress), (.accelerometer, .realtimeAccelerometer), (.spo2, .realtimeSpo2),
+            (.bodyBattery, .realtimeBodyBattery), (.respiration, .realtimeRespiration),
+        ]
+        XCTAssertEqual(pairs.count, GarminLiveChannel.allCases.count)
+        for (channel, service) in pairs {
+            XCTAssertEqual(UInt16(channel.rawValue), service.rawValue, "\(channel)")
+            XCTAssertTrue(service.isRealtime, "\(service)")
+        }
+    }
+
+    /// The Test Centre capture opens HR + 8 / 10 / 13 only through the policy: in the foreground with the
+    /// capture view as the viewer, and nothing in the background.
+    func testCaptureChannelsAreAllowedByThePolicyOnlyInTheForeground() {
+        let capture = Set(GarminRealtimeCapture.captureChannels.map { Int($0.rawValue) })
+        let on = GarminRadioInputs(appInForeground: true, liveScreenVisible: true,
+                                   onScreenChannels: [.calories, .intensity, .stress])
+        let allowed = Set(GarminRadioPolicy.desiredChannels(on).map(\.rawValue))
+        XCTAssertTrue(capture.isSubset(of: allowed))
+        var off = on
+        off.appInForeground = false
+        XCTAssertTrue(GarminRadioPolicy.desiredChannels(off).isEmpty)
     }
 }

@@ -2889,4 +2889,6 @@
     <string name="raw_diag_ecg_probe_running">A capture may still be running on this strap. The verdict goes to the strap log.</string>
     <string name="today_customize_live_session_availability">Appears today when Live Sessions is enabled in Settings or a session is active.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today your way, heart rate any app can read, and Italian</string>
+    <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Garmin realtime capture</string>
+    <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">While NOOP is open, listens to the watch\'s live calories, intensity-minutes and stress channels and writes every message to the strap log with an unverified reading. Nothing else uses these values. Uses extra watch battery while on.</string>
 </resources>

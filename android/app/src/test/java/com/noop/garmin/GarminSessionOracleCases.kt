@@ -35,6 +35,8 @@ internal fun oracleDescribe(o: GarminSessionOutput): String = when (o) {
     is GarminSessionOutput.TransferActive -> "transfer ${o.active}"
     is GarminSessionOutput.Live -> "live ${GarminRealtime.describe(o.reading)}"
     is GarminSessionOutput.LiveChannel -> "channel ${o.service.raw} ${if (o.open) "open" else "closed"}"
+    is GarminSessionOutput.LiveRefused -> "channel ${o.service.raw} refused status=${o.status}"
+    is GarminSessionOutput.LiveRaw -> "raw ${o.service.raw} ${garminHex(o.payload)}"
 }
 
 internal fun oracleRunSession(

@@ -326,7 +326,8 @@ final class SourceCoordinator: ObservableObject {
     /// sources. The
     /// first-pairing flag is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once.
     /// Per-connect readouts (every message in and out) appear only while the Connection or Sources Test
-    /// Centre domain is active; state changes, refusals and failures are always logged.
+    /// Centre domain is active; state changes, refusals and failures are always logged. The Test Centre's
+    /// "Garmin realtime capture" toggle opens the undecoded channels 8 / 10 / 13 for raw capture.
     private func makeGarminSource(id: String) -> any LiveHRSource {
         let pairedKey = "noop.garmin.pairingEventsSent.\(id)"
         // Live channels feed the SAME LiveState + store funnels as every other source (GarminLiveFeed).
@@ -358,7 +359,8 @@ final class SourceCoordinator: ObservableObject {
             ingest: { [storeHandle, straplog] file in
                 guard let store = await storeHandle() else { return false }
                 return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)
-            })
+            },
+            undecodedCapture: { UserDefaults.standard.bool(forKey: AppModel.garminRealtimeCaptureKey) })
         // Whoever is already watching (the Live screen open while the user switches to the watch).
         source.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
         return source

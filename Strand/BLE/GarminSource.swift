@@ -36,6 +36,8 @@ enum GarminLiveEvent: Equatable {
 /// with its 30 s linger turns that into a channel set, and the session registers / closes the handles.
 /// Nothing opens without demand, nothing opens in the background except for an active workout, SpO2 opens
 /// only on an explicit request, and the accelerometer never opens. Readings go out through `onLive`.
+/// The Test Centre-only capture of the undecoded channels 8 / 10 / 13 (`undecodedCapture`) counts as one
+/// more viewer and writes their payloads raw to the strap log.
 ///
 /// Owns its OWN `CBCentralManager` and never references `BLEManager`, so the WHOOP path cannot regress.
 /// Uses only Foundation, CoreBluetooth and GarminProtocol plus `GarminRadioPolicy`, so it can also be
@@ -85,6 +87,10 @@ final class GarminSource: NSObject, ObservableObject {
     /// DownloadRequest compression; the policy's value unless a caller (a Test Centre toggle, the hardware
     /// harness) needs uncompressed transfers.
     private let requestsCompression: Bool
+    /// The Test Centre "Garmin realtime capture" toggle. While it returns true and the app is in the
+    /// foreground, the policy opens HR + R-R + calories / intensity / stress and every 8 / 10 / 13 payload
+    /// is logged raw.
+    private let undecodedCapture: () -> Bool
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -97,6 +103,12 @@ final class GarminSource: NSObject, ObservableObject {
     private var deadlineTimer: DispatchWorkItem?
     private var reconnectTimer: DispatchWorkItem?
     private var telemetry = GarminRadioTelemetry()
+    /// Capture mode (Test Centre): whether it is on, how each undecoded channel answered on this session
+    /// (for the one availability line per connect), and the latest live HR for the capture lines' context.
+    private var capturing = false
+    private var channelAnswers: [UInt16: String] = [:]
+    private var availabilityLogged = false
+    private var contextHr: Int?
 
     /// Who is watching. `appInForeground` is always overwritten with this source's own foreground state.
     private var liveDemand = GarminRadioInputs(appInForeground: true)
@@ -144,6 +156,7 @@ final class GarminSource: NSObject, ObservableObject {
          onSyncFinished: @escaping (GarminSyncSummary) -> Void = { _ in },
          syncFlow: @escaping (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(productNumber: $0?.productNumber) },
          requestsCompression: Bool = GarminRadioPolicy.requestsCompression,
+         undecodedCapture: @escaping () -> Bool = { false },
          restoresState: Bool = true) {
         self.deviceId = deviceId
         self.isFirstPairing = isFirstPairing
@@ -160,6 +173,7 @@ final class GarminSource: NSObject, ObservableObject {
         self.onSyncFinished = onSyncFinished
         self.syncFlow = syncFlow
         self.requestsCompression = requestsCompression
+        self.undecodedCapture = undecodedCapture
         super.init()
         #if os(iOS)
         // iOS state restoration: CoreBluetooth relaunches the app into the background for this central
@@ -322,15 +336,31 @@ final class GarminSource: NSObject, ObservableObject {
 
     private func applyLiveDemand() {
         liveDemand.appInForeground = foreground
-        let hold = linger.update(liveDemand, now: Self.uptimeSeconds())
-        let wanted = Set(hold.channels.compactMap { GarminService(rawValue: UInt16($0.rawValue)) })
+        // Capture mode is one more viewer: a live screen with the calories / intensity / stress tiles on it.
+        // Turning it off drops 8 / 10 / 13 at once (no linger); the session gate closes their handles.
+        let captureChanged = undecodedCapture() != capturing
+        capturing = undecodedCapture()
+        if captureChanged { say(true, "realtime capture \(capturing ? "on" : "off")") }
+        var inputs = liveDemand
+        if capturing {
+            inputs.liveScreenVisible = true
+            inputs.onScreenChannels.formUnion([.calories, .intensity, .stress])
+        }
+        let hold = linger.update(inputs, now: Self.uptimeSeconds())
+        var wanted = Set(hold.channels.compactMap { GarminService(rawValue: UInt16($0.rawValue)) })
+        if !capturing { wanted.subtract(GarminRealtimeCapture.undecodedChannels) }
         if wanted != wantedLive {
             say(true, "live channels wanted: \(Self.list(wanted))"
                 + (hold.recheckAt != nil ? " (lingering \(Int(GarminRadioPolicy.liveLingerSeconds)) s)" : ""))
         }
         wantedLive = wanted
         if var s = session {
-            let outputs = s.setLiveChannels(wanted, clock())
+            let c = clock()
+            // On: allow 8 / 10 / 13 before asking for them. Off: stop asking first, so they close as
+            // ordinary demand changes, then drop the flag.
+            var outputs = captureChanged && capturing ? s.setUndecodedCapture(true, c) : []
+            outputs += s.setLiveChannels(wanted, c)
+            if captureChanged && !capturing { outputs += s.setUndecodedCapture(false, c) }
             session = s
             perform(outputs)
         }
@@ -417,6 +447,7 @@ final class GarminSource: NSObject, ObservableObject {
             case let .transferActive(active):
                 syncing = active
             case let .live(reading):
+                if case .heartRate = reading { contextHr = GarminRealtimeCapture.contextHeartRate(reading) }
                 onLive(.reading(reading))
             case let .liveChannel(service, open):
                 if let channel = GarminLiveChannel(rawValue: Int(service.rawValue)) {
@@ -429,10 +460,30 @@ final class GarminSource: NSObject, ObservableObject {
                         openLiveChannels.remove(channel)
                     }
                 }
+                if open { channelAnswered(service, "opened") }
                 onLive(.channel(service, open: open))
+            case let .liveRefused(service, status):
+                channelAnswered(service, "refused(\(status))")
+            case let .liveRaw(service, payload):
+                // The capture IS the Test Centre readout, so its lines are always written while it runs.
+                say(true, GarminRealtimeCapture.line(service: service.rawValue, payload: payload,
+                                                     unixMs: Int64(Date().timeIntervalSince1970 * 1000), hr: contextHr))
             }
         }
         scheduleDeadline()
+    }
+
+    // MARK: - Realtime capture (Test Centre only)
+
+    /// Record how an undecoded channel answered; once all three have, log the per-model availability line.
+    private func channelAnswered(_ service: GarminService, _ answer: String) {
+        guard GarminRealtimeCapture.undecodedChannels.contains(service) else { return }
+        channelAnswers[service.rawValue] = answer
+        guard !availabilityLogged, let info = watch,
+              GarminRealtimeCapture.undecodedChannels.allSatisfy({ channelAnswers[$0.rawValue] != nil }) else { return }
+        availabilityLogged = true
+        say(true, GarminRealtimeCapture.availabilityLine(model: info.bluetoothName, firmware: info.softwareVersion,
+                                                         answers: channelAnswers))
     }
 
     private func enqueueWrite(_ data: Data) {
@@ -486,6 +537,9 @@ final class GarminSource: NSObject, ObservableObject {
             onLive(.linkDown)
         }
         session = nil
+        channelAnswers = [:]
+        availabilityLogged = false
+        contextHr = nil
         notifyChar = nil
         writeChar = nil
         writeQueue.removeAll()
@@ -535,6 +589,13 @@ final class GarminSource: NSObject, ObservableObject {
         }
         center.addObserver(forName: inactive, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.appStateChanged(foreground: false) }
+        }
+        // The capture toggle lives in UserDefaults; a change takes effect on the open session at once.
+        center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.undecodedCapture() != self.capturing else { return }
+                self.applyLiveDemand()
+            }
         }
     }
 
@@ -733,6 +794,7 @@ extension GarminSource: CBPeripheralDelegate {
             var outputs = s.start(c)
             if !foreground { outputs += s.setForeground(false, c) }
             // Remembered by the session and registered once its handshake completes.
+            outputs += s.setUndecodedCapture(capturing, c)
             outputs += s.setLiveChannels(wantedLive, c)
             session = s
             linkPhase = .handshaking

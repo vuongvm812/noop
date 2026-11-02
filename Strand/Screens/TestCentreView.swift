@@ -65,6 +65,11 @@ struct TestCentreView: View {
         return PolarModel.debugIdentification(advertisedName: name)
     }
 
+    // Garmin 6/10: raw capture of the undecoded realtime channels, only offered when a Garmin watch is
+    // paired over GFDI (not the Broadcast Heart Rate fallback, which has no such channels).
+    @AppStorage(AppModel.garminRealtimeCaptureKey) private var garminRealtimeCapture = false
+    private var garminPaired: Bool { model.deviceRegistry?.devices.contains { $0.sourceKind == .garmin } ?? false }
+
     // #1284 residual 3: experimental Oura 0x49-onset keying, only offered when an Oura ring is paired.
     @AppStorage(AppModel.ouraOnsetKeyingKey) private var ouraOnsetKeying = false
     // Packed-notification A/B: the official app's SetNotification mask `ff` vs NOOP's `3f`, next connect.
@@ -391,6 +396,20 @@ struct TestCentreView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Polar debug logging").font(StrandFont.body)
                             Text("\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model NOOP resolved your strap to.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(StrandPalette.accent)
+                }
+
+                // Garmin 6/10: capture mode for channels 8 / 10 / 13. The readings are candidates only.
+                if garminPaired {
+                    Divider().overlay(StrandPalette.hairline)
+                    Toggle(isOn: $garminRealtimeCapture) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Garmin realtime capture").font(StrandFont.body)
+                            Text("While NOOP is open, listens to the watch's live calories, intensity-minutes and stress channels and writes every message to the strap log with an unverified reading. Nothing else uses these values. Uses extra watch battery while on.")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

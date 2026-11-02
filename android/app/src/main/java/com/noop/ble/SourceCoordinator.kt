@@ -493,7 +493,8 @@ class SourceCoordinator(
      * handshake and the read-only history sync; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
      * is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once. Per-connect readouts
      * appear only while the Connection or Sources Test Centre domain is active; state changes, refusals and
-     * failures are always logged. Mirrors macOS `makeGarminSource(id:)`.
+     * failures are always logged. The Test Centre's "Garmin realtime capture" toggle opens the undecoded
+     * channels 8 / 10 / 13 for raw capture. Mirrors macOS `makeGarminSource(id:)`.
      */
     private fun makeGarminSource(id: String, ctx: Context, row: PairedDeviceRow?): GarminSource {
         val prefs = NoopPrefs.of(ctx)
@@ -537,6 +538,9 @@ class SourceCoordinator(
                 repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)
             },
             onLive = feed::handle,
+            undecodedCapture = { NoopPrefs.garminRealtimeCapture(ctx) },
+            capturePrefs = prefs,
+            captureKey = NoopPrefs.KEY_GARMIN_REALTIME_CAPTURE,
         ).also { source ->
             // Whoever is already watching (the Live screen open while the user switches to the watch).
             val demand = garminLiveDemand

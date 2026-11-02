@@ -2876,4 +2876,6 @@
     <string name="raw_diag_ecg_probe_running">Na tym pasku może nadal trwać zapis. Werdykt trafia do strap log.</string>
     <string name="today_customize_live_session_availability">Pojawia się dzisiaj, gdy sesje na żywo są włączone w Ustawieniach lub trwa sesja.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Dziś po swojemu, tętno dostępne dla każdej aplikacji i język włoski</string>
+    <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Przechwytywanie Garmin w czasie rzeczywistym</string>
+    <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Gdy NOOP jest otwarty, nasłuchuje kanałów na żywo zegarka z kaloriami, minutami intensywności i stresem oraz zapisuje każdą wiadomość w dzienniku paska z niezweryfikowanym odczytem. Nic innego nie używa tych wartości. Zużywa więcej baterii zegarka, gdy jest włączone.</string>
 </resources>

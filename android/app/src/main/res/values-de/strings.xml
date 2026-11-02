@@ -2873,4 +2873,6 @@
     <string name="raw_diag_ecg_probe_running">Auf diesem Strap läuft möglicherweise noch eine Aufzeichnung. Das Ergebnis steht im Strap-Log.</string>
     <string name="today_customize_live_session_availability">Erscheint heute, wenn Live Sessions in den Einstellungen aktiviert sind oder eine Session aktiv ist.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">Today nach Ihren Wünschen, Herzfrequenz für jede App und Italienisch</string>
+    <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Garmin-Echtzeitaufzeichnung</string>
+    <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Solange NOOP geöffnet ist, hört NOOP die Live-Kanäle der Uhr für Kalorien, Intensitätsminuten und Stress ab und schreibt jede Nachricht mit einem ungeprüften Wert ins Bandprotokoll. Nichts anderes verwendet diese Werte. Verbraucht zusätzlich Akku der Uhr, solange aktiv.</string>
 </resources>

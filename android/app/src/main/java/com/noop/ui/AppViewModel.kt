@@ -2507,6 +2507,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         NoopPrefs.setPolarDebugLogging(appContext, enabled)
     }
 
+    /** Garmin 6/10: toggle the Test Centre capture of the undecoded realtime channels. The Garmin source listens
+     *  for the preference change and opens or closes the channels on the open session at once. */
+    fun setGarminRealtimeCapture(enabled: Boolean) {
+        NoopPrefs.setGarminRealtimeCapture(appContext, enabled)
+    }
+
     /** #1284 residual 3: toggle EXPERIMENTAL Oura 0x49-onset keying. Read live at persist by the Oura source
      *  (via [SourceCoordinator]); no restart needed. Off = the shipped end-anchored persist. */
     fun setOuraOnsetKeying(enabled: Boolean) {

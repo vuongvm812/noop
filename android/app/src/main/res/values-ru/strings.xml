@@ -2755,4 +2755,6 @@
     <string name="raw_diag_ecg_probe_running">На этом ремешке запись может всё ещё идти. Результат попадёт в strap log.</string>
     <string name="today_customize_live_session_availability">Появляется сегодня, если сессии в реальном времени включены в Настройках или сеанс уже активен.</string>
     <string name="l10n_app_changelog_today_your_way_heart_rate_any_5e1308b3">«Сегодня» на ваш вкус, пульс для любого приложения и итальянский язык</string>
+    <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Захват данных Garmin в реальном времени</string>
+    <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Пока NOOP открыт, прослушивает живые каналы часов с калориями, минутами интенсивности и стрессом и записывает каждое сообщение в журнал браслета с непроверенным значением. Больше ничто не использует эти значения. Пока включено, расходует больше заряда часов.</string>
 </resources>

@@ -31,7 +31,7 @@ Open what the result adds and close what it drops.
 | Live demand (app in the foreground) | live screen visible, a NOOP workout active, or "continuous live" on and the user not asleep |
 | Live demand (app in the background) | an active NOOP workout only |
 | Default channel set | HR (6) + RR (12) |
-| Added only while their UI is on screen, foreground only | steps 7, stress 8, floors 9, calories 10, intensity 13, Body Battery 20, respiration 21 |
+| Added only while their UI is on screen, foreground only | steps 7, calories 8, floors 9, intensity 10, stress 13, Body Battery 20, respiration 21 |
 | Never automatic | accelerometer 16, SpO2 19: explicit foreground request only, no linger, never during a background workout |
 | Auto-close | 30 s after the viewer leaves (`liveLingerSeconds`), counted from the input change that ended demand |
 | Backgrounding | closes everything at once, except HR + RR for an active workout |

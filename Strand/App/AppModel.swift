@@ -2161,6 +2161,11 @@ final class AppModel: ObservableObject {
     /// Polar strap is paired. Diagnostic-only — nothing gates behaviour on it. Twin of Android
     /// `NoopPrefs.KEY_POLAR_DEBUG_LOGGING`.
     static let polarDebugLoggingKey = "noopPolarDebugLogging"
+    /// Garmin 6/10: the Test Centre-only capture of the undecoded realtime channels 8 / 10 / 13. Default off;
+    /// the toggle is shown only when a Garmin watch is paired over GFDI. While on (and the app is in the
+    /// foreground) the Garmin source opens those channels and logs every payload raw, with the UNVALIDATED
+    /// candidate readings. Nothing else reads the values. Twin of Android NoopPrefs.KEY_GARMIN_REALTIME_CAPTURE.
+    static let garminRealtimeCaptureKey = "noopGarminRealtimeCapture"
     var polarDebugLogging: Bool {
         get { UserDefaults.standard.bool(forKey: Self.polarDebugLoggingKey) }
         set { UserDefaults.standard.set(newValue, forKey: Self.polarDebugLoggingKey) }

@@ -31,6 +31,16 @@ enum class GarminService(val raw: Int) {
     FILE_TRANSFER_C(0xC018),
     FILE_TRANSFER_E(0xE018);
 
+    /** The realtime multi-link channels (the services that carry `[handle][payload]` live data). */
+    val isRealtime: Boolean
+        get() = when (this) {
+            REALTIME_HEART_RATE, REALTIME_STEPS, REALTIME_CALORIES, REALTIME_FLOORS, REALTIME_INTENSITY,
+            REALTIME_HRV, REALTIME_STRESS, REALTIME_ACCELEROMETER, REALTIME_SPO2, REALTIME_BODY_BATTERY,
+            REALTIME_RESPIRATION -> true
+            GFDI, REGISTRATION, FILE_TRANSFER_2, FILE_TRANSFER_4, FILE_TRANSFER_6, FILE_TRANSFER_A,
+            FILE_TRANSFER_C, FILE_TRANSFER_E -> false
+        }
+
     companion object {
         fun fromRaw(raw: Int): GarminService? = entries.firstOrNull { it.raw == raw }
     }

@@ -11,6 +11,10 @@ internal sealed class GarminLiveChannelEvent {
     data class Opened(val service: GarminService, val handle: Int) : GarminLiveChannelEvent()
     data class Closed(val service: GarminService) : GarminLiveChannelEvent()
     data class Reading(val service: GarminService, val reading: GarminRealtimeReading) : GarminLiveChannelEvent()
+    /** A payload on an undecoded capture channel, handle byte stripped. */
+    class Raw(val service: GarminService, val payload: ByteArray) : GarminLiveChannelEvent()
+    /** The watch refused a registration (status != 0). */
+    data class Refused(val service: GarminService, val status: Int) : GarminLiveChannelEvent()
 }
 
 internal class GarminLiveChannelTable {
@@ -23,6 +27,10 @@ internal class GarminLiveChannelTable {
 
     var desired: Set<GarminService> = emptySet()
         private set
+    /** What the caller asked for, before filtering; re-filtered when capture is switched. */
+    private var requested: Set<GarminService> = emptySet()
+    var capture = false
+        private set
     val states = HashMap<GarminService, State>()
     private val refused = HashSet<GarminService>()
     private val loggedUnsupported = HashSet<GarminService>()
@@ -31,13 +39,29 @@ internal class GarminLiveChannelTable {
     val openServices: Set<GarminService> get() = states.filterValues { it is State.Open }.keys.toSet()
 
     fun setDesired(services: Set<GarminService>, active: Boolean): List<GarminLiveChannelEvent> {
+        requested = services
+        return refilter(active)
+    }
+
+    /** Allow (true) or forbid the undecoded capture channels. Forbidding closes any that are open. */
+    fun setCapture(on: Boolean, active: Boolean): List<GarminLiveChannelEvent> {
+        capture = on
+        return refilter(active)
+    }
+
+    private fun refilter(active: Boolean): List<GarminLiveChannelEvent> {
         val events = mutableListOf<GarminLiveChannelEvent>()
         val wanted = HashSet<GarminService>()
-        for (service in services.sortedBy { it.raw }) {
-            if (service in GarminRealtime.DECODABLE_SERVICES) {
+        for (service in requested.sortedBy { it.raw }) {
+            val undecoded = service in GarminRealtimeCapture.undecodedChannels
+            if (service in GarminRealtime.DECODABLE_SERVICES || (capture && undecoded)) {
                 wanted += service
             } else if (loggedUnsupported.add(service)) {
-                events += GarminLiveChannelEvent.Log(true, "live channel ${service.raw} is not supported; not opened")
+                events += GarminLiveChannelEvent.Log(
+                    true,
+                    if (undecoded) "live channel ${service.raw} is undecoded; opens only in capture mode"
+                    else "live channel ${service.raw} is not supported; not opened",
+                )
             }
         }
         refused.removeAll(desired - wanted)
@@ -81,7 +105,10 @@ internal class GarminLiveChannelTable {
         if (status != 0) {
             states.remove(service)
             refused += service
-            return listOf(GarminLiveChannelEvent.Log(true, "live channel $raw refused status=$status; not retried until asked again"))
+            return listOf(
+                GarminLiveChannelEvent.Log(true, "live channel $raw refused status=$status; not retried until asked again"),
+                GarminLiveChannelEvent.Refused(service, status),
+            )
         }
         if (reliable || service !in desired) {
             states[service] = State.Closing(handle)
@@ -132,6 +159,7 @@ internal class GarminLiveChannelTable {
     fun receive(handle: Int, payload: ByteArray): List<GarminLiveChannelEvent>? {
         val service = states.entries.firstOrNull { it.value == State.Open(handle) || it.value == State.Closing(handle) }?.key
             ?: return null
+        if (service in GarminRealtimeCapture.undecodedChannels) return listOf(GarminLiveChannelEvent.Raw(service, payload))
         val reading = GarminRealtime.decode(service, payload)
             ?: return listOf(GarminLiveChannelEvent.Log(true, "live channel ${service.raw} payload too short: ${garminHex(payload)}"))
         val events = mutableListOf<GarminLiveChannelEvent>(GarminLiveChannelEvent.Log(false, "live ${service.raw} [${garminHex(payload)}] ${GarminRealtime.describe(reading)}"))

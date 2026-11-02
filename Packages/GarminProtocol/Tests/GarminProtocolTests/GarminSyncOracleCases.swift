@@ -295,7 +295,7 @@ func oracleSyncDescribe(_ o: GarminSessionOutput) -> String? {
     case let .syncAnnounced(a): return "announced \(a.label) filter=\(a.expectsFilter)"
     case let .transferActive(active): return "transfer \(active)"
     case let .phase(p): return "phase \(p.label)"
-    case .battery, .watch, .pairingEventsSent, .live, .liveChannel: return nil
+    case .battery, .watch, .pairingEventsSent, .live, .liveChannel, .liveRefused, .liveRaw: return nil
     }
 }
 

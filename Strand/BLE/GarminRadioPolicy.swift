@@ -17,11 +17,11 @@ import Foundation
 enum GarminLiveChannel: Int, CaseIterable, Comparable {
     case heartRate = 6
     case steps = 7
-    case stress = 8
+    case calories = 8
     case floors = 9
-    case calories = 10
+    case intensity = 10
     case rrIntervals = 12
-    case intensity = 13
+    case stress = 13
     case accelerometer = 16
     case spo2 = 19
     case bodyBattery = 20

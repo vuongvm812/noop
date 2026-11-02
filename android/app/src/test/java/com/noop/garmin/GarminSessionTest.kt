@@ -315,7 +315,7 @@ trace ml-live
 @72 log D live 12 [5203] rr ms=850 unknown=-
 @72 live rr ms=850 unknown=-
 @73 log R live channel 12 payload too short: 05
-@80 log R live channel 13 is not supported; not opened
+@80 log R live channel 13 is undecoded; opens only in capture mode
 @80 log R live channel 16 is not supported; not opened
 @80 log D live channel 7 registering
 @80 log D -> ML register service=7 reliable=false
@@ -337,6 +337,7 @@ trace ml-live
 @91 log R live channel 9 open handle=0x69
 @91 channel 9 open
 @92 log R live channel 19 refused status=1; not retried until asked again
+@92 channel 19 refused status=1
 @93 log R live channel 20 came back reliable; closing handle 0x6a
 @93 log D -> ML close handle service=20 handle=106
 @93 w 0002020000000000000014006a

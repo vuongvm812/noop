@@ -49,6 +49,8 @@ func oracleDescribe(_ o: GarminSessionOutput) -> String {
     case let .transferActive(active): return "transfer \(active)"
     case let .live(reading): return "live \(GarminRealtime.describe(reading))"
     case let .liveChannel(service, open): return "channel \(service.rawValue) \(open ? "open" : "closed")"
+    case let .liveRefused(service, status): return "channel \(service.rawValue) refused status=\(status)"
+    case let .liveRaw(service, payload): return "raw \(service.rawValue) \(garminHex(payload))"
     }
 }
 

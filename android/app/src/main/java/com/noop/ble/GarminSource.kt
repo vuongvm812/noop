@@ -19,6 +19,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -35,6 +36,8 @@ import com.noop.garmin.GarminSyncRequest
 import com.noop.garmin.GarminSyncResume
 import com.noop.garmin.GarminSyncSummary
 import com.noop.garmin.GarminGattService
+import com.noop.garmin.GarminRealtimeCapture
+import com.noop.garmin.GarminRealtimeReading
 import com.noop.garmin.GarminSession
 import com.noop.garmin.GarminSessionConfig
 import com.noop.garmin.GarminSessionOutput
@@ -75,6 +78,8 @@ import java.util.UUID
  * downloads every new FIT file. [loadSynced] (the `garminSyncedFile` ledger) says what is already stored;
  * each file goes to [ingest]. Nothing on the watch is archived, flagged or deleted. A transfer cut short by
  * a dropped link is continued (or, where the watch restarts it, re-fetched) on the next sync.
+ * The Test Centre-only capture of the undecoded channels 8 / 10 / 13 ([undecodedCapture]) counts as one
+ * more live viewer and writes their payloads raw to the strap log.
  * Runs on the app-scoped [SourceCoordinator], so the existing foreground connection service keeps the
  * process (and this link) alive. Every GATT callback is posted to the main looper, which keeps the
  * session single-threaded. Owns its OWN GATT and never references [WhoopBleClient].
@@ -103,6 +108,14 @@ class GarminSource(
     /** DownloadRequest compression; the policy's value unless a caller needs uncompressed transfers. */
     private val requestsCompression: Boolean = GarminRadioPolicy.REQUESTS_COMPRESSION,
     private val onLive: (GarminLiveEvent) -> Unit = {},
+    /**
+     * The Test Centre "Garmin realtime capture" toggle. While it returns true and the app is in the foreground,
+     * the policy opens HR + R-R + calories / intensity / stress and every 8 / 10 / 13 payload is logged raw.
+     */
+    private val undecodedCapture: () -> Boolean = { false },
+    /** The preferences holding that toggle and its key, so a change applies to the open session at once. */
+    private val capturePrefs: SharedPreferences? = null,
+    private val captureKey: String? = null,
 ) : LiveHrSource {
 
     enum class LinkPhase { DISCONNECTED, CONNECTING, DISCOVERING, SUBSCRIBING, HANDSHAKING, READY, UNSUPPORTED }
@@ -143,6 +156,17 @@ class GarminSource(
     private val writeQueue = ArrayDeque<ByteArray>()
     private var writeInFlight = false
     private val telemetry = GarminRadioTelemetry()
+    /**
+     * Capture mode (Test Centre): whether it is on, how each undecoded channel answered on this session (for the
+     * one availability line per connect), and the latest live HR for the capture lines' context.
+     */
+    private var capturing = false
+    private val channelAnswers = HashMap<Int, String>()
+    private var availabilityLogged = false
+    private var contextHr: Int? = null
+    private val captureListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == captureKey) onMain { if (undecodedCapture() != capturing) applyLiveDemand() }
+    }
 
     /** Who is watching. `appInForeground` is always overwritten with this source's own foreground state. */
     private var liveDemand = GarminRadioInputs(appInForeground = true)
@@ -229,6 +253,7 @@ class GarminSource(
         _linkPhase.value = LinkPhase.DISCONNECTED
         (appContext as? Application)?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
         runCatching { appContext.unregisterReceiver(adapterReceiver) }
+        capturePrefs?.unregisterOnSharedPreferenceChangeListener(captureListener)
     }
 
     /** Drop the link and let the ordinary reconnect path bring it back (a "Reconnect" affordance). */
@@ -320,14 +345,33 @@ class GarminSource(
 
     private fun applyLiveDemand() {
         liveDemand = liveDemand.copy(appInForeground = foreground)
-        val hold = linger.update(liveDemand, SystemClock.elapsedRealtime() / 1000.0)
-        val wanted = hold.channels.mapNotNull { GarminService.fromRaw(it.serviceId) }.toSet()
+        // Capture mode is one more viewer: a live screen with the calories / intensity / stress tiles on it.
+        // Turning it off drops 8 / 10 / 13 at once (no linger); the session gate closes their handles.
+        val captureChanged = undecodedCapture() != capturing
+        capturing = undecodedCapture()
+        if (captureChanged) say(true, "realtime capture ${if (capturing) "on" else "off"}")
+        val inputs = if (!capturing) liveDemand else liveDemand.copy(
+            liveScreenVisible = true,
+            onScreenChannels = liveDemand.onScreenChannels +
+                setOf(GarminLiveChannel.CALORIES, GarminLiveChannel.INTENSITY, GarminLiveChannel.STRESS),
+        )
+        val hold = linger.update(inputs, SystemClock.elapsedRealtime() / 1000.0)
+        var wanted = hold.channels.mapNotNull { GarminService.fromRaw(it.serviceId) }.toSet()
+        if (!capturing) wanted = wanted - GarminRealtimeCapture.undecodedChannels.toSet()
         if (wanted != wantedLive) {
             say(true, "live channels wanted: ${list(wanted)}" +
                 if (hold.recheckAtSeconds != null) " (lingering ${GarminRadioPolicy.LIVE_LINGER_SECONDS.toInt()} s)" else "")
         }
         wantedLive = wanted
-        session?.let { perform(it.setLiveChannels(wanted, clock())) }
+        session?.let { s ->
+            val c = clock()
+            // On: allow 8 / 10 / 13 before asking for them. Off: stop asking first, so they close as ordinary
+            // demand changes, then drop the flag.
+            val outputs = if (captureChanged && capturing) s.setUndecodedCapture(true, c).toMutableList() else mutableListOf()
+            outputs += s.setLiveChannels(wanted, c)
+            if (captureChanged && !capturing) outputs += s.setUndecodedCapture(false, c)
+            perform(outputs)
+        }
         handler.removeCallbacks(lingerRecheck)
         hold.recheckAtSeconds?.let { at ->
             val delayMs = ((at - SystemClock.elapsedRealtime() / 1000.0) * 1000).toLong().coerceAtLeast(0) + 50
@@ -415,7 +459,10 @@ class GarminSource(
                     setPriority(GarminRadioPolicy.connectionPriority(
                         if (o.active) GarminLinkActivity.FILE_TRANSFER else GarminLinkActivity.IDLE))
                 }
-                is GarminSessionOutput.Live -> onLive(GarminLiveEvent.Reading(o.reading))
+                is GarminSessionOutput.Live -> {
+                    if (o.reading is GarminRealtimeReading.HeartRate) contextHr = GarminRealtimeCapture.contextHeartRate(o.reading)
+                    onLive(GarminLiveEvent.Reading(o.reading))
+                }
                 is GarminSessionOutput.LiveChannel -> {
                     GarminLiveChannel.entries.firstOrNull { it.serviceId == o.service.raw }?.let { channel ->
                         val now = System.currentTimeMillis() / 1000.0
@@ -427,12 +474,31 @@ class GarminSource(
                             _openLiveChannels.value = _openLiveChannels.value - channel
                         }
                     }
+                    if (o.open) channelAnswered(o.service, "opened")
                     onLive(GarminLiveEvent.Channel(o.service, o.open))
                 }
+                is GarminSessionOutput.LiveRefused -> channelAnswered(o.service, "refused(${o.status})")
+                // The capture IS the Test Centre readout, so its lines are always written while it runs.
+                is GarminSessionOutput.LiveRaw -> say(
+                    true,
+                    GarminRealtimeCapture.line(o.service.raw, o.payload, System.currentTimeMillis(), contextHr),
+                )
             }
         }
         drainWrites()
         scheduleDeadline()
+    }
+
+    // Realtime capture (Test Centre only)
+
+    /** Record how an undecoded channel answered; once all three have, log the per-model availability line. */
+    private fun channelAnswered(service: GarminService, answer: String) {
+        if (service !in GarminRealtimeCapture.undecodedChannels) return
+        channelAnswers[service.raw] = answer
+        val info = watch ?: return
+        if (availabilityLogged || GarminRealtimeCapture.undecodedChannels.any { channelAnswers[it.raw] == null }) return
+        availabilityLogged = true
+        say(true, GarminRealtimeCapture.availabilityLine(info.bluetoothName, info.softwareVersion, channelAnswers))
     }
 
     private fun drainWrites() {
@@ -495,6 +561,9 @@ class GarminSource(
             onLive(GarminLiveEvent.LinkDown)
         }
         session = null
+        channelAnswers.clear()
+        availabilityLogged = false
+        contextHr = null
         notifyChar = null
         writeChar = null
         writeQueue.clear()
@@ -586,6 +655,7 @@ class GarminSource(
     init {
         (appContext as? Application)?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
         runCatching { appContext.registerReceiver(adapterReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)) }
+        capturePrefs?.registerOnSharedPreferenceChangeListener(captureListener)
     }
 
     // Scan callback
@@ -707,6 +777,7 @@ class GarminSource(
             val outputs = s.start(c).toMutableList()
             if (!foreground) outputs += s.setForeground(false, c)
             // Remembered by the session and registered once its handshake completes.
+            outputs += s.setUndecodedCapture(capturing, c)
             outputs += s.setLiveChannels(wantedLive, c)
             perform(outputs)
         }

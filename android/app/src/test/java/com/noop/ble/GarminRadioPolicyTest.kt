@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.noop.garmin.GarminRealtimeCapture
+import com.noop.garmin.GarminService
 
 /**
  * Tests for [GarminRadioPolicy], the twin of the Swift `GarminRadioPolicy`
@@ -207,6 +209,45 @@ class GarminRadioPolicyTest {
         tm.linkDown(360.0)
         out += tm.summary(9999.0)
         return out
+    }
+
+    /**
+     * Each policy channel is the protocol's ML service of the same meaning. Guards the 8 / 10 / 13 mix-up
+     * (calories 8, intensity 10, stress 13; Garmin 6/10) and any future renumbering on one side only.
+     */
+    @Test
+    fun channelNumbersMatchTheProtocolServices() {
+        val pairs = listOf(
+            GarminLiveChannel.HEART_RATE to GarminService.REALTIME_HEART_RATE,
+            GarminLiveChannel.STEPS to GarminService.REALTIME_STEPS,
+            GarminLiveChannel.CALORIES to GarminService.REALTIME_CALORIES,
+            GarminLiveChannel.FLOORS to GarminService.REALTIME_FLOORS,
+            GarminLiveChannel.INTENSITY to GarminService.REALTIME_INTENSITY,
+            GarminLiveChannel.RR_INTERVALS to GarminService.REALTIME_HRV,
+            GarminLiveChannel.STRESS to GarminService.REALTIME_STRESS,
+            GarminLiveChannel.ACCELEROMETER to GarminService.REALTIME_ACCELEROMETER,
+            GarminLiveChannel.SPO2 to GarminService.REALTIME_SPO2,
+            GarminLiveChannel.BODY_BATTERY to GarminService.REALTIME_BODY_BATTERY,
+            GarminLiveChannel.RESPIRATION to GarminService.REALTIME_RESPIRATION,
+        )
+        assertEquals(GarminLiveChannel.entries.size, pairs.size)
+        for ((channel, service) in pairs) {
+            assertEquals(channel.name, service.raw, channel.serviceId)
+            assertTrue(service.name, service.isRealtime)
+        }
+    }
+
+    /** The Test Centre capture opens HR + 8 / 10 / 13 only through the policy, and nothing in the background. */
+    @Test
+    fun captureChannelsAreAllowedByThePolicyOnlyInTheForeground() {
+        val capture = GarminRealtimeCapture.captureChannels.map { it.raw }.toSet()
+        val on = GarminRadioInputs(
+            appInForeground = true, liveScreenVisible = true,
+            onScreenChannels = setOf(GarminLiveChannel.CALORIES, GarminLiveChannel.INTENSITY, GarminLiveChannel.STRESS),
+        )
+        val allowed = GarminRadioPolicy.desiredChannels(on).map { it.serviceId }.toSet()
+        assertTrue(allowed.containsAll(capture))
+        assertTrue(GarminRadioPolicy.desiredChannels(on.copy(appInForeground = false)).isEmpty())
     }
 
     private companion object {

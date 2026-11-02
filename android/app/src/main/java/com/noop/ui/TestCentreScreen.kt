@@ -818,12 +818,16 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
     var polarDebugLogging by remember { mutableStateOf(NoopPrefs.polarDebugLogging(context)) }
     // #1284 residual 3: the experimental Oura onset-keying toggle, shown only when an Oura ring is paired.
     var ouraPaired by remember { mutableStateOf(false) }
+    // Garmin 6/10: raw capture of the undecoded realtime channels, only when a Garmin watch is paired over GFDI.
+    var garminPaired by remember { mutableStateOf(false) }
+    var garminRealtimeCapture by remember { mutableStateOf(NoopPrefs.garminRealtimeCapture(context)) }
     var ouraOnsetKeying by remember { mutableStateOf(NoopPrefs.ouraOnsetKeying(context)) }
     var ouraNotifyMaskFull by remember { mutableStateOf(NoopPrefs.ouraNotifyMaskFull(context)) }
     LaunchedEffect(Unit) {
         val paired = runCatching { vm.pairedDevices() }.getOrDefault(emptyList())
         polarIdentity = PolarModel.debugIdentification(paired.firstOrNull { PolarModel.isPolar(it.model) }?.model)
         ouraPaired = paired.any { it.brand.equals("Oura", ignoreCase = true) }
+        garminPaired = paired.any { it.sourceKind == com.noop.data.SourceKind.garmin.name }
     }
     var detailedCapture by remember { mutableStateOf(NoopPrefs.detailedCapture(context)) }
     var captureShareBusy by remember { mutableStateOf(false) }
@@ -899,6 +903,15 @@ private fun DiagnosticToolsCard(vm: AppViewModel) {
                         "so a Polar bug report shows the model NOOP resolved your strap to.",
                     checked = polarDebugLogging,
                     onCheckedChange = { polarDebugLogging = it; vm.setPolarDebugLogging(it) },
+                )
+            }
+            // Garmin 6/10: capture mode for channels 8 / 10 / 13. The readings are candidates only.
+            if (garminPaired) {
+                ToggleRowTC(
+                    title = uiString(R.string.l10n_test_centre_screen_garmin_realtime_capture_a3a664b8),
+                    description = uiString(R.string.l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f),
+                    checked = garminRealtimeCapture,
+                    onCheckedChange = { garminRealtimeCapture = it; vm.setGarminRealtimeCapture(it) },
                 )
             }
             // #1284 residual 3: experimental Oura 0x49-onset keying, only when an Oura ring is paired.

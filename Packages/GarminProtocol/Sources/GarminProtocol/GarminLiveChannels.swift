@@ -11,8 +11,9 @@ import Foundation
 // A registration that comes back after the demand ended is closed at once; one the watch refuses is not
 // retried until the demand for it goes away and comes back (no retry loop against a watch that says no).
 // A handle the watch closes by itself is forgotten; the next demand change opens it again. Only services
-// in `GarminRealtime.decodableServices` can be registered, so the accelerometer and the undecoded channels
-// cannot be opened from here whatever the caller asks for.
+// in `GarminRealtime.decodableServices` can be registered, so the accelerometer cannot be opened from here
+// whatever the caller asks for. The undecoded 8 / 10 / 13 (`GarminRealtimeCapture.undecodedChannels`) open
+// only while `setCapture(true)` (the Test Centre capture toggle); their payloads go out raw, undecoded.
 
 enum GarminLiveChannelEvent: Equatable {
     case control(GarminMultiLink.ControlRequest)
@@ -20,6 +21,10 @@ enum GarminLiveChannelEvent: Equatable {
     case opened(GarminService, handle: UInt8)
     case closed(GarminService)
     case reading(GarminService, GarminRealtimeReading)
+    /// A payload on an undecoded capture channel, handle byte stripped.
+    case raw(GarminService, [UInt8])
+    /// The watch refused a registration (status != 0, e.g. a channel this model does not offer).
+    case refused(GarminService, status: UInt8)
 }
 
 struct GarminLiveChannelTable {
@@ -31,6 +36,9 @@ struct GarminLiveChannelTable {
     }
 
     private(set) var desired: Set<GarminService> = []
+    /// What the caller asked for, before filtering; re-filtered when capture is switched.
+    private var requested: Set<GarminService> = []
+    private(set) var capture = false
     private(set) var states: [GarminService: State] = [:]
     private var refused: Set<GarminService> = []
     private var loggedUnsupported: Set<GarminService> = []
@@ -45,13 +53,27 @@ struct GarminLiveChannelTable {
 
     /// Record the wanted set. Nothing is sent unless `active` (the session is ready on multi-link).
     mutating func setDesired(_ services: Set<GarminService>, active: Bool) -> [GarminLiveChannelEvent] {
+        requested = services
+        return refilter(active: active)
+    }
+
+    /// Allow (true) or forbid the undecoded capture channels. Forbidding closes any that are open.
+    mutating func setCapture(_ on: Bool, active: Bool) -> [GarminLiveChannelEvent] {
+        capture = on
+        return refilter(active: active)
+    }
+
+    private mutating func refilter(active: Bool) -> [GarminLiveChannelEvent] {
         var events: [GarminLiveChannelEvent] = []
         var wanted: Set<GarminService> = []
-        for service in services.sorted(by: { $0.rawValue < $1.rawValue }) {
-            if GarminRealtime.decodableServices.contains(service) {
+        for service in requested.sorted(by: { $0.rawValue < $1.rawValue }) {
+            if GarminRealtime.decodableServices.contains(service)
+                || (capture && GarminRealtimeCapture.undecodedChannels.contains(service)) {
                 wanted.insert(service)
             } else if loggedUnsupported.insert(service).inserted {
-                events.append(.log(rare: true, "live channel \(service.rawValue) is not supported; not opened"))
+                events.append(.log(rare: true, GarminRealtimeCapture.undecodedChannels.contains(service)
+                                   ? "live channel \(service.rawValue) is undecoded; opens only in capture mode"
+                                   : "live channel \(service.rawValue) is not supported; not opened"))
             }
         }
         // Demand that went away clears a refusal, so the next viewer may try again.
@@ -95,7 +117,8 @@ struct GarminLiveChannelTable {
         guard status == 0 else {
             states[service] = nil
             refused.insert(service)
-            return [.log(rare: true, "live channel \(raw) refused status=\(status); not retried until asked again")]
+            return [.log(rare: true, "live channel \(raw) refused status=\(status); not retried until asked again"),
+                    .refused(service, status: status)]
         }
         guard !reliable, desired.contains(service) else {
             // Asked plain and got reliable (payloads would be MLR-framed), or the demand ended meanwhile.
@@ -146,6 +169,7 @@ struct GarminLiveChannelTable {
         guard let service = states.first(where: { $0.value == .open(handle) || $0.value == .closing(handle) })?.key else {
             return nil
         }
+        if GarminRealtimeCapture.undecodedChannels.contains(service) { return [.raw(service, payload)] }
         guard let reading = GarminRealtime.decode(service: service, payload: payload) else {
             return [.log(rare: true, "live channel \(service.rawValue) payload too short: \(garminHex(payload))")]
         }

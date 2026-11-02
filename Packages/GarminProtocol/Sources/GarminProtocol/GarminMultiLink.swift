@@ -33,6 +33,19 @@ public enum GarminService: UInt16, CaseIterable, Sendable {
     case fileTransferA = 0xA018
     case fileTransferC = 0xC018
     case fileTransferE = 0xE018
+
+    /// The realtime multi-link channels (the services that carry `[handle][payload]` live data).
+    public var isRealtime: Bool {
+        switch self {
+        case .realtimeHeartRate, .realtimeSteps, .realtimeCalories, .realtimeFloors, .realtimeIntensity,
+             .realtimeHrv, .realtimeStress, .realtimeAccelerometer, .realtimeSpo2, .realtimeBodyBattery,
+             .realtimeRespiration:
+            return true
+        case .gfdi, .registration, .fileTransfer2, .fileTransfer4, .fileTransfer6, .fileTransferA,
+             .fileTransferC, .fileTransferE:
+            return false
+        }
+    }
 }
 
 public enum GarminMultiLink {

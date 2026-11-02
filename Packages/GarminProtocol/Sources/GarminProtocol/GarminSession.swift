@@ -134,6 +134,11 @@ public enum GarminSessionOutput: Equatable, Sendable {
     case live(GarminRealtimeReading)
     /// A live channel's handle opened or closed on the watch (telemetry; the readings stop on close).
     case liveChannel(GarminService, open: Bool)
+    /// The watch refused a live channel's registration with this status (not retried this demand).
+    case liveRefused(GarminService, status: UInt8)
+    /// One raw payload from an undecoded capture channel (8 / 10 / 13), handle byte stripped. Realtime
+    /// channels carry no COBS and no CRC. Test Centre instrumentation only: see GarminRealtimeCapture.
+    case liveRaw(GarminService, [UInt8])
 }
 
 /// How the watch said it has new data.
@@ -262,6 +267,13 @@ public struct GarminSession {
             return flush()
         }
         emit(live.setDesired(services, active: phase == .ready))
+        return flush()
+    }
+
+    /// Test Centre capture: allow the undecoded channels 8 / 10 / 13 in `setLiveChannels` (they still open
+    /// only when asked for). Off closes any that are open. Default off.
+    public mutating func setUndecodedCapture(_ on: Bool, _ clock: GarminClock) -> [GarminSessionOutput] {
+        emit(live.setCapture(on, active: phase == .ready && transport == .multiLinkV2))
         return flush()
     }
 
@@ -595,6 +607,8 @@ public struct GarminSession {
             case let .opened(service, _): out.append(.liveChannel(service, open: true))
             case let .closed(service): out.append(.liveChannel(service, open: false))
             case let .reading(_, reading): out.append(.live(reading))
+            case let .raw(service, payload): out.append(.liveRaw(service, payload))
+            case let .refused(service, status): out.append(.liveRefused(service, status: status))
             }
         }
     }
