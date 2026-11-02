@@ -477,7 +477,7 @@ struct RootTabView: View {
                     MoreRow("Lift Log", "dumbbell.fill", .liftLog)
                     MoreRow("Health", "heart.text.square.fill", .health)
                     MoreRow("Lab Book", "books.vertical.fill", .labBook)
-                    MoreRow("Stress", "bolt.heart.fill", .stress)
+                    // #42: no Stress row. The Stress card on Today opens the Stress screen.
                     MoreRow("Breathe", "wind", .breathe)
                     MoreRow("Intervals", "timer", .intervals)
                     // Experimental beat-to-beat regularity visualization — self-gates on its own consent.
@@ -598,7 +598,7 @@ struct RootTabView: View {
 /// registration in `moreTab`.
 private enum MoreDestination: Hashable {
     case insightsHub, intelligence, coach, insights, explore, compare
-    case live, workouts, liftLog, health, labBook, stress, breathe, intervals, rhythm
+    case live, workouts, liftLog, health, labBook, breathe, intervals, rhythm
     case fusedRecord, appleHealth, miBand, dataSources, backupSync, shortcutsExport, noopLimitations
     case alarms, automations, testCentre, siriShortcuts, powerSaving, settings
 
@@ -615,7 +615,6 @@ private enum MoreDestination: Hashable {
         case .liftLog:         LiftLogView()
         case .health:          HealthView()
         case .labBook:         LabBookView()
-        case .stress:          StressView()
         case .breathe:         BreathingView()
         case .intervals:       IntervalTimerView()
         case .rhythm:          RhythmHost()

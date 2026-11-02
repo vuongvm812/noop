@@ -2162,6 +2162,12 @@
     <string name="today_section_menstrual_cycle">Менструальный цикл</string>
     <string name="today_section_journal">Журнал</string>
     <string name="today_section_supplements">Добавки</string>
+    <string name="today_section_stress">Стресс</string>
+    <string name="stress_summary_source_garmin">Стресс Garmin</string>
+    <string name="stress_summary_source_noop">Стресс NOOP</string>
+    <string name="stress_summary_latest">Последнее</string>
+    <string name="stress_summary_average">Среднее за сегодня</string>
+    <string name="stress_summary_empty">Сегодня пока нет данных о стрессе.</string>
     <string name="supplements_today_empty">Вопросов о добавках пока нет.</string>
     <string name="supplements_today_add_link">Добавить в журнале</string>
     <string name="journal_supplements_on_today_hint">Добавки отмечаются на карточке «Сегодня». Нажмите «Изменить», чтобы управлять ими.</string>

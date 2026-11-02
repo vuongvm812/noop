@@ -10,6 +10,7 @@ extension TodaySection {
         case .keyMetrics: return "square.grid.2x2"
         case .workouts: return "figure.run"
         case .heartRate: return "waveform.path.ecg"
+        case .stress: return "gauge.with.dots.needle.50percent"
         case .recoveryVitals: return "heart.text.square"
         case .yourCards: return "rectangle.stack"
         case .menstrualCycle: return "drop.degreesign"
@@ -27,6 +28,7 @@ extension TodaySection {
         case .keyMetrics: return StrandPalette.metricPurple
         case .workouts: return StrandPalette.effortColor
         case .heartRate: return StrandPalette.metricRose
+        case .stress: return StrandPalette.stressColor
         case .recoveryVitals: return StrandPalette.metricCyan
         case .yourCards: return StrandPalette.accent
         case .menstrualCycle: return StrandPalette.restColor

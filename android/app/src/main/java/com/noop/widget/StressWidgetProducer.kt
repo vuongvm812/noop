@@ -30,11 +30,13 @@ import kotlinx.coroutines.withContext
  */
 internal object StressWidgetProducer {
 
-    /** Today's curve, honest activity-masked hour count, and the local day they belong to. */
+    /** Today's curve, honest activity-masked hour count, and the local day they belong to. [dayMean] is
+     *  `DaytimeStress.Result.dayMean`, which the Today stress card's resolver reads (#42). */
     data class Curve(
         val points: List<StressPoint>,
         val epochDay: Long,
         val activityMaskedHours: Int,
+        val dayMean: Double? = null,
     )
 
     /** What the last computation saw and produced, swapped in as ONE value.
@@ -49,6 +51,7 @@ internal object StressWidgetProducer {
         val personalBaseline: Boolean,
         val points: List<StressPoint>,
         val activityMaskedHours: Int,
+        val dayMean: Double?,
     )
 
     /**
@@ -176,7 +179,7 @@ internal object StressWidgetProducer {
                 it.day == day && it.fingerprint == fingerprint
             }
             if (memoHit != null) {
-                return@runCatching Curve(memoHit.points, day, memoHit.activityMaskedHours)
+                return@runCatching Curve(memoHit.points, day, memoHit.activityMaskedHours, memoHit.dayMean)
             }
 
             val hr = repo.hrSamplesUnion(deviceId, from, nowSeconds, limit = 200_000)
@@ -213,10 +216,10 @@ internal object StressWidgetProducer {
 
             memos = memos + (
                 personalBaseline to Memo(
-                    fingerprint, day, personalBaseline, points, result.activityMaskedHours,
+                    fingerprint, day, personalBaseline, points, result.activityMaskedHours, result.dayMean,
                 )
             )
-            Curve(points, day, result.activityMaskedHours)
+            Curve(points, day, result.activityMaskedHours, result.dayMean)
         }.getOrNull()
     }
 

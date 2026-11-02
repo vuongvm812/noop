@@ -82,6 +82,10 @@ struct StressView: View {
                        // fixed, full-bleed time-of-day sky behind the scroll content (does not scroll), so the
                        // Stress screen sits in the same liquid atmosphere as every other tab.
                        topBackground: liquidScaffoldSky()) {
+            // #42: today's latest level and average, from the SAME loader and resolver the Today card
+            // reads, so the two cannot disagree. Shown in every state: a Garmin-only day has it even when
+            // the 0-3 model below has no history yet.
+            StressSummaryCard()
             if let model {
                 content(model)
             } else if !loaded {
@@ -366,11 +370,10 @@ struct StressView: View {
         }
     }
 
-    /// "avg 1.4 · 9h" summary for the timeline header, from the scored hours.
+    /// "9h" for the timeline header: how many hours scored. Today's average is NOT repeated here; the
+    /// Stress card at the top of the screen states it once, from the shared resolver (#42).
     private func timelineTrailing(_ day: DaytimeStress.Result) -> String {
-        let n = day.scored.count
-        guard let mean = day.dayMean else { return String(localized: "\(n)h") }
-        return String(localized: "avg \(StressTrace.formatLevel(mean)) · \(n)h")
+        String(localized: "\(day.scored.count)h")
     }
 
     /// The timeline's explanatory line, honest about WHICH reference each hour was scored against —

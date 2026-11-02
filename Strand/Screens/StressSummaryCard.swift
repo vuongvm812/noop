@@ -1,0 +1,135 @@
+import SwiftUI
+import StrandAnalytics
+import StrandDesign
+
+// MARK: - Stress card (Today + Stress screen) — #42
+//
+// Today's stress at a glance: the latest level, today's average, a small intraday sparkline and the
+// source (Garmin's own 0-100 stress, or NOOP's 0-3 proxy). The SAME view, fed by the SAME
+// `StressTodayLoader` → `StressToday.resolve`, renders on Today and at the top of the Stress screen, so
+// the two readouts cannot disagree. Today wraps it in a link to the Stress screen. Twin of Android
+// `StressSummaryCard` (android/.../ui/StressSummaryCard.kt).
+
+struct StressSummaryCard: View {
+
+    @EnvironmentObject var repo: Repository
+
+    /// Today shows a chevron because the card opens the Stress screen; the Stress screen itself does not.
+    var showsChevron = false
+
+    @State private var reading: StressToday.Reading?
+    @State private var loaded = false
+
+    var body: some View {
+        NoopCard(tint: StrandPalette.stressColor) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                header
+                if !loaded {
+                    Text("Calibrating")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                } else if let reading {
+                    figures(reading)
+                    if reading.points.count >= 2 {
+                        Sparkline(values: reading.points.map(\.level),
+                                  gradient: Gradient(colors: [StrandPalette.stressColor.opacity(0.5),
+                                                              StrandPalette.stressColor]),
+                                  range: 0...reading.scaleMax,
+                                  showsHover: false)
+                            .frame(height: 36)
+                            .accessibilityHidden(true)
+                    }
+                } else {
+                    Text("No stress reading yet today.")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        // A sync bumps refreshSeq; the loader's NOOP half is memoised, so a re-read of an unchanged day
+        // costs one fingerprint query.
+        .task(id: repo.refreshSeq) {
+            reading = await StressTodayLoader.load(repo: repo)
+            loaded = true
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            Image(systemName: "gauge.with.dots.needle.50percent")
+                .font(StrandFont.headline)
+                .foregroundStyle(StrandPalette.stressColor)
+                .accessibilityHidden(true)
+            Text("Stress")
+                .font(StrandFont.headline)
+                .foregroundStyle(StrandPalette.textPrimary)
+            Spacer()
+            if let reading {
+                Text(sourceLabel(reading.source))
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func figures(_ reading: StressToday.Reading) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space4) {
+            figure(label: Text("Latest"), value: reading.latest?.level, reading: reading,
+                   caption: reading.latest.map { Self.timeLabel($0.ts) })
+            figure(label: Text("Today's average"), value: reading.average, reading: reading, caption: nil)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func figure(label: Text, value: Double?, reading: StressToday.Reading,
+                        caption: String?) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            label.strandOverline()
+            HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
+                Text(value.map { Self.format($0, source: reading.source) } ?? "—")
+                    .font(StrandFont.number(24))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text(verbatim: Self.scaleSuffix(reading.scaleMax))
+                    .font(StrandFont.captionNumber)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+            if let caption {
+                Text(caption)
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func sourceLabel(_ source: StressToday.Source) -> String {
+        switch source {
+        case .garmin: return String(localized: "Garmin stress")
+        case .noop:   return String(localized: "NOOP stress")
+        }
+    }
+
+    /// Garmin's scale is whole numbers; NOOP's 0-3 proxy prints to one decimal like the Stress screen.
+    static func format(_ value: Double, source: StressToday.Source) -> String {
+        switch source {
+        case .garmin: return "\(Int(value.rounded()))"
+        case .noop:   return StressTrace.formatLevel(value)
+        }
+    }
+
+    /// "/100" or "/3": the scale the figure is on. A number, so nothing to translate.
+    static func scaleSuffix(_ scaleMax: Double) -> String {
+        "/" + String(Int(scaleMax))
+    }
+
+    private static func timeLabel(_ ts: Int) -> String {
+        Date(timeIntervalSince1970: TimeInterval(ts)).formatted(date: .omitted, time: .shortened)
+    }
+}

@@ -29,6 +29,12 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
     KEY_METRICS("keyMetrics", R.string.today_section_key_metrics),
     WORKOUTS("workouts", R.string.today_section_workouts),
     HEART_RATE("heartRate", R.string.today_section_heart_rate),
+
+    /** Today's stress (#42): the latest level, today's average and an intraday sparkline, from Garmin's
+     *  own stress or NOOP's proxy. Tapping it opens the Stress screen. Placed after Heart Rate;
+     *  [decodeOrder] inserts it there for saved orders. */
+    STRESS("stress", R.string.today_section_stress),
+
     RECOVERY_VITALS("recoveryVitals", R.string.today_section_recovery_vitals),
     YOUR_CARDS("yourCards", R.string.today_section_your_cards),
     MENSTRUAL_CYCLE("menstrualCycle", R.string.today_section_menstrual_cycle),
@@ -50,8 +56,8 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
         /** The original, hard-coded section order — the default when the layout isn't customised. The
          *  journal widget (#656) is last by default, where it was first added, above the data-sources card. */
         val defaultOrder: List<TodaySection> = listOf(
-            HERO, LIVE_SESSION, SYNTHESIS, KEY_METRICS, WORKOUTS, HEART_RATE, RECOVERY_VITALS, YOUR_CARDS,
-            MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
+            HERO, LIVE_SESSION, SYNTHESIS, KEY_METRICS, WORKOUTS, HEART_RATE, STRESS, RECOVERY_VITALS,
+            YOUR_CARDS, MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
         )
     }
 }

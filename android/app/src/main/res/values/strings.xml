@@ -2320,6 +2320,12 @@
     <string name="today_section_menstrual_cycle">Menstrual Cycle</string>
     <string name="today_section_journal">Journal</string>
     <string name="today_section_supplements">Supplements</string>
+    <string name="today_section_stress">Stress</string>
+    <string name="stress_summary_source_garmin">Garmin stress</string>
+    <string name="stress_summary_source_noop">NOOP stress</string>
+    <string name="stress_summary_latest">Latest</string>
+    <string name="stress_summary_average">Today\'s average</string>
+    <string name="stress_summary_empty">No stress reading yet today.</string>
     <string name="supplements_today_empty">No supplement questions yet.</string>
     <string name="supplements_today_add_link">Add one in the Journal</string>
     <string name="journal_supplements_on_today_hint">Supplements are logged on the Today card. Tap Edit to manage them.</string>

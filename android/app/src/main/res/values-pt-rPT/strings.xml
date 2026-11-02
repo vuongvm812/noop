@@ -2191,6 +2191,12 @@
     <string name="today_section_menstrual_cycle">Ciclo menstrual</string>
     <string name="today_section_journal">Diário</string>
     <string name="today_section_supplements">Suplementos</string>
+    <string name="today_section_stress">Stress</string>
+    <string name="stress_summary_source_garmin">Stress Garmin</string>
+    <string name="stress_summary_source_noop">Stress NOOP</string>
+    <string name="stress_summary_latest">Último</string>
+    <string name="stress_summary_average">Média de hoje</string>
+    <string name="stress_summary_empty">Ainda não há leituras de stress hoje.</string>
     <string name="supplements_today_empty">Ainda não há perguntas sobre suplementos.</string>
     <string name="supplements_today_add_link">Adicione uma no diário</string>
     <string name="journal_supplements_on_today_hint">Os suplementos são registados no cartão Hoje. Toque em Editar para os gerir.</string>

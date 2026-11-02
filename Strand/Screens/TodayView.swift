@@ -1956,6 +1956,12 @@ struct TodayView: View {
             workoutsSection
         case .heartRate:
             heartRateTrendSection
+        case .stress:
+            // #42: today's stress, tapping through to the Stress screen. Today only.
+            if selectedDayOffset == 0 {
+                NavigationLink(value: TabRoute.stress) { StressSummaryCard(showsChevron: true) }
+                    .buttonStyle(.plain)
+            }
         case .recoveryVitals:
             recoveryVitalsSection
         case .yourCards:

@@ -205,6 +205,10 @@ fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
         // down (Today / Trends / Sleep / metric-detail parity - same two prefs, same two behaviours).
         fullBleedBackground = screenBackdropFullBleed(showDayCycleBackground, skyBehindCards),
     ) {
+        // #42: today's latest level and average, from the SAME loader and resolver the Today card reads,
+        // so the two cannot disagree. Shown in every state: a Garmin-only day has it even when the 0-3
+        // model below has no history yet.
+        item { StressSummaryCard(vm, refreshKey = days) }
         when {
             model != null -> StressContent(
                 model, daytime, daytimeUsesPersonalBaseline, stressIndex, freqHrv, onBreathe,
@@ -1247,12 +1251,9 @@ private fun TimeInBandRow(band: StressTotalsBand, hours: Int, total: Double) {
     }
 }
 
-/** "avg 1.4 · 9h" summary for the timeline header, from the scored hours. */
-private fun timelineTrailing(day: DaytimeStress.Result): String {
-    val n = day.scored.size
-    val mean = day.dayMean ?: return "${n}h"
-    return "avg " + String.format(Locale.US, "%.1f", mean) + " · ${n}h"
-}
+/** "9h" for the timeline header: how many hours scored. Today's average is NOT repeated here; the Stress
+ *  card at the top of the screen states it once, from the shared resolver (#42). */
+private fun timelineTrailing(day: DaytimeStress.Result): String = "${day.scored.size}h"
 
 /**
  * A passive, in-app nudge to run a Breathe session after a sustained high-stress run. No
