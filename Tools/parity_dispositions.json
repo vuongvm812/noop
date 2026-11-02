@@ -497,6 +497,15 @@
     {
       "type": "out_of_scope_twin",
       "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::workoutRow/2#1",
+      "identity_sha256": "5b1baac509735fc372b1c4e3021a73bb45058939972135ee4064fdf01c7cc2eb",
+      "platform": "kotlin",
+      "rationale": "GarminHistoryIngest maps a decoded watch ACTIVITY file onto its workout row, including the GPS route as routePolyline (vuongvm812/noop#32). Its Swift twin, GarminHistoryIngest.workoutRoute in Strand/Data, stores the same precision-5 polyline in RouteStore; it is app glue in the app target the ledger does not scan, while the Kotlin file sits in com.noop.data, which it does. The polyline itself is pinned on both platforms by one Swift-oracle literal (GarminHistoryIngestRouteTests / GarminHistoryIngestRouteTest).",
+      "twin_path": "Strand/Data/GarminHistoryIngest.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::syncedKeys/2#1",
       "identity_sha256": "aadff2f676057607dd53f0435966712e112df85bced58d54fe0d06df427ca63f",
       "platform": "kotlin",

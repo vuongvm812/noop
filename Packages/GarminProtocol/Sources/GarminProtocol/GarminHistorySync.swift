@@ -218,6 +218,13 @@ public struct GarminDownloadedFile: Equatable, Sendable {
     /// FileAccess type name when the watch gave one (diagnostics), nil for the legacy flow.
     public let typeName: String?
 
+    public init(key: GarminSyncFileKey, bytes: [UInt8], resumedFrom: UInt32?, typeName: String?) {
+        self.key = key
+        self.bytes = bytes
+        self.resumedFrom = resumedFrom
+        self.typeName = typeName
+    }
+
     /// The FIT sub-type, from the directory entry or the FileAccess type name.
     public var fitType: GarminFitFileType? { GarminFitFileType(rawValue: key.subType) }
 }
