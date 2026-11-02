@@ -854,16 +854,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         combine(
             repository.importedDailyUnionFlow(deviceId, from, "9999-12-31"),
             repository.computedDailyUnionFlow(deviceId, from, "9999-12-31"),
-        ) { imported, own ->
+            // #31: same-brand export nights seed at the lowest precedence, as in the engine.
+            repository.baselineSeedDailyUnionFlow(deviceId, from, "9999-12-31"),
+        ) { imported, own, seed ->
             val nowSec = System.currentTimeMillis() / 1000L
             val tz = java.util.TimeZone.getDefault().getOffset(nowSec * 1000L) / 1000L
             val prefs = NoopPrefs.of(appContext)
-            ChargeBaselines.resolve(
+            ChargeBaselines.resolveWithSeed(
                 imported = imported,
                 own = own,
                 anchorDay = AnalyticsEngine.dayString(nowSec, tz),
                 hrvEpoch = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
                 recoveryEpoch = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
+                seed = seed,
             )
         }
             .flowOn(Dispatchers.Default)

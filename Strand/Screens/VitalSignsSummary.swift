@@ -103,6 +103,8 @@ struct BodyVitalReading: Identifiable {
             return String(localized: "NOOP computed")
         case .appleHealth:
             return String(localized: "Apple Health")
+        case .wearableImport(let brand):
+            return brand
         case .localCache:
             return nil
         }
@@ -145,7 +147,8 @@ enum BodyVitalSigns {
             let allowedSources = DailyMetricSource.vitalPrecedence(for: key)
             var byDay: [String: VitalPoint] = [:]
             for source in allowedSources {
-                for row in sourceRows where row.source == source {
+                // Matched by kind (`vitalPriority` is one per case), so every provider's export rows match.
+                for row in sourceRows where row.source.vitalPriority == source.vitalPriority {
                     guard let v = value(row.metric), byDay[row.metric.day] == nil else { continue }
                     byDay[row.metric.day] = VitalPoint(day: row.metric.day, value: v, source: row.source)
                 }
@@ -514,7 +517,8 @@ private extension DailyMetricSource {
         case "skin":
             return [.whoopImport, .noopComputed, .localCache]
         default:
-            return [.whoopImport, .noopComputed, .appleHealth, .localCache]
+            // A wearable export (#31) fills only what every other source leaves open.
+            return [.whoopImport, .noopComputed, .appleHealth, .wearableImport(brand: ""), .localCache]
         }
     }
 }

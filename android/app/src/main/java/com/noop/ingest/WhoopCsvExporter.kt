@@ -350,7 +350,8 @@ object WhoopCsvExporter {
         // Daily: the same imported-wins merge the dashboards show (daysMerged resolves the union
         // internally); a day present under ANY imported source is "import", otherwise it came from
         // the on-device computed source.
-        val daily = repo.daysMerged(deviceId)
+        // includeHistory = false (#31): a WHOOP-format export never carries a Garmin/Oura export's rows.
+        val daily = repo.daysMerged(deviceId, includeHistory = false)
         val importedDays = importedIds.flatMap { repo.days(it) }.map { it.day }.toHashSet()
         val sourceByDay = daily.associate { d ->
             d.day to if (d.day in importedDays) "import" else "noop (APPROXIMATE)"

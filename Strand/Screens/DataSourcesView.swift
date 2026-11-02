@@ -136,7 +136,9 @@ struct DataSourcesView: View {
     }
 
     private var whoopCard: some View {
-        let hasWhoop = !repo.days.isEmpty
+        // From the WHOOP/strap buckets, not `days`: `days` also carries wearable-export history (#31), and
+        // a Garmin export alone must not read as a WHOOP import.
+        let hasWhoop = repo.freshness.importedDays + repo.freshness.computedDays > 0
         return card(title: String(localized: "WHOOP Export"), icon: "square.and.arrow.down.fill",
              tint: StrandPalette.accent,
              status: StatePill(hasWhoop ? "Imported" : "Nothing imported",

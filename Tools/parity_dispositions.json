@@ -28,15 +28,6 @@
     {
       "type": "out_of_scope_twin",
       "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::computeHabitualSleep/7#1",
-      "identity_sha256": "0f4c9098de75c40d0ed87c6ad6111d259d664e632fe4b34ea7c77fef57fe8484",
-      "platform": "kotlin",
-      "rationale": "Swift IntelligenceEngine.computeHabitualSleep(finishedBefore:) has the same role in the excluded app layer; this disposition does not assert behavioral parity.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::finishedSessions/2#1",
       "identity_sha256": "8f5d3811a0bc62b7a45c7faadd3a96ba6cd93609fdd023d540b41d19fff6a5d7",
       "platform": "kotlin",
@@ -556,15 +547,6 @@
     {
       "type": "out_of_scope_twin",
       "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::eraSourceDays/4#1",
-      "identity_sha256": "ce6f5c390e4ee6e517c2abb92b8c9a9fe635f656ce59c8d5b69b0fdd7dc4f648",
-      "platform": "kotlin",
-      "rationale": "eraSourceDays builds the (day, source) pairs the respiration and Garmin baseline-era cuts read; it was lifted out of analyzeRecentOnCpu to keep that method under its JaCoCo size budget, and the Swift engine builds the same pairs inline (respCandidateDays + respSourceByDay) (Garmin analytics, vuongvm812/noop#10). Its Swift twin is in IntelligenceEngine in Strand/Data, the app target the ledger does not scan; the Kotlin engine sits in com.noop.analytics, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminScoringInputs.resolve and baselineEraEpoch) is paired and oracle-checked, and GarminAnalyticsTests / GarminAnalyticsEngineTest run the same synthetic Garmin profile through both engines.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::garminVitalsLine/2#1",
       "identity_sha256": "11e62e774802ebf3bdcf690bac96dc94a3cdd9adf5294a390a3e88daeb324743",
       "platform": "kotlin",
@@ -587,6 +569,139 @@
       "identity_sha256": "854718d15010adeac6116542424f2e7c94a41941d84dde2636d3124ea229fba2",
       "platform": "kotlin",
       "rationale": "Room @Query DAO method reading one watch-computed series for a device (Garmin analytics, vuongvm812/noop#10). The paired read is WhoopRepository.deviceMetricSamples, whose Swift twin WhoopStore.deviceMetricSamples runs the same SELECT through GRDB directly, so there is no Swift DAO function to pair with; every sibling DAO query is one-sided for the same reason."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::baselineImports/3#1",
+      "identity_sha256": "f0c566bea1e122bce085625a7f4e07ba45fb0b4e92d0d417f564b091a1ab7711",
+      "platform": "kotlin",
+      "rationale": "baselineImports reads the imported WHOOP rows the baselines fold (hist) together with the same-brand wearable-export seed (#31, vuongvm812/noop#31), in one call so analyzeRecentOnCpu stays under its JaCoCo size budget; the Swift engine reads hist and the seed inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::chargeHistories/13#1",
+      "identity_sha256": "c1a5ed05247682a12ebd1300d4d9573e85cd71cf4426d183ce67c098adfb1a6d",
+      "platform": "kotlin",
+      "rationale": "chargeHistories builds the era-cut epochs and the HRV / resting-HR / respiration Charge histories with the same-brand export seed (#31, vuongvm812/noop#31); it was lifted out of analyzeRecentOnCpu for its JaCoCo size budget, and the Swift engine builds the same values inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::computeHabitualSleep/8#1",
+      "identity_sha256": "2990cd69a6af39dc853f6665695ef9520a936a073eab24b983c4585d10577070",
+      "platform": "kotlin",
+      "rationale": "Swift IntelligenceEngine.computeHabitualSleep has the same role in the excluded app layer; #31 (vuongvm812/noop#31) adds the wearable-export nights on both, by the same gap-fill. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::eraSourceDays/5#1",
+      "identity_sha256": "cd9d678dd367019091b5f3dd5477e8fbfaa8f40b437ccab8fd1440c2ddd55242",
+      "platform": "kotlin",
+      "rationale": "eraSourceDays builds the (day, source) pairs the respiration and Garmin baseline-era cuts read, now tagging a seeded export night with its export source (#31, vuongvm812/noop#31); the Swift engine builds the same pairs inline (respCandidateDays + respSourceByDay) in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::historyActiveId/2#1",
+      "identity_sha256": "435659d2f829e674a8c42533685d3d617abe6693339fd381a488263fa6eb2bb1",
+      "platform": "kotlin",
+      "rationale": "historyActiveId resolves the active device whose brand picks the wearable-export history and seed ids (#31, vuongvm812/noop#31); the Swift engine reads registry.activeDeviceId() (regActiveId) inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::seedSourceByDay/2#1",
+      "identity_sha256": "ba8bcd888fc9b2333602554bb462b39d7697822aff486c4bb7f0909afdf8ffa6",
+      "platform": "kotlin",
+      "rationale": "seedSourceByDay tags each seeded export day with the first seed source holding it (#31, vuongvm812/noop#31); the Swift engine builds the same map inline (respSourceByDay) in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::seededHistory/7#1",
+      "identity_sha256": "3731b2f9e9a4490b3621b2da8842a6358bb53792c3a6c794966ffded064ea4de",
+      "platform": "kotlin",
+      "rationale": "seededHistory calls ChargeBaselines.history with the WHOOP-import, own and same-brand export seed nights for one metric (#31, vuongvm812/noop#31); it exists to keep analyzeRecentOnCpu under its JaCoCo size budget, and the Swift engine calls ChargeBaselines.history inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::wearableBaselineSeed/3#1",
+      "identity_sha256": "468d4194a2723bc4387232b36bc1a3b6033673d34d16722280f459fa4f50b7bf",
+      "platform": "kotlin",
+      "rationale": "wearableBaselineSeed reads the same-brand wearable-export rows that seed the Charge baselines (#31, vuongvm812/noop#31); the Swift engine reads them inline (seedIds / seedRows) in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::baselineSeedDailyUnionFlow/3#1",
+      "identity_sha256": "be35c097a6d825fde4db06a1695e098eff0b6cd4fe2d08667b5a06255595882c",
+      "platform": "kotlin",
+      "rationale": "baselineSeedDailyUnionFlow feeds the dashboard Charge baselines the same-brand export seed rows (#31, vuongvm812/noop#31); the Swift Repository reads the same rows in refresh() (seed) in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::daysMerged/2#1",
+      "identity_sha256": "c7f30a0c31a3ec37740c416c8f38cbed6e14b8edb019c3a5e5209bbc196d0b12",
+      "platform": "kotlin",
+      "rationale": "daysMerged gained includeHistory (#31, vuongvm812/noop#31) so the WHOOP-format CSV export and the WHOOP day count leave wearable-export rows out; the Swift Repository folds the history in refresh() / dailyMetrics(fromDay:toDay:) in Strand/Data, the app target the ledger does not scan, and Swift CsvExport reads importedReadIds directly. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::historySourceIds/1#1",
+      "identity_sha256": "5386c8134d6a762ae56d4be5c3fd2da4bf92bd9e8361f8bb199382a02fe3f86e",
+      "platform": "kotlin",
+      "rationale": "historySourceIds is the wearable-export namespace list for the active device (#31, vuongvm812/noop#31), WearableHistory.readOrder; its Swift twin is the historyReadIds property on Repository in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::localEndDay/1#1",
+      "identity_sha256": "a4f0993fb4cba72849587fd3f1dda9c2600eb7d327c05fb8bccfd894a6892462",
+      "platform": "kotlin",
+      "rationale": "localEndDay is the local wake-day keyer mergeSleep uses, shared by fillSleepGaps (#31, vuongvm812/noop#31); its Swift twin is Repository.localEndDayKey in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::sleepBrowseSessions/3#1",
+      "identity_sha256": "dc3107cc7157b0cb66817a5703299bca228f8cf343367fe84d92ec034153ab70",
+      "platform": "kotlin",
+      "rationale": "sleepBrowseSessions is the one sleep funnel the Sleep tab, its reloads and the hosted Today sleep model read (imported/computed richness merge, then the wearable-export gap-fill, #31, vuongvm812/noop#31); the Swift Sleep tab reads Repository.allSleepSessions in Strand/Data, the app target the ledger does not scan, which applies the same gap-fill. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WearableHistory.swift::sourceIds",
+      "identity_sha256": "d55966741bb81217dd8a264dffb6754744ac1f7a9847eae9df951f426f59e827",
+      "platform": "swift",
+      "rationale": "WearableHistory.sourceIds (#31, vuongvm812/noop#31) is a collection, so its Kotlin twin WearableHistory.sourceIds in com.noop.analytics is a plain val (Kotlin const val cannot hold a List or Set) and the ledger's const-val rule cannot pair it. Both are pinned through the shared oracle Tools/parity_cases/wearable_history.json (WearableHistoryTests / WearableHistoryParityTest)."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WearableHistory.swift::referenceKeys",
+      "identity_sha256": "b239f6cdc8b887b615771f2dcaa9a18a53fe9544d486aabfad43a518aab84380",
+      "platform": "swift",
+      "rationale": "WearableHistory.referenceKeys (#31, vuongvm812/noop#31) is a collection, so its Kotlin twin WearableHistory.referenceKeys in com.noop.analytics is a plain val (Kotlin const val cannot hold a List or Set) and the ledger's const-val rule cannot pair it. Both are pinned through the shared oracle Tools/parity_cases/wearable_history.json (WearableHistoryTests / WearableHistoryParityTest)."
     }
   ]
 }

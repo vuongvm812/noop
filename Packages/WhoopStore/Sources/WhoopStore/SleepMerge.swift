@@ -59,6 +59,31 @@ public enum SleepMerge {
         return out.sorted { $0.startTs < $1.startTs }
     }
 
+    /// Add wearable-export history sessions (#31) under an already-merged sleep list, at the LOWEST
+    /// precedence: a history session survives only on a local end-day `base` holds no session for, so a
+    /// night the active device, the WHOOP import or NOOP's own detection recorded is never shown twice.
+    /// `history` arrives in `WearableHistory.readOrder`; on a day two export sources both cover, the first
+    /// source to reach that day keeps it (all of its sessions, so a nap beside the night survives) and the
+    /// other source's copy of the night is dropped. Result sorted by start time, like `merge`.
+    /// Kotlin twin: `WhoopRepository.fillSleepGaps`.
+    public static func fillingGaps(_ base: [CachedSleepSession],
+                                   history: [CachedSleepSession],
+                                   endDay: (CachedSleepSession) -> String) -> [CachedSleepSession] {
+        guard !history.isEmpty else { return base }
+        let held = Set(base.map(endDay))
+        var ownerByDay: [String: String] = [:]
+        var out = base
+        for s in history {
+            let day = endDay(s)
+            guard !held.contains(day) else { continue }
+            let source = s.deviceId ?? ""
+            if let owner = ownerByDay[day], owner != source { continue }
+            ownerByDay[day] = source
+            out.append(s)
+        }
+        return out.sorted { $0.startTs != $1.startTs ? $0.startTs < $1.startTs : $0.endTs < $1.endTs }
+    }
+
     /// True when the session carries a non-empty stage payload; nil, "", and "[]" carry none.
     static func hasStages(_ s: CachedSleepSession) -> Bool {
         guard let json = s.stagesJSON?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }

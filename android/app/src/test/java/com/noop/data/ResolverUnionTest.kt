@@ -37,7 +37,7 @@ class ResolverUnionTest {
      *  candidate list , and therefore every resolver read , is byte-identical to the pre-fix behaviour. */
     @Test
     fun singleDeviceCandidatesCollapseToCanonicalPair() {
-        assertEquals(listOf("my-whoop", "my-whoop-noop"), candidateSources(strap = canonical))
+        assertEquals(listOf("my-whoop", "my-whoop-noop", "garmin-import", "oura-import", "oura-api", "fitbit-import"), candidateSources(strap = canonical))
     }
 
     /** After a re-add the resolver tries the ACTIVE strap first (live/measured wins per day), then the
@@ -47,7 +47,7 @@ class ResolverUnionTest {
     @Test
     fun reAddCandidatesUnionActiveThenCanonical() {
         assertEquals(
-            listOf(reAdded, "my-whoop", "$reAdded-noop", "my-whoop-noop"),
+            listOf(reAdded, "my-whoop", "$reAdded-noop", "my-whoop-noop", "garmin-import", "oura-import", "oura-api", "fitbit-import"),
             candidateSources(strap = reAdded),
         )
     }
@@ -59,10 +59,11 @@ class ResolverUnionTest {
     fun appleFallbackAppendsLastWithMappedKey() {
         val candidates = WhoopRepository.sourceCandidates("rhr", canonical, reAdded)
         assertEquals(
-            listOf(reAdded, "my-whoop", "$reAdded-noop", "my-whoop-noop", "apple-health"),
+            // #31: the wearable-export history follows Apple as the lowest-precedence fallback.
+            listOf(reAdded, "my-whoop", "$reAdded-noop", "my-whoop-noop", "apple-health", "garmin-import", "oura-import", "oura-api", "fitbit-import"),
             candidates.map { it.source },
         )
-        assertEquals("resting_hr", candidates.last().key)
+        assertEquals("resting_hr", candidates.first { it.source == "apple-health" }.key)
     }
 
     /** A derived score with NO Apple mapping never grows an Apple candidate , the resolver must not

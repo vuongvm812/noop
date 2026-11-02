@@ -1896,7 +1896,12 @@ class WhoopRepository(
         val imported = dedupSleepBlocks(rawIds.flatMap { dao.sleepSessions(it, lo, hi, 4000) })
         val computed = dedupSleepBlocks(rawIds.map { "$it-noop" }.flatMap { dao.sleepSessions(it, lo, hi, 4000) })
         val offsetSec = (java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000).toLong()
-        val blocks = (imported + computed).mapNotNull { s ->
+        // #31: wearable-export nights count as history on the end-days nothing else covers, by the same
+        // fill `IntelligenceEngine.computeHabitualSleep` applies.
+        val all = fillSleepGaps(imported + computed, historySleepSessions(deviceId, lo, hi, 4000)) {
+            com.noop.analytics.AnalyticsEngine.dayString(it.endTs, offsetSec)
+        }
+        val blocks = all.mapNotNull { s ->
             val start = s.effectiveStartTs
             val end = s.endTs
             if (end <= start) {
@@ -2138,19 +2143,63 @@ class WhoopRepository(
      * is byte-identical there. Active id wins per day inside each bucket ([unionByDay]); imports still win
      * over computed across buckets ([mergeDaily]).
      */
-    suspend fun daysMerged(deviceId: String): List<DailyMetric> {
+    suspend fun daysMerged(deviceId: String, includeHistory: Boolean = true): List<DailyMetric> {
         val imported = unionByDay(importedSourceIds(deviceId).map { dao.days(it) })
         val computed = unionByDay(computedSourceIds(deviceId).map { dao.days(it) })
         val activityFile = dao.days(ACTIVITY_FILE_SOURCE)
+        // #31: the wearable-export history bucket, folded UNDER the merge. A WHOOP-format export passes
+        // includeHistory = false so a Garmin export is never written out as WHOOP data.
+        val history = if (includeHistory) unionByDay(historySourceIds(deviceId).map { dao.days(it) }) else emptyList()
         // H5 (#509): days the user hand-edited the sleep of (the edit lives under the computed source); on
         // those days the computed sleep fields win over a re-imported night. Pool the edited sessions across
         // every computed source in the union so a re-add doesn't lose an earlier-id edit's precedence.
         val editedSessions = computedSourceIds(deviceId).flatMap { dao.editedSleepSessions(it) }
         return mergeActivityFileSteps(
-            mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(editedSessions)),
+            foldWearableHistory(
+                mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(editedSessions)),
+                history,
+            ),
             activityFile,
         )
     }
+
+    /** The wearable-export namespaces (#31) for [activeDeviceId], in
+     *  [com.noop.analytics.WearableHistory.readOrder]. Never part of [importedSourceIds]: workouts, raw
+     *  streams, ownership sets and exports keep reading the device and WHOOP namespaces only.
+     *  Mirrors the Swift `historyReadIds` property on Repository. */
+    fun historySourceIds(activeDeviceId: String): List<String> =
+        com.noop.analytics.WearableHistory.readOrder(activeDeviceId)
+
+    /** Same-brand export rows (#31) that seed the Charge baselines, one row per day. The engine reads the
+     *  same ids, so the readouts and the score fold one history. Mirrors the seed read in the Swift
+     *  Repository's refresh. */
+    fun baselineSeedDailyUnionFlow(activeStrapId: String, from: String, to: String): Flow<List<DailyMetric>> {
+        val ids = com.noop.analytics.WearableHistory.baselineSeedIds(activeStrapId)
+        if (ids.isEmpty()) return kotlinx.coroutines.flow.flowOf(emptyList())
+        return unionDaysFlow(ids.map { dao.dailyMetricsRangeFlow(it, from, to) })
+    }
+
+    /** Wearable-export sleep sessions (#31) for a ts range, in [historySourceIds] order with near-identical
+     *  nights across two exports collapsed. Lowest precedence: callers add them only through
+     *  [fillSleepGaps]. Swift twin: `Repository.historySleepSessions`. */
+    suspend fun historySleepSessions(activeDeviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT):
+        List<SleepSession> =
+        dedupSleepBlocks(historySourceIds(activeDeviceId).flatMap { dao.sleepSessions(it, from, to, limit) })
+
+    /**
+     * The sleep list the Sleep tab, the hosted Today sleep model and their reloads browse: the imported
+     * union merged with the computed union (imported wins per local wake-day, with the #241 richness
+     * exception), then the wearable-export history (#31) on the wake-days still empty, ordered by effective
+     * onset. ONE funnel so the screens cannot each merge differently.
+     */
+    suspend fun sleepBrowseSessions(activeDeviceId: String, from: Long, to: Long): List<SleepSession> =
+        fillSleepGaps(
+            mergeSleepRichness(
+                sleepSessionsUnion(activeDeviceId, from, to),
+                computedSleepSessionsUnion(activeDeviceId, from, to),
+            ) { localEndDay(it) },
+            historySleepSessions(activeDeviceId, from, to),
+        ).sortedBy { it.effectiveStartTs }
 
     /**
      * Union ([unionByDay]) of one daily flow per source id, emitting whenever any source changes. For the
@@ -2180,9 +2229,13 @@ class WhoopRepository(
             unionDaysFlow(computedSourceIds(deviceId).map { dao.daysFlow(it) }),
             dao.daysFlow(ACTIVITY_FILE_SOURCE),
             editedSleepSessionsFlow(deviceId),
-        ) { imported, computed, activityFile, edited ->
+            unionDaysFlow(historySourceIds(deviceId).map { dao.daysFlow(it) }),
+        ) { imported, computed, activityFile, edited, history ->
             mergeActivityFileSteps(
-                mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(edited)),
+                foldWearableHistory(
+                    mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(edited)),
+                    history,
+                ),
                 activityFile,
             )
         }
@@ -2208,11 +2261,15 @@ class WhoopRepository(
             unionDaysFlow(computedSourceIds(deviceId).map { dao.recentDaysFlow(it, RECENT_DAYS_CAP) }),
             dao.recentDaysFlow(ACTIVITY_FILE_SOURCE, RECENT_DAYS_CAP),
             editedSleepSessionsFlow(deviceId),
-        ) { imported, computed, activityFile, edited ->
+            unionDaysFlow(historySourceIds(deviceId).map { dao.recentDaysFlow(it, RECENT_DAYS_CAP) }),
+        ) { imported, computed, activityFile, edited, history ->
             // recentDaysFlow returns newest-first (DESC LIMIT); mergeDaily re-sorts ascending by day, so the
             // emitted order matches daysMergedFlow exactly.
             mergeActivityFileSteps(
-                mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(edited)),
+                foldWearableHistory(
+                    mergeDaily(imported = imported, computed = computed, userEditedDays = userEditedDays(edited)),
+                    history,
+                ),
                 activityFile,
             )
         }
@@ -2292,7 +2349,9 @@ class WhoopRepository(
         }
         val importedDays = imported.mapTo(HashSet(), ::endDay)
         val computedKept = computed.filter { endDay(it) !in importedDays }
-        return (imported + computedKept).sortedBy { it.effectiveStartTs }
+        // #31: wearable-export nights on the wake-days neither bucket holds.
+        return fillSleepGaps(imported + computedKept, historySleepSessions(deviceId, lo, hi), ::endDay)
+            .sortedBy { it.effectiveStartTs }
     }
 
     /** Workouts over every registered WHOOP (active first, archived retained) plus canonical "my-whoop",
@@ -2861,6 +2920,11 @@ class WhoopRepository(
                 appleCompatibleKey(key)?.let {
                     candidates.add(MetricSourceCandidate(APPLE_HEALTH_SOURCE, it))
                 }
+                // #31: the wearable-export history last, never for a brand's own reference score.
+                if (com.noop.analytics.WearableHistory.seriesKeyAllowed(key)) {
+                    com.noop.analytics.WearableHistory.readOrder(strapDeviceId)
+                        .forEach { candidates.add(MetricSourceCandidate(it, key)) }
+                }
                 return uniqued(candidates)
             }
             if (preferredSource == APPLE_HEALTH_SOURCE) {
@@ -3284,6 +3348,57 @@ class WhoopRepository(
                 return com.noop.analytics.AnalyticsEngine.dayString(s.endTs, offsetSec)
             }
             return mergeSleepRichness(imported, computed, ::endDay).sortedBy { it.startTs }
+        }
+
+        /**
+         * Add wearable-export history sessions (#31) under an already-merged sleep list, at the LOWEST
+         * precedence: a history session survives only on a local end-day [base] holds no session for. On a
+         * day two export sources both cover, the first source (in [com.noop.analytics.WearableHistory.readOrder])
+         * keeps it. Sorted by start, then end. Swift twin: `SleepMerge.fillingGaps`.
+         */
+        internal fun fillSleepGaps(
+            base: List<SleepSession>,
+            history: List<SleepSession>,
+            endDay: (SleepSession) -> String = ::localEndDay,
+        ): List<SleepSession> {
+            if (history.isEmpty()) return base
+            val held = base.mapTo(HashSet(), endDay)
+            val ownerByDay = HashMap<String, String>()
+            val out = ArrayList(base)
+            for (s in history) {
+                val day = endDay(s)
+                if (day in held) continue
+                val owner = ownerByDay[day]
+                if (owner != null && owner != s.deviceId) continue
+                ownerByDay[day] = s.deviceId
+                out.add(s)
+            }
+            return out.sortedWith(compareBy<SleepSession>({ it.startTs }, { it.endTs }))
+        }
+
+        /** The local wake-day [mergeSleep] keys a session by. */
+        internal fun localEndDay(s: SleepSession): String {
+            val offsetSec = (java.util.TimeZone.getDefault().getOffset(s.endTs * 1000) / 1000).toLong()
+            return com.noop.analytics.AnalyticsEngine.dayString(s.endTs, offsetSec)
+        }
+
+        /**
+         * Fold wearable-export history rows (#31) under an already-merged daily list, at the LOWEST
+         * precedence. A day the merge already holds keeps every column it carries and takes only what it
+         * left null, by [coalesceDay]'s column groups (so a sleep total never sits beside another source's
+         * stage minutes); a day only the export covers is added whole. [history] is already one row per day
+         * ([unionByDay] over [com.noop.analytics.WearableHistory.readOrder]). Sorted by day.
+         * Swift twin: `Repository.foldWearableHistory`.
+         */
+        internal fun foldWearableHistory(merged: List<DailyMetric>, history: List<DailyMetric>): List<DailyMetric> {
+            if (history.isEmpty()) return merged
+            val byDay = LinkedHashMap<String, DailyMetric>()
+            for (d in merged) byDay[d.day] = d
+            for (h in history) {
+                val held = byDay[h.day]
+                byDay[h.day] = if (held == null) h else coalesceDay(held, h)
+            }
+            return byDay.values.sortedBy { it.day }
         }
 
         /** Imported-wins-per-day sleep merge WITH the #241 richness exception, returned UNSORTED so callers

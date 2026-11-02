@@ -69,9 +69,12 @@ object ChargeBaselines {
      * cannot place. While seeding, an imported value wins a day both sources cover; an own night fills a day
      * the import does not cover or covers without a value (the precedence of the dashboard's `mergeDaily` and
      * of the engine merge before #2525, so a blank imported row can never shadow a night the strap measured).
-     * Swift twin: `ChargeBaselines.history`.
+     * [seed] is the active device's own-brand wearable-export nights (#31), in precedence order: the
+     * lowest-precedence input, counted only on a day neither [imported] nor [own] carries a value for, only
+     * with a value of its own, first listed wins; it then seeds exactly like an imported night.
+     * Swift twin: `ChargeBaselines.historyWithSeed`.
      */
-    fun history(
+    fun historyWithSeed(
         imported: List<Pair<String, Double?>>,
         own: List<Pair<String, Double?>>,
         anchorDay: String,
@@ -79,6 +82,7 @@ object ChargeBaselines {
         baselineEpoch: Double,
         windowDays: Int = ChargeBaselines.windowDays,
         handoffNights: Int = Baselines.minNightsTrust,
+        seed: List<Pair<String, Double?>>,
     ): History {
         val empty = History(emptyList(), emptyList(), seededByImport = false, ownValidNights = 0, importedNights = 0)
         if (windowDays <= 0) return empty
@@ -96,6 +100,13 @@ object ChargeBaselines {
 
         val importedByDay = HashMap<String, Double?>()
         for ((day, value) in imported) if (inWindow(day)) importedByDay[day] = value
+        // Same-brand wearable-export nights (#31): the lowest-precedence input, counted only on a day
+        // neither the import nor an own night carries a value for, first listed wins. Mirrors Swift.
+        for ((day, value) in seed) {
+            if (value == null || !inWindow(day)) continue
+            if (importedByDay[day] != null || ownByDay[day] != null) continue
+            importedByDay[day] = value
+        }
 
         // Handed off, or nothing to seed with: the own nights are the whole history.
         if (ownValid >= handoffNights || importedByDay.isEmpty()) {
@@ -118,6 +129,17 @@ object ChargeBaselines {
         )
     }
 
+    /** [historyWithSeed] with no wearable-export seed: the #2525 rule exactly. Swift twin: `ChargeBaselines.history`. */
+    fun history(
+        imported: List<Pair<String, Double?>>,
+        own: List<Pair<String, Double?>>,
+        anchorDay: String,
+        cfg: MetricCfg,
+        baselineEpoch: Double,
+        windowDays: Int = ChargeBaselines.windowDays,
+        handoffNights: Int = Baselines.minNightsTrust,
+    ): History = historyWithSeed(imported, own, anchorDay, cfg, baselineEpoch, windowDays, handoffNights, seed = emptyList())
+
     /**
      * The Charge baselines the dashboard reads, resolved from the stored daily rows with the same rule the
      * engine's pass-2 fold applies (#2525), so the "What shaped it" rows, the calibration count and the
@@ -137,8 +159,45 @@ object ChargeBaselines {
      * rows, [own] the NOOP-computed ("-noop") rows. HRV folds on [hrvEpoch], resting HR and respiration on
      * [recoveryEpoch], exactly as the engine does. The engine additionally cuts respiration at a device-era
      * boundary (#459), which needs a per-night source the stored rows do not carry; the two agree for every
-     * single-brand history. Swift twin: `ChargeBaselines.resolve`.
+     * single-brand history. [seed] is the same-brand wearable-export rows (#31), folded by [historyWithSeed].
+     * Swift twin: `ChargeBaselines.resolveWithSeed`.
      */
+    fun resolveWithSeed(
+        imported: List<DailyMetric>,
+        own: List<DailyMetric>,
+        anchorDay: String,
+        hrvEpoch: Double,
+        recoveryEpoch: Double,
+        seed: List<DailyMetric>,
+    ): Resolved {
+        if (seed.isEmpty()) return resolve(imported, own, anchorDay, hrvEpoch, recoveryEpoch)
+        val hrvCfg = Baselines.hrvCfg
+        val rhrCfg = Baselines.restingHRCfg
+        val respCfg = Baselines.respCfg
+        val hrvHistory = historyWithSeed(
+            imported.map { it.day to it.avgHrv }, own.map { it.day to it.avgHrv },
+            anchorDay, hrvCfg, hrvEpoch, seed = seed.map { it.day to it.avgHrv },
+        )
+        val rhrHistory = historyWithSeed(
+            imported.map { it.day to it.restingHr?.toDouble() }, own.map { it.day to it.restingHr?.toDouble() },
+            anchorDay, rhrCfg, recoveryEpoch, seed = seed.map { it.day to it.restingHr?.toDouble() },
+        )
+        val respHistory = historyWithSeed(
+            imported.map { it.day to it.respRateBpm }, own.map { it.day to it.respRateBpm },
+            anchorDay, respCfg, recoveryEpoch, seed = seed.map { it.day to it.respRateBpm },
+        )
+        return Resolved(
+            hrvHistory = hrvHistory,
+            restingHRHistory = rhrHistory,
+            respHistory = respHistory,
+            hrv = Baselines.foldHistory(hrvHistory.values, hrvHistory.dayKeys, hrvCfg, hrvEpoch),
+            restingHR = Baselines.foldHistory(rhrHistory.values, rhrHistory.dayKeys, rhrCfg, recoveryEpoch),
+            resp = Baselines.foldHistory(respHistory.values, respHistory.dayKeys, respCfg, recoveryEpoch),
+        )
+    }
+
+    /** The #2525 rule with no wearable-export seed; [resolveWithSeed] delegates here when it has none, so a
+     *  WHOOP wearer's dashboard baselines take exactly this path. Swift twin: `ChargeBaselines.resolve`. */
     fun resolve(
         imported: List<DailyMetric>,
         own: List<DailyMetric>,

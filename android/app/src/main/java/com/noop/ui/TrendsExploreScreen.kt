@@ -273,8 +273,12 @@ fun TrendsExploreScreen(vm: AppViewModel) {
         // Scan the strap's series keys across the active-id ∪ canonical "my-whoop" union (SPINE / #814), so a
         // re-added strap still discovers the keys the canonical import/engine wrote. `seriesSource = null`
         // keeps these resolving against the strap path below; a single-WHOOP install scans just "my-whoop".
-        val strap = WhoopRepository.importedSourceIdsFor(deviceId)
-            .flatMap { id -> runCatching { vm.repo.metricKeys(id) }.getOrDefault(emptyList()) }
+        val strap = (WhoopRepository.importedSourceIdsFor(deviceId)
+            .flatMap { id -> runCatching { vm.repo.metricKeys(id) }.getOrDefault(emptyList()) } +
+            // #31: the wearable-export series keys too, minus a brand's own reference scores.
+            vm.repo.historySourceIds(deviceId)
+                .flatMap { id -> runCatching { vm.repo.metricKeys(id) }.getOrDefault(emptyList()) }
+                .filter { com.noop.analytics.WearableHistory.seriesKeyAllowed(it) })
             .distinct()
             .map { it to null as String? }
         val sourced = listOf(NutritionCsvImporter.SOURCE_ID, MoodStore.MOOD_DEVICE_ID).flatMap { src ->
@@ -351,6 +355,14 @@ fun TrendsExploreScreen(vm: AppViewModel) {
                     for (id in WhoopRepository.importedSourceIdsFor(deviceId)) {
                         for (r in vm.repo.metricSeries(id, selected.seriesKey, "0000-00-00", "9999-99-99")) {
                             byDay.putIfAbsent(r.day, r.value)
+                        }
+                    }
+                    // #31: wearable-export series fill the days still open (lowest), except reference scores.
+                    if (com.noop.analytics.WearableHistory.seriesKeyAllowed(selected.seriesKey)) {
+                        for (id in vm.repo.historySourceIds(deviceId)) {
+                            for (r in vm.repo.metricSeries(id, selected.seriesKey, "0000-00-00", "9999-99-99")) {
+                                byDay.putIfAbsent(r.day, r.value)
+                            }
                         }
                     }
                     byDay.entries.sortedBy { it.key }.map { SeriesPoint(it.key, it.value) }
