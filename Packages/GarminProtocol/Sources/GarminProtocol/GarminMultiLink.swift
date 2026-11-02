@@ -113,25 +113,44 @@ public enum GarminMultiLink {
     /// request type echoed back, an unknown type, or a response addressed to another client id.
     public static func parseControl(_ packet: [UInt8],
                                     clientId: UInt64 = GarminMultiLink.defaultClientId) -> ControlResponse? {
+        guard let frame = parseControlFrame(packet), frame.clientId == clientId else { return nil }
+        return frame.response
+    }
+
+    /// Parse a control response addressed to ANY client id. Every app on the phone shares the one notify
+    /// characteristic, so the watch's answers to another app (Garmin Connect) arrive here too; the session
+    /// logs them and reads them as hints (another app took or released GFDI), and never acts for that app.
+    public static func parseControlFrame(_ packet: [UInt8]) -> (clientId: UInt64, response: ControlResponse)? {
         var r = GarminByteReader(packet)
         guard r.u8() == controlHandle,
               let rawType = r.u8(),
               let incomingClient = r.u64(),
-              incomingClient == clientId,
               let type = ControlType(rawValue: rawType) else { return nil }
         switch type {
         case .registerResponse:
             guard let service = r.u16(), let status = r.u8() else { return nil }
             let handle = r.u8() ?? 0
             let reliable = (r.u8() ?? 0) != 0
-            return .registered(service: service, status: status, handle: handle, reliable: reliable)
+            return (incomingClient, .registered(service: service, status: status, handle: handle, reliable: reliable))
         case .closeHandleResponse:
             guard let service = r.u16(), let handle = r.u8(), let status = r.u8() else { return nil }
-            return .handleClosed(service: service, handle: handle, status: status)
+            return (incomingClient, .handleClosed(service: service, handle: handle, status: status))
         case .closeAllResponse:
-            return .allClosed
+            return (incomingClient, .allClosed)
         case .registerRequest, .closeHandleRequest, .closeAllRequest:
             return nil
+        }
+    }
+
+    /// One line naming a control response, for the always-on log.
+    public static func describe(_ response: ControlResponse) -> String {
+        switch response {
+        case let .registered(service, status, handle, reliable):
+            return "register response service=\(service) status=\(status) handle=0x\(garminHex([handle])) reliable=\(reliable)"
+        case let .handleClosed(service, handle, status):
+            return "close-handle response service=\(service) handle=0x\(garminHex([handle])) status=\(status)"
+        case .allClosed:
+            return "close-all response"
         }
     }
 

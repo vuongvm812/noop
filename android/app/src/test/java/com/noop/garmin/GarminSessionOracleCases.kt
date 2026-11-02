@@ -9,6 +9,8 @@ internal sealed class OracleSessionStep {
     object Tick : OracleSessionStep()
     class Foreground(val fg: Boolean) : OracleSessionStep()
     class Live(val services: List<GarminService>) : OracleSessionStep()
+    /** Foreground / "Sync now": `retryGfdi`. */
+    object Retry : OracleSessionStep()
 }
 
 /** The Forerunner 165's 5024 as observed on 2026-11-01 (protocol 151, product 4432, firmware 29.05). */
@@ -19,6 +21,10 @@ internal fun oracleFr165DeviceInformation(): ByteArray =
 internal fun oracleCobs(message: ByteArray): ByteArray = GarminCobs.encode(message)
 
 internal fun oracleControl(type: Int, rest: ByteArray): ByteArray = bytes(0, type, 2, 0, 0, 0, 0, 0, 0, 0) + rest
+
+/** A control response addressed to another app's client id (what NOOP overhears of Garmin Connect). */
+internal fun oracleOtherControl(client: Long, type: Int, rest: ByteArray): ByteArray =
+    bytes(0, type) + ByteArray(8) { ((client ushr (8 * it)) and 0xFF).toByte() } + rest
 
 internal fun oracleSessionHost(): GarminHostIdentity = GarminSessionConfig.noopHost("oracle", 1)
 
@@ -55,6 +61,7 @@ internal fun oracleRunSession(
             is OracleSessionStep.Tick -> session.tick(clock)
             is OracleSessionStep.Foreground -> session.setForeground(step.fg, clock)
             is OracleSessionStep.Live -> session.setLiveChannels(step.services.toSet(), clock)
+            is OracleSessionStep.Retry -> session.retryGfdi(clock)
         }
         out += outputs.map { "@$ms " + oracleDescribe(it) }
     }
@@ -98,11 +105,12 @@ internal fun garminSessionOracleLines(): List<String> {
         170L to OracleSessionStep.Foreground(false),
         171L to OracleSessionStep.Foreground(false),
         180L to rx(oracleControl(3, oracleLE16(1) + bytes(handle, 0))),
-        190L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x66, 0))),
-        195L to rx(bytes(0x66) + oracleCobs(oracleFr165DeviceInformation())),
-        196L to rx(bytes(0x66) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
-        200L to OracleSessionStep.Foreground(true),
-        210L to OracleSessionStep.Tick,
+        190L to OracleSessionStep.Foreground(true),
+        5_180L to OracleSessionStep.Tick,
+        5_190L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x66, 0))),
+        5_195L to rx(bytes(0x66) + oracleCobs(oracleFr165DeviceInformation())),
+        5_196L to rx(bytes(0x66) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        5_210L to OracleSessionStep.Tick,
     ))
 
     val b = GarminSession(GarminSessionConfig(oracleSessionHost(), firstPairing = false, sendsHostLifecycleEvents = false),
@@ -112,6 +120,56 @@ internal fun garminSessionOracleLines(): List<String> {
         10L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
         20L to rx(oracleControl(1, oracleLE16(1) + bytes(3, 0, 0))),
         30L to rx(ml(oracleFr165DeviceInformation())),
+        40L to rx(ml(oracleFr165DeviceInformation())),
+        50L to OracleSessionStep.Tick,
+        30_019L to OracleSessionStep.Tick,
+        30_020L to OracleSessionStep.Tick,
+        30_030L to rx(oracleControl(1, oracleLE16(1) + bytes(3, 0, 0))),
+        31_000L to OracleSessionStep.Retry,
+        40_000L to OracleSessionStep.Retry,
+        40_010L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x67, 0))),
+        40_020L to rx(bytes(0x67) + oracleCobs(oracleFr165DeviceInformation())),
+        40_030L to rx(bytes(0x67) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        40_040L to OracleSessionStep.Retry,
+    ))
+
+    // H: coexistence with another app (client 7, standing in for Garmin Connect); see the Swift twin.
+    val h = GarminSession(GarminSessionConfig(oracleSessionHost(), firstPairing = false, sendsHostLifecycleEvents = false),
+        GarminTransportKind.MULTI_LINK_V2, 150)
+    val other = 7L
+    out += oracleRunSession("ml-coexist", h, listOf(
+        0L to OracleSessionStep.Start,
+        1L to OracleSessionStep.Live(listOf(GarminService.REALTIME_HEART_RATE)),
+        10L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
+        12L to rx(oracleOtherControl(other, 6, oracleLE16(0) + bytes(0))),
+        14L to rx(oracleOtherControl(other, 1, oracleLE16(1) + bytes(0, 0x40, 0))),
+        20L to rx(oracleControl(1, oracleLE16(1) + bytes(3, 0, 0))),
+        30L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x41, 0))),
+        31L to rx(bytes(0x41, 3, 62, 55, 0xFF, 0xFF)),
+        40L to rx(bytes(0x40, 1, 2, 3)),
+        41L to rx(bytes(0x40, 4, 5)),
+        50L to rx(oracleOtherControl(other, 3, oracleLE16(1) + bytes(0x40, 0))),
+        60L to rx(oracleOtherControl(other, 6, oracleLE16(0) + bytes(0))),
+        70L to rx(oracleOtherControl(other, 1, oracleLE16(1) + bytes(0, 0x42, 0))),
+        80L to rx(oracleOtherControl(other, 3, oracleLE16(1) + bytes(0x42, 0))),
+        5_079L to OracleSessionStep.Tick,
+        5_080L to OracleSessionStep.Tick,
+        5_090L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x43, 0))),
+        5_100L to rx(bytes(0x43) + oracleCobs(oracleFr165DeviceInformation())),
+        5_110L to rx(bytes(0x43) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        6_000L to rx(oracleOtherControl(other, 1, oracleLE16(1) + bytes(3, 0, 0))),
+        6_010L to rx(oracleControl(3, oracleLE16(1) + bytes(0x43, 0))),
+        6_020L to rx(oracleOtherControl(other, 1, oracleLE16(1) + bytes(0, 0x44, 0))),
+        126_020L to OracleSessionStep.Tick,
+        126_030L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x45, 0))),
+        126_040L to rx(bytes(0x45) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        127_000L to rx(oracleControl(3, oracleLE16(1) + bytes(0x45, 0))),
+        132_000L to OracleSessionStep.Tick,
+        132_010L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x46, 0))),
+        132_020L to rx(bytes(0x46) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        133_000L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
+        133_010L to rx(bytes(0xC2, 1, 2)),
+        133_011L to rx(bytes(0x00, 9)),
     ))
 
     val c = GarminSession(GarminSessionConfig(oracleSessionHost(), firstPairing = false, sendsHostLifecycleEvents = true,
@@ -205,11 +263,12 @@ internal fun garminSessionOracleLines(): List<String> {
         200L to rx(bytes(0x6D, 3, 70, 0, 0xFF, 0xFF)),
         210L to rx(oracleControl(6, oracleLE16(0) + bytes(0))),
         211L to rx(bytes(0x6D, 3, 71, 0, 0xFF, 0xFF)),
-        220L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x70, 0))),
-        221L to rx(bytes(0x70) + oracleCobs(oracleFr165DeviceInformation())),
-        222L to rx(bytes(0x70) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
-        230L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x71, 0))),
-        240L to rx(oracleControl(2, oracleLE16(6) + bytes(0x71, 0))),
+        215L to rx(oracleControl(1, oracleLE16(6) + bytes(0, 0x71, 0))),
+        5_210L to OracleSessionStep.Tick,
+        5_220L to rx(oracleControl(1, oracleLE16(1) + bytes(0, 0x70, 0))),
+        5_221L to rx(bytes(0x70) + oracleCobs(oracleFr165DeviceInformation())),
+        5_222L to rx(bytes(0x70) + oracleCobs(oracleFrame(5050, bytes(1, 0x09)))),
+        5_240L to rx(oracleControl(2, oracleLE16(6) + bytes(0x71, 0))),
     ))
 
     // G: a direct (V1) transport has no live channels; asked once, said once.

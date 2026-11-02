@@ -2880,6 +2880,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">正在连接…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">协议不受支持</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">未连接</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">手表正被其他应用占用</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">电量 %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">电量：此手表不提供</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">上次同步 %1$s</string>

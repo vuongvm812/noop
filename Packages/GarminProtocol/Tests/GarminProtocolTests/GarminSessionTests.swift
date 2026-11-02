@@ -1,8 +1,8 @@
 import XCTest
 @testable import GarminProtocol
 
-/// The connected-watch session: handshake order, the bytes it writes, refusals, re-registration and the
-/// transport choice. Kotlin twin: com.noop.garmin.GarminSessionTest (holds the shared oracle literal).
+/// The connected-watch session: handshake order, the bytes it writes, coexistence with another app (busy,
+/// re-ask, yield) and the transport choice. Kotlin twin: com.noop.garmin.GarminSessionTest (holds the shared oracle literal).
 final class GarminSessionTests: XCTestCase {
 
     private func clock(_ ms: Int64) -> GarminClock {
@@ -87,14 +87,79 @@ final class GarminSessionTests: XCTestCase {
         XCTAssertTrue(out.contains { if case let .log(l) = $0 { return l.rare && l.text.contains("core (HTTP proxy") }; return false })
     }
 
-    func testRefusedRegistrationFailsWithoutSendingMore() {
+    // MARK: - Coexistence with another app (#35). Kotlin twin: the same tests in GarminSessionTest.
+
+    private func writes(_ outputs: [GarminSessionOutput]) -> [[UInt8]] {
+        outputs.compactMap { if case let .write(bytes) = $0 { return bytes } else { return nil } }
+    }
+
+    /// A refused GFDI registration keeps the link: busy, no write, another app's traffic ignored, and one
+    /// plain REGISTER (never CLOSE_ALL) when the backoff runs out.
+    func testRefusedRegistrationParksBusyAndReasksOnlyWithRegister() {
         var s = GarminSession(config: config(), transport: .multiLinkV2, mtu: 23)
         _ = s.start(clock(0))
         _ = s.receive(oracleControl(6, oracleLE16(0) + [0]), clock(1))
-        let out = s.receive(oracleControl(1, oracleLE16(1) + [3, 0, 0]), clock(2))
-        XCTAssertEqual(s.phase, .failed("registration refused status=3"))
-        XCTAssertFalse(out.contains { if case .write = $0 { return true }; return false })
-        XCTAssertTrue(s.receive([0x65] + oracleCobs(oracleFr165DeviceInformation()), clock(3)).isEmpty)
+        let refused = s.receive(oracleControl(1, oracleLE16(1) + [3, 0, 0]), clock(2))
+        XCTAssertEqual(s.phase, .busy)
+        XCTAssertTrue(writes(refused).isEmpty)
+        XCTAssertEqual(s.gfdiRetryAtMs, 2 + 30_000)
+        XCTAssertEqual(s.nextDeadlineMs, 2 + 30_000)
+        XCTAssertTrue(writes(s.receive([0x65] + oracleCobs(oracleFr165DeviceInformation()), clock(3))).isEmpty)
+        XCTAssertTrue(writes(s.tick(clock(30_001))).isEmpty)
+        XCTAssertEqual(writes(s.tick(clock(30_002))),
+                       [GarminMultiLink.ControlRequest.register(.gfdi, reliable: false).encode()])
+        XCTAssertEqual(s.phase, .registering)
+    }
+
+    func testRetryBackoffDoublesFromThirtySecondsAndCapsAtTenMinutes() {
+        XCTAssertEqual((1...8).map(GarminCoexistence.retryDelayMs(refusals:)),
+                       [30_000, 60_000, 120_000, 240_000, 480_000, 600_000, 600_000, 600_000])
+        XCTAssertEqual(GarminCoexistence.retryDelayMs(refusals: 0), 30_000)
+        XCTAssertEqual(GarminCoexistence.retryDelayMs(refusals: 1_000), 600_000)
+    }
+
+    /// Foreground / "Sync now" re-ask only while busy, and not within 5 s of the last ask.
+    func testManualRetryIsGatedOnBusyAndTheMinimumGap() {
+        var s = GarminSession(config: config(), transport: .multiLinkV2, mtu: 23)
+        XCTAssertTrue(writes(s.retryGfdi(clock(0))).isEmpty)
+        _ = s.start(clock(0))
+        _ = s.receive(oracleControl(6, oracleLE16(0) + [0]), clock(1))   // REGISTER sent at 1
+        _ = s.receive(oracleControl(1, oracleLE16(1) + [3, 0, 0]), clock(2))
+        XCTAssertTrue(writes(s.retryGfdi(clock(5_000))).isEmpty)
+        XCTAssertEqual(writes(s.retryGfdi(clock(5_001))).count, 1)
+        XCTAssertNil(s.gfdiRetryAtMs)
+    }
+
+    /// Whatever another app's answers say, every control frame NOOP writes carries NOOP's own client id, and
+    /// the only GFDI close it sends is of its own handle.
+    func testNeverWritesUnderAnotherClientIdAndClosesOnlyItsOwnGfdiHandle() {
+        var s = GarminSession(config: config(), transport: .multiLinkV2, mtu: 150)
+        var out = s.start(clock(0))
+        out += s.receive(oracleControl(6, oracleLE16(0) + [0]), clock(1))
+        out += s.receive(oracleOtherControl(7, 1, oracleLE16(1) + [0, 0x40, 0]), clock(2))
+        out += s.receive(oracleControl(1, oracleLE16(1) + [0, 0x65, 0]), clock(3))
+        out += s.receive([0x65] + oracleCobs(oracleFr165DeviceInformation()), clock(4))
+        out += s.receive([0x65] + oracleCobs(oracleFrame(5050, [1, 0x09])), clock(5))
+        XCTAssertEqual(s.phase, .ready)
+        out += s.receive(oracleOtherControl(7, 3, oracleLE16(1) + [0x40, 0]), clock(6))
+        out += s.receive(oracleOtherControl(7, 6, oracleLE16(0) + [0]), clock(7))
+        out += s.receive(oracleOtherControl(7, 1, oracleLE16(1) + [3, 0, 0]), clock(8))
+        XCTAssertEqual(s.phase, .busy)
+        XCTAssertEqual(s.gfdiRetryAtMs, 8 + GarminCoexistence.yieldCooldownMs)
+        let control = writes(out).filter { $0.first == GarminMultiLink.controlHandle }
+        XCTAssertFalse(control.isEmpty)
+        for frame in control { XCTAssertEqual(Array(frame[2..<10]), [2, 0, 0, 0, 0, 0, 0, 0]) }
+        XCTAssertEqual(control.last, GarminMultiLink.ControlRequest.closeHandle(.gfdi, handle: 0x65).encode())
+    }
+
+    /// Another app's control answers are visible to the parser with their client id; the own-client parser
+    /// still ignores them.
+    func testParseControlFrameReportsTheClientId() {
+        let frame = oracleOtherControl(0x0102_0304_0506_0708, 1, oracleLE16(1) + [3, 0, 0])
+        XCTAssertNil(GarminMultiLink.parseControl(frame))
+        let parsed = GarminMultiLink.parseControlFrame(frame)
+        XCTAssertEqual(parsed?.clientId, 0x0102_0304_0506_0708)
+        XCTAssertEqual(parsed?.response, .registered(service: 1, status: 3, handle: 0, reliable: false))
     }
 
     func testTransportPrefersMultiLinkAndRejectsWatchAppsService() {

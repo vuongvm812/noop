@@ -50,9 +50,16 @@ enum GarminWatchFacts {
         switch phase {
         case .ready:        return String(localized: "Connected")
         case .unsupported:  return String(localized: "Protocol not supported")
+        case .busy:         return String(localized: "Watch busy with another app")
         case .disconnected: return String(localized: "Not connected")
         case .connecting, .discovering, .subscribing, .handshaking: return String(localized: "Connecting…")
         }
+    }
+
+    /// "Sync now" is offered on a ready link with no sync running, and while another app holds the watch
+    /// (there it asks the watch again).
+    static func canSyncNow(phase: GarminSource.LinkPhase, syncing: Bool) -> Bool {
+        (phase == .ready || phase == .busy) && !syncing
     }
 
     /// "3 new files, 31 already in NOOP, 34 on the watch" for the last sync, nil before any sync.
@@ -108,7 +115,7 @@ struct GarminWatchPanel: View {
                 NoopButton("Sync now", systemImage: "arrow.triangle.2.circlepath", kind: .secondary) {
                     model.garminSyncNow()
                 }
-                .disabled(source.linkPhase != .ready || source.syncing)
+                .disabled(!GarminWatchFacts.canSyncNow(phase: source.linkPhase, syncing: source.syncing))
 
                 Divider().overlay(StrandPalette.hairline)
                 Toggle(isOn: Binding(get: { continuousLive },

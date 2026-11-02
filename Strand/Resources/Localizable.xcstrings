@@ -115344,6 +115344,7 @@
         }
       }
     },
+    "Watch busy with another app": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Uhr wird von einer anderen App genutzt"}}, "fr": {"stringUnit": {"state": "translated", "value": "Montre occupée par une autre app"}}, "es": {"stringUnit": {"state": "translated", "value": "Reloj ocupado por otra app"}}, "it": {"stringUnit": {"state": "translated", "value": "Orologio occupato da un'altra app"}}, "pl": {"stringUnit": {"state": "translated", "value": "Zegarek zajęty przez inną aplikację"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Relógio ocupado por outra app"}}, "ru": {"stringUnit": {"state": "translated", "value": "Часы заняты другим приложением"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "手表正被其他应用占用"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "手錶正被其他應用程式佔用"}}}},
     "Not connected": {
       "localizations": {
         "de": {

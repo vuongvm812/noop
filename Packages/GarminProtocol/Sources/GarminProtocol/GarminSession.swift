@@ -12,6 +12,9 @@ import Foundation
 // Sequence (wire facts from Gadgetbridge, see ATTRIBUTION.md; observed on a Forerunner 165):
 //   ML only:  CLOSE_ALL → CLOSE_ALL_RESP → REGISTER GFDI (plain) → REGISTER_RESP [handle, reliable].
 //             The watch then sends 5024 on that handle. If it answered `reliable`, the handle runs MLR.
+//             CLOSE_ALL carries NOOP's client id and closes only NOOP's own handles. A refused REGISTER
+//             (another app, e.g. Garmin Connect, holds GFDI) parks the session in `busy` and re-asks
+//             later: see GarminCoexistence for the rules and the hardware evidence behind them.
 //   GFDI:     5024 DeviceInformation → ACK, then the 5000 reply carrying NOOP's own identity.
 //             5050 Configuration     → ACK, then NOOP's minimal capability set, then SYNC_READY (and, on
 //                                       the first pairing only, PAIR_COMPLETE + SETUP_WIZARD_COMPLETE),
@@ -85,6 +88,9 @@ public enum GarminSessionPhase: Equatable, Sendable {
     case idle
     case closingAll
     case registering
+    /// The watch refused GFDI (another app holds it) or NOOP yielded it. The link stays up, live channels
+    /// may still open, and the session re-asks on the backoff, on foreground and on "Sync now".
+    case busy
     case awaitingDeviceInformation
     case handshaking
     case ready
@@ -95,6 +101,7 @@ public enum GarminSessionPhase: Equatable, Sendable {
         case .idle: return "idle"
         case .closingAll: return "closing-all"
         case .registering: return "registering"
+        case .busy: return "busy"
         case .awaitingDeviceInformation: return "awaiting-device-information"
         case .handshaking: return "handshaking"
         case .ready: return "ready"
@@ -192,6 +199,15 @@ public struct GarminSession {
     private var live = GarminLiveChannelTable()
     private var loggedNoLiveTransport = false
     private var out: [GarminSessionOutput] = []
+    // Coexistence (GarminCoexistence): when to re-ask for GFDI, how often it was refused in a row, when NOOP
+    // last asked, a yield waiting for the running sync, the handle NOOP closed when it yielded, and how many
+    // packets arrived on each handle NOOP did not open.
+    private var busyRetryAtMs: Int64?
+    private var refusals = 0
+    private var lastRegisterMs: Int64?
+    private var yieldPending = false
+    private var yieldedHandle: UInt8?
+    private var foreignPackets: [UInt8: Int] = [:]
 
     /// Realtime channels whose handle is open on the watch right now.
     public var openLiveChannels: Set<GarminService> { live.openServices }
@@ -205,8 +221,14 @@ public struct GarminSession {
     /// The earliest moment `tick` has work: the handshake deadline, an MLR retransmit / ack timer, or the
     /// history sync's stall deadline.
     public var nextDeadlineMs: Int64? {
-        [handshakeDeadline, mlr?.nextDeadlineMs, sync.deadlineMs].compactMap { $0 }.min()
+        [handshakeDeadline, mlr?.nextDeadlineMs, sync.deadlineMs, busyRetryAtMs].compactMap { $0 }.min()
     }
+
+    /// When a `busy` session asks for GFDI again (session clock), nil when not waiting.
+    public var gfdiRetryAtMs: Int64? { busyRetryAtMs }
+
+    /// Live channels may be registered: multi-link, and the handshake is done or GFDI is held elsewhere.
+    private var liveActive: Bool { transport == .multiLinkV2 && (phase == .ready || phase == .busy) }
 
     /// A history sync is running.
     public var isSyncing: Bool { sync.isActive }
@@ -266,19 +288,38 @@ public struct GarminSession {
             }
             return flush()
         }
-        emit(live.setDesired(services, active: phase == .ready))
+        emit(live.setDesired(services, active: liveActive))
         return flush()
     }
 
     /// Test Centre capture: allow the undecoded channels 8 / 10 / 13 in `setLiveChannels` (they still open
     /// only when asked for). Off closes any that are open. Default off.
     public mutating func setUndecodedCapture(_ on: Bool, _ clock: GarminClock) -> [GarminSessionOutput] {
-        emit(live.setCapture(on, active: phase == .ready && transport == .multiLinkV2))
+        emit(live.setCapture(on, active: liveActive))
+        return flush()
+    }
+
+    /// Foreground or "Sync now": a `busy` session asks for GFDI again now instead of waiting for the backoff
+    /// (skipped when it asked within `GarminCoexistence.manualRetryMinGapMs`). Does nothing otherwise.
+    public mutating func retryGfdi(_ clock: GarminClock) -> [GarminSessionOutput] {
+        guard phase == .busy else { return flush() }
+        if let last = lastRegisterMs, clock.nowMs - last < GarminCoexistence.manualRetryMinGapMs {
+            note(false, "GFDI re-ask skipped; asked \(clock.nowMs - last) ms ago")
+            return flush()
+        }
+        busyRetryAtMs = nil
+        note(true, "asking for GFDI again now")
+        registerGfdi(clock)
         return flush()
     }
 
     public mutating func tick(_ clock: GarminClock) -> [GarminSessionOutput] {
         perform(sync.tick(nowMs: clock.nowMs), clock)
+        if phase == .busy, let at = busyRetryAtMs, clock.nowMs >= at {
+            busyRetryAtMs = nil
+            note(true, "asking for GFDI again" + (refusals > 0 ? " (refused \(refusals) time(s) in a row)" : ""))
+            registerGfdi(clock)
+        }
         if let deadline = handshakeDeadline, clock.nowMs >= deadline {
             handshakeDeadline = nil
             fail("handshake timed out in \(phase.label) after \(clock.nowMs - (startedAtMs ?? clock.nowMs)) ms", clock)
@@ -287,6 +328,7 @@ public struct GarminSession {
             for packet in m.tick(nowMs: clock.nowMs) { out.append(.write(packet)) }
             mlr = m
         }
+        yieldIfPending(clock)
         return flush()
     }
 
@@ -318,38 +360,49 @@ public struct GarminSession {
             } else if let events = live.receive(handle: handle, payload: payload) {
                 emit(events)
             } else {
-                note(false, "ignored \(payload.count) bytes on unregistered handle \(hex8(handle))")
+                // Another app's handle (every app shares this characteristic), or a stale one of NOOP's.
+                let count = (foreignPackets[handle] ?? 0) + 1
+                foreignPackets[handle] = count
+                note(GarminCoexistence.logsForeignPacket(count: count),
+                     "\(count) packet(s) on handle \(hex8(handle)) NOOP did not open (latest \(payload.count) bytes)")
             }
         }
+        yieldIfPending(clock)
         return flush()
     }
 
     // MARK: - ML control
 
     private mutating func handleControl(_ packet: [UInt8], _ clock: GarminClock) {
-        guard let response = GarminMultiLink.parseControl(packet, clientId: config.clientId) else {
-            note(false, "ignored control frame \(garminHex(packet))")
+        guard let frame = GarminMultiLink.parseControlFrame(packet) else {
+            note(true, "<- ML unparsed control frame \(garminHex(packet))")
             return
         }
-        switch response {
+        guard frame.clientId == config.clientId else {
+            handleOtherClient(frame.clientId, frame.response, clock)
+            return
+        }
+        note(true, "<- ML \(GarminMultiLink.describe(frame.response))")
+        switch frame.response {
         case .allClosed:
             emit(live.allClosed())
             if phase == .closingAll {
                 note(false, "all handles closed")
+                registerGfdi(clock)
             } else {
-                note(true, "watch closed all handles; re-registering GFDI")
                 dropGfdi(clock)
+                enterBusy(clock, after: GarminCoexistence.releaseGraceMs, "watch closed all of NOOP's handles unasked")
             }
-            setPhase(.registering)
-            control(.register(.gfdi, reliable: false))
         case let .handleClosed(service, handle, status):
             if routeSync(sync.handleClosed(service: service, handle: handle, nowMs: clock.nowMs), clock) {
                 note(false, "file-transfer handle \(hex8(handle)) closed status=\(status)")
+            } else if service == GarminService.gfdi.rawValue, handle == yieldedHandle {
+                yieldedHandle = nil
+                note(true, "NOOP's GFDI handle \(hex8(handle)) closed (yielded) status=\(status)")
             } else if handle == gfdiHandle, service == GarminService.gfdi.rawValue {
-                note(true, "watch closed GFDI handle \(hex8(handle)) status=\(status); re-registering")
                 dropGfdi(clock)
-                setPhase(.registering)
-                control(.register(.gfdi, reliable: false))
+                enterBusy(clock, after: GarminCoexistence.releaseGraceMs,
+                          "watch closed NOOP's GFDI handle \(hex8(handle)) unasked status=\(status)")
             } else if let events = live.handleClosed(handle: handle, status: status) {
                 emit(events)
             } else {
@@ -368,12 +421,16 @@ public struct GarminSession {
                 return
             }
             guard status == 0 else {
-                // The watch refused: another app holds GFDI, or the service is unavailable. One status is
-                // reportedly ALREADY_IN_USE; its number is unconfirmed, so the raw value is what is logged.
-                note(true, "GFDI registration refused status=\(status)")
-                fail("registration refused status=\(status)", clock)
+                // Another app holds GFDI (status 3 was seen while Garmin Connect held it) or the service is
+                // unavailable. Never fight for it: keep the link and ask again later.
+                refusals += 1
+                enterBusy(clock, after: GarminCoexistence.retryDelayMs(refusals: refusals),
+                          "GFDI registration refused status=\(status)"
+                          + (status == GarminCoexistence.inUseStatus ? " (in use by another app)" : ""))
                 return
             }
+            refusals = 0
+            busyRetryAtMs = nil
             gfdiHandle = handle
             if reliable { mlr = GarminMlrSession(handle: handle, mtu: mtu) }
             note(true, "GFDI registered handle=\(hex8(handle)) reliable=\(reliable) status=0")
@@ -381,16 +438,93 @@ public struct GarminSession {
         }
     }
 
-    /// The watch dropped GFDI: forget the handle and run the handshake again on the next one, under a
-    /// fresh deadline. The pairing events are not repeated; the lifecycle state is re-sent once ready.
+    /// The watch's answer to another app on the phone. Logged always; read only as a hint about GFDI. NOOP
+    /// never sends anything under that app's client id.
+    private mutating func handleOtherClient(_ client: UInt64, _ response: GarminMultiLink.ControlResponse,
+                                            _ clock: GarminClock) {
+        note(true, "<- ML other app (client \(client)) \(GarminMultiLink.describe(response))")
+        let gfdi = GarminService.gfdi.rawValue
+        switch response {
+        case let .registered(service, status, _, _) where service == gfdi:
+            if status != 0 {
+                if gfdiHandle != nil { yieldGfdi(clock) }
+            } else if phase == .busy {
+                // The other app holds GFDI now; drop any early re-ask back onto the backoff.
+                let at = clock.nowMs + GarminCoexistence.retryDelayMs(refusals: max(1, refusals))
+                busyRetryAtMs = max(busyRetryAtMs ?? at, at)
+            }
+        case let .handleClosed(service, _, _) where service == gfdi:
+            otherAppReleased("another app closed its GFDI handle", clock)
+        case .allClosed:
+            otherAppReleased("another app closed all its handles", clock)
+        case .registered, .handleClosed:
+            break
+        }
+    }
+
+    /// The other app let go of GFDI (or is restarting its session): ask again after a short grace.
+    private mutating func otherAppReleased(_ why: String, _ clock: GarminClock) {
+        guard phase == .busy else { return }
+        let at = clock.nowMs + GarminCoexistence.releaseGraceMs
+        guard busyRetryAtMs.map({ at < $0 }) ?? true else { return }
+        busyRetryAtMs = at
+        note(true, "\(why); asking for GFDI in \(GarminCoexistence.releaseGraceMs / 1000) s")
+    }
+
+    /// Another app was refused GFDI while NOOP holds it: close NOOP's own GFDI handle so that app can sync,
+    /// once any running sync has ended (the transfer resumes from its checkpoint on NOOP's next session).
+    private mutating func yieldGfdi(_ clock: GarminClock) {
+        guard let handle = gfdiHandle else { return }
+        if sync.isActive {
+            if !yieldPending {
+                yieldPending = true
+                note(true, "another app was refused GFDI; NOOP yields it when the running sync ends")
+            }
+            return
+        }
+        yieldPending = false
+        note(true, "another app was refused GFDI; NOOP closes its own GFDI handle \(hex8(handle))")
+        yieldedHandle = handle
+        control(.closeHandle(.gfdi, handle: handle))
+        dropGfdi(clock)
+        refusals = 0
+        enterBusy(clock, after: GarminCoexistence.yieldCooldownMs, "yielded GFDI to another app")
+    }
+
+    private mutating func yieldIfPending(_ clock: GarminClock) {
+        if yieldPending, !sync.isActive { yieldGfdi(clock) }
+    }
+
+    /// Ask for GFDI. The handshake deadline starts here when none is running (a re-ask from `busy`).
+    private mutating func registerGfdi(_ clock: GarminClock) {
+        setPhase(.registering)
+        lastRegisterMs = clock.nowMs
+        if handshakeDeadline == nil {
+            startedAtMs = clock.nowMs
+            handshakeDeadline = clock.nowMs + config.handshakeTimeoutMs
+        }
+        control(.register(.gfdi, reliable: false))
+    }
+
+    /// Park in `busy`: no handshake deadline, a re-ask at `after` ms from now, and live channels may open.
+    private mutating func enterBusy(_ clock: GarminClock, after delayMs: Int64, _ why: String) {
+        handshakeDeadline = nil
+        startedAtMs = nil
+        busyRetryAtMs = clock.nowMs + delayMs
+        setPhase(.busy)
+        note(true, "\(why); asking for GFDI again in \(delayMs / 1000) s")
+        emit(live.apply())
+    }
+
+    /// GFDI is gone (the watch closed it, or NOOP yielded it): forget the handle; the handshake runs again
+    /// on the next one. The pairing events are not repeated; the lifecycle state is re-sent once ready.
     private mutating func dropGfdi(_ clock: GarminClock) {
-        perform(sync.interrupt("GFDI handle closed by the watch"), clock)
+        yieldPending = false
+        perform(sync.interrupt("GFDI handle closed"), clock)
         gfdiHandle = nil
         mlr = nil
         decoder.reset()
         lifecycleSent = nil
-        startedAtMs = clock.nowMs
-        handshakeDeadline = clock.nowMs + config.handshakeTimeoutMs
     }
 
     // MARK: - GFDI
@@ -530,6 +664,8 @@ public struct GarminSession {
         setPhase(.ready)
         note(true, "handshake complete in \(clock.nowMs - (startedAtMs ?? clock.nowMs)) ms")
         sendLifecycleIfNeeded(clock)
+        // A channel refused while GFDI was held elsewhere gets one more try on the new session.
+        live.clearRefusals()
         emit(live.apply())
     }
 
@@ -614,11 +750,13 @@ public struct GarminSession {
     }
 
     private mutating func control(_ request: GarminMultiLink.ControlRequest) {
-        note(false, "-> ML \(Self.describe(request))")
+        note(true, "-> ML \(Self.describe(request))")
         out.append(.write(request.encode(clientId: config.clientId)))
     }
 
     private mutating func fail(_ reason: String, _ clock: GarminClock) {
+        yieldPending = false
+        busyRetryAtMs = nil
         perform(sync.interrupt("session failed"), clock)
         handshakeDeadline = nil
         note(true, "session failed: \(reason)")

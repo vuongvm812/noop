@@ -43,6 +43,11 @@ internal class GarminLiveChannelTable {
         return refilter(active)
     }
 
+    /** Forget every refusal, so the next [apply] asks again (a new GFDI session after `busy`). */
+    fun clearRefusals() {
+        refused.clear()
+    }
+
     /** Allow (true) or forbid the undecoded capture channels. Forbidding closes any that are open. */
     fun setCapture(on: Boolean, active: Boolean): List<GarminLiveChannelEvent> {
         capture = on
