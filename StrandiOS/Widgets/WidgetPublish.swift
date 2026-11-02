@@ -52,6 +52,8 @@ extension WidgetSnapshot {
         // inside the helper (matching `TodayView.selectedDayKey`) means a stale scored row can never
         // re-surface AS today.
         let day = Repository.widgetAnchor(days: days, now: now)
+        // HRV and resting HR resolve the way the Today tiles do (#34), not off the Charge-gated anchor.
+        let vitals = Repository.widgetVitals(days: days, now: now)
         // Rest (sleep_performance) for that same anchor day. exploreSeries merges imported + on-device,
         // exactly like the Today Rest tile. The tail fallback (restSeries.last) is ONLY valid when the
         // anchor day IS the local today: early in a fresh day today's Rest row may not exist yet, so we
@@ -107,8 +109,8 @@ extension WidgetSnapshot {
             // Stored 0–100 axis for ring fill; display string carries the #313 scale.
             effort: strain.map { Int($0.rounded()) },
             rest: restScore.map { Int($0.rounded()) },
-            hrv: day?.avgHrv.map { Int($0.rounded()) },
-            restingHr: day?.restingHr,
+            hrv: vitals.hrv.map { Int($0.rounded()) },
+            restingHr: vitals.restingHr,
             effortDisplay: effortDisplay,
             effortWhoop: effortScale == .whoop,
             // nil when the curve could not be scored at all, which must not blank a widget that already
