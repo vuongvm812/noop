@@ -12,7 +12,8 @@ import WhoopStore
 ///   `GarminWellnessParser`, folded by `GarminWatchIngest`, and written with their ledger row in ONE
 ///   transaction (`WhoopStore.ingestGarminFile`).
 /// - ACTIVITY files go through the existing workout path (`ActivityFileImporter`, the same parse the
-///   manual workout-file import uses), stored under the watch's own device id, then recorded.
+///   manual workout-file import uses), stored under the watch's own device id, then recorded. A GPS
+///   route goes to `RouteStore` under the row's natural key, so the workout detail draws its map.
 /// Kotlin twin: `GarminHistoryIngest` (android/.../data/GarminHistoryIngest.kt).
 enum GarminHistoryIngest {
 
@@ -33,12 +34,15 @@ enum GarminHistoryIngest {
     /// Decode and store one file. True when it is stored and recorded; false leaves it "new", so the
     /// next sync fetches it again.
     static func ingest(_ file: GarminDownloadedFile, deviceId: String, store: WhoopStore,
-                       log: (String) -> Void) async -> Bool {
+                       routeDefaults: UserDefaults = .standard, log: (String) -> Void) async -> Bool {
         let now = Int(Date().timeIntervalSince1970)
         let row = ledgerRow(file.key)
         do {
             if file.fitType == .activity {
-                try await ingestActivity(file, deviceId: deviceId, store: store, log: log)
+                if let kept = try await ingestActivity(file, deviceId: deviceId, store: store, log: log),
+                   let route = kept.route {
+                    RouteStore.store(route, startTs: kept.row.startTs, sport: kept.row.sport, into: routeDefaults)
+                }
                 try await store.recordGarminSyncedFile(row, deviceId: deviceId, ingestedAt: now)
                 return true
             }
@@ -58,13 +62,14 @@ enum GarminHistoryIngest {
 
     /// The manual workout-file import's mapping (DataSourcesView `importActivityFile`), under the watch's
     /// device id: one workout row plus its per-sample heart rate. A file with no usable activity is
-    /// recorded anyway, so it is not fetched on every sync.
+    /// recorded anyway, so it is not fetched on every sync. Returns the stored row and its route (nil when
+    /// the file had fewer than two GPS points); `ingest` keeps the route in `RouteStore`.
     private static func ingestActivity(_ file: GarminDownloadedFile, deviceId: String, store: WhoopStore,
-                                       log: (String) -> Void) async throws {
+                                       log: (String) -> Void) async throws -> (row: WorkoutRow, route: WorkoutRoute?)? {
         let result = ActivityFileImporter.parse(data: Data(file.bytes), filename: "garmin-activity.fit")
         guard let activity = result.activity, let duration = activity.durationS, duration > 0 else {
             log("Garmin: activity \(file.key.label) has no usable workout; recorded as synced")
-            return
+            return nil
         }
         let row = WorkoutRow(
             startTs: Int(activity.start.timeIntervalSince1970),
@@ -85,6 +90,19 @@ enum GarminHistoryIngest {
             _ = try await store.insert(Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) }),
                                        deviceId: deviceId)
         }
-        log("Garmin: stored workout \(row.sport) \(row.startTs)-\(row.endTs) hr=\(activity.hrSamples.count) from \(file.key.label)")
+        let route = workoutRoute(from: activity)
+        log("Garmin: stored workout \(row.sport) \(row.startTs)-\(row.endTs) hr=\(activity.hrSamples.count) "
+            + "route=\(route == nil ? 0 : activity.route.count) from \(file.key.label)")
+        return (row, route)
+    }
+
+    /// The route to keep for a decoded activity, or nil when it has fewer than two GPS points. The
+    /// polyline is the same precision-5 encoding Android stores in `WorkoutRow.routePolyline`. No
+    /// per-point measurements: the FIT route carries no horizontal accuracy, and a guessed one would make
+    /// the route look exportable as a measured series.
+    static func workoutRoute(from activity: ActivityFile) -> WorkoutRoute? {
+        guard activity.route.count >= 2 else { return nil }
+        let points = activity.route.map { RouteMath.LatLng($0.lat, $0.lon) }
+        return WorkoutRoute(polyline: RouteMath.encode(points), distanceM: RouteMath.totalMeters(points))
     }
 }

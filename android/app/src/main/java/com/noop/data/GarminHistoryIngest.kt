@@ -1,5 +1,6 @@
 package com.noop.data
 
+import com.noop.analytics.RouteMath
 import com.noop.garmin.GarminDownloadedFile
 import com.noop.garmin.GarminFitFileType
 import com.noop.garmin.GarminSyncFileKey
@@ -17,7 +18,8 @@ import java.util.TimeZone
  * - Wellness files are decoded by [GarminWellnessParser], folded by [GarminWatchIngest], and written with
  *   their ledger row in ONE transaction ([GarminSyncStore.ingest]).
  * - ACTIVITY files go through the existing workout parse ([ActivityFileImporter.parse]), stored under the
- *   watch's own device id, then recorded.
+ *   watch's own device id, then recorded. A GPS route is kept as the row's `routePolyline`, as the
+ *   manual workout-file import does, so the workout detail draws its map.
  */
 object GarminHistoryIngest {
 
@@ -66,26 +68,35 @@ object GarminHistoryIngest {
             log("Garmin: activity ${file.key.label} has no usable workout; recorded as synced")
             return
         }
-        val row = WorkoutRow(
-            deviceId = deviceId,
-            startTs = activity.startTs,
-            endTs = activity.endTs,
-            sport = ActivityFileImporter.workoutSport(activity.sport),
-            source = deviceId,
-            durationS = activity.durationS,
-            energyKcal = activity.energyKcal,
-            avgHr = activity.avgHr,
-            maxHr = activity.maxHr,
-            strain = null,                       // never a fabricated cardiovascular strain
-            distanceM = activity.distanceM,
-            zonesJSON = null,
-            notes = activity.importNote(),
-            steps = activity.steps,
-        )
+        val row = workoutRow(activity, deviceId)
         repo.upsertWorkouts(listOf(row))
         if (activity.hrSamples.isNotEmpty()) {
             repo.insertHr(activity.hrSamples.map { HrSample(deviceId = deviceId, ts = it.ts, bpm = it.bpm) })
         }
-        log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} from ${file.key.label}")
+        log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} " +
+            "route=${if (row.routePolyline == null) 0 else activity.route.size} from ${file.key.label}")
     }
+
+    /**
+     * The workout row for a decoded watch activity. `routePolyline` is the precision-5 encoding of the
+     * route when it has at least two points (Swift twin: `workoutRoute(from:)`, stored in `RouteStore`).
+     */
+    internal fun workoutRow(activity: ActivityFileImporter.Activity, deviceId: String) = WorkoutRow(
+        deviceId = deviceId,
+        startTs = activity.startTs,
+        endTs = activity.endTs,
+        sport = ActivityFileImporter.workoutSport(activity.sport),
+        source = deviceId,
+        durationS = activity.durationS,
+        energyKcal = activity.energyKcal,
+        avgHr = activity.avgHr,
+        maxHr = activity.maxHr,
+        strain = null,                       // never a fabricated cardiovascular strain
+        distanceM = activity.distanceM,
+        zonesJSON = null,
+        notes = activity.importNote(),
+        routePolyline = activity.route.takeIf { it.size >= 2 }
+            ?.let { RouteMath.encode(it.map { p -> RouteMath.LatLng(p.lat, p.lon) }) },
+        steps = activity.steps,
+    )
 }
