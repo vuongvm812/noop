@@ -277,7 +277,9 @@ public struct WearableExportImporter {
         // JSON: name-based wellness hints (covers Fitbit/Garmin per-day files + Oura's single export).
         let hints = ["sleep", "heart", "rate", "step", "stress", "activit", "readiness",
                      "wellness", "rhr", "oura", "calorie", "spo2", "respiration", "temperature",
-                     "biometric", "summarizedactivities", "di_connect"]
+                     "biometric", "summarizedactivities", "di_connect",
+                     // Garmin's newer export: daily summaries (UDSFile) and overnight HRV (healthStatusData).
+                     "udsfile", "healthstatus"]
         return hints.contains(where: { name.contains($0) })
     }
 
