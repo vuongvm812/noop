@@ -301,9 +301,13 @@ class GarminHistorySyncTest {
 trace legacy-watch-initiated
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -348,9 +352,13 @@ end syncing=false resume=- deadline=-
 trace legacy-cut
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -378,9 +386,13 @@ end syncing=true resume=128/32 #1 idx=1 size=150 ts=1161900000@128 crc=62518 dea
 trace legacy-resume
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -420,9 +432,13 @@ end syncing=false resume=- deadline=-
 trace legacy-resume-refused
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -466,9 +482,13 @@ end syncing=false resume=- deadline=-
 trace legacy-nothing-new
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -498,9 +518,13 @@ end syncing=false resume=- deadline=-
 trace legacy-directory-refused
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -527,9 +551,13 @@ end syncing=false resume=- deadline=-
 trace legacy-stall
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -555,9 +583,13 @@ end syncing=false resume=- deadline=-
 trace legacy-gfdi-closed
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -578,33 +610,26 @@ trace legacy-gfdi-closed
 @9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 2 to download
 @9 w 5002 0100000000000100000000000000
 @11 w 5000 8c13000040000000
-@12 log watch closed GFDI handle 0x65 status=0; re-registering
-@12 log sync interrupted(GFDI handle closed by the watch): listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=176
-@12 finished sync interrupted(GFDI handle closed by the watch): listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=176 empty=true
+@12 log <- ML close-handle response service=1 handle=0x65 status=0
+@12 log sync interrupted(GFDI handle closed): listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=176
+@12 finished sync interrupted(GFDI handle closed): listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=176 empty=true
 @12 transfer false
 @12 log holding resume point 128/32 #1 idx=1 size=150 ts=1161900000@64
-@12 phase registering
-@12 w ml 00000200000000000000010000
-@13 log GFDI registered handle=0x65 reliable=false status=0
-@13 phase awaiting-device-information
-@14 w 5000 a01300
-@14 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
-@14 phase handshaking
-@15 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
-@15 w 5000 ba1300
-@15 w 5050 113900000000008000801000040000000000
-@15 w 5030 0800
-@15 phase ready
-@15 log handshake complete in 3 ms
-watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | link cut at offset 64 | ml register gfdi | rx configuration | rx system event 8
+@12 phase busy
+@12 log watch closed NOOP's GFDI handle 0x65 unasked status=0; asking for GFDI again in 5 s
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | link cut at offset 64
 watch types 5000,5002,5030,5050
-end syncing=false resume=128/32 #1 idx=1 size=150 ts=1161900000@64 crc=61724 deadline=-
+end syncing=false resume=128/32 #1 idx=1 size=150 ts=1161900000@64 crc=61724 deadline=5012
 trace file-access-flush
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -631,8 +656,11 @@ trace file-access-flush
 @15 log item list: 5 items; 2 to download
 @15 w 5043 len=77 fnv=cbc2ff86
 @17 w 5000 b413000300000000000000
+@17 log -> ML register service=8216 reliable=false
 @17 w ml 00000200000000000000182000
+@18 log <- ML register response service=8216 status=0 handle=0x66 reliable=false
 @18 w raw 66000034120000
+@29 log <- ML close-handle response service=8216 handle=0x66 status=0
 @29 log downloaded FIT_TYPE_32 255/32 #58799 idx=16605 size=416 ts=1161900000 (328 -> 416 bytes)
 @29 file 255/32 #58799 idx=16605 size=416 ts=1161900000 n=416 fnv=be5fb77d resumed=- type=FIT_TYPE_32 fit=MONITOR
 @29 w 5043 len=61 fnv=4f0b8c15
@@ -648,9 +676,13 @@ end syncing=false resume=- deadline=-
 trace file-access-no-flush
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -677,8 +709,11 @@ trace file-access-no-flush
 @12 log item list: 1 items; 1 to download
 @12 w 5043 len=77 fnv=69130721
 @14 w 5000 b413000200000000000000
+@14 log -> ML register service=8216 reliable=false
 @14 w ml 00000200000000000000182000
+@15 log <- ML register response service=8216 status=0 handle=0x66 reliable=false
 @15 w raw 66000042000000
+@26 log <- ML close-handle response service=8216 handle=0x66 status=0
 @26 log FileAccess item 255/32 #58799 idx=16605 size=416 ts=1161900000: 327 bytes did not inflate
 @26 w 5030 0000
 @26 log sync completed: listed=1 wanted=1 synced=0 old=0 large=0 downloaded=0 failed=1 resumed=0 bytes=327
@@ -690,9 +725,13 @@ end syncing=false resume=- deadline=-
 trace compressed
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -738,9 +777,13 @@ end syncing=false resume=- deadline=-
 trace compressed-cut
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -767,9 +810,13 @@ end syncing=true resume=128/32 #8 idx=8 size=416 ts=1161900000@64 crc=8090 deadl
 trace compressed-resume-restarted
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -816,9 +863,13 @@ end syncing=false resume=- deadline=-
 trace legacy-continue-restarted
 @0 log session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
+@0 log -> ML close all
 @0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
 @1 phase registering
+@1 log -> ML register service=1 reliable=false
 @1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -858,6 +909,60 @@ trace legacy-continue-restarted
 watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=64 kind=0 seed=61724 size=86 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0
 watch types 5000,5002,5030,5050
 end syncing=false resume=- deadline=-
+trace yield-after-sync
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 2 to download
+@9 w 5002 0100000000000100000000000000
+@10 log <- ML other app (client 7) register response service=1 status=3 handle=0x00 reliable=false
+@10 log another app was refused GFDI; NOOP yields it when the running sync ends
+@12 w 5000 8c13000040000000
+@13 w 5000 8c13000080000000
+@14 w 5000 8c13000096000000
+@14 log downloaded MONITOR 128/32 #1 idx=1 size=150 ts=1161900000 (150 bytes)
+@14 file 128/32 #1 idx=1 size=150 ts=1161900000 n=150 fnv=e1692bc2 resumed=- type=- fit=MONITOR
+@14 w 5002 0200000000000100000000000000
+@16 w 5000 8c13000040000000
+@17 w 5000 8c13000046000000
+@17 log downloaded SLEEP 128/49 #2 idx=2 size=70 ts=1161900060 (70 bytes)
+@17 file 128/49 #2 idx=2 size=70 ts=1161900060 n=70 fnv=d2a3fcaf resumed=- type=- fit=SLEEP
+@17 w 5030 0000
+@17 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332
+@17 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332 empty=false
+@17 transfer false
+@17 log another app was refused GFDI; NOOP closes its own GFDI handle 0x65
+@17 log -> ML close handle service=1 handle=101
+@17 w ml 00020200000000000000010065
+@17 phase busy
+@17 log yielded GFDI to another app; asking for GFDI again in 120 s
+@18 log 1 packet(s) on handle 0x65 NOOP did not open (latest 12 bytes)
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | other app refused gfdi | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0 | ml close handle service=1 handle=101
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=120017
 trace not-ready
 @0 log sync not started: session is idle
 watch saw 

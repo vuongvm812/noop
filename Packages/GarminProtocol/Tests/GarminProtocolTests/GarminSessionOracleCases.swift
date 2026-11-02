@@ -19,6 +19,8 @@ enum OracleSessionStep {
     case tick
     case foreground(Bool)
     case live([GarminService])
+    /// Foreground / "Sync now": `retryGfdi`.
+    case retry
 }
 
 /// The Forerunner 165's 5024 as observed on 2026-11-01 (protocol 151, product 4432, firmware 29.05).
@@ -30,6 +32,11 @@ func oracleFr165DeviceInformation() -> [UInt8] {
 func oracleCobs(_ message: [UInt8]) -> [UInt8] { GarminCOBS.encode(message) }
 
 func oracleControl(_ type: UInt8, _ rest: [UInt8]) -> [UInt8] { [0, type, 2, 0, 0, 0, 0, 0, 0, 0] + rest }
+
+/// A control response addressed to another app's client id (what NOOP overhears of Garmin Connect).
+func oracleOtherControl(_ client: UInt64, _ type: UInt8, _ rest: [UInt8]) -> [UInt8] {
+    [0, type] + (0..<8).map { UInt8((client >> (8 * UInt64($0))) & 0xFF) } + rest
+}
 
 func oracleSessionHost() -> GarminHostIdentity {
     GarminSessionConfig.noopHost(platform: "oracle", softwareVersion: 1)
@@ -67,6 +74,7 @@ func oracleRunSession(_ name: String, _ session: inout GarminSession, _ steps: [
         case .tick: outputs = session.tick(clock)
         case let .foreground(fg): outputs = session.setForeground(fg, clock)
         case let .live(services): outputs = session.setLiveChannels(Set(services), clock)
+        case .retry: outputs = session.retryGfdi(clock)
         }
         out += outputs.map { "@\(ms) " + oracleDescribe($0) }
     }
@@ -110,15 +118,18 @@ func garminSessionOracleLines() -> [String] {
         (160, .rx(oracleControl(1, oracleLE16(6) + [0, 0x22, 0]))),   // foreign-service registration
         (170, .foreground(false)),
         (171, .foreground(false)),
-        (180, .rx(oracleControl(3, oracleLE16(1) + [handle, 0]))),    // watch closed GFDI
-        (190, .rx(oracleControl(1, oracleLE16(1) + [0, 0x66, 0]))),
-        (195, .rx([0x66] + oracleCobs(oracleFr165DeviceInformation()))),
-        (196, .rx([0x66] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
-        (200, .foreground(true)),
-        (210, .tick),
+        (180, .rx(oracleControl(3, oracleLE16(1) + [handle, 0]))),    // watch closed GFDI: busy, 5 s grace
+        (190, .foreground(true)),
+        (5_180, .tick),
+        (5_190, .rx(oracleControl(1, oracleLE16(1) + [0, 0x66, 0]))),
+        (5_195, .rx([0x66] + oracleCobs(oracleFr165DeviceInformation()))),
+        (5_196, .rx([0x66] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (5_210, .tick),
     ])
 
-    // B: registration refused; nothing further is sent and later traffic is ignored.
+    // B: registration refused (another app holds GFDI): the session parks in busy, keeps the link, ignores
+    // the other app's GFDI traffic, re-asks on the backoff (30 s, then 60 s), skips a re-ask moments after
+    // the last one, and completes the handshake when a foreground re-ask is granted.
     var b = GarminSession(config: GarminSessionConfig(host: oracleSessionHost(), firstPairing: false,
                                                       sendsHostLifecycleEvents: false),
                           transport: .multiLinkV2, mtu: 23)
@@ -127,6 +138,60 @@ func garminSessionOracleLines() -> [String] {
         (10, .rx(oracleControl(6, oracleLE16(0) + [0]))),
         (20, .rx(oracleControl(1, oracleLE16(1) + [3, 0, 0]))),
         (30, .rx(ml(oracleFr165DeviceInformation()))),
+        (40, .rx(ml(oracleFr165DeviceInformation()))),
+        (50, .tick),
+        (30_019, .tick),
+        (30_020, .tick),
+        (30_030, .rx(oracleControl(1, oracleLE16(1) + [3, 0, 0]))),
+        (31_000, .retry),
+        (40_000, .retry),
+        (40_010, .rx(oracleControl(1, oracleLE16(1) + [0, 0x67, 0]))),
+        (40_020, .rx([0x67] + oracleCobs(oracleFr165DeviceInformation()))),
+        (40_030, .rx([0x67] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (40_040, .retry),
+    ])
+
+    // H: coexistence with another app (client 7, standing in for Garmin Connect). NOOP overhears that app
+    // take GFDI, is refused, opens its own live channel while busy, re-asks after the other app releases
+    // GFDI, completes the handshake; then yields GFDI when the other app is refused, and backs off after
+    // the watch closes NOOP's GFDI handle, and all its handles, unasked.
+    var h = GarminSession(config: GarminSessionConfig(host: oracleSessionHost(), firstPairing: false,
+                                                      sendsHostLifecycleEvents: false),
+                          transport: .multiLinkV2, mtu: 150)
+    let other: UInt64 = 7
+    out += oracleRunSession("ml-coexist", &h, [
+        (0, .start),
+        (1, .live([.realtimeHeartRate])),
+        (10, .rx(oracleControl(6, oracleLE16(0) + [0]))),
+        (12, .rx(oracleOtherControl(other, 6, oracleLE16(0) + [0]))),
+        (14, .rx(oracleOtherControl(other, 1, oracleLE16(1) + [0, 0x40, 0]))),
+        (20, .rx(oracleControl(1, oracleLE16(1) + [3, 0, 0]))),
+        (30, .rx(oracleControl(1, oracleLE16(6) + [0, 0x41, 0]))),
+        (31, .rx([0x41, 3, 62, 55, 0xFF, 0xFF])),
+        (40, .rx([0x40, 1, 2, 3])),
+        (41, .rx([0x40, 4, 5])),
+        (50, .rx(oracleOtherControl(other, 3, oracleLE16(1) + [0x40, 0]))),
+        (60, .rx(oracleOtherControl(other, 6, oracleLE16(0) + [0]))),
+        (70, .rx(oracleOtherControl(other, 1, oracleLE16(1) + [0, 0x42, 0]))),
+        (80, .rx(oracleOtherControl(other, 3, oracleLE16(1) + [0x42, 0]))),
+        (5_079, .tick),
+        (5_080, .tick),
+        (5_090, .rx(oracleControl(1, oracleLE16(1) + [0, 0x43, 0]))),
+        (5_100, .rx([0x43] + oracleCobs(oracleFr165DeviceInformation()))),
+        (5_110, .rx([0x43] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (6_000, .rx(oracleOtherControl(other, 1, oracleLE16(1) + [3, 0, 0]))),
+        (6_010, .rx(oracleControl(3, oracleLE16(1) + [0x43, 0]))),
+        (6_020, .rx(oracleOtherControl(other, 1, oracleLE16(1) + [0, 0x44, 0]))),
+        (126_020, .tick),
+        (126_030, .rx(oracleControl(1, oracleLE16(1) + [0, 0x45, 0]))),
+        (126_040, .rx([0x45] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (127_000, .rx(oracleControl(3, oracleLE16(1) + [0x45, 0]))),
+        (132_000, .tick),
+        (132_010, .rx(oracleControl(1, oracleLE16(1) + [0, 0x46, 0]))),
+        (132_020, .rx([0x46] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (133_000, .rx(oracleControl(6, oracleLE16(0) + [0]))),
+        (133_010, .rx([0xC2, 1, 2])),
+        (133_011, .rx([0x00, 9])),
     ])
 
     // C: the watch never answers CLOSE_ALL; the handshake deadline fails the session.
@@ -223,11 +288,12 @@ func garminSessionOracleLines() -> [String] {
         (200, .rx([0x6D, 3, 70, 0, 0xFF, 0xFF])),
         (210, .rx(oracleControl(6, oracleLE16(0) + [0]))),
         (211, .rx([0x6D, 3, 71, 0, 0xFF, 0xFF])),
-        (220, .rx(oracleControl(1, oracleLE16(1) + [0, 0x70, 0]))),
-        (221, .rx([0x70] + oracleCobs(oracleFr165DeviceInformation()))),
-        (222, .rx([0x70] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
-        (230, .rx(oracleControl(1, oracleLE16(6) + [0, 0x71, 0]))),
-        (240, .rx(oracleControl(2, oracleLE16(6) + [0x71, 0]))),
+        (215, .rx(oracleControl(1, oracleLE16(6) + [0, 0x71, 0]))),   // HR re-opens while busy
+        (5_210, .tick),
+        (5_220, .rx(oracleControl(1, oracleLE16(1) + [0, 0x70, 0]))),
+        (5_221, .rx([0x70] + oracleCobs(oracleFr165DeviceInformation()))),
+        (5_222, .rx([0x70] + oracleCobs(oracleFrame(5050, [1, 0x09])))),
+        (5_240, .rx(oracleControl(2, oracleLE16(6) + [0x71, 0]))),
     ])
 
     // G: a direct (V1) transport has no live channels; asked once, said once.

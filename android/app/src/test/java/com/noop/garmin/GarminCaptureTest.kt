@@ -63,12 +63,14 @@ class GarminCaptureTest {
 trace capture
 @0 log R session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
-@0 log D -> ML close all
+@0 log R -> ML close all
 @0 w 00050200000000000000000000
+@1 log R <- ML close-all response
 @1 log D all handles closed
 @1 phase registering
-@1 log D -> ML register service=1 reliable=false
+@1 log R -> ML register service=1 reliable=false
 @1 w 00000200000000000000010000
+@2 log R <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log R GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log R watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -92,23 +94,27 @@ trace capture
 @10 log R live channel 13 is undecoded; opens only in capture mode
 @10 log R live channel 16 is not supported; not opened
 @10 log D live channel 6 registering
-@10 log D -> ML register service=6 reliable=false
+@10 log R -> ML register service=6 reliable=false
 @10 w 00000200000000000000060000
 @11 log D live channel 8 registering
-@11 log D -> ML register service=8 reliable=false
+@11 log R -> ML register service=8 reliable=false
 @11 w 00000200000000000000080000
 @11 log D live channel 10 registering
-@11 log D -> ML register service=10 reliable=false
+@11 log R -> ML register service=10 reliable=false
 @11 w 000002000000000000000a0000
 @11 log D live channel 13 registering
-@11 log D -> ML register service=13 reliable=false
+@11 log R -> ML register service=13 reliable=false
 @11 w 000002000000000000000d0000
+@20 log R <- ML register response service=6 status=0 handle=0x66 reliable=false
 @20 log R live channel 6 open handle=0x66
 @20 channel 6 open
+@21 log R <- ML register response service=8 status=0 handle=0x67 reliable=false
 @21 log R live channel 8 open handle=0x67
 @21 channel 8 open
+@22 log R <- ML register response service=10 status=0 handle=0x68 reliable=false
 @22 log R live channel 10 open handle=0x68
 @22 channel 10 open
+@23 log R <- ML register response service=13 status=3 handle=0x00 reliable=false
 @23 log R live channel 13 refused status=3; not retried until asked again
 @23 channel 13 refused status=3
 @30 log D live 6 [00483bffff] hr bpm=72 resting=59 type=0 trailing=ffff
@@ -117,28 +123,32 @@ trace capture
 @30 live hr bpm=72 resting=59 type=0 trailing=ffff
 @31 raw 8 660800009a010000
 @32 raw 10 5f000f0028000700000096000000
-@33 log D ignored 2 bytes on unregistered handle 0x69
+@33 log R 1 packet(s) on handle 0x69 NOOP did not open (latest 2 bytes)
 @40 log D live channel 8 closing handle 0x67
-@40 log D -> ML close handle service=8 handle=103
+@40 log R -> ML close handle service=8 handle=103
 @40 w 00020200000000000000080067
 @40 log D live channel 10 closing handle 0x68
-@40 log D -> ML close handle service=10 handle=104
+@40 log R -> ML close handle service=10 handle=104
 @40 w 000202000000000000000a0068
+@41 log R <- ML close-handle response service=8 handle=0x67 status=0
 @41 log R live channel 8 closed handle=0x67 status=0
 @41 channel 8 closed
 @42 raw 10 01
+@43 log R <- ML close-handle response service=10 handle=0x68 status=0
 @43 log R live channel 10 closed handle=0x68 status=0
 @43 channel 10 closed
 end phase=ready open=6
 trace late-answer
 @0 log R session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
-@0 log D -> ML close all
+@0 log R -> ML close all
 @0 w 00050200000000000000000000
+@1 log R <- ML close-all response
 @1 log D all handles closed
 @1 phase registering
-@1 log D -> ML register service=1 reliable=false
+@1 log R -> ML register service=1 reliable=false
 @1 w 00000200000000000000010000
+@2 log R <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log R GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log R watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -158,24 +168,28 @@ trace late-answer
 @4 phase ready
 @4 log R handshake complete in 4 ms
 @11 log D live channel 13 registering
-@11 log D -> ML register service=13 reliable=false
+@11 log R -> ML register service=13 reliable=false
 @11 w 000002000000000000000d0000
 @12 log R live channel 13 is undecoded; opens only in capture mode
+@13 log R <- ML register response service=13 status=0 handle=0x70 reliable=false
 @13 log D live channel 13 no longer wanted; closing handle 0x70
-@13 log D -> ML close handle service=13 handle=112
+@13 log R -> ML close handle service=13 handle=112
 @13 w 000202000000000000000d0070
+@14 log R <- ML close-handle response service=13 handle=0x70 status=0
 @14 log R live channel 13 closed handle=0x70 status=0
 @14 channel 13 closed
 end phase=ready open=-
 trace watch-closes
 @0 log R session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
-@0 log D -> ML close all
+@0 log R -> ML close all
 @0 w 00050200000000000000000000
+@1 log R <- ML close-all response
 @1 log D all handles closed
 @1 phase registering
-@1 log D -> ML register service=1 reliable=false
+@1 log R -> ML register service=1 reliable=false
 @1 w 00000200000000000000010000
+@2 log R <- ML register response service=1 status=0 handle=0x65 reliable=false
 @2 log R GFDI registered handle=0x65 reliable=false status=0
 @2 phase awaiting-device-information
 @3 log R watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -195,33 +209,43 @@ trace watch-closes
 @4 phase ready
 @4 log R handshake complete in 4 ms
 @11 log D live channel 8 registering
-@11 log D -> ML register service=8 reliable=false
+@11 log R -> ML register service=8 reliable=false
 @11 w 00000200000000000000080000
 @11 log D live channel 13 registering
-@11 log D -> ML register service=13 reliable=false
+@11 log R -> ML register service=13 reliable=false
 @11 w 000002000000000000000d0000
+@12 log R <- ML register response service=8 status=0 handle=0x67 reliable=false
 @12 log R live channel 8 open handle=0x67
 @12 channel 8 open
+@13 log R <- ML register response service=13 status=0 handle=0x66 reliable=false
 @13 log R live channel 13 open handle=0x66
 @13 channel 13 open
+@14 log R <- ML close-handle response service=13 handle=0x66 status=0
 @14 log R watch closed live channel 13 handle 0x66 status=0
 @14 channel 13 closed
+@15 log R <- ML close-all response
 @15 channel 8 closed
-@15 log R watch closed all handles; re-registering GFDI
-@15 phase registering
-@15 log D -> ML register service=1 reliable=false
-@15 w 00000200000000000000010000
-@16 log D ignored 1 bytes on unregistered handle 0x67
-end phase=registering open=-
+@15 phase busy
+@15 log R watch closed all of NOOP's handles unasked; asking for GFDI again in 5 s
+@15 log D live channel 8 registering
+@15 log R -> ML register service=8 reliable=false
+@15 w 00000200000000000000080000
+@15 log D live channel 13 registering
+@15 log R -> ML register service=13 reliable=false
+@15 w 000002000000000000000d0000
+@16 log R 1 packet(s) on handle 0x67 NOOP did not open (latest 1 bytes)
+end phase=busy open=-
 trace before-ready
 @0 log R session start transport=V2 multi-link mtu=150 firstPairing=false
 @0 phase closing-all
-@0 log D -> ML close all
+@0 log R -> ML close all
 @0 w 00050200000000000000000000
+@2 log R <- ML close-all response
 @2 log D all handles closed
 @2 phase registering
-@2 log D -> ML register service=1 reliable=false
+@2 log R -> ML register service=1 reliable=false
 @2 w 00000200000000000000010000
+@3 log R <- ML register response service=1 status=0 handle=0x65 reliable=false
 @3 log R GFDI registered handle=0x65 reliable=false status=0
 @3 phase awaiting-device-information
 @4 log R watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
@@ -241,7 +265,7 @@ trace before-ready
 @5 phase ready
 @5 log R handshake complete in 5 ms
 @5 log D live channel 10 registering
-@5 log D -> ML register service=10 reliable=false
+@5 log R -> ML register service=10 reliable=false
 @5 w 000002000000000000000a0000
 end phase=ready open=-
 trace v1

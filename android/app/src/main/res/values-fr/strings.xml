@@ -2903,6 +2903,7 @@
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Connexion…</string>
     <string name="l10n_garmin_watch_panel_protocol_not_supported_05ba63ff">Protocole non pris en charge</string>
     <string name="l10n_garmin_watch_panel_not_connected_8b02f3de">Non connectée</string>
+    <string name="l10n_garmin_watch_panel_watch_busy_with_another_app_d723ea45">Montre occupée par une autre app</string>
     <string name="l10n_garmin_watch_panel_battery_c81930ed">Batterie %1$d%%</string>
     <string name="l10n_garmin_watch_panel_battery_not_reported_by_this_watch_db5206e5">Batterie : non indiquée par cette montre</string>
     <string name="l10n_garmin_watch_panel_last_sync_6dc327c7">Dernière synchronisation %1$s</string>

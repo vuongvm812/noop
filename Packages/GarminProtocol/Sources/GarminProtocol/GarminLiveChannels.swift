@@ -83,6 +83,11 @@ struct GarminLiveChannelTable {
         return events
     }
 
+    /// Forget every refusal, so the next `apply` asks again (a new GFDI session after `busy`).
+    mutating func clearRefusals() {
+        refused.removeAll()
+    }
+
     /// Bring the handles in line with `desired`. Closes in service order, then registers in service order,
     /// so both platforms emit the same frames.
     mutating func apply() -> [GarminLiveChannelEvent] {

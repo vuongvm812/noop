@@ -100,12 +100,24 @@ object GarminMultiLink {
 
     /** Parse a control packet. Null for a short packet, an echoed request, an unknown type or a foreign client. */
     fun parseControl(packet: ByteArray, clientId: Long = DEFAULT_CLIENT_ID): ControlResponse? {
+        val frame = parseControlFrame(packet) ?: return null
+        return if (frame.clientId == clientId) frame.response else null
+    }
+
+    /** A control response and the client id it is addressed to. */
+    data class ControlFrame(val clientId: Long, val response: ControlResponse)
+
+    /**
+     * Parse a control response addressed to ANY client id. Every app on the phone shares the one notify
+     * characteristic, so the watch's answers to another app (Garmin Connect) arrive here too; the session
+     * logs them and reads them as hints, and never acts for that app.
+     */
+    fun parseControlFrame(packet: ByteArray): ControlFrame? {
         val r = GarminByteReader(packet)
         if (r.u8() != CONTROL_HANDLE) return null
         val type = r.u8() ?: return null
         val client = r.u64() ?: return null
-        if (client != clientId) return null
-        return when (type) {
+        val response = when (type) {
             TYPE_REGISTER_RESPONSE -> {
                 val service = r.u16() ?: return null
                 val status = r.u8() ?: return null
@@ -120,8 +132,20 @@ object GarminMultiLink {
                 ControlResponse.HandleClosed(service, handle, status)
             }
             TYPE_CLOSE_ALL_RESPONSE -> ControlResponse.AllClosed
-            else -> null
+            else -> return null
         }
+        return ControlFrame(client, response)
+    }
+
+    /** One line naming a control response, for the always-on log. */
+    fun describe(response: ControlResponse): String = when (response) {
+        is ControlResponse.Registered ->
+            "register response service=${response.service} status=${response.status} " +
+                "handle=0x${garminHex(byteArrayOf(response.handle.toByte()))} reliable=${response.reliable}"
+        is ControlResponse.HandleClosed ->
+            "close-handle response service=${response.service} " +
+                "handle=0x${garminHex(byteArrayOf(response.handle.toByte()))} status=${response.status}"
+        ControlResponse.AllClosed -> "close-all response"
     }
 
     /** Payload bytes per plain-ML write: MTU − 3 (ATT header) − 1 (handle byte). */
