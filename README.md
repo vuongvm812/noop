@@ -48,6 +48,38 @@
 
 ---
 
+## Why this fork exists
+
+[NOOP](https://github.com/ryanbr/noop) is an excellent open-source, local-first app for WHOOP straps. It pairs over Bluetooth, keeps everything on your device, and computes recovery, strain, HRV and sleep itself.
+
+I don't wear a WHOOP. I wear a **Garmin Forerunner 165**. I forked NOOP so I could get its on-device Charge, Effort, Rest and sleep analysis from my own watch, without giving up Garmin Connect, which still sends my workouts to Strava. I also wanted NOOP to use the history already sitting in my Garmin account, instead of starting over from zero.
+
+## What's different from NOOP
+
+**Garmin watches are a first-class device:**
+
+- **Direct Bluetooth pairing.** It uses a clean-room driver for Garmin's own watch protocol. No Garmin account and no factory reset are needed. Pair from Add Device like any strap.
+- **History sync.** The watch's own 24/7 recordings (sleep, heart rate, HRV, stress, Body Battery, steps, workouts) download in the background as FIT files. NOOP only reads: it never archives, flags or deletes anything on the watch, so Garmin Connect still gets every file.
+- **Live metrics on demand.** HR, HRV, stress, Body Battery, SpO2 and respiration stream only while you're looking, to save the watch's battery.
+- **Scores from Garmin data.** Charge, Effort and Rest are computed from the watch's HR, HRV and sleep. Garmin's own sleep score, stress and Body Battery stay as reference values.
+- **Shares the watch with Garmin Connect.** NOOP no longer resets the watch's link when it connects, so Garmin Connect can keep syncing workouts to Strava.
+- **Run routes.** Workouts synced from the watch keep their GPS route, and NOOP's workout screen shows it on a map.
+
+**Your Garmin history counts:**
+
+- **Garmin Connect export import.** NOOP reads the current "Export Your Data" ZIP: sleep, resting HR, HRV, steps and stress.
+- **Imported history feeds every screen and every calculation:** Today, Sleep, Trends, baselines, sleep need and debt, training load, illness warnings and correlations. The watch's own data wins on any overlapping day, and nothing is counted twice.
+
+**Today does more:**
+
+- **Supplements card.** Log today's supplements (yes/no or an amount with a unit) right on Today instead of in the Journal.
+- **Stress card.** Today's stress level and average, with an intraday sparkline.
+- **Home-screen widget works for a Garmin wearer.** It shows HRV, resting HR and scores even before Charge has finished calibrating.
+
+The Bluetooth stack for WHOOP, the strap protocol, storage, sleep staging and the analytics engines are NOOP's, unchanged. Garmin protocol facts were re-derived from [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge)'s documentation, with attribution in [ATTRIBUTION.md](ATTRIBUTION.md). No Gadgetbridge code was copied.
+
+---
+
 ## Download
 
 Pre-built apps you can run right now:
