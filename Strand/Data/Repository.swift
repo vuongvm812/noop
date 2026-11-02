@@ -602,11 +602,25 @@ final class Repository: ObservableObject {
     /// on. The `$0.day < carriedKey` bound (`carriedKey` = today's own key) mirrors
     /// `TodayView.lastScoredRecoveryDay` + its #547 future-day guard, so a stale or stray future-dated
     /// scored row can never re-surface AS today.
+    ///
+    /// #34: when NO day up to today carries a Charge (a Garmin-only wearer whose Charge is still
+    /// calibrating), the anchor falls back to the freshest day up to and including today that carries any
+    /// other widget value (`hasWidgetValue`), so Effort and Rest still have a day to describe instead of
+    /// every cell reading "–". The fallback is only reached when the scored carry finds nothing, so a
+    /// wearer with any Charge keeps the #911 behaviour unchanged. Byte-twin of the Kotlin `widgetAnchorRow`.
     nonisolated static func widgetAnchor(days: [DailyMetric], logicalKey: String, localKey: String) -> DailyMetric? {
         let todayRow = resolveToday(days: days, logicalKey: logicalKey, localKey: localKey)
         if todayRow?.recovery != nil { return todayRow }
         let carriedKey = todayRow?.day ?? logicalKey
-        return days.last(where: { $0.recovery != nil && $0.day < carriedKey })
+        if let scored = days.last(where: { $0.recovery != nil && $0.day < carriedKey }) { return scored }
+        return days.last(where: { hasWidgetValue($0) && $0.day <= carriedKey })
+    }
+
+    /// A row the #34 anchor fallback may describe: it carries an Effort, a night (Rest) or an overnight
+    /// vital. Charge is not listed because the fallback only runs when no row has one. Byte-twin of the
+    /// Kotlin `hasWidgetValue`.
+    nonisolated static func hasWidgetValue(_ row: DailyMetric) -> Bool {
+        row.strain != nil || row.totalSleepMin != nil || row.avgHrv != nil || row.restingHr != nil
     }
 
     /// Live-clock convenience over the pure `widgetAnchor`: resolves the anchor for `now` (defaults to the
@@ -617,6 +631,25 @@ final class Repository: ObservableObject {
     /// MainActor. Tests call the pure 3-arg overload above instead.
     static func widgetAnchor(days: [DailyMetric], now: Date = Date()) -> DailyMetric? {
         widgetAnchor(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now))
+    }
+
+    /// #34: the HRV and resting HR the off-dashboard surfaces show, resolved exactly the way Today reads
+    /// them: today's own row first, then the per-field carry (`lastHrvDay` / `lastRestingHrDay`) bounded
+    /// at today's key. They are deliberately NOT read off `widgetAnchor`, which is Charge-gated: a night
+    /// with real HRV but no Charge (every night for a wearer still calibrating) must still reach the
+    /// widget, and the widget must never show a different HRV than the Today tile beside it.
+    nonisolated static func widgetVitals(days: [DailyMetric], logicalKey: String, localKey: String)
+        -> (hrv: Double?, restingHr: Int?) {
+        let todayRow = resolveToday(days: days, logicalKey: logicalKey, localKey: localKey)
+        let todayKey = todayRow?.day ?? logicalKey
+        return (todayRow?.avgHrv ?? lastHrvDay(days: days, todayKey: todayKey)?.avgHrv,
+                todayRow?.restingHr ?? lastRestingHrDay(days: days, todayKey: todayKey)?.restingHr)
+    }
+
+    /// Live-clock convenience over the pure `widgetVitals`, MainActor for the same reason as
+    /// `widgetAnchor(days:now:)`.
+    static func widgetVitals(days: [DailyMetric], now: Date = Date()) -> (hrv: Double?, restingHr: Int?) {
+        widgetVitals(days: days, logicalKey: logicalDayKey(now), localKey: localDayKey(now))
     }
 
     /// #1051-shaped memo for the anchor resolve on the high-frequency live surfaces. Not @Published — pure

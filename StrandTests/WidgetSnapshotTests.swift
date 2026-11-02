@@ -108,4 +108,32 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertTrue(WidgetSnapshot.liveUpdateRequiresFullBuild(
             previous: nil, now: nextDay, calendar: calendar))
     }
+
+    // #34: a healthy App Group logs nothing.
+    func testAppGroupDiagnostic_healthyGroup_isSilent() {
+        XCTAssertNil(WidgetSnapshot.appGroupDiagnostic(
+            suite: "group.example.noop", infoDictionary: ["AppGroupIdentifier": "group.example.noop"],
+            defaultsAvailable: true, containerAvailable: true))
+    }
+
+    // #34: a store that exists but is not shared (no container) names the group and its inputs.
+    func testAppGroupDiagnostic_unsharedGroup_namesResolution() {
+        let line = WidgetSnapshot.appGroupDiagnostic(
+            suite: "group.example.noop.TEAM123456",
+            infoDictionary: ["AppGroupIdentifier": "group.example.noop",
+                             "ALTAppGroups": ["group.example.noop.TEAM123456"]],
+            defaultsAvailable: true, containerAvailable: false)
+        XCTAssertEqual(line, "App Group: resolved 'group.example.noop.TEAM123456' has no shared container on "
+            + "this signature (AppGroupIdentifier=group.example.noop, ALTAppGroups=[group.example.noop.TEAM123456]); "
+            + "the widget, Live Activity and intents cannot read what the app publishes.")
+    }
+
+    func testAppGroupDiagnostic_missingStore_saysSo() {
+        let line = WidgetSnapshot.appGroupDiagnostic(
+            suite: "group.com.noopapp.noop", infoDictionary: [:],
+            defaultsAvailable: false, containerAvailable: false)
+        XCTAssertEqual(line, "App Group: resolved 'group.com.noopapp.noop' has no defaults store on this "
+            + "signature (AppGroupIdentifier=absent, ALTAppGroups=absent); "
+            + "the widget, Live Activity and intents cannot read what the app publishes.")
+    }
 }

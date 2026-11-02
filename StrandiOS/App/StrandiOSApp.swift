@@ -91,6 +91,11 @@ struct StrandiOSApp: App {
         }, log: { [weak model] line in
             model?.live.append(log: AppModel.stamped(line))
         })
+        // #34: always-on evidence for an App Group this signature cannot share (silent in Release
+        // otherwise, and the widget then shows only dashes). Logs nothing on a healthy build.
+        if let line = WidgetSnapshot.appGroupDiagnostic() {
+            model.live.append(log: AppModel.stamped(line))
+        }
         // Settings → "Keep screen on while syncing". Wired once here, not as another modifier on `body`.
         SyncKeepAwake.shared.attach(to: model.live)
         // The strap-sync Live Activity (Lock Screen + Dynamic Island). Same placement, same reason — and

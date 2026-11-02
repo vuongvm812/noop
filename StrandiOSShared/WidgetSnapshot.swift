@@ -141,6 +141,37 @@ public struct WidgetSnapshot: Codable, Equatable {
                "App Group '\(suiteName)' not provisioned on this target — check the entitlement.")
     }
 
+    /// #34: the strap-log line for an App Group the app cannot actually share, or nil when it can.
+    ///
+    /// `assertGroupProvisioned` only fires in Debug, and its `UserDefaults(suiteName:)` check is not
+    /// enough on iOS: for a group this signature does not grant, the call can still return a store, just
+    /// a private one the widget extension never sees. `containerURL(forSecurityApplicationGroupIdentifier:)`
+    /// is nil exactly when the group is not in the signed entitlements, so that is the test. Rare by
+    /// construction (a misprovisioned or re-signed build), so it is always on; a healthy build logs nothing.
+    public static func appGroupDiagnostic() -> String? {
+        appGroupDiagnostic(
+            suite: suiteName,
+            infoDictionary: Bundle.main.infoDictionary ?? [:],
+            defaultsAvailable: UserDefaults(suiteName: suiteName) != nil,
+            containerAvailable: FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: suiteName) != nil
+        )
+    }
+
+    /// Pure core of `appGroupDiagnostic()`. Names what `resolveSuiteName` was given and what it chose, so
+    /// a sideloaded build's log shows whether `ALTAppGroups` was present and which group won.
+    static func appGroupDiagnostic(suite: String, infoDictionary: [String: Any],
+                                   defaultsAvailable: Bool, containerAvailable: Bool) -> String? {
+        if defaultsAvailable && containerAvailable { return nil }
+        let configured = (infoDictionary["AppGroupIdentifier"] as? String) ?? "absent"
+        let altGroups = (infoDictionary["ALTAppGroups"] as? [String]).map { "[\($0.joined(separator: ", "))]" }
+            ?? "absent"
+        let fault = defaultsAvailable ? "has no shared container" : "has no defaults store"
+        return "App Group: resolved '\(suite)' \(fault) on this signature "
+            + "(AppGroupIdentifier=\(configured), ALTAppGroups=\(altGroups)); "
+            + "the widget, Live Activity and intents cannot read what the app publishes."
+    }
+
     public static var placeholder: WidgetSnapshot {
         // Gallery / pre-publish stand-in: realistic Charge · Effort · Rest on the 0–100 axis so the
         // three-ring Home Screen layouts (and the large grid) preview with filled arcs, not dashes.

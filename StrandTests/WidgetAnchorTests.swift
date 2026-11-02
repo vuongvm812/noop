@@ -98,4 +98,62 @@ final class WidgetAnchorTests: XCTestCase {
         let days = [day("2026-06-18", recovery: nil), day("2026-06-19", recovery: nil)]
         XCTAssertNil(Repository.widgetAnchor(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19"))
     }
+
+    /// A row with any subset of the fields the #34 fallback and vitals resolver read.
+    private func row(_ key: String, recovery: Double? = nil, strain: Double? = nil, sleepMin: Double? = nil,
+                     hrv: Double? = nil, rhr: Int? = nil) -> DailyMetric {
+        DailyMetric(day: key, totalSleepMin: sleepMin, efficiency: nil, deepMin: nil, remMin: nil,
+                    lightMin: nil, disturbances: nil, restingHr: rhr, avgHrv: hrv, recovery: recovery,
+                    strain: strain, exerciseCount: nil)
+    }
+
+    // #34: no Charge on any day (a Garmin-only wearer still calibrating) -> the freshest day up to and
+    // including today that carries any other widget value. Same cases as the Kotlin WidgetAnchorTest.
+    func testNoChargeAnywhere_fallsBackToTodayWithEffort() {
+        let days = [row("2026-06-18", hrv: 61), row("2026-06-19", strain: 9)]
+        XCTAssertEqual(Repository.widgetAnchor(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19")?.day,
+                       "2026-06-19")
+    }
+
+    func testNoChargeAnywhere_emptyToday_fallsBackToPriorVitalsDay() {
+        let days = [row("2026-06-18", hrv: 61, rhr: 52), row("2026-06-19")]
+        XCTAssertEqual(Repository.widgetAnchor(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19")?.day,
+                       "2026-06-18")
+    }
+
+    func testNoChargeAnywhere_neverFallsBackToAFutureRow() {
+        let days = [row("2026-06-19"), row("2026-07-12", strain: 9)]
+        XCTAssertNil(Repository.widgetAnchor(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19"))
+    }
+
+    // #34: a Charge on an OLDER day still wins over newer unscored rows that carry Effort or HRV.
+    func testChargeOnOlderDay_winsOverNewerUnscoredRows() {
+        let days = [row("2026-06-17", recovery: 64), row("2026-06-18", hrv: 61), row("2026-06-19", strain: 9)]
+        let anchor = Repository.widgetAnchor(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19")
+        XCTAssertEqual(anchor?.day, "2026-06-17")
+        XCTAssertEqual(anchor?.recovery, 64)
+    }
+
+    // #34: HRV and resting HR reach the widget with no Charge anywhere, from the latest night that has each.
+    func testVitals_noCharge_carryPerFieldFromPriorNights() {
+        let days = [row("2026-06-17", hrv: 58, rhr: 51), row("2026-06-18", hrv: 61), row("2026-06-19", strain: 9)]
+        let vitals = Repository.widgetVitals(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19")
+        XCTAssertEqual(vitals.hrv, 61)
+        XCTAssertEqual(vitals.restingHr, 51)
+    }
+
+    // Today's own value wins over the carry, as on the Today tiles; a future row is never read.
+    func testVitals_todayWins_andFutureIgnored() {
+        let days = [row("2026-06-18", recovery: 70, hrv: 61, rhr: 50), row("2026-06-19", hrv: 66),
+                    row("2026-07-12", hrv: 99, rhr: 99)]
+        let vitals = Repository.widgetVitals(days: days, logicalKey: "2026-06-19", localKey: "2026-06-19")
+        XCTAssertEqual(vitals.hrv, 66)
+        XCTAssertEqual(vitals.restingHr, 50)
+    }
+
+    func testVitals_noData_isNil() {
+        let vitals = Repository.widgetVitals(days: [], logicalKey: "2026-06-19", localKey: "2026-06-19")
+        XCTAssertNil(vitals.hrv)
+        XCTAssertNil(vitals.restingHr)
+    }
 }

@@ -88,8 +88,20 @@ internal fun widgetAnchorRow(days: List<DailyMetric>, logicalKey: String, localK
     val todayRow = resolveTodayRow(days, logicalKey, localKey)
     if (todayRow?.recovery != null) return todayRow
     val anchorKey = todayRow?.day ?: logicalKey
-    return days.lastOrNull { it.recovery != null && it.day < anchorKey }
+    days.lastOrNull { it.recovery != null && it.day < anchorKey }?.let { return it }
+    // #34: no Charge on any day up to today (a Garmin-only wearer still calibrating). Fall back to the
+    // freshest day up to and including today that carries any other widget value, so Effort and Rest
+    // still have a day to describe. Byte-twin of the Swift Repository.widgetAnchor fallback.
+    return days.lastOrNull { hasWidgetValue(it) && it.day <= anchorKey }
 }
+
+/**
+ * A row the #34 anchor fallback in [widgetAnchorRow] may describe: it carries an Effort, a night (Rest)
+ * or an overnight vital. Charge is not listed because the fallback only runs when no row has one.
+ * Byte-twin of the Swift Repository.hasWidgetValue.
+ */
+internal fun hasWidgetValue(row: DailyMetric): Boolean =
+    row.strain != null || row.totalSleepMin != null || row.avgHrv != null || row.restingHr != null
 
 /**
  * The freshest STRICTLY-PRIOR row that carries a real overnight VITAL (HRV / resting-HR / respiratory),
