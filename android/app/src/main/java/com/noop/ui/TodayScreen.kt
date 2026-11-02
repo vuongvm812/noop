@@ -1681,6 +1681,7 @@ fun TodayScreen(
                         (cycleOptInApplies(profileStore.sex) || cycleEnabled || periodStarts.isNotEmpty())
                 TodaySection.JOURNAL ->
                     selectedDayOffset == 0 && journalReminderOn
+                TodaySection.SUPPLEMENTS -> selectedDayOffset == 0
                 TodaySection.ADDED_CARDS ->
                     selectedDayOffset == 0 && enabledHostedCards.isNotEmpty()
                 else -> true
@@ -1932,6 +1933,14 @@ fun TodayScreen(
                         // and enabled-gated at the loop level (sectionVisible) so it never leaves a blank
                         // draggable slot. Twin of iOS LiquidTodayView's `.journal` arm.
                         TodaySection.JOURNAL -> JournalReminderCard(
+                            viewModel = viewModel,
+                            days = days,
+                            onOpenJournal = onOpenJournal,
+                        )
+                        // #33: today's supplement intake, logged in place from the Journal's Supplements
+                        // group. Today-only, gated at the loop level. Twin of iOS LiquidTodayView's
+                        // `.supplements` arm.
+                        TodaySection.SUPPLEMENTS -> SupplementsTodayCard(
                             viewModel = viewModel,
                             days = days,
                             onOpenJournal = onOpenJournal,

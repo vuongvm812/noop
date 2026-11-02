@@ -47,6 +47,26 @@ enum class JournalGroup(val title: String) {
 }
 
 /**
+ * The groups the Journal log card renders (#33). Supplements are logged from the Today Supplements card,
+ * so the Journal leaves that group out while answering and shows it only in edit mode, where supplement
+ * questions are still added, renamed, regrouped and removed. Mirrors macOS `JournalGroup.journalLogGroups`.
+ */
+fun journalLogGroups(editing: Boolean): List<JournalGroup> =
+    if (editing) JournalGroup.displayOrder else JournalGroup.displayOrder.filter { it != JournalGroup.Supplements }
+
+/**
+ * The rows of the Today Supplements card (#33): every visible item in the Supplements group, ordered by
+ * sortIndex then display. Imported questions are not re-read from the database here: an imported
+ * question only lands in Supplements after the user regroups it, which saves it into [savedItems], so
+ * the saved non-custom canonicals stand in for the imported list. Mirrors macOS
+ * `JournalCatalogStore.supplementItems`.
+ */
+fun supplementJournalItems(savedItems: List<JournalCatalogItem>): List<JournalCatalogItem> =
+    resolveJournalItems(imported = savedItems.filterNot { it.custom }.map { it.canonical }, savedItems = savedItems)
+        .filter { it.group == JournalGroup.Supplements && !it.hidden }
+        .sortedWith(compareBy({ it.sortIndex }, { it.display }))
+
+/**
  * One journal catalog item. [canonical] is the verbatim DB/engine key (the exact question string the
  * effects engine and the `journal` table join on), it is NEVER localised or rewritten, so a rename
  * or a re-import always folds onto one behaviour. [displayName] (a rename) and [kind] / [group] /

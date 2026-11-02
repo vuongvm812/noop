@@ -233,6 +233,32 @@ final class JournalLogicTests: XCTestCase {
         XCTAssertEqual(item?.kind.unitLabel, "L")
     }
 
+    /// #33: the Today Supplements card lists every visible Supplements-group item (starter, custom, and a
+    /// regrouped imported question) in sortIndex order, and drops hidden items and other groups. Twin of
+    /// the Android `supplementJournalItems` test, same scenario and same expected list.
+    @MainActor
+    func testSupplementItemsFilterToVisibleSupplementsInOrder() {
+        let store = makeCatalog()
+        XCTAssertEqual(store.supplementItems().map(\.canonical), ["Did you take magnesium?"])
+
+        store.addCustom("Vitamin D", kind: .numeric(unitLabel: "IU"), group: .supplements)
+        store.setGroup("Creatine taken?", to: .supplements)   // an imported question, regrouped
+        store.addCustom("Fish oil", kind: .bool, group: .health)
+        XCTAssertEqual(store.supplementItems().map(\.canonical),
+                       ["Vitamin D", "Creatine taken?", "Did you take magnesium?"])
+        XCTAssertEqual(store.supplementItems().first?.kind.unitLabel, "IU")
+
+        store.remove("Did you take magnesium?")
+        XCTAssertEqual(store.supplementItems().map(\.canonical), ["Vitamin D", "Creatine taken?"])
+    }
+
+    /// #33: the Journal log card leaves Supplements out while answering and keeps it in edit mode.
+    func testJournalLogGroupsHideSupplementsOutsideEditMode() {
+        XCTAssertEqual(JournalGroup.journalLogGroups(editing: false),
+                       [.nutrition, .lifestyle, .health, .behaviour, .other])
+        XCTAssertEqual(JournalGroup.journalLogGroups(editing: true), JournalGroup.displayOrder)
+    }
+
     func testNumericJournalKeyIsNamespaced() {
         // The InsightsView folds a numeric journal series under a namespaced key that can never
         // collide with a fixed metric outcome ("recovery" / "hrv" / …).

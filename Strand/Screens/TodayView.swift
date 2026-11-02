@@ -1964,6 +1964,9 @@ struct TodayView: View {
             if selectedDayOffset == 0 { MenstrualCycleHomeCard() }
         case .journal:
             if selectedDayOffset == 0 { JournalReminderCard() }
+        case .supplements:
+            // #33: today's supplement intake, logged in place. Today only, like the journal widget.
+            if selectedDayOffset == 0 { SupplementsTodayCard() }
         case .addedCards:
             hostedCardsSection
         }

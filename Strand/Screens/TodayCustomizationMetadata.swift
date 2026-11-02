@@ -14,6 +14,7 @@ extension TodaySection {
         case .yourCards: return "rectangle.stack"
         case .menstrualCycle: return "drop.degreesign"
         case .journal: return "book.closed"
+        case .supplements: return "pills"
         case .addedCards: return "rectangle.stack.badge.plus"
         }
     }
@@ -30,6 +31,7 @@ extension TodaySection {
         case .yourCards: return StrandPalette.accent
         case .menstrualCycle: return StrandPalette.restColor
         case .journal: return StrandPalette.metricAmber
+        case .supplements: return StrandPalette.restColor
         case .addedCards: return StrandPalette.accent
         }
     }

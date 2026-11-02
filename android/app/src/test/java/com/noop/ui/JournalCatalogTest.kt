@@ -177,4 +177,38 @@ class JournalCatalogTest {
         assertTrue(e.answeredYes)
         assertEquals(180.0, e.numericValue!!, 0.0001)
     }
+
+    // MARK: - #33 Today Supplements card
+
+    /** The Today Supplements card lists every visible Supplements-group item (starter, custom, and a
+     *  regrouped imported question) in sortIndex order, and drops hidden items and other groups. Twin of
+     *  the macOS `testSupplementItemsFilterToVisibleSupplementsInOrder`, same scenario and expected list. */
+    @Test
+    fun supplementItemsFilterToVisibleSupplementsInOrder() {
+        var saved = emptyList<JournalCatalogItem>()
+        assertEquals(listOf("Did you take magnesium?"), supplementJournalItems(saved).map { it.canonical })
+
+        saved = addCustomJournalItem(saved, "Vitamin D", JournalKind.Numeric("IU"), JournalGroup.Supplements)
+        saved = setJournalItemGroup(saved, "Creatine taken?", JournalGroup.Supplements)   // imported, regrouped
+        saved = addCustomJournalItem(saved, "Fish oil", JournalKind.Bool, JournalGroup.Health)
+        assertEquals(
+            listOf("Vitamin D", "Creatine taken?", "Did you take magnesium?"),
+            supplementJournalItems(saved).map { it.canonical },
+        )
+        assertEquals("IU", supplementJournalItems(saved).first().kind.unitLabel)
+
+        saved = removeJournalItem(saved, "Did you take magnesium?")
+        assertEquals(listOf("Vitamin D", "Creatine taken?"), supplementJournalItems(saved).map { it.canonical })
+    }
+
+    /** The Journal log card leaves Supplements out while answering and keeps it in edit mode. */
+    @Test
+    fun journalLogGroupsHideSupplementsOutsideEditMode() {
+        assertEquals(
+            listOf(JournalGroup.Nutrition, JournalGroup.Lifestyle, JournalGroup.Health,
+                JournalGroup.Behaviour, JournalGroup.Other),
+            journalLogGroups(editing = false),
+        )
+        assertEquals(JournalGroup.displayOrder, journalLogGroups(editing = true))
+    }
 }

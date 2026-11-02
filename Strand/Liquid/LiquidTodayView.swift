@@ -383,6 +383,9 @@ struct LiquidTodayView: View {
                         // the card self-hides when the reminder toggle is off (an empty branch renders
                         // nothing yet keeps its slot). Twin of Android TodayScreen's JOURNAL arm.
                         case .journal: if selectedDayOffset == 0 { JournalReminderCard() }
+                        // #33: today's supplement intake, logged in place from the Journal's Supplements
+                        // group. Today only. Twin of Android TodayScreen's SUPPLEMENTS arm.
+                        case .supplements: if selectedDayOffset == 0 { SupplementsTodayCard() }
                         // #today-hosted-cards: cards the user pulled in from the Trends/Sleep tabs, in the
                         // order they arranged. Empty (renders nothing) until they add one in Customise.
                         // Today-only, matching Android's addedCards section gate + the classic TodayView.

@@ -2197,6 +2197,12 @@
     <string name="today_section_your_cards">Vos cartes</string>
     <string name="today_section_menstrual_cycle">Cycle menstruel</string>
     <string name="today_section_journal">Journal de bord</string>
+    <string name="today_section_supplements">Suppléments</string>
+    <string name="supplements_today_empty">Aucune question sur les suppléments pour l’instant.</string>
+    <string name="supplements_today_add_link">En ajouter une dans le journal</string>
+    <string name="journal_supplements_on_today_hint">Les suppléments se notent sur la carte Aujourd’hui. Touchez Modifier pour les gérer.</string>
+    <string name="journal_answer_yes">Oui</string>
+    <string name="journal_answer_no">Non</string>
     <string name="today_section_added_cards">Cartes ajoutées</string>
     <string name="today_hr_window_today">Aujourd’hui</string>
     <string name="today_hr_window_24h">24 h</string>

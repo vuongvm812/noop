@@ -2118,6 +2118,12 @@
     <string name="today_section_your_cards">你的卡片</string>
     <string name="today_section_menstrual_cycle">月经周期</string>
     <string name="today_section_journal">日志</string>
+    <string name="today_section_supplements">补充剂</string>
+    <string name="supplements_today_empty">还没有补充剂问题。</string>
+    <string name="supplements_today_add_link">在日志中添加</string>
+    <string name="journal_supplements_on_today_hint">补充剂在“今天”卡片上记录。轻点“编辑”进行管理。</string>
+    <string name="journal_answer_yes">是</string>
+    <string name="journal_answer_no">否</string>
     <string name="today_section_added_cards">已添加的卡片</string>
     <string name="today_hr_window_today">今天</string>
     <string name="today_hr_window_24h">24 小时</string>

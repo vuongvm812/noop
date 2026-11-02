@@ -2198,6 +2198,12 @@
     <string name="today_section_your_cards">Tus tarjetas</string>
     <string name="today_section_menstrual_cycle">Ciclo menstrual</string>
     <string name="today_section_journal">Diario</string>
+    <string name="today_section_supplements">Suplementos</string>
+    <string name="supplements_today_empty">Aún no hay preguntas sobre suplementos.</string>
+    <string name="supplements_today_add_link">Añade una en el diario</string>
+    <string name="journal_supplements_on_today_hint">Los suplementos se registran en la tarjeta de Hoy. Toca Editar para gestionarlos.</string>
+    <string name="journal_answer_yes">Sí</string>
+    <string name="journal_answer_no">No</string>
     <string name="today_section_added_cards">Tarjetas añadidas</string>
     <string name="today_hr_window_today">Hoy</string>
     <string name="today_hr_window_24h">24 h</string>

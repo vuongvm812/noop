@@ -246,7 +246,9 @@ fun JournalLogCard(
                     color = Palette.textTertiary,
                 )
                 // Grouped, collapsible blocks in the fixed display order. Empty groups hide outside edit.
-                JournalGroup.displayOrder.forEach { group ->
+                // #33: Supplements are answered on the Today Supplements card, so that group only shows
+                // in edit mode, where its questions are still added, renamed and removed.
+                journalLogGroups(editing).forEach { group ->
                     val groupItems = items.filter { it.group == group }
                         .sortedWith(compareBy({ it.sortIndex }, { it.display }))
                     if (groupItems.isNotEmpty() || editing) {
@@ -266,6 +268,13 @@ fun JournalLogCard(
                             onRestoreQuestion = onRestoreQuestion,
                         )
                     }
+                }
+                if (!editing) {
+                    Text(
+                        uiString(R.string.journal_supplements_on_today_hint),
+                        style = NoopType.footnote,
+                        color = Palette.textTertiary,
+                    )
                 }
                 JournalDivider()
                 JournalAddRow(onAddCustom = onAddCustom)
@@ -338,14 +347,8 @@ private fun JournalGroupBlock(
                             onCommit = { onNumeric(item.canonical, it) },
                             onClear = { onClear(item.canonical) },
                         )
-                        else -> {
-                            JournalChip("Yes", selected = answers[item.canonical] == true) {
-                                if (answers[item.canonical] == true) onClear(item.canonical) else onAnswer(item.canonical, true)
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            JournalChip("No", selected = answers[item.canonical] == false) {
-                                if (answers[item.canonical] == false) onClear(item.canonical) else onAnswer(item.canonical, false)
-                            }
+                        else -> JournalAnswerChips(answer = answers[item.canonical]) { answer ->
+                            if (answer == null) onClear(item.canonical) else onAnswer(item.canonical, answer)
                         }
                     }
                 }
@@ -354,9 +357,30 @@ private fun JournalGroupBlock(
     }
 }
 
-/** Compact numeric log field: current value or a placeholder, commits a Double, with -/+ steppers. */
+// MARK: - Shared row controls (#33)
+//
+// The answer controls for one journal item, shared by the Journal log card and the Today Supplements card
+// so both surfaces log identically. They only render and report; the host owns the write.
+
+/** Yes / No chips for a yes/no journal item. Tri-state: re-tapping the selected chip reports `null`
+ *  (clear the answer); tapping the other chip reports its value. Twin of macOS `JournalAnswerPills`. */
 @Composable
-private fun JournalNumericField(
+internal fun JournalAnswerChips(answer: Boolean?, onSelect: (Boolean?) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        JournalChip(uiString(R.string.journal_answer_yes), selected = answer == true) {
+            onSelect(if (answer == true) null else true)
+        }
+        Spacer(Modifier.width(6.dp))
+        JournalChip(uiString(R.string.journal_answer_no), selected = answer == false) {
+            onSelect(if (answer == false) null else false)
+        }
+    }
+}
+
+/** Compact numeric log field: current value or a placeholder, commits a Double, with -/+ steppers.
+ *  Shared with the Today Supplements card. Twin of macOS `JournalNumericControl`. */
+@Composable
+internal fun JournalNumericField(
     item: JournalCatalogItem,
     value: Double?,
     onCommit: (Double) -> Unit,
@@ -531,7 +555,7 @@ private fun JournalDivider() {
 /** A pill chip, filled with the accent when selected, hairline-bordered otherwise. Shared by the
  *  day toggle, the yes/no answers, and the "Add" action so they read identically. */
 @Composable
-private fun JournalChip(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun JournalChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     Text(
         label,

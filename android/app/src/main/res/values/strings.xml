@@ -2319,6 +2319,12 @@
     <string name="today_section_your_cards">Your Cards</string>
     <string name="today_section_menstrual_cycle">Menstrual Cycle</string>
     <string name="today_section_journal">Journal</string>
+    <string name="today_section_supplements">Supplements</string>
+    <string name="supplements_today_empty">No supplement questions yet.</string>
+    <string name="supplements_today_add_link">Add one in the Journal</string>
+    <string name="journal_supplements_on_today_hint">Supplements are logged on the Today card. Tap Edit to manage them.</string>
+    <string name="journal_answer_yes">Yes</string>
+    <string name="journal_answer_no">No</string>
     <string name="today_section_added_cards">Added Cards</string>
     <string name="today_hr_window_today">Today</string>
     <string name="today_hr_window_24h">24h</string>

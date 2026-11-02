@@ -2196,6 +2196,12 @@
     <string name="today_section_your_cards">Twoje karty</string>
     <string name="today_section_menstrual_cycle">Cykl menstruacyjny</string>
     <string name="today_section_journal">Dziennik</string>
+    <string name="today_section_supplements">Suplementy</string>
+    <string name="supplements_today_empty">Brak pytań o suplementy.</string>
+    <string name="supplements_today_add_link">Dodaj w dzienniku</string>
+    <string name="journal_supplements_on_today_hint">Suplementy zapisujesz na karcie Dziś. Stuknij Edytuj, aby nimi zarządzać.</string>
+    <string name="journal_answer_yes">Tak</string>
+    <string name="journal_answer_no">Nie</string>
     <string name="today_section_added_cards">Dodane karty</string>
     <string name="today_hr_window_today">Dzisiaj</string>
     <string name="today_hr_window_24h">24 godz.</string>

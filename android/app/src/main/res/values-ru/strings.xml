@@ -2161,6 +2161,12 @@
     <string name="today_section_your_cards">ВАШИ КАРТОЧКИ</string>
     <string name="today_section_menstrual_cycle">Менструальный цикл</string>
     <string name="today_section_journal">Журнал</string>
+    <string name="today_section_supplements">Добавки</string>
+    <string name="supplements_today_empty">Вопросов о добавках пока нет.</string>
+    <string name="supplements_today_add_link">Добавить в журнале</string>
+    <string name="journal_supplements_on_today_hint">Добавки отмечаются на карточке «Сегодня». Нажмите «Изменить», чтобы управлять ими.</string>
+    <string name="journal_answer_yes">Да</string>
+    <string name="journal_answer_no">Нет</string>
     <string name="today_section_added_cards">Добавленные карточки</string>
     <string name="today_hr_window_today">Сегодня</string>
     <string name="today_hr_window_24h">24ч</string>
