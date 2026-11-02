@@ -270,6 +270,8 @@ private struct DevicesContent: View {
                     // families. Same Test Centre → Connection gate.
                     onDeviceConfigProbe: probeGate ? { deviceConfigProbeTarget = device } : nil)
                     .staggeredAppear(index: idx)
+                // The active Garmin watch's battery / last sync / Sync now / continuous-live panel.
+                GarminDevicePanelSlot(device: device)
             }
 
             addButton
@@ -520,6 +522,7 @@ private struct DevicesContent: View {
         case .heartRate: return "Heart rate"
         case .hrv:       return "HRV"
         case .spo2:      return "SpO₂"
+        case .respiration: return "Respiration"
         case .skinTemp:  return "Skin temp"
         case .steps:     return "Steps"
         case .sleep:     return "Sleep"
@@ -700,6 +703,22 @@ private struct DeviceSyncStatusCard: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(accessibility))
+    }
+}
+
+// MARK: - Garmin watch panel slot
+
+/// Shows `GarminWatchPanel` under the ACTIVE `.garmin` device card while the coordinator has its source
+/// live; nothing for any other device. Its own view so the Devices `ForEach` stays within the iOS
+/// type-checker budget.
+private struct GarminDevicePanelSlot: View {
+    let device: PairedDevice
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        if device.status == .active, device.sourceKind == .garmin, let source = model.garminSource {
+            GarminWatchPanel(source: source)
+        }
     }
 }
 
@@ -1103,6 +1122,7 @@ private struct DeviceCard: View {
         if device.sourceKind == .huami { return "waveform.path.ecg.rectangle" }
         if device.sourceKind == .liveAppleWatch { return "applewatch" }
         if device.sourceKind == .oura { return "circle.circle" }
+        if device.sourceKind == .garmin { return "applewatch" }
         return SourceCoordinator.isWhoop(device) ? "applewatch.side.right" : "heart.circle"
     }
 
@@ -1220,6 +1240,15 @@ struct DeviceCapabilityProfile {
                 captures: captures,
                 powers: powers,
                 footnote: String(localized: "Beta. * is an on-device estimate. Skin temp is a trend versus your own baseline, and HRV needs you to be still. No Oura Readiness or SpO₂ percentage comes off the ring (import an Oura file for those)."))
+        }
+        // EXPERIMENTAL Garmin watch over its own GFDI protocol: the watch's own history files plus live
+        // channels on demand. Read-only. Effort from a Garmin day is still labelled experimental.
+        if d.sourceKind == .garmin {
+            return DeviceCapabilityProfile(
+                displayModel: String(localized: "\(d.model) (experimental)"),
+                captures: String(localized: "Heart rate · R-R · Sleep · Steps · SpO₂ · Respiration · Stress · Body Battery · HRV"),
+                powers: String(localized: "Powers Charge, Effort and Rest from the watch's own data. Effort is experimental"),
+                footnote: String(localized: "Experimental. Read-only: NOOP downloads the watch's files and never deletes or changes them. Garmin's stress and Body Battery are shown as Garmin reports them."))
         }
         // Apple Watch (live HealthKit source). UNLIKE the WHOOP/strap branches, the watch's stored
         // capability `Set` is already the honest per-model trim (AppleWatchDevice only adds a metric

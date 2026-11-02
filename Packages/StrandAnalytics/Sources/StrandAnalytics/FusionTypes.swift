@@ -25,6 +25,12 @@ public enum FusionSource: String, Equatable, Sendable, CaseIterable, Codable {
     case healthConnect = "health-connect"
     /// Mi Band / Xiaomi import — a dedicated wrist band (counts steps directly).
     case xiaomiBand = "xiaomi-band"
+    /// A Garmin watch synced over its own protocol (Garmin child 9). Its rows live under the watch's
+    /// registry id ("garmin-<uuid>"), so the stored id is mapped through `forStoredSourceId`; this raw value
+    /// is only the canonical name. The watch's OWN values (resting HR, overnight HRV, SpO2, respiration,
+    /// stress, Body Battery, sleep stages and score) are primary; NOOP computes Charge / Effort / Rest from
+    /// them. A Garmin Connect CSV export ("garmin-import") is a different source and does not map here.
+    case garminWatch = "garmin-watch"
     /// Nutrition CSV import (single-source passthrough — calories/macros).
     case nutritionCsv = "nutrition-csv"
     /// Locally-cached fallback row with no richer provenance.
@@ -38,9 +44,24 @@ public enum FusionSource: String, Equatable, Sendable, CaseIterable, Codable {
         case .appleHealth:   return "Apple Health"
         case .healthConnect: return "Health Connect"
         case .xiaomiBand:    return "Mi Band"
+        case .garminWatch:   return "Garmin"
         case .nutritionCsv:  return "Nutrition"
         case .localCache:    return "Cached"
         }
+    }
+
+    /// Map a STORED source id (a `dailyMetric.deviceId` / resolver source) onto its fusion source. A paired
+    /// Garmin watch is stored under its registry id, "garmin-" + a per-device suffix, so it cannot round-trip
+    /// through `rawValue`; every other source does. "garmin-import" (a Garmin Connect CSV export) and a
+    /// computed "-noop" sibling are not the watch. Kotlin twin: `FusionSource.forStoredSourceId`.
+    public static func forStoredSourceId(_ id: String) -> FusionSource? {
+        if isGarminWatchId(id) { return .garminWatch }
+        return FusionSource(rawValue: id)
+    }
+
+    /// True for a paired Garmin watch's registry id. Kotlin twin: `FusionSource.isGarminWatchId`.
+    public static func isGarminWatchId(_ id: String) -> Bool {
+        id.hasPrefix("garmin-") && id != "garmin-import" && !id.hasSuffix("-noop")
     }
 }
 

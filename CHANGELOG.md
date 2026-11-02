@@ -17,6 +17,28 @@ approximate; downloads are on the [Releases](https://github.com/NoopApp/noop/rel
 
 ---
 
+## Unreleased: Garmin watches (experimental, all platforms)
+
+- **Pair a Garmin watch over its own protocol.** Add a device → Garmin watch walks through Pair Phone on
+  the watch, finds it (including a watch the OS already holds connected), and shows its model, firmware
+  and protocol variant once the handshake completes. A watch whose protocol NOOP does not speak says so
+  plainly and offers Broadcast Heart Rate instead, which also stays one tap away from the start.
+- **Read-only history sync.** The watch's own files (sleep, heart rate, steps, stress, Body Battery,
+  SpO2, respiration, HRV, activities) are downloaded and stored on the device, and Today, Sleep and
+  Trends re-score as soon as a sync stores new files. NOOP never deletes, archives or flags anything on
+  the watch.
+- **Devices and Data Sources** show the watch's state, battery (where the watch reports it), last sync
+  and Sync now, and an off-by-default Continuous live toggle that says its battery cost is not measured
+  yet rather than guessing.
+- **Live** adds Body Battery, respiration, steps, floors and an on-request SpO2 reading. The watch's live
+  channels open only while the screen is open and close 30 seconds after you leave.
+- **Test Centre → Garmin**: the current connect, radio counters, the realtime capture of channels 8 / 10
+  / 13, and the list of files on the watch against what NOOP has stored.
+- Tested on a Forerunner 165 on macOS. Coexistence with a connected Garmin Connect, battery drain, and
+  iOS / Android on hardware are still being validated; see docs/GARMIN.md.
+
+---
+
 ## 12.0.0: Today your way, heart rate any app can read, and Italian (all platforms)
 
 A major release about choice and about honesty. Today can be drawn two different ways, a WHOOP 4.0 can

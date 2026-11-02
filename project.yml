@@ -66,6 +66,10 @@ packages:
   # record. The live PMD data path is not wired yet — this is identification/diagnostics only.
   PolarProtocol:
     path: Packages/PolarProtocol
+  # Clean-room Garmin GFDI / multi-link protocol: framing, codecs, the send allowlist and the pure session
+  # state machine. Zero CoreBluetooth; the app target imports it for the experimental GarminSource.
+  GarminProtocol:
+    path: Packages/GarminProtocol
   # Compresses the full-database `.noopbak` backup (single-entry deflate ZIP) in DataBackup.swift.
   # Already resolved transitively via StrandImport; linked directly so the app target can
   # `import ZIPFoundation`. Same exact version as StrandImport's, so SPM resolves one copy.
@@ -158,6 +162,7 @@ targets:
       - package: ZIPFoundation
       - package: OuraProtocol
       - package: PolarProtocol
+      - package: GarminProtocol
   StrandTests:
     type: bundle.unit-test
     platform: macOS
@@ -188,6 +193,7 @@ targets:
       - package: WhoopProtocol
       - package: WhoopStore
       - package: OuraProtocol
+      - package: GarminProtocol
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -363,6 +369,7 @@ targets:
       - package: MarkdownUI
       - package: ZIPFoundation
       - package: PolarProtocol
+      - package: GarminProtocol
       - target: NOOPiOSWidgets
       # Embed the watchOS app so the iPhone app carries it (NOOP.app/Watch/NOOPWatch.app). A watch app
       # installs by riding inside its iOS companion; without this it would never reach a paired watch.

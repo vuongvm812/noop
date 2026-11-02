@@ -51,7 +51,8 @@ final class DeviceBrandCatalogTests: XCTestCase {
         XCTAssertEqual(spec("Mi Band").sourceKind, .huami)
         XCTAssertEqual(spec("Oura").sourceKind, .oura)
         // Garmin + generic straps are standard 0x180D live-BLE (no proprietary protocol).
-        XCTAssertEqual(spec("Garmin").sourceKind, .liveBLE)
+        XCTAssertEqual(spec("Garmin").sourceKind, .garmin)
+        XCTAssertEqual(SourceKind.garmin.rawValue, "garmin")   // stable cross-platform store encoding
         XCTAssertEqual(spec("Polar").sourceKind, .liveBLE)
         // id prefixes match the wizard's registration.
         XCTAssertEqual(spec("Amazfit").idPrefix, "huami")

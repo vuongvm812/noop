@@ -51,7 +51,12 @@ object FusionDayAdapter {
      * and byte-identical behaviour.
      */
     private fun sourceIds(activeStrapId: String): List<Pair<FusionSource, List<String>>> = listOf(
-        FusionSource.WHOOP_IMPORT to WhoopRepository.importedSourceIdsFor(activeStrapId),
+        // A Garmin watch as the active device is its OWN fusion source (Garmin child 9): its rows are the
+        // watch's measured values, not a WHOOP import, so they are tiered as GARMIN_WATCH.
+        FusionSource.GARMIN_WATCH to
+            (if (FusionSource.isGarminWatchId(activeStrapId)) listOf(activeStrapId) else emptyList()),
+        FusionSource.WHOOP_IMPORT to WhoopRepository.importedSourceIdsFor(activeStrapId)
+            .filterNot { FusionSource.isGarminWatchId(it) },
         FusionSource.NOOP_COMPUTED to WhoopRepository.computedSourceIdsFor(activeStrapId),
         FusionSource.APPLE_HEALTH to listOf(WhoopRepository.APPLE_HEALTH_SOURCE),
         FusionSource.HEALTH_CONNECT to listOf(WhoopRepository.HEALTH_CONNECT_SOURCE),
@@ -131,6 +136,7 @@ object FusionDayAdapter {
         FusionSource.WHOOP_IMPORT -> 1     // the strap's own banked day
         FusionSource.NOOP_COMPUTED -> 0    // on-device computed from the active strap = the live owner
         FusionSource.XIAOMI_BAND -> 1
+        FusionSource.GARMIN_WATCH -> 1
         FusionSource.APPLE_HEALTH -> 2
         FusionSource.HEALTH_CONNECT -> 2
         FusionSource.NUTRITION_CSV -> 3

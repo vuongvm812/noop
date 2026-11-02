@@ -16,7 +16,7 @@ public struct DeviceBrandSpec: Sendable, Equatable {
     /// order (most specific first) so a Huami sub-brand like Mi Band wins over the broader Amazfit tokens.
     public let nameTokens: [String]
     /// The routing kind stored on the device (drives `SourceCoordinator.makeSource`). `.liveBLE` for a brand
-    /// whose live HR is the standard 0x180D broadcast (generic straps + Garmin); `.huami` / `.oura` for the
+    /// whose live HR is the standard 0x180D broadcast (generic straps); `.huami` / `.oura` / `.garmin` for the
     /// experimental custom-protocol sources.
     public let sourceKind: SourceKind
     /// The registry id prefix for a device of this brand ("huami", "oura", "garmin", "strap").
@@ -51,7 +51,7 @@ public enum DeviceBrandCatalog {
                         sourceKind: .huami, idPrefix: "huami", canStreamLiveHR: true, isExperimentalTier: true),
         DeviceBrandSpec(brand: "Garmin",
                         nameTokens: ["garmin", "forerunner", "fenix", "vivoactive", "venu", "instinct", "epix", "vivosmart", "hrm"],
-                        sourceKind: .liveBLE, idPrefix: "garmin", canStreamLiveHR: true, isExperimentalTier: true),
+                        sourceKind: .garmin, idPrefix: "garmin", canStreamLiveHR: true, isExperimentalTier: true),
         DeviceBrandSpec(brand: "Oura", nameTokens: ["oura"],
                         sourceKind: .oura, idPrefix: "oura", canStreamLiveHR: false, isExperimentalTier: true),
         // Shipped generic HR straps — standard 0x180D broadcast, labelled for display only. All route as a

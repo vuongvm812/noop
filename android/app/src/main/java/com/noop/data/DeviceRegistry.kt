@@ -127,6 +127,8 @@ class DeviceRegistry(
         dao.reKeyPpgHr(from, to); dao.deletePpgHrFor(from)
         dao.reKeyPpgWaveform(from, to); dao.deletePpgWaveformFor(from)
         dao.reKeyEcgWaveform(from, to); dao.deleteEcgWaveformFor(from)
+        dao.reKeyDeviceMetric(from, to); dao.deleteDeviceMetricFor(from)
+        dao.reKeyGarminSyncedFiles(from, to); dao.deleteGarminSyncedFilesFor(from)
         dao.reKeyV18Aux(from, to); dao.deleteV18AuxFor(from)
         dao.reKeyEvents(from, to); dao.deleteEventsFor(from)
         dao.reKeyBattery(from, to); dao.deleteBatteryFor(from)
@@ -197,7 +199,7 @@ class DeviceRegistry(
      *
      * The table set is EVERY device-keyed table of [WhoopDatabase]: hrSample, rrInterval, spo2Sample,
      * skinTempSample, respSample, gravitySample, stepSample, ppgHrSample, ppgWaveformSample,
-     * ecgWaveformSample, event, battery, dailyMetric,
+     * ecgWaveformSample, deviceMetricSample, garminSyncedFile, event, battery, dailyMetric,
      * sleepSession, journal, workout, appleDaily, metricSeries, dayOwnership, sleepStateSample, labMarker,
      * liveSession, dismissedWorkout, dismissedSleep. DeviceRegistryTest.deleteDeviceDataCallsEveryDaoDeleteMethod
      * guards completeness (fails if a delete*For DAO method isn't wired in here).
@@ -214,6 +216,10 @@ class DeviceRegistry(
             dao.deletePpgHrFor(id)
             dao.deletePpgWaveformFor(id)
             dao.deleteEcgWaveformFor(id)
+            dao.deleteDeviceMetricFor(id)
+            // The sync ledger goes with the samples: otherwise a later sync would skip files still on
+            // the watch as "already ingested" and never restore the deleted data.
+            dao.deleteGarminSyncedFilesFor(id)
             dao.deleteV18AuxFor(id)
             dao.deleteEventsFor(id)
             dao.deleteBatteryFor(id)

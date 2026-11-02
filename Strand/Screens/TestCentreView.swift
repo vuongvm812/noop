@@ -65,6 +65,10 @@ struct TestCentreView: View {
         return PolarModel.debugIdentification(advertisedName: name)
     }
 
+    // The Garmin section (connect readouts, radio counters, realtime capture, sync files), only offered when
+    // a Garmin watch is paired over GFDI (not the Broadcast Heart Rate fallback, which has none of these).
+    private var garminPaired: Bool { model.deviceRegistry?.devices.contains { $0.sourceKind == .garmin } ?? false }
+
     // #1284 residual 3: experimental Oura 0x49-onset keying, only offered when an Oura ring is paired.
     @AppStorage(AppModel.ouraOnsetKeyingKey) private var ouraOnsetKeying = false
     // Packed-notification A/B: the official app's SetNotification mask `ff` vs NOOP's `3f`, next connect.
@@ -169,6 +173,8 @@ struct TestCentreView: View {
                 if is5MG { rawDataCollectorCard.staggeredAppear(index: 2) }
                 if is5MG { fiveMGProtocolDiagnosticsCard.staggeredAppear(index: 3) }
                 if ouraPaired { ouraCard.staggeredAppear(index: 2) }
+                // Garmin: connect readouts, radio counters, capture mode, sync files (GarminTestCentreCard).
+                if garminPaired { GarminTestCentreCard().staggeredAppear(index: 2) }
                 exportCard.staggeredAppear(index: 2)
                 experimentalAlgorithmsCard.staggeredAppear(index: 3)
             }
@@ -397,6 +403,7 @@ struct TestCentreView: View {
                     }
                     .tint(StrandPalette.accent)
                 }
+
             }
         }
     }

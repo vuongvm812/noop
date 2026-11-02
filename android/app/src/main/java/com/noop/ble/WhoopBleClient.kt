@@ -142,6 +142,10 @@ data class LiveState(
      *  branch and false at every teardown. Twin of macOS LiveState.streamingLiveHR (#903). */
     val streamingLiveHR: Boolean = false,
     val heartRate: Int? = null,
+    /** The latest live values an EXPERIMENTAL Garmin watch reported on its realtime channels (Body Battery,
+     *  respiration, SpO2, steps, floors, resting HR). Null when no Garmin is streaming; a field is null when
+     *  its channel is closed or the watch sent its "unknown" code. Twin of macOS LiveState.garminLive. */
+    val garminLive: com.noop.garmin.GarminLiveSnapshot? = null,
     val rr: List<Int> = emptyList(),
     /** Monotonic count of R-R packet arrivals, bumped by every [withRRIntervals] call. Consume
      *  packets via `Flow<LiveState>.rrPackets()` (keyed on this), never by watching [rr] — see
@@ -321,7 +325,8 @@ data class LiveState(
      *  strip can't outlive the link. Applied on disconnect alongside the charging/bond clears. Twin of
      *  macOS LiveState.clearBiometrics (PR#191). */
     fun clearedBiometrics(): LiveState = copy(heartRate = null, rr = emptyList(), rrRecent = emptyList(),
-                                              streamingLiveHR = false)   // #56: a dropped link is no longer streaming
+                                              streamingLiveHR = false,   // #56: a dropped link is no longer streaming
+                                              garminLive = null)
 }
 
 /**
@@ -2318,6 +2323,21 @@ class WhoopBleClient(
         if (pct in 0..100) _state.update { it.copy(batteryPct = pct.toDouble()) }
     }
 
+    /** Surface an EXPERIMENTAL Garmin watch's live snapshot (null clears it). Same seam as [publishExternalLiveHr]. */
+    fun publishExternalGarminLive(snapshot: com.noop.garmin.GarminLiveSnapshot?) {
+        _state.update { it.copy(garminLive = snapshot) }
+    }
+
+    /**
+     * Blank a non-WHOOP source's live heart rate and latest R-R packet: its HR channel closed (an EXPERIMENTAL
+     * Garmin watch closes it when nobody is watching), so the last number must not stand. The rolling
+     * [LiveState.rrRecent] strip is left alone, as on macOS `LiveState.clearLiveHeartRate`. Called only while
+     * WHOOP's own BLE is paused, like [publishExternalLiveHr].
+     */
+    fun clearExternalLiveHr() {
+        _state.update { it.copy(heartRate = null, rr = emptyList(), streamingLiveHR = false) }
+    }
+
     // MARK: Android Bluetooth handles.
     private val bluetoothManager: BluetoothManager? =
         context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
@@ -3171,6 +3191,12 @@ class WhoopBleClient(
         decodedChunksThisSession += 1   // invoked once per non-empty decoded chunk (#77 family tally)
         schedulePostBackfillAnalysis()
     }
+
+    /**
+     * Another source (a Garmin watch's history sync) stored new history: run the same debounced post-offload
+     * scoring pass a completed WHOOP backfill schedules.
+     */
+    fun requestPostSyncAnalysis() = schedulePostBackfillAnalysis()
 
     private fun schedulePostBackfillAnalysis() {
         if (!analyzeAfterBackfillScheduled.compareAndSet(false, true)) {

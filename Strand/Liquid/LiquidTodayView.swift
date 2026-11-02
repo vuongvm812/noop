@@ -1930,12 +1930,31 @@ struct LiquidTodayView: View {
     /// two distinct winners in Charge / Effort / Rest order so the compact badge stays readable.
     private var heroSourceLabel: String? {
         Self.heroSourceLabel(
-            providers: ["recovery", "strain", "sleep_performance"].compactMap { heroProviderByMetric[$0] })
+            providers: ["recovery", "strain", "sleep_performance"].compactMap { heroProviderByMetric[$0] },
+            effortProvider: heroProviderByMetric["strain"])
     }
 
     /// Pure aggregation seam for the Liquid hero. The provider mapper names the sensors/imports that
     /// supplied the score inputs; identical names collapse and the compact badge is capped at two.
-    static func heroSourceLabel(providers: [ScoreInputProvider]) -> String? {
+    ///
+    /// Garmin child 9: when the displayed Effort was scored from a Garmin watch's heart rate, the badge says
+    /// it is experimental (`GarminScoringInputs.effortIsExperimental`) until a multi-day comparison
+    /// validates it. Kotlin twin: `scoreHeroSourceLabel` + `heroEffortExperimental`.
+    static func heroSourceLabel(providers: [ScoreInputProvider],
+                                effortProvider: ScoreInputProvider? = nil) -> String? {
+        let names = heroSourceNames(providers: providers)
+        guard heroEffortExperimental(effortProvider) else { return names }
+        let flag = String(localized: "Effort experimental")
+        return names.map { "\($0) · \(flag)" } ?? flag
+    }
+
+    /// True when the hero's Effort came from a provider whose Effort is still experimental.
+    static func heroEffortExperimental(_ provider: ScoreInputProvider?) -> Bool {
+        guard let provider else { return false }
+        return GarminScoringInputs.effortIsExperimental(sourceId: provider.sourceId, brand: provider.brand)
+    }
+
+    private static func heroSourceNames(providers: [ScoreInputProvider]) -> String? {
         var seen = Set<String>()
         var labels: [String] = []
         for provider in providers {

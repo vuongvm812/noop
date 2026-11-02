@@ -1498,6 +1498,15 @@ final class IntelligenceEngine: ObservableObject {
                             day: day, attempted: false, reason: "stored-sessions-exist",
                             gravRows: grav.count, storedNights: stored.count))
                         providedSleep = []
+                    } else if FusionSource.isGarminWatchId(owner) {
+                        // Garmin child 9: the watch stages its own nights (SLEEP_LEVEL) and is primary for
+                        // sleep, so a day with no stored watch night has no night. Staging one from its
+                        // heart rate invented 43-hour "nights" from run HR on real Forerunner 165 days.
+                        // Kotlin twin: the same arm in `IntelligenceEngine.analyzeRecentOnCpu`.
+                        traceSink?(SleepStager.GateTrace.hrOnlyGateLine(
+                            day: day, attempted: false, reason: "watch-stages-its-own-sleep",
+                            gravRows: grav.count, storedNights: 0))
+                        providedSleep = []
                     } else {
                         // Reachable for ANY owner now, which widens this past the 5/MG it was built for:
                         // a WHOOP 4.0 day that banked nothing at all also lands here, where the owner
@@ -1932,11 +1941,29 @@ final class IntelligenceEngine: ObservableObject {
         // #1169: its coverage inputs (valid-sample count + primary-session duration), same lifetime as the mean.
         var primarySessionRHRCoverageByDay: [String: PrimarySessionRestingHR.Coverage] = [:]
 
+        // Garmin child 9: a day a Garmin watch owns scores from the watch's OWN resting HR, overnight HRV and
+        // respiration, each decided against NOOP's sparse-HR estimate by the one fusion resolver
+        // (`GarminScoringInputs`). Applied here, before the nightly maps and pass 2 read the row, so the
+        // baselines, Charge and the persisted row all carry the value the dashboard shows. Every other owner
+        // returns nil and its row is untouched.
+        let recoveryTraceOn = TestCentre.active(.recovery)
+        var garminDailyByDay: [String: DailyMetric] = [:]
+        for scan in scanned {
+            let res = scan.result
+            let blocks = res.mainNightBlocks.isEmpty
+                ? res.cachedSleep.map { GarminScoringInputs.Night(start: $0.startTs, end: $0.endTs) }
+                : res.mainNightBlocks.map { GarminScoringInputs.Night(start: $0.start, end: $0.end) }
+            guard let (resolved, r) = await Self.garminResolvedDaily(res.daily, owner: scan.readOwner,
+                                                                    nights: blocks, store: store) else { continue }
+            garminDailyByDay[res.daily.day] = resolved
+            if recoveryTraceOn { diagnosticSink?(Self.garminVitalsLine(day: res.daily.day, r), .recovery) }
+        }
         // Back on the main actor: fold the off-actor results into the pass-2 state in the SAME order the
         // loop produced them. Pure assignment / appends , no further store reads , so this is cheap and the
         // main actor was free during the heavy enumeration above.
         for scan in scanned {
-            let res = scan.result
+            let raw = scan.result
+            let res = garminDailyByDay[raw.daily.day].map { raw.with(daily: $0) } ?? raw
             readOwnerByDay[res.daily.day] = (scan.readOwner, scan.hrRows)
             resolvedScoreOwnerByDay[res.daily.day] = scan.readOwner
             nightlyHrvByDay[res.daily.day] = res.daily.avgHrv
@@ -2033,12 +2060,18 @@ final class IntelligenceEngine: ObservableObject {
         // Baselines+Trace is deliberately pure so it cannot read the pref itself, and letting the scored
         // fold take its UserDefaults default while the trace read its own copy would leave a window -
         // however small - where a diagnostic describes a fold the score did not perform.
-        let hrvEpoch = Baselines.hrvBaselineEpoch()
+        // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
+        // switch to or from one starts a new baseline era for both (#459). 0 when no night in the window is
+        // a Garmin night, so every other history folds exactly as before.
+        let garminEraEpoch = GarminScoringInputs.baselineEraEpoch(
+            respCandidateDays.map { (day: $0, sourceId: respSourceByDay[$0] ?? deviceId) })
+        let hrvEpoch = max(Baselines.hrvBaselineEpoch(), garminEraEpoch)
+        let rhrEpoch = max(recoveryEpoch, garminEraEpoch)
         let hrvHistory = ChargeBaselines.history(imported: importedNights { $0.avgHrv }, own: ownNights(nightlyHrvByDay),
                                                  anchorDay: newestDay, cfg: hrvCfg, baselineEpoch: hrvEpoch)
         let rhrHistory = ChargeBaselines.history(imported: importedNights { $0.restingHr.map(Double.init) },
                                                  own: ownNights(nightlyRhrByDay),
-                                                 anchorDay: newestDay, cfg: rhrCfg, baselineEpoch: recoveryEpoch)
+                                                 anchorDay: newestDay, cfg: rhrCfg, baselineEpoch: rhrEpoch)
         let respHistory = ChargeBaselines.history(imported: importedNights { $0.respRateBpm }, own: ownNights(nightlyRespByDay),
                                                   anchorDay: newestDay, cfg: respCfg, baselineEpoch: respEpoch)
         // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
@@ -2078,7 +2111,7 @@ final class IntelligenceEngine: ObservableObject {
             hrv: Baselines.foldHistory(hrvHistory.values, dayKeys: hrvHistory.dayKeys, cfg: hrvCfg,
                                        baselineEpoch: hrvEpoch),
             restingHR: Baselines.foldHistory(rhrHistory.values, dayKeys: rhrHistory.dayKeys, cfg: rhrCfg,
-                                             baselineEpoch: recoveryEpoch),
+                                             baselineEpoch: rhrEpoch),
             resp: respFold.usable ? respFold : nil,
             skinTemp: skinFold.usable ? skinFold : nil)
 
@@ -2465,7 +2498,11 @@ final class IntelligenceEngine: ObservableObject {
         // already scored this pass (`dailies`) or owned by a WHOOP/Apple import. The window matches the
         // computed reconcile below, so the fold's rows survive the stale-row eviction.
         var importScoredDays = Set(dailies.map { $0.day }).union(importedWhoopDays).union(appleHealthDays)
-        for source in Repository.wearableImportSources {
+        // Garmin child 9: a paired Garmin watch's own day rows (resting HR + last-night HRV from its history
+        // sync) fold the same way on a day the raw-HR loop could not score (too little HR synced), so the
+        // watch's days are not left blank. Days the loop scored stay excluded above.
+        let garminWatchSources = regDevices.map(\.id).filter { FusionSource.isGarminWatchId($0) }.sorted()
+        for source in Repository.wearableImportSources + garminWatchSources {
             let rows = ((try? await store.dailyMetrics(deviceId: source, from: oldestDay, to: newestDay)) ?? [])
                 .sorted { $0.day < $1.day }
             guard !rows.isEmpty else { continue }
@@ -3562,6 +3599,55 @@ final class IntelligenceEngine: ObservableObject {
     }
 }
 
+extension IntelligenceEngine {
+    /// Garmin child 9: rebuild a Garmin-owned day's row with the watch's own resting HR, overnight HRV and
+    /// respiration where the arbitration table prefers them (`GarminScoringInputs.resolve`). nil for any
+    /// other owner. Reads the watch's day row and its HRV / respiration samples inside `nights`.
+    nonisolated static func garminResolvedDaily(_ daily: DailyMetric, owner: String,
+                                                nights: [GarminScoringInputs.Night],
+                                                store: WhoopStore) async
+        -> (DailyMetric, GarminScoringInputs.Resolution)? {
+        guard FusionSource.isGarminWatchId(owner) else { return nil }
+        let watchRow = (try? await store.dailyMetrics(deviceId: owner, from: daily.day, to: daily.day))?.first
+        var hrv: [GarminScoringInputs.Sample] = []
+        var resp: [GarminScoringInputs.Sample] = []
+        if let lo = nights.map(\.start).min(), let hi = nights.map(\.end).max() {
+            hrv = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .hrvMs, from: lo, to: hi)) ?? [])
+                .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
+            resp = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .respirationBpm,
+                                                          from: lo, to: hi)) ?? [])
+                .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
+        }
+        let r = GarminScoringInputs.resolve(
+            computedRestingHr: daily.restingHr, computedHrv: daily.avgHrv, computedResp: daily.respRateBpm,
+            watch: watchRow.map { .init(restingHr: $0.restingHr, lastNightHrvMs: $0.avgHrv) },
+            hrvSamples: hrv, respSamples: resp, nights: nights)
+        return (daily.with(restingHr: r.restingHr, avgHrv: r.avgHrv, respRateBpm: r.respRateBpm), r)
+    }
+
+    /// The Recovery-domain trace line for one Garmin-owned day: each scoring input and the source that won
+    /// it. Names only what the resolver decided. Kotlin twin: `IntelligenceEngine.garminVitalsLine`.
+    nonisolated static func garminVitalsLine(day: String, _ r: GarminScoringInputs.Resolution) -> String {
+        func v(_ x: Double?) -> String { x.map { String(format: "%.1f", $0) } ?? "nil" }
+        return "garmin vitals: day=\(day) rhr=\(r.restingHr.map(String.init) ?? "nil")/\(r.restingHrSource?.rawValue ?? "nil")"
+            + " hrv=\(v(r.avgHrv))/\(r.hrvBasis.rawValue) resp=\(v(r.respRateBpm))/\(r.respRateSource?.rawValue ?? "nil")"
+    }
+}
+
+extension AnalyticsEngine.DayResult {
+    /// The same result with a substituted daily row (a Garmin-owned day's watch vitals, Garmin child 9).
+    func with(daily d: DailyMetric) -> AnalyticsEngine.DayResult {
+        AnalyticsEngine.DayResult(
+            daily: d, sleepSessions: sleepSessions, cachedSleep: cachedSleep, workouts: workouts,
+            recovery: recovery, strain: strain, nightlySkinTempC: nightlySkinTempC, restScore: restScore,
+            chargeConfidence: chargeConfidence, effortConfidence: effortConfidence,
+            restConfidence: restConfidence, sessionMotionByStart: sessionMotionByStart,
+            sessionSleepStateByStart: sessionSleepStateByStart, chargeDrivers: chargeDrivers,
+            skinTempRelative: skinTempRelative, detectionFunnel: detectionFunnel,
+            mainNightBlocks: mainNightBlocks)
+    }
+}
+
 // `internal`, not `private`: the two `with(...)` rebuilds below are the seams a new DailyMetric column
 // is most easily dropped at (they respell every field by name), so StrandTests asserts them directly
 // rather than through a copy that could drift. Nothing outside this module can see them either way.
@@ -3575,6 +3661,18 @@ extension DailyMetric {
                     spo2Pct: spo2Pct, skinTempDevC: skinTempDevC, respRateBpm: resp,
                     steps: steps, activeKcalEst: activeKcalEst,
                     spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: sdnn, skinTempC: skinTempC,
+                    sleepHrOnly: sleepHrOnly)
+    }
+
+    /// Rebuild with substituted overnight vitals (a Garmin-owned day's watch values, Garmin child 9),
+    /// leaving every other field untouched.
+    func with(restingHr rhr: Int?, avgHrv hrv: Double?, respRateBpm resp: Double?) -> DailyMetric {
+        DailyMetric(day: day, totalSleepMin: totalSleepMin, efficiency: efficiency, deepMin: deepMin,
+                    remMin: remMin, lightMin: lightMin, disturbances: disturbances, restingHr: rhr,
+                    avgHrv: hrv, recovery: recovery, strain: strain, exerciseCount: exerciseCount,
+                    spo2Pct: spo2Pct, skinTempDevC: skinTempDevC, respRateBpm: resp,
+                    steps: steps, activeKcalEst: activeKcalEst,
+                    spo2Red: spo2Red, spo2Ir: spo2Ir, avgSdnn: avgSdnn, skinTempC: skinTempC,
                     sleepHrOnly: sleepHrOnly)
     }
 

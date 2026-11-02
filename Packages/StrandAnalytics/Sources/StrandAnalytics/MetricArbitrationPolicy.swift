@@ -27,6 +27,7 @@ public enum MetricArbitrationPolicy {
         case heartRate      // avg/max HR
         case hrv
         case spo2
+        case respiration    // breaths per minute
         case skinTemp
         case steps
         case sleep          // any sleep stage/total
@@ -46,6 +47,8 @@ public enum MetricArbitrationPolicy {
             return .hrv
         case "spo2":
             return .spo2
+        case "resp_rate", "respiration":
+            return .respiration
         case "skin_temp", "skinTemp":
             return .skinTemp
         case "steps":
@@ -69,11 +72,12 @@ public enum MetricArbitrationPolicy {
     /// `other`/unmapped keys tier purely by source kind (import vs computed vs phone vs cache).
     public static func tier(metric: MetricKind, source: FusionSource) -> Int {
         switch metric {
-        case .restingHR, .heartRate, .hrv, .spo2:
+        case .restingHR, .heartRate, .hrv, .spo2, .respiration:
             // Worn-sensor vitals: the strap measures them directly; the phone aggregates them.
             switch source {
             case .whoopImport:   return 0   // direct dedicated sensor (R-R / PPG)
             case .xiaomiBand:    return 0   // dedicated wrist PPG
+            case .garminWatch:   return 0   // the watch's own overnight value beats NOOP's sparse-HR estimate
             case .noopComputed:  return 1   // derived on-device from raw strap streams
             case .appleHealth:   return 2   // phone aggregate
             case .healthConnect: return 2
@@ -86,6 +90,7 @@ public enum MetricArbitrationPolicy {
             switch source {
             case .whoopImport:   return 0
             case .xiaomiBand:    return 0
+            case .garminWatch:   return 0
             case .noopComputed:  return 1
             case .appleHealth:   return 2
             case .healthConnect: return 2
@@ -97,6 +102,7 @@ public enum MetricArbitrationPolicy {
             // The device that ACTUALLY COUNTS steps wins; the strap only ESTIMATES from motion.
             switch source {
             case .xiaomiBand:    return 0   // wrist pedometer — counts directly
+            case .garminWatch:   return 0   // the watch's own pedometer — counts directly
             case .appleHealth:   return 0   // phone pedometer — counts directly
             case .healthConnect: return 0
             case .whoopImport:   return 3   // strap step estimate is a last resort
@@ -109,6 +115,7 @@ public enum MetricArbitrationPolicy {
             // The best STAGER wins: imported WHOOP stages > NOOP-computed stages > phone sleep buckets.
             switch source {
             case .whoopImport:   return 0
+            case .garminWatch:   return 0   // the watch's own stages are primary on the days it owns
             case .noopComputed:  return 1
             case .xiaomiBand:    return 1   // a band with its own staging, below WHOOP's
             case .appleHealth:   return 2   // phone sleep buckets
@@ -125,6 +132,7 @@ public enum MetricArbitrationPolicy {
             case .whoopImport:   return 3
             case .noopComputed:  return 3
             case .xiaomiBand:    return 3
+            case .garminWatch:   return 3
             case .nutritionCsv:  return 3
             case .localCache:    return 3
             }
@@ -134,6 +142,7 @@ public enum MetricArbitrationPolicy {
             switch source {
             case .whoopImport:   return 0
             case .xiaomiBand:    return 0
+            case .garminWatch:   return 0   // stress, Body Battery, sleep score: the watch's own
             case .noopComputed:  return 1
             case .appleHealth:   return 2
             case .healthConnect: return 2
@@ -154,8 +163,9 @@ public enum MetricArbitrationPolicy {
         case .appleHealth:   return 2
         case .healthConnect: return 3
         case .xiaomiBand:    return 4
-        case .nutritionCsv:  return 5
-        case .localCache:    return 6
+        case .garminWatch:   return 5
+        case .nutritionCsv:  return 6
+        case .localCache:    return 7
         }
     }
 
@@ -165,7 +175,7 @@ public enum MetricArbitrationPolicy {
     public static func reason(metric: MetricKind, source: FusionSource) -> String {
         let t = tier(metric: metric, source: source)
         switch (metric, source) {
-        case (.steps, .xiaomiBand), (.steps, .appleHealth), (.steps, .healthConnect):
+        case (.steps, .xiaomiBand), (.steps, .appleHealth), (.steps, .healthConnect), (.steps, .garminWatch):
             return "counts directly"
         case (.steps, .whoopImport), (.steps, .noopComputed):
             return "step estimate"
@@ -173,6 +183,8 @@ public enum MetricArbitrationPolicy {
             return "best stager"
         case (.sleep, .noopComputed):
             return "computed stages"
+        case (.sleep, .garminWatch):
+            return "watch stages"
         case (.sleep, .appleHealth), (.sleep, .healthConnect):
             return "phone sleep buckets"
         case (.skinTemp, _):
@@ -222,6 +234,8 @@ public enum MetricArbitrationPolicy {
             return Tolerance(agree: 8, minorDelta: 20, isPercent: false)     // ms
         case .spo2:
             return Tolerance(agree: 2, minorDelta: 4, isPercent: false)      // %
+        case .respiration:
+            return Tolerance(agree: 1, minorDelta: 3, isPercent: false)      // breaths/min
         case .skinTemp:
             return Tolerance(agree: 0.5, minorDelta: 1.5, isPercent: false)  // °C
         case .steps:

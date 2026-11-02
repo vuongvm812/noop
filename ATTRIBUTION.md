@@ -95,6 +95,43 @@ own Charge/Rest, and **never** reads or displays Oura's encrypted readiness or s
 documented Oura file-import lane (`Packages/StrandImport/Sources/StrandImport/OuraExportParser.swift`)
 remains available as a fallback.
 
+## Garmin watch protocol (experimental)
+NOOP's Garmin code (`Packages/GarminProtocol/`, `android/.../com/noop/garmin/`) is **original
+clean-room** work written from **protocol facts only**: the multi-link control-frame and MLR header
+layouts, the COBS variant with leading and trailing `0x00`, CRC-16/ARC, the GFDI message frame, message
+ids and payload layouts, service numbers, capability bit positions, and the FileAccess protobuf field
+numbers.
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org): consulted for those facts at commit
+  `edbea98cbe1377001c0b8154ac20cb930e1db7f6` (2026-10-30), together with its Garmin protocol notes
+  (gadgetbridge.org/internals/specifics/garmin-protocol/). Licensed **AGPL-3.0**; NOOP copies **none** of
+  its code, tables, test fixtures or literals beyond the wire values themselves, and is not a derivative
+  work of it. Every value remains an unvalidated candidate until checked on a real watch.
+- **Garmin wellness FIT messages** (`GarminWellness.swift`, `GarminWellness.kt`): the global message
+  and field numbers, base types, scales and enum values of the monitoring, stress, SpO2, sleep, HRV,
+  respiration, beat-interval and skin-temperature messages were taken as facts from Gadgetbridge's
+  `fit_profile.json` and FIT importer at the same commit. No code or fixtures were copied; NOOP's
+  fixtures are written by its own test builders. Beat intervals (290) and skin temperature (397/398)
+  are not imported upstream either, so they decode only into raw `*Candidate` fields.
+- **Garmin history sync** (`GarminHistorySync.swift`, `GarminHistorySync.kt`): the legacy directory and
+  DOWNLOAD_REQUEST / FILE_TRANSFER_DATA flow, the FileAccess list / pull flow with its file-transfer
+  pipe start packet and leading acknowledgement, the FIT sub-type numbers and the "uid top 32 bits are
+  the creation time" rule are Gadgetbridge facts at the same commit. The 5054 COMPRESSED_FILE_DATA
+  layout (sequence, last flag, checkpoint, checkpoint CRC, zlib piece), the `FIT_TYPE_<n>` FileAccess
+  names and the watch restarting a file on CONTINUE were OBSERVED on a Forerunner 165 (fw 29.05), not
+  taken from Gadgetbridge, which names id 5054 only. The zlib inflater is written from RFC 1950/1951.
+- **Garmin realtime channels** (`GarminRealtime.swift`, `GarminRealtime.kt`): the realtime service
+  numbers and the payload layouts of heart rate (6), steps (7), floors (9), beat intervals (12), SpO2 (19),
+  Body Battery (20) and respiration (21), with their "unknown" codes, were taken as facts from
+  Gadgetbridge's `CommunicatorV2` realtime callbacks at the same commit. The heart-rate type byte and the
+  u32 after each beat interval are undecoded upstream and stay logged-only candidates in NOOP. Checked on a
+  Forerunner 165 (firmware 29.05): every layout's length and the unknown codes 0x7F (Body Battery), -2
+  (respiration) and -1 (SpO2) as sent off the wrist.
+- **Garmin pairing, onboarding and UI** (Add Device wizard, Devices / Data Sources panel, Live and Test
+  Centre sections, [docs/GARMIN.md](docs/GARMIN.md)): written for NOOP. The pairing steps follow the
+  watch's own "Pair Phone" menu; the supported-model table, coexistence guidance and battery figures come
+  from NOOP's own runs on a Forerunner 165. Nothing from Gadgetbridge beyond the protocol facts above, at
+  the same pinned commit.
+
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
 - **MarkdownUI** (`gonzalezreal/swift-markdown-ui`) — renders the AI Coach's Markdown

@@ -32,11 +32,37 @@ enum class FusionSource(val id: String, val displayName: String) {
     /** Mi Band / Xiaomi import — a dedicated wrist band (counts steps directly). */
     XIAOMI_BAND("xiaomi-band", "Mi Band"),
 
+    /**
+     * A Garmin watch synced over its own protocol (Garmin child 9). Its rows live under the watch's registry
+     * id ("garmin-<suffix>"), so a stored id is mapped through [forStoredSourceId]; [id] is only the
+     * canonical name. The watch's OWN values (resting HR, overnight HRV, SpO2, respiration, stress, Body
+     * Battery, sleep stages and score) are primary; NOOP computes Charge / Effort / Rest from them. A Garmin
+     * Connect CSV export ("garmin-import") is a different source and does not map here.
+     */
+    GARMIN_WATCH("garmin-watch", "Garmin"),
+
     /** Nutrition CSV import (single-source passthrough — calories/macros). */
     NUTRITION_CSV("nutrition-csv", "Nutrition"),
 
     /** Locally-cached fallback row with no richer provenance. */
     LOCAL_CACHE("local-cache", "Cached"),
+    ;
+
+    companion object {
+        /**
+         * Map a STORED source id (a dailyMetric deviceId / resolver source) onto its fusion source. A paired
+         * Garmin watch is stored under its registry id, so it cannot round-trip through [id]; every other
+         * source does. Swift twin: `FusionSource.forStoredSourceId`.
+         */
+        fun forStoredSourceId(id: String): FusionSource? {
+            if (isGarminWatchId(id)) return GARMIN_WATCH
+            return entries.firstOrNull { it.id == id }
+        }
+
+        /** True for a paired Garmin watch's registry id. Swift twin: `FusionSource.isGarminWatchId`. */
+        fun isGarminWatchId(id: String): Boolean =
+            id.startsWith("garmin-") && id != "garmin-import" && !id.endsWith("-noop")
+    }
 }
 
 /**

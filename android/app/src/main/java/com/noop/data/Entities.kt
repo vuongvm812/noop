@@ -777,6 +777,57 @@ data class EcgWaveformSampleEntity(
 }
 
 /**
+ * One value of a watch-computed series (v43 / MIGRATION_42_43): stress, Body Battery, SpO2 percent and
+ * the rest of [DeviceMetricKind]. Swift `deviceMetricSample` (WhoopStore Database.swift
+ * `v49-garmin-metric-samples`).
+ *
+ * One narrow table keyed by [kind] rather than one table per metric, so a new kind is a new enum entry
+ * and not a migration. Heart rate, beat intervals and sleep stages are NOT here: they go to their existing
+ * streams. SpO2 and respiration are, because `spo2Sample` / `respSample` hold raw WHOOP optical and ADC
+ * counts and their readers only tell the Oura ring apart, so a Garmin percent stored there would be read
+ * as a WHOOP count.
+ *
+ * PK (deviceId, kind, ts) is the dedup key; `kind` before `ts` so the key also serves a per-kind range
+ * read. Written by UPSERT so a re-ingested file is idempotent and a re-synced partial file's newer value
+ * wins. Fields are declared in the SAME order as the GRDB schema (deviceId, ts, kind, value, source) so
+ * Room's generated shape matches it column for column.
+ */
+@Entity(tableName = "deviceMetricSample", primaryKeys = ["deviceId", "kind", "ts"])
+data class DeviceMetricSampleEntity(
+    val deviceId: String,
+    val ts: Long,
+    /** [DeviceMetricKind.wire]. */
+    val kind: String,
+    val value: Double,
+    /** The record the value came from (for example a FIT message name). */
+    val source: String,
+)
+
+/**
+ * One Garmin watch file already ingested by history sync (v43 / MIGRATION_42_43). Swift
+ * `garminSyncedFile` (WhoopStore Database.swift `v49-garmin-metric-samples`).
+ *
+ * This REPLACES archiving files on the watch: NOOP never changes a file's flags on the device, so Garmin
+ * Connect still sees every file as new. The key is the whole directory-entry identity, so a file the
+ * watch rewrites under the same index (new size or timestamp) reads as a new file. [ingestedAt] is the
+ * first ingest and sits outside the key. Field order matches the GRDB column order.
+ */
+@Entity(
+    tableName = "garminSyncedFile",
+    primaryKeys = ["deviceId", "fileIndex", "dataType", "subType", "fileNumber", "ts", "size"],
+)
+data class GarminSyncedFileEntity(
+    val deviceId: String,
+    val fileIndex: Int,
+    val dataType: Int,
+    val subType: Int,
+    val fileNumber: Int,
+    val ts: Long,
+    val size: Long,
+    val ingestedAt: Long,
+)
+
+/**
  * One Live Session (silent guardian) record (v22 / MIGRATION_15_16). Natural key (deviceId, startTs).
  * `endTs` is null while the session is still in progress. Fields are declared in the SAME order as the
  * Swift WhoopStore `liveSession` schema so the migration SQL matches Room's generated shape. Twin of the

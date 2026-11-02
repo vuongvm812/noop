@@ -220,6 +220,7 @@ final class DecoderOracleTests: XCTestCase {
             "resp": s.resp.count, "gravity": s.gravity.count, "steps": s.steps.count,
             "sleep_state": s.sleepState.count, "ppg_hr": s.ppgHr.count,
             "ppg_waveform": s.ppgWaveform.count, "ecg_waveform": s.ecgWaveform.count,
+            "device_metric": s.deviceMetric.count,
             "v18_aux": s.v18Aux.count,
             "events": s.events.count, "battery": s.battery.count,
         ]
@@ -250,6 +251,8 @@ final class DecoderOracleTests: XCTestCase {
             "ecg_waveform": Streams(ecgWaveform: [
                 EcgWaveformSample(ts: 1, sequence: 1,
                                   record: [UInt8](repeating: 0, count: Whoop5Ecg.r16InnerLength))]),
+            "device_metric": Streams(deviceMetric: [
+                DeviceMetricSample(ts: 1, kind: .stress, value: 20, source: "oracle")]),
             // Carries a real slot value rather than a bare `ts`: `V18AuxSample.isEmpty` is "every slot is
             // nil", so an all-nil sample would still make the ARRAY non-empty and pass this check while
             // saying nothing about a row that carries data.

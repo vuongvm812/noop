@@ -466,6 +466,7 @@ object FusionFormat {
             MetricArbitrationPolicy.MetricKind.HEART_RATE -> "${v.roundToInt()} bpm"
             MetricArbitrationPolicy.MetricKind.HRV -> "${v.roundToInt()} ms"
             MetricArbitrationPolicy.MetricKind.SPO2 -> "${v.roundToInt()}%"
+            MetricArbitrationPolicy.MetricKind.RESPIRATION -> String.format("%.1f rpm", v)
             MetricArbitrationPolicy.MetricKind.SKIN_TEMP -> String.format("%.1f°C", v)
             MetricArbitrationPolicy.MetricKind.STEPS -> integerGrouped(v)
             MetricArbitrationPolicy.MetricKind.SLEEP -> duration(v)

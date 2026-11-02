@@ -31,6 +31,7 @@ object MetricArbitrationPolicy {
         HEART_RATE, // avg/max HR
         HRV,
         SPO2,
+        RESPIRATION, // breaths per minute
         SKIN_TEMP,
         STEPS,
         SLEEP, // any sleep stage/total
@@ -47,6 +48,7 @@ object MetricArbitrationPolicy {
         "avg_hr", "max_hr" -> MetricKind.HEART_RATE
         "hrv" -> MetricKind.HRV
         "spo2" -> MetricKind.SPO2
+        "resp_rate", "respiration" -> MetricKind.RESPIRATION
         "skin_temp", "skinTemp" -> MetricKind.SKIN_TEMP
         "steps" -> MetricKind.STEPS
         "sleep_total_min", "asleep_min",
@@ -65,11 +67,12 @@ object MetricArbitrationPolicy {
      * OTHER/unmapped keys tier purely by source kind (import vs computed vs phone vs cache).
      */
     fun tier(metric: MetricKind, source: FusionSource): Int = when (metric) {
-        MetricKind.RESTING_HR, MetricKind.HEART_RATE, MetricKind.HRV, MetricKind.SPO2 ->
+        MetricKind.RESTING_HR, MetricKind.HEART_RATE, MetricKind.HRV, MetricKind.SPO2, MetricKind.RESPIRATION ->
             // Worn-sensor vitals: the strap measures them directly; the phone aggregates them.
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0   // direct dedicated sensor (R-R / PPG)
                 FusionSource.XIAOMI_BAND -> 0    // dedicated wrist PPG
+                FusionSource.GARMIN_WATCH -> 0   // the watch's own overnight value beats NOOP's sparse-HR estimate
                 FusionSource.NOOP_COMPUTED -> 1  // derived on-device from raw strap streams
                 FusionSource.APPLE_HEALTH -> 2   // phone aggregate
                 FusionSource.HEALTH_CONNECT -> 2
@@ -82,6 +85,7 @@ object MetricArbitrationPolicy {
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
                 FusionSource.XIAOMI_BAND -> 0
+                FusionSource.GARMIN_WATCH -> 0
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.APPLE_HEALTH -> 2
                 FusionSource.HEALTH_CONNECT -> 2
@@ -93,6 +97,7 @@ object MetricArbitrationPolicy {
             // The device that ACTUALLY COUNTS steps wins; the strap only ESTIMATES from motion.
             when (source) {
                 FusionSource.XIAOMI_BAND -> 0    // wrist pedometer — counts directly
+                FusionSource.GARMIN_WATCH -> 0   // the watch's own pedometer — counts directly
                 FusionSource.APPLE_HEALTH -> 0   // phone pedometer — counts directly
                 FusionSource.HEALTH_CONNECT -> 0
                 FusionSource.WHOOP_IMPORT -> 3   // strap step estimate is a last resort
@@ -105,6 +110,7 @@ object MetricArbitrationPolicy {
             // The best STAGER wins: imported WHOOP stages > NOOP-computed stages > phone sleep buckets.
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
+                FusionSource.GARMIN_WATCH -> 0   // the watch's own stages are primary on the days it owns
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.XIAOMI_BAND -> 1    // a band with its own staging, below WHOOP's
                 FusionSource.APPLE_HEALTH -> 2   // phone sleep buckets
@@ -121,6 +127,7 @@ object MetricArbitrationPolicy {
                 FusionSource.WHOOP_IMPORT -> 3
                 FusionSource.NOOP_COMPUTED -> 3
                 FusionSource.XIAOMI_BAND -> 3
+                FusionSource.GARMIN_WATCH -> 3
                 FusionSource.NUTRITION_CSV -> 3
                 FusionSource.LOCAL_CACHE -> 3
             }
@@ -130,6 +137,7 @@ object MetricArbitrationPolicy {
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
                 FusionSource.XIAOMI_BAND -> 0
+                FusionSource.GARMIN_WATCH -> 0   // stress, Body Battery, sleep score: the watch's own
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.APPLE_HEALTH -> 2
                 FusionSource.HEALTH_CONNECT -> 2
@@ -150,8 +158,9 @@ object MetricArbitrationPolicy {
         FusionSource.APPLE_HEALTH -> 2
         FusionSource.HEALTH_CONNECT -> 3
         FusionSource.XIAOMI_BAND -> 4
-        FusionSource.NUTRITION_CSV -> 5
-        FusionSource.LOCAL_CACHE -> 6
+        FusionSource.GARMIN_WATCH -> 5
+        FusionSource.NUTRITION_CSV -> 6
+        FusionSource.LOCAL_CACHE -> 7
     }
 
     /**
@@ -162,7 +171,7 @@ object MetricArbitrationPolicy {
     fun reason(metric: MetricKind, source: FusionSource): String {
         if (metric == MetricKind.STEPS &&
             (source == FusionSource.XIAOMI_BAND || source == FusionSource.APPLE_HEALTH ||
-                source == FusionSource.HEALTH_CONNECT)
+                source == FusionSource.HEALTH_CONNECT || source == FusionSource.GARMIN_WATCH)
         ) {
             return "counts directly"
         }
@@ -173,6 +182,7 @@ object MetricArbitrationPolicy {
         }
         if (metric == MetricKind.SLEEP && source == FusionSource.WHOOP_IMPORT) return "best stager"
         if (metric == MetricKind.SLEEP && source == FusionSource.NOOP_COMPUTED) return "computed stages"
+        if (metric == MetricKind.SLEEP && source == FusionSource.GARMIN_WATCH) return "watch stages"
         if (metric == MetricKind.SLEEP &&
             (source == FusionSource.APPLE_HEALTH || source == FusionSource.HEALTH_CONNECT)
         ) {
@@ -214,6 +224,7 @@ object MetricArbitrationPolicy {
         MetricKind.HEART_RATE -> Tolerance(agree = 5.0, minorDelta = 12.0, isPercent = false)   // bpm
         MetricKind.HRV -> Tolerance(agree = 8.0, minorDelta = 20.0, isPercent = false)          // ms
         MetricKind.SPO2 -> Tolerance(agree = 2.0, minorDelta = 4.0, isPercent = false)          // %
+        MetricKind.RESPIRATION -> Tolerance(agree = 1.0, minorDelta = 3.0, isPercent = false)   // breaths/min
         MetricKind.SKIN_TEMP -> Tolerance(agree = 0.5, minorDelta = 1.5, isPercent = false)     // °C
         MetricKind.STEPS -> Tolerance(agree = 0.10, minorDelta = 0.30, isPercent = true)        // ±10/30%
         MetricKind.SLEEP -> Tolerance(agree = 20.0, minorDelta = 60.0, isPercent = false)       // min

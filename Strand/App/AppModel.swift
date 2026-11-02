@@ -93,7 +93,9 @@ final class AppModel: ObservableObject {
     /// since; on End the window is scored via `StrainScorer` and saved as a `WorkoutRow` (source
     /// "manual"), which then shows in the Workouts view. The day's strain already counts this HR (it's
     /// the same live stream the store persists), so this is a per-session annotation, not a double-count.
-    @Published var activeWorkout: ActiveWorkout?
+    @Published var activeWorkout: ActiveWorkout? {
+        didSet { if (oldValue == nil) != (activeWorkout == nil) { syncGarminLiveDemand() } }
+    }
     /// The just-ended workout, for a brief inline confirmation on Live (cleared on the next start).
     @Published var lastWorkout: WorkoutRow?
 
@@ -656,8 +658,14 @@ final class AppModel: ObservableObject {
         self.ble.onSerialIdentityAdopted = { [weak registry] serialId in
             registry?.setActive(serialId)
         }
+        // A Garmin history sync that stored files re-scores like a completed WHOOP offload.
+        coordinator.onGarminHistoryStored = { [weak self] in
+            Task { @MainActor in await self?.refreshAfterCompletedBackfill() }
+        }
         self.sourceCoordinator = coordinator
+        syncGarminLiveDemand()   // a Live screen already open before the store finished opening
         bindOuraFeatureStatusMirror()
+        bindGarminSourceMirror()
         // #814 READ SPINE (HIGH-1): drive the read side off the registry's `activeDeviceId` for the WHOLE
         // session, exactly as SourceCoordinator drives the WRITE side off the SAME publisher. A Devices-
         // screen switch/remove/re-add calls `registry.setActive` DIRECTLY (NOT through `registerDevice`), so
@@ -1414,6 +1422,7 @@ final class AppModel: ObservableObject {
             ble.startRealtime()
         }
         realtimeWanters += 1
+        syncGarminLiveDemand()
     }
     /// A live-HR surface went away. Stops the realtime stream only when the last one leaves (1→0 edge);
     /// the lightweight 0x2A37 HR keeps recording regardless. Clamped at 0 so an unbalanced extra stop
@@ -1421,6 +1430,86 @@ final class AppModel: ObservableObject {
     func stopRealtimeHR() {
         realtimeWanters = max(0, realtimeWanters - 1)
         if realtimeWanters == 0 { ble.stopRealtime() }
+        syncGarminLiveDemand()
+    }
+
+    /// An EXPERIMENTAL Garmin watch opens its live channels only while someone is watching: a live-HR
+    /// surface is on screen, or a workout is recording (the one demand that survives backgrounding). The
+    /// coordinator forwards this to the Garmin source, whose `GarminRadioPolicy` decides the channels.
+    func syncGarminLiveDemand() {
+        let visible = realtimeWanters > 0
+        let workout = activeWorkout != nil
+        let continuous = UserDefaults.standard.bool(forKey: Self.garminContinuousLiveKey)
+        let onScreen = garminOnScreenChannels
+        let explicit: Set<GarminLiveChannel> = garminSpO2Requested ? [.spo2] : []
+        sourceCoordinator?.updateGarminLiveDemand {
+            $0.liveScreenVisible = visible
+            $0.workoutActive = workout
+            $0.continuousLiveEnabled = continuous
+            $0.onScreenChannels = onScreen
+            $0.explicitChannels = explicit
+        }
+    }
+
+    // MARK: Garmin watch (UI glue)
+
+    /// The experimental "continuous live" toggle on the Garmin watch panel. Off by default. Twin of
+    /// Android `NoopPrefs.KEY_GARMIN_CONTINUOUS_LIVE`.
+    static let garminContinuousLiveKey = "noopGarminContinuousLive"
+    /// How long an explicit "Measure SpO2" request holds the SpO2 channel open.
+    static let garminSpO2RequestSeconds: TimeInterval = 60
+
+    /// The typed active Garmin source, mirrored off the coordinator. nil when no Garmin watch is live.
+    @Published private(set) var garminSource: GarminSource?
+    private var garminSourceCancellable: AnyCancellable?
+    /// Optional live channels whose cards are on screen (the Live screen's Garmin section).
+    private var garminOnScreenChannels: Set<GarminLiveChannel> = []
+    /// An explicit SpO2 request is open (the Live screen's "Measure SpO2").
+    @Published private(set) var garminSpO2Requested = false
+    private var garminSpO2Timer: DispatchWorkItem?
+
+    private func bindGarminSourceMirror() {
+        guard let coordinator = sourceCoordinator else { return }
+        garminSourceCancellable = coordinator.$garminSource
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.garminSource = $0 }
+    }
+
+    func setGarminContinuousLive(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: Self.garminContinuousLiveKey)
+        syncGarminLiveDemand()
+    }
+
+    func setGarminOnScreenChannels(_ channels: Set<GarminLiveChannel>) {
+        guard channels != garminOnScreenChannels else { return }
+        garminOnScreenChannels = channels
+        syncGarminLiveDemand()
+    }
+
+    /// Open SpO2 for `garminSpO2RequestSeconds`. SpO2 opens only on an explicit request and closes the
+    /// moment the request ends (`GarminRadioPolicy.explicitOnlyChannels`).
+    func requestGarminSpO2() {
+        garminSpO2Timer?.cancel()
+        garminSpO2Requested = true
+        syncGarminLiveDemand()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.endGarminSpO2Request() }
+        }
+        garminSpO2Timer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.garminSpO2RequestSeconds, execute: work)
+    }
+
+    func endGarminSpO2Request() {
+        garminSpO2Timer?.cancel()
+        garminSpO2Timer = nil
+        guard garminSpO2Requested else { return }
+        garminSpO2Requested = false
+        syncGarminLiveDemand()
+    }
+
+    /// "Sync now" on the Garmin watch panel: a manual history sync on the live watch.
+    func garminSyncNow() {
+        garminSource?.syncNow()
     }
 
     /// Re-issue the BLE realtime arm WITHOUT touching the ref-count , used when a fresh
@@ -2144,6 +2233,11 @@ final class AppModel: ObservableObject {
     /// Polar strap is paired. Diagnostic-only — nothing gates behaviour on it. Twin of Android
     /// `NoopPrefs.KEY_POLAR_DEBUG_LOGGING`.
     static let polarDebugLoggingKey = "noopPolarDebugLogging"
+    /// Garmin 6/10: the Test Centre-only capture of the undecoded realtime channels 8 / 10 / 13. Default off;
+    /// the toggle is shown only when a Garmin watch is paired over GFDI. While on (and the app is in the
+    /// foreground) the Garmin source opens those channels and logs every payload raw, with the UNVALIDATED
+    /// candidate readings. Nothing else reads the values. Twin of Android NoopPrefs.KEY_GARMIN_REALTIME_CAPTURE.
+    static let garminRealtimeCaptureKey = "noopGarminRealtimeCapture"
     var polarDebugLogging: Bool {
         get { UserDefaults.standard.bool(forKey: Self.polarDebugLoggingKey) }
         set { UserDefaults.standard.set(newValue, forKey: Self.polarDebugLoggingKey) }
@@ -2303,12 +2397,15 @@ final class AppModel: ObservableObject {
         ]
         // Every source that could carry a value, mapped to its stored device id. (FusionSource.rawValue
         // IS the canonical source id, but the strap's real id is `deviceId`/`computed` , map explicitly.)
-        let sources: [(FusionSource, String)] = [
+        var sources: [(FusionSource, String)] = [
             (.whoopImport, deviceId),
             (.noopComputed, deviceId + "-noop"),
             (.appleHealth, appleDeviceId),
             (.xiaomiBand, FusionSource.xiaomiBand.rawValue),
         ]
+        // Garmin child 9: an active Garmin watch is its own fusion source (its rows live under its registry
+        // id), tiered as the watch, never as a WHOOP import. Kotlin twin: `FusionDayAdapter.sourceIds`.
+        if FusionSource.isGarminWatchId(repo.deviceId) { sources.append((.garminWatch, repo.deviceId)) }
 
         let now = Date()
         let fromDay = Repository.dayString(now.addingTimeInterval(-3 * 86_400))

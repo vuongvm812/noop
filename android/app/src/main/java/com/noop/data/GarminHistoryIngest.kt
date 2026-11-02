@@ -1,0 +1,91 @@
+package com.noop.data
+
+import com.noop.garmin.GarminDownloadedFile
+import com.noop.garmin.GarminFitFileType
+import com.noop.garmin.GarminSyncFileKey
+import com.noop.ingest.ActivityFileImporter
+import com.noop.ingest.GarminWatchIngest
+import com.noop.ingest.GarminWellnessParser
+import java.util.TimeZone
+
+/**
+ * Stores what Garmin history sync downloads ([com.noop.ble.GarminSource] hands each checked file here) and
+ * answers which files are already stored. Nothing here talks to the watch: the `garminSyncedFile` ledger
+ * is the only record of "already downloaded", which is what lets NOOP leave every file on the watch
+ * untouched. Kotlin twin of Strand/Data/GarminHistoryIngest.swift.
+ *
+ * - Wellness files are decoded by [GarminWellnessParser], folded by [GarminWatchIngest], and written with
+ *   their ledger row in ONE transaction ([GarminSyncStore.ingest]).
+ * - ACTIVITY files go through the existing workout parse ([ActivityFileImporter.parse]), stored under the
+ *   watch's own device id, then recorded.
+ */
+object GarminHistoryIngest {
+
+    suspend fun syncedKeys(store: GarminSyncStore, deviceId: String): Set<GarminSyncFileKey> =
+        store.syncedFiles(deviceId).map {
+            GarminSyncFileKey(it.fileIndex, it.dataType, it.subType, it.fileNumber, it.ts, it.size)
+        }.toSet()
+
+    fun ledgerRow(key: GarminSyncFileKey) =
+        GarminSyncedFileRow(key.fileIndex, key.dataType, key.subType, key.fileNumber, key.garminTimestamp, key.size)
+
+    /** Decode and store one file. True when stored and recorded; false leaves it "new" for the next sync. */
+    suspend fun ingest(
+        file: GarminDownloadedFile,
+        deviceId: String,
+        store: GarminSyncStore,
+        repo: WhoopRepository,
+        log: (String) -> Unit,
+    ): Boolean {
+        val now = System.currentTimeMillis() / 1000
+        val row = ledgerRow(file.key)
+        return try {
+            if (file.fitType == GarminFitFileType.ACTIVITY) {
+                ingestActivity(file, deviceId, repo, log)
+                store.record(row, deviceId, now)
+                return true
+            }
+            val samples = GarminWellnessParser.parse(file.bytes)
+            val batch = GarminWatchIngest.fold(samples, row, TimeZone.getDefault().getOffset(now * 1000) / 1000)
+            val c = store.ingest(batch, deviceId, now)
+            log("Garmin: stored ${file.fitType?.wireName ?: "file"} ${file.key.label}: hr=${c.hr} metrics=${c.deviceMetric} " +
+                "days=${c.days} sleeps=${c.sleeps} points=${c.metricPoints}" +
+                if (samples.complete) "" else " (file ended early; kept what decoded)")
+            true
+        } catch (e: Exception) {
+            log("Garmin: storing ${file.key.label} failed: ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    /** The manual workout-file import's mapping, under the watch's device id (Swift twin: `ingestActivity`). */
+    private suspend fun ingestActivity(file: GarminDownloadedFile, deviceId: String, repo: WhoopRepository, log: (String) -> Unit) {
+        val activity = ActivityFileImporter.parse(file.bytes, "garmin-activity.fit").activity
+        val duration = activity?.durationS
+        if (activity == null || duration == null || duration <= 0) {
+            log("Garmin: activity ${file.key.label} has no usable workout; recorded as synced")
+            return
+        }
+        val row = WorkoutRow(
+            deviceId = deviceId,
+            startTs = activity.startTs,
+            endTs = activity.endTs,
+            sport = ActivityFileImporter.workoutSport(activity.sport),
+            source = deviceId,
+            durationS = activity.durationS,
+            energyKcal = activity.energyKcal,
+            avgHr = activity.avgHr,
+            maxHr = activity.maxHr,
+            strain = null,                       // never a fabricated cardiovascular strain
+            distanceM = activity.distanceM,
+            zonesJSON = null,
+            notes = activity.importNote(),
+            steps = activity.steps,
+        )
+        repo.upsertWorkouts(listOf(row))
+        if (activity.hrSamples.isNotEmpty()) {
+            repo.insertHr(activity.hrSamples.map { HrSample(deviceId = deviceId, ts = it.ts, bpm = it.bpm) })
+        }
+        log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} from ${file.key.label}")
+    }
+}

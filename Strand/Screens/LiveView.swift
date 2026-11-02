@@ -133,6 +133,9 @@ struct LiveView: View {
                 // `auth OK` — the same "no link yet" slot the WHOOP callout fills.
                 if activeIsOura, ringPhase != .authenticated { ringConnectCallout }
                 bodyConsole
+                // An active Garmin watch: its live Body Battery / respiration / steps / floors / SpO2 cards.
+                // The section reports its cards as on screen, so their channels open only while it shows.
+                if model.garminSource != nil { GarminLiveSection() }
                 // Low-bandwidth fallback note (#80): the radio couldn't sustain the WHOOP 4 R10/R11 raw
                 // realtime burst, so live HR is riding the standard BLE Heart-Rate profile instead. Live HR
                 // still works — this is informational, not an error — so it sits right under the readout in
@@ -771,9 +774,18 @@ struct LiveView: View {
     /// Live tab appeared: take a ref-count on the realtime stream (arms it on the 0→1 edge) and pull a
     /// battery reading. Balanced by the single `stopRealtimeHR()` on `.onDisappear`.
     private func refreshLiveSession() {
-        guard activeConnection else { return }
+        // An active Garmin watch has no WHOOP link, but this screen is still its live viewer: the ref-count
+        // is what opens the watch's HR + R-R channels (`AppModel.syncGarminLiveDemand`).
+        guard activeConnection || activeIsGarmin else { return }
         model.startRealtimeHR()
-        model.getBattery()
+        if activeConnection { model.getBattery() }
+    }
+
+    /// The ACTIVE registry device is a Garmin watch paired over GFDI.
+    private var activeIsGarmin: Bool {
+        guard let registry = model.deviceRegistry else { return false }
+        let id = registry.activeDeviceId
+        return registry.devices.first { $0.id == id }?.sourceKind == .garmin
     }
 
     /// Honour a one-shot "Return to workout" from the Today indicator card: present the in-exercise screen

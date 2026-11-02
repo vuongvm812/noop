@@ -675,6 +675,30 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_POLAR_DEBUG_LOGGING, enabled).apply()
     }
 
+    /** Garmin 6/10: the Test Centre-only capture of the undecoded realtime channels 8 / 10 / 13. Default off;
+     *  the toggle is shown only when a Garmin watch is paired over GFDI. While on (and the app is in the
+     *  foreground) the Garmin source opens those channels and logs every payload raw, with the UNVALIDATED
+     *  candidate readings. Nothing else reads the values. Twin of iOS AppModel.garminRealtimeCaptureKey. */
+    const val KEY_GARMIN_REALTIME_CAPTURE = "noop.garminRealtimeCapture"
+
+    fun garminRealtimeCapture(context: Context): Boolean =
+        of(context).getBoolean(KEY_GARMIN_REALTIME_CAPTURE, false)
+
+    fun setGarminRealtimeCapture(context: Context, enabled: Boolean) {
+        of(context).edit().putBoolean(KEY_GARMIN_REALTIME_CAPTURE, enabled).apply()
+    }
+
+    /** Garmin "Continuous live" toggle (default off): HR + R-R keep streaming while NOOP is open, even off the
+     *  Live screen. Fed into GarminRadioInputs.continuousLiveEnabled. Twin of iOS `noopGarminContinuousLive`. */
+    const val KEY_GARMIN_CONTINUOUS_LIVE = "noopGarminContinuousLive"
+
+    fun garminContinuousLive(context: Context): Boolean =
+        of(context).getBoolean(KEY_GARMIN_CONTINUOUS_LIVE, false)
+
+    fun setGarminContinuousLive(context: Context, enabled: Boolean) {
+        of(context).edit().putBoolean(KEY_GARMIN_CONTINUOUS_LIVE, enabled).apply()
+    }
+
     /** #1284 residual 3 (EXPERIMENTAL, default OFF): generation-side 0x49-onset keying for Oura sleep. When
      *  on, an Oura hypnogram persist keys its startTs on the rounded 0x49 onset and a completeness guard
      *  suppresses/replaces a duplicate re-serve BEFORE it is banked. A hardware-validation toggle; no effect

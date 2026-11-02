@@ -75,6 +75,12 @@ final class SourceCoordinator: ObservableObject {
     /// `tearDownNonWhoopSource`. The coordinator's lifecycle logic uses `activeSource`; this is only the
     /// published UI handle.
     @Published private(set) var ouraSource: OuraLiveSource?
+    /// The live Garmin source, TYPED, kept alongside `activeSource` so the wizard, Devices, Live and Test
+    /// Centre can observe its link phase, watch info and sync state. Same lifecycle as `ouraSource`.
+    @Published private(set) var garminSource: GarminSource?
+    /// A Garmin history sync stored new files. `AppModel` re-scores and refreshes the dashboard, the
+    /// same as after a completed WHOOP offload, so a first sync populates Today and Sleep at once.
+    var onGarminHistoryStored: (() -> Void)?
     /// The deviceId for which the user has granted explicit adopt consent (the wizard's irreversible gate +
     /// "Take over this ring?" confirm). The NEXT `makeOuraSource` for THIS id builds its live source with
     /// `adoptIntent == true`, so the dangerous `0x24` key install can run for exactly that adopt session and
@@ -299,6 +305,7 @@ final class SourceCoordinator: ObservableObject {
         case .ftms:  return makeFTMSSource(id: id)
         case .huami: return makeHuamiSource(id: id)
         case .oura:  return makeOuraSource(id: id)
+        case .garmin: return makeGarminSource(id: id)
         default:     return makeStandardSource(id: id)
         }
     }
@@ -318,6 +325,66 @@ final class SourceCoordinator: ObservableObject {
             // #polar-debug: read the toggle live at connect so a Polar strap logs its identified model
             // (default off; the Test Centre only exposes the toggle when a Polar strap is paired).
             polarDebug: { UserDefaults.standard.bool(forKey: AppModel.polarDebugLoggingKey) })
+    }
+
+    /// Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`.garmin`). It holds the session,
+    /// the handshake and the read-only history sync; battery rides the SAME `LiveState` funnel as the other
+    /// sources. The
+    /// first-pairing flag is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once.
+    /// Per-connect readouts (every message in and out) appear only while the Connection or Sources Test
+    /// Centre domain is active; state changes, refusals and failures are always logged. The Test Centre's
+    /// "Garmin realtime capture" toggle opens the undecoded channels 8 / 10 / 13 for raw capture.
+    private func makeGarminSource(id: String) -> any LiveHRSource {
+        let pairedKey = "noop.garmin.pairingEventsSent.\(id)"
+        // Live channels feed the SAME LiveState + store funnels as every other source (GarminLiveFeed).
+        let feed = GarminLiveFeed(
+            live: live,
+            persist: { [storeHandle] streams in
+                Task { if let store = await storeHandle() { _ = try? await store.insert(streams, deviceId: id) } }
+            },
+            log: straplog,
+            detail: { TestCentre.active(.connection) || TestCentre.active(.sources) || TestCentre.active(.hrv) })
+        let source = GarminSource(
+            deviceId: id,
+            isFirstPairing: { !UserDefaults.standard.bool(forKey: pairedKey) },
+            markPaired: { UserDefaults.standard.set(true, forKey: pairedKey) },
+            log: straplog,
+            detail: { TestCentre.active(.connection) || TestCentre.active(.sources) },
+            onBattery: { [live] pct in live.setBattery(Double(pct)) },
+            onWatch: { [registry] info in
+                if !info.bluetoothName.isEmpty { registry.setModel(id, model: info.bluetoothName) }
+            },
+            onLive: { feed.handle($0) },
+            nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin },
+            // History sync: the local ledger says what is already stored; each downloaded file is decoded
+            // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
+            loadSynced: { [storeHandle] in
+                guard let store = await storeHandle() else { return [] }
+                return await GarminHistoryIngest.syncedKeys(store: store, deviceId: id)
+            },
+            ingest: { [storeHandle, straplog] file in
+                guard let store = await storeHandle() else { return false }
+                return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)
+            },
+            onSyncFinished: { [weak self] summary in
+                if summary.downloaded > 0 { self?.onGarminHistoryStored?() }
+            },
+            undecodedCapture: { UserDefaults.standard.bool(forKey: AppModel.garminRealtimeCaptureKey) })
+        // Whoever is already watching (the Live screen open while the user switches to the watch).
+        source.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
+        garminSource = source
+        return source
+    }
+
+    /// Who is watching live data (`GarminRadioPolicy` inputs). Kept here so a Garmin source built later,
+    /// or rebuilt on a strap switch, starts from the current demand. Only a Garmin source acts on it.
+    private var garminLiveDemand = GarminRadioInputs(appInForeground: true)
+
+    /// Report a change in live demand (the Live screen, an active workout, an explicit SpO2 request).
+    /// Forwarded to the active Garmin source; every other source ignores live demand.
+    func updateGarminLiveDemand(_ change: (inout GarminRadioInputs) -> Void) {
+        change(&garminLiveDemand)
+        (activeSource as? GarminSource)?.updateLiveDemand { [garminLiveDemand] in $0 = garminLiveDemand }
     }
 
     /// Build the isolated `FTMSSource` for a gym machine `id`. HR (when the machine reports it) rides the
@@ -506,6 +573,7 @@ final class SourceCoordinator: ObservableObject {
         activeSource?.stop()
         activeSource = nil
         ouraSource = nil
+        garminSource = nil
     }
 
     // MARK: - Identity adoption
@@ -588,7 +656,7 @@ final class SourceCoordinator: ObservableObject {
 
     /// The registered `sourceKind` for a device id, or nil if the registry doesn't know it. Routes the
     /// non-WHOOP switch to the right isolated source (`.ftms` → FTMSSource, `.huami` → HuamiHRSource,
-    /// `.oura` → OuraLiveSource, anything else → StandardHRSource).
+    /// `.oura` → OuraLiveSource, `.garmin` → GarminSource, anything else → StandardHRSource).
     private func sourceKind(for id: String) -> SourceKind? {
         registry.devices.first(where: { $0.id == id })?.sourceKind
     }

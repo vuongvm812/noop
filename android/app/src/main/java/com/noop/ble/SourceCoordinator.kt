@@ -3,6 +3,9 @@ package com.noop.ble
 import android.content.Context
 import android.util.Log
 import com.noop.data.DeviceRegistry
+import com.noop.data.GarminHistoryIngest
+import com.noop.data.GarminSyncStore
+import com.noop.data.WhoopDatabase
 import com.noop.data.PairedDeviceRow
 import com.noop.data.SourceKind
 import com.noop.data.StreamBatch
@@ -96,6 +99,12 @@ class SourceCoordinator(
      *  generic strap / FTMS machine surfaces its charge where the WHOOP strap battery does. Default no-op
      *  keeps existing call sites + JVM tests compiling unchanged. */
     private val batterySink: (Int) -> Unit = {},
+    /** Blank a non-WHOOP source's live HR when its HR channel closes (an EXPERIMENTAL Garmin watch). */
+    private val clearExternalLiveHr: () -> Unit = {},
+    /** An EXPERIMENTAL Garmin watch's live snapshot (Body Battery, respiration, SpO2, …); null clears it. */
+    private val garminLiveSink: (com.noop.garmin.GarminLiveSnapshot?) -> Unit = {},
+    /** A Garmin history sync stored new files: run the same refresh + analysis a completed WHOOP offload runs. */
+    private val onGarminHistoryStored: () -> Unit = {},
     /** Push the latest instantaneous speed/cadence/power from a connected standard fitness sensor
      *  (RSC/CSC/CPS), read ADDITIVELY alongside HR by [StandardHrSource], into the live state the in-workout
      *  UI observes (wired at the composition root to `ble::publishExternalSensorMetrics`). PURE ADDITIVE — it
@@ -128,6 +137,11 @@ class SourceCoordinator(
      *  no strap source is live, so a stale readout can't outlive the link. Never carries HR / scoring. */
     private val _sensorMetrics = MutableStateFlow(StandardHrSource.SensorMetrics())
     val sensorMetrics: StateFlow<StandardHrSource.SensorMetrics> = _sensorMetrics.asStateFlow()
+
+    /** The active Garmin watch source, for the wizard, the Garmin watch panel, Live and the Test Centre.
+     *  null whenever the active source is not a GarminSource. Mirrors macOS `SourceCoordinator.garminSource`. */
+    private val _garminSource = MutableStateFlow<GarminSource?>(null)
+    val garminSource: StateFlow<GarminSource?> = _garminSource.asStateFlow()
 
     /** The active Oura source's live adopt outcome, mirrored so the Add-Oura wizard can leave its Adopting
      *  step (success -> close, failed -> the honest Failed step). [AdoptPhase.Idle] whenever no Oura source
@@ -406,6 +420,7 @@ class SourceCoordinator(
         // when the registry row has no address.
         if (!address.isNullOrEmpty()) source.connect(address) else source.scan()
         activeSource = source
+        _garminSource.value = source as? GarminSource
         activeStrapId = id
         onStrap = true
     }
@@ -414,7 +429,8 @@ class SourceCoordinator(
      * Build the isolated [LiveHrSource] for a device from its registered `sourceKind` — the ONE place that
      * maps a kind to a concrete driver. An FTMS gym machine runs the FtmsSource; an EXPERIMENTAL Huami
      * device (Amazfit / Zepp / Mi Band) runs the HuamiHrSource; an EXPERIMENTAL Oura ring runs the
-     * OuraLiveSource; everything else is a generic HR strap on StandardHrSource. Adding a brand adds ONE arm
+     * OuraLiveSource; an EXPERIMENTAL Garmin watch runs the GarminSource; everything else is a generic HR
+     * strap on StandardHrSource. Adding a brand adds ONE arm
      * here (plus a conforming source); nothing else in the coordinator changes. Returns the source WITHOUT
      * connecting — the caller ([switchToStrap]) does the connect-by-address-else-scan bring-up. Mirrors
      * macOS `SourceCoordinator.makeSource(for:)`.
@@ -444,6 +460,7 @@ class SourceCoordinator(
                 )
             }
             SourceKind.oura.name -> makeOuraSource(id, ctx, row)
+            SourceKind.garmin.name -> makeGarminSource(id, ctx, row)
             else -> {
                 val repo = requireNotNull(repository) { "SourceCoordinator.repository is required to persist strap samples" }
                 StandardHrSource(
@@ -476,6 +493,83 @@ class SourceCoordinator(
                     },
                 )
             }
+        }
+    }
+
+    /**
+     * Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`garmin`). It holds the session, the
+     * handshake and the read-only history sync; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
+     * is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once. Per-connect readouts
+     * appear only while the Connection or Sources Test Centre domain is active; state changes, refusals and
+     * failures are always logged. The Test Centre's "Garmin realtime capture" toggle opens the undecoded
+     * channels 8 / 10 / 13 for raw capture. Mirrors macOS `makeGarminSource(id:)`.
+     */
+    private fun makeGarminSource(id: String, ctx: Context, row: PairedDeviceRow?): GarminSource {
+        val prefs = NoopPrefs.of(ctx)
+        val pairedKey = "noop.garmin.pairingEventsSent.$id"
+        val syncStore = GarminSyncStore(WhoopDatabase.get(ctx))
+        val repo = requireNotNull(repository) { "SourceCoordinator.repository is required to persist Garmin samples" }
+        // Live channels feed the SAME live sink + repository as every other source (GarminLiveFeed).
+        val feed = GarminLiveFeed(
+            liveSink = liveSink,
+            clearHeartRate = clearExternalLiveHr,
+            publishSnapshot = garminLiveSink,
+            persist = { batch -> scope.launch { runCatching { repo.insert(batch, id) } } },
+            log = straplog,
+            detail = {
+                val tc = com.noop.testcentre.TestCentre.from(ctx)
+                tc.active(com.noop.testcentre.TestDomain.CONNECTION) || tc.active(com.noop.testcentre.TestDomain.SOURCES) ||
+                    tc.active(com.noop.testcentre.TestDomain.HRV)
+            },
+        )
+        return GarminSource(
+            context = ctx,
+            deviceId = id,
+            isFirstPairing = { !prefs.getBoolean(pairedKey, false) },
+            markPaired = { prefs.edit().putBoolean(pairedKey, true).apply() },
+            log = straplog,
+            detail = {
+                val tc = com.noop.testcentre.TestCentre.from(ctx)
+                tc.active(com.noop.testcentre.TestDomain.CONNECTION) || tc.active(com.noop.testcentre.TestDomain.SOURCES)
+            },
+            onBattery = batterySink,
+            onWatch = { info ->
+                if (info.bluetoothName.isNotBlank() && info.bluetoothName != row?.model) {
+                    scope.launch { runCatching { registry.setModel(id, info.bluetoothName) } }
+                }
+            },
+            // History sync: the local ledger says what is already stored; each downloaded file is decoded
+            // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
+            loadSynced = { GarminHistoryIngest.syncedKeys(syncStore, id) },
+            ingest = { file ->
+                val repo = repository
+                repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)
+            },
+            onSyncFinished = { summary -> if (garminSyncStoredHistory(summary)) onGarminHistoryStored() },
+            onLive = feed::handle,
+            undecodedCapture = { NoopPrefs.garminRealtimeCapture(ctx) },
+            capturePrefs = prefs,
+            captureKey = NoopPrefs.KEY_GARMIN_REALTIME_CAPTURE,
+        ).also { source ->
+            // Whoever is already watching (the Live screen open while the user switches to the watch).
+            val demand = garminLiveDemand
+            source.updateLiveDemand { demand }
+        }
+    }
+
+    /** Who is watching live data ([GarminRadioPolicy] inputs), kept so a Garmin source built later starts from it. */
+    private var garminLiveDemand = GarminRadioInputs(appInForeground = true)
+
+    /**
+     * Report a change in live demand (the Live screen, an active workout, an explicit SpO2 request). Forwarded
+     * to the active Garmin source on the main thread; every other source ignores it. Mirrors macOS
+     * `SourceCoordinator.updateGarminLiveDemand`.
+     */
+    fun updateGarminLiveDemand(change: (GarminRadioInputs) -> GarminRadioInputs) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            garminLiveDemand = change(garminLiveDemand)
+            val demand = garminLiveDemand
+            (activeSource as? GarminSource)?.updateLiveDemand { demand }
         }
     }
 
@@ -654,6 +748,7 @@ class SourceCoordinator(
     private fun tearDownNonWhoopSource() {
         activeSource?.stop()
         activeSource = null
+        _garminSource.value = null
         // Stop mirroring the (now torn-down) Oura source and clear the mirrors so a stale adopt outcome /
         // needs-pairing message never outlives the source or drives a later wizard transition.
         ouraStateJob?.cancel(); ouraStateJob = null
@@ -669,6 +764,9 @@ class SourceCoordinator(
     }
 
     companion object {
+        /** Whether a finished Garmin sync stored anything new (only then does it trigger a re-analysis). */
+        fun garminSyncStoredHistory(summary: com.noop.garmin.GarminSyncSummary): Boolean = summary.downloaded > 0
+
         /**
          * Classify a device id as WHOOP vs a generic strap. WHOOP if the id is the canonical "my-whoop",
          * the registry row's `brand` is "WHOOP" (case-insensitive), OR the id is unknown — unknown ids

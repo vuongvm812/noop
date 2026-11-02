@@ -1,6 +1,8 @@
 package com.noop.protocol
 
 import com.noop.data.BatteryRow
+import com.noop.data.DeviceMetricKind
+import com.noop.data.DeviceMetricRow
 import com.noop.data.EcgWaveformRow
 import com.noop.data.EventEntry
 import com.noop.data.GravityRow
@@ -197,6 +199,7 @@ class DecoderOracleTest {
         "resp" to b.resp.size, "gravity" to b.gravity.size, "steps" to b.steps.size,
         "sleep_state" to b.sleepState.size, "ppg_hr" to b.ppgHr.size,
         "ppg_waveform" to b.ppgWaveform.size, "ecg_waveform" to b.ecgWaveform.size,
+        "device_metric" to b.deviceMetric.size,
         "v18_aux" to b.v18Aux.size,
         "events" to b.events.size, "battery" to b.battery.size,
     )
@@ -229,6 +232,11 @@ class DecoderOracleTest {
             "ecg_waveform" to StreamBatch(
                 ecgWaveform = listOf(
                     EcgWaveformRow(1L, 1L, ByteArray(com.noop.protocol.Whoop5Ecg.R16_INNER_LENGTH)),
+                ),
+            ),
+            "device_metric" to StreamBatch(
+                deviceMetric = listOf(
+                    DeviceMetricRow(1L, DeviceMetricKind.STRESS, 20.0, "oracle"),
                 ),
             ),
             // Carries a real slot value rather than a bare ts: V18AuxRow.isEmpty is "every slot is null",

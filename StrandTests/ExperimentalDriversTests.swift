@@ -56,12 +56,12 @@ final class ExperimentalDriversTests: XCTestCase {
 
     func testRecogniseGarmin() {
         // Exercise the catalog-to-enum bridge used by discovery, including model-only names and
-        // case/diacritic folding. Every recognised Garmin routes through standard broadcast HR.
+        // case/diacritic folding. The brand routes to GarminSource; the Broadcast HR wizard path stores .liveBLE.
         for name in ["Garmin Instinct 2", "Garmin Forerunner 265", "FORERUNNER 265",
                      "fenix 7", "fēnix 7", "vívoactive 5", "Venu 3", "Instinct 2", "epix Pro", "vívosmart 5", "HRM-Pro"] {
             let brand = ExperimentalBrand.recognise(name: name)
             XCTAssertEqual(brand, .garmin, name)
-            XCTAssertEqual(brand?.sourceKind, .liveBLE, name)
+            XCTAssertEqual(brand?.sourceKind, .garmin, name)   // GFDI pairing; Broadcast HR rows stay .liveBLE
             XCTAssertEqual(brand?.idPrefix, "garmin", name)
             XCTAssertEqual(brand?.canStreamLiveHR, true, name)
         }
@@ -124,6 +124,16 @@ final class ExperimentalDriversTests: XCTestCase {
             id: "garmin-1", brand: "Garmin", model: "Forerunner 265", peripheralId: "BB",
             sourceKind: .liveBLE, capabilities: [.hr, .hrv], status: .paired, addedAt: 0, lastSeenAt: 0)
         XCTAssertFalse(SourceCoordinator.isWhoop(garmin))
+    }
+
+    /// A watch paired over GFDI carries the `.garmin` kind (GarminSource); a Broadcast-HR row keeps `.liveBLE`.
+    @MainActor
+    func testGarminGfdiRowIsGarminKindNonWhoop() {
+        let watch = PairedDevice(
+            id: "garmin-2", brand: "Garmin", model: "Forerunner 165", peripheralId: "CC",
+            sourceKind: .garmin, capabilities: [.hr], status: .paired, addedAt: 0, lastSeenAt: 0)
+        XCTAssertFalse(SourceCoordinator.isWhoop(watch))
+        XCTAssertEqual(ExperimentalBrand.garmin.sourceKind, .garmin)
     }
 
     // MARK: - Apple Watch is a HealthKit source, not a BLE peripheral

@@ -155,6 +155,10 @@ public struct DeviceRegistryStore: Sendable {
         // every stream above, and they are the most personal of them, so "delete all of this device's
         // data" must clear them or a user's ECG readings survive the delete.
         "ecgWaveformSample",
+        // v49-garmin-metric-samples: the watch-computed series are deviceId-keyed like every stream above.
+        // The synced-file ledger goes with them: once a device's samples are deleted, its record of
+        // "already ingested" would otherwise stop a later sync from restoring files still on the watch.
+        "deviceMetricSample", "garminSyncedFile",
         // v28-raw-imu (#423): the opt-in 5/MG raw-IMU offload capture is deviceId-keyed too — "delete all
         // of this device's data" must clear it, or the raw inertial samples survive deletion (same defect).
         // v31-deep-capture-channels: the banked 5/MG v18 auxiliary fields are deviceId-keyed per-second

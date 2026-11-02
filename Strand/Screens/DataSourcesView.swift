@@ -91,6 +91,8 @@ struct DataSourcesView: View {
                        // built cards — that observation can't be removed here (see the lane-B2 note).
                        lazy: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
+                // The active Garmin watch is a live source with its own history sync: same panel as Devices.
+                if let garmin = model.garminSource { GarminWatchPanel(source: garmin) }
                 whoopCard.staggeredAppear(index: 0)
                 appleHealthCard.staggeredAppear(index: 1)
                 xiaomiCard.staggeredAppear(index: 2)

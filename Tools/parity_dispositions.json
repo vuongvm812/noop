@@ -436,6 +436,157 @@
       "identity_sha256": "6aa52285ae46cf0ae75a690feee01765f9401825b6c9845c146163fdf5b2bb3e",
       "platform": "swift",
       "rationale": "A LOCAL binding inside the private v16 ECG decoder (#2847), not a static constant. The ledger's Swift rule treats any four-space `let` in a file-scope function as a candidate `static let`, which is how it finds file-scope constants without parsing, so a local in a top-level `private func` lands in the inventory. The Kotlin twin's equivalent is a local `val` in its own decodeWhoop5HistoricalV16, which the Kotlin rule never inventories because it matches `const val` only, and a Set-valued or object-valued local cannot be `const` in Kotlin at all. There is nothing to pair and nothing to change in either decoder."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::deleteDeviceMetricFor/1#1",
+      "identity_sha256": "dcdb345a2028cec3cddd6aab5e485719b28ff3f50afc148d09cce53d66cdb73b",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method clearing one device's watch-metric samples (Garmin storage, vuongvm812/noop#4). The Swift store names the table in DeviceRegistryStore.deviceScopedTables and loops over that list, so there is no Swift function to pair with; every sibling delete*For method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::deleteGarminSyncedFilesFor/1#1",
+      "identity_sha256": "65ee38db04ab34a5c164844c4e995565fb8f31f2dcb5fbc94644bd97ad8d0026",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method clearing one device's Garmin history-sync ledger (vuongvm812/noop#4). The Swift store names the table in DeviceRegistryStore.deviceScopedTables and loops over that list, so there is no Swift function to pair with; every sibling delete*For method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::reKeyDeviceMetric/2#1",
+      "identity_sha256": "82e698a4730355032f95878c50a8c3563ee069843f596509722d1890a8c3f3ed",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method re-keying watch-metric samples onto an adopted identity (vuongvm812/noop#4). The Swift store drives the same re-key from its own table list rather than through a DAO, so there is no Swift function to pair with; every sibling reKey* method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::reKeyGarminSyncedFiles/2#1",
+      "identity_sha256": "f5f6ecb75660d26c8f816cf014ce594645e2f407d84a7bf1bc3078b32c5ddd33",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method re-keying the Garmin history-sync ledger onto an adopted identity (vuongvm812/noop#4). The Swift store drives the same re-key from its own table list rather than through a DAO, so there is no Swift function to pair with; every sibling reKey* method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::upsertDeviceMetric/1#1",
+      "identity_sha256": "1d402c265c110c33a8a690f85a41991d4c4a2ef0d8649b5c70bd7c6d3b52dafc",
+      "platform": "kotlin",
+      "rationale": "Room @Upsert DAO method writing watch-metric samples (vuongvm812/noop#4). The Swift store prepares the same INSERT ... ON CONFLICT DO UPDATE inline in StreamStore.insert rather than through a DAO, so there is no Swift function to pair with, exactly as for insertEcgWaveform."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDatabase.kt::migrate/1#41",
+      "identity_sha256": "adaa74b3e05b17f100a3b6f0e11995f084ed0bdea2f6246e68ba823d84a3d1b1",
+      "platform": "kotlin",
+      "rationale": "Room Migration.migrate override of MIGRATION_42_43, the deviceMetricSample and garminSyncedFile tables (vuongvm812/noop#4). GRDB registers each migration as a closure (`v49-garmin-metric-samples`), so there is no Swift function to pair with; the two are paired by the migration identifiers pinned in schema_oracle.json and by the resulting table shapes, which both suites compare against that oracle."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::ingest/5#1",
+      "identity_sha256": "e168d297d5cdf3b831fb917fd6e3a01bc74462aad97f54cd637b73ace7406363",
+      "platform": "kotlin",
+      "rationale": "GarminHistoryIngest decodes and stores one downloaded watch file for Garmin history sync (vuongvm812/noop#8). Its Swift twin, GarminHistoryIngest in Strand/Data, is app glue between GarminSource and the store, so it lives in the app target the ledger does not scan; the Kotlin file sits in com.noop.data, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminWatchIngest.fold, GarminSyncStore) is paired and oracle-checked.",
+      "twin_path": "Strand/Data/GarminHistoryIngest.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::ledgerRow/1#1",
+      "identity_sha256": "0726deda9e9300194fe4c0a8995e0d7bcad2c0f4819d428cbb8e32d4262397d3",
+      "platform": "kotlin",
+      "rationale": "GarminHistoryIngest maps a sync key onto a garminSyncedFile ledger row for Garmin history sync (vuongvm812/noop#8). Its Swift twin, GarminHistoryIngest in Strand/Data, is app glue between GarminSource and the store, so it lives in the app target the ledger does not scan; the Kotlin file sits in com.noop.data, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminWatchIngest.fold, GarminSyncStore) is paired and oracle-checked.",
+      "twin_path": "Strand/Data/GarminHistoryIngest.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::syncedKeys/2#1",
+      "identity_sha256": "aadff2f676057607dd53f0435966712e112df85bced58d54fe0d06df427ca63f",
+      "platform": "kotlin",
+      "rationale": "GarminHistoryIngest reads the garminSyncedFile ledger back as sync keys for Garmin history sync (vuongvm812/noop#8). Its Swift twin, GarminHistoryIngest in Strand/Data, is app glue between GarminSource and the store, so it lives in the app target the ledger does not scan; the Kotlin file sits in com.noop.data, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminWatchIngest.fold, GarminSyncStore) is paired and oracle-checked.",
+      "twin_path": "Strand/Data/GarminHistoryIngest.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminSyncStore.kt::exec/2#1",
+      "identity_sha256": "ce78f33e6522091e36cf1998f9f1919dbe1c539e46fc70f0f7d448ba1ca34d37",
+      "platform": "kotlin",
+      "rationale": "Room plumbing for the Garmin history-sync store (vuongvm812/noop#8): runs one raw SQL statement on the SupportSQLiteDatabase and reads SQLite changes() back. GRDB hands the Swift twin a Database whose execute and changesCount do this directly, so there is no Swift function to pair with; the SQL itself is the same statement on both platforms and GarminSyncStoreTest / GarminSyncStoreTests pin its effect."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminSyncStore.kt::sql@property#1",
+      "identity_sha256": "a6e6673a013a82782b91420dd7245063644a09e1c2a93778c0089d10b41746fa",
+      "platform": "kotlin",
+      "rationale": "The Room writable SupportSQLiteDatabase that the Garmin history-sync store runs its raw SQL on (vuongvm812/noop#8). GRDB passes the Swift twin the transaction's Database as a closure argument instead, so there is no Swift property to pair with."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandImport/Sources/StrandImport/GarminWatchIngest.swift::hrRange",
+      "identity_sha256": "07040f1fcb22c8305b928c3afb946b021f6cf82dd6069eae3877285c577c1ccd",
+      "platform": "swift",
+      "rationale": "The heart-rate sanity range of the Garmin watch fold (vuongvm812/noop#8). The Kotlin twin is GarminWatchIngest.HR_RANGE, an IntRange, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. The range's effect is pinned by the fold oracle both platforms check."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/WhoopStore/Sources/WhoopStore/GarminSyncStore.swift::garminMaxKeys",
+      "identity_sha256": "369a7dca9fb69336b78f160fcf9fa6f6d39b4310228f7d428e2df9c796f379ee",
+      "platform": "swift",
+      "rationale": "The metricSeries keys the Garmin history-sync store merges with MAX (vuongvm812/noop#8). The Kotlin twin is GarminSyncStore.MAX_KEYS, a Set, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. Both stores' merge behaviour is pinned by GarminSyncStoreTests and GarminSyncStoreTest."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::applyGarminVitals/7#1",
+      "identity_sha256": "d4730f2e18fefa556c842cdc61f339bef90040f5e514452372da1827e7fa7b88",
+      "platform": "kotlin",
+      "rationale": "applyGarminVitals rebuilds each Garmin-owned night with the watch's own resting HR, overnight HRV and respiration before the baselines fold; the Swift engine does the same in its garminDailyByDay block with garminResolvedDaily (Garmin analytics, vuongvm812/noop#10). Its Swift twin is in IntelligenceEngine in Strand/Data, the app target the ledger does not scan; the Kotlin engine sits in com.noop.analytics, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminScoringInputs.resolve and baselineEraEpoch) is paired and oracle-checked, and GarminAnalyticsTests / GarminAnalyticsEngineTest run the same synthetic Garmin profile through both engines.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::eraSourceDays/4#1",
+      "identity_sha256": "ce6f5c390e4ee6e517c2abb92b8c9a9fe635f656ce59c8d5b69b0fdd7dc4f648",
+      "platform": "kotlin",
+      "rationale": "eraSourceDays builds the (day, source) pairs the respiration and Garmin baseline-era cuts read; it was lifted out of analyzeRecentOnCpu to keep that method under its JaCoCo size budget, and the Swift engine builds the same pairs inline (respCandidateDays + respSourceByDay) (Garmin analytics, vuongvm812/noop#10). Its Swift twin is in IntelligenceEngine in Strand/Data, the app target the ledger does not scan; the Kotlin engine sits in com.noop.analytics, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminScoringInputs.resolve and baselineEraEpoch) is paired and oracle-checked, and GarminAnalyticsTests / GarminAnalyticsEngineTest run the same synthetic Garmin profile through both engines.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::garminVitalsLine/2#1",
+      "identity_sha256": "11e62e774802ebf3bdcf690bac96dc94a3cdd9adf5294a390a3e88daeb324743",
+      "platform": "kotlin",
+      "rationale": "garminVitalsLine is the Recovery test-mode trace line naming each Garmin scoring input and the source that won it; the Swift engine has garminVitalsLine with the same format (Garmin analytics, vuongvm812/noop#10). Its Swift twin is in IntelligenceEngine in Strand/Data, the app target the ledger does not scan; the Kotlin engine sits in com.noop.analytics, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminScoringInputs.resolve and baselineEraEpoch) is paired and oracle-checked, and GarminAnalyticsTests / GarminAnalyticsEngineTest run the same synthetic Garmin profile through both engines.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::garminWatchIds/1#1",
+      "identity_sha256": "6c742d9ea2de433c6462732d3c6830403c9df52a76c174160307c6965e06bb88",
+      "platform": "kotlin",
+      "rationale": "garminWatchIds lists the paired Garmin watches the source-only Charge/Rest fold covers; the Swift engine filters the registry ids inline (garminWatchSources) (Garmin analytics, vuongvm812/noop#10). Its Swift twin is in IntelligenceEngine in Strand/Data, the app target the ledger does not scan; the Kotlin engine sits in com.noop.analytics, which it does. This disposition does not assert behavioural parity: the shared logic it calls (GarminScoringInputs.resolve and baselineEraEpoch) is paired and oracle-checked, and GarminAnalyticsTests / GarminAnalyticsEngineTest run the same synthetic Garmin profile through both engines.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::deviceMetricSamples/5#1",
+      "identity_sha256": "854718d15010adeac6116542424f2e7c94a41941d84dde2636d3124ea229fba2",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method reading one watch-computed series for a device (Garmin analytics, vuongvm812/noop#10). The paired read is WhoopRepository.deviceMetricSamples, whose Swift twin WhoopStore.deviceMetricSamples runs the same SELECT through GRDB directly, so there is no Swift DAO function to pair with; every sibling DAO query is one-sided for the same reason."
     }
   ]
 }

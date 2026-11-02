@@ -1,7 +1,8 @@
 import Foundation
 
 /// A non-WHOOP live BLE source the `SourceCoordinator` can run as the single active source (a generic HR
-/// strap, an FTMS gym machine, an experimental Huami band, or an experimental Oura ring).
+/// strap, an FTMS gym machine, an experimental Huami band, an experimental Oura ring, or an experimental
+/// Garmin watch).
 ///
 /// Deliberately MINIMAL: the coordinator only ever starts, targets, and stops a source, so this contract
 /// is exactly `scan` / `connect` / `stop`. All the richer per-source state — `discovered`, `scanning`,
@@ -31,3 +32,4 @@ extension StandardHRSource: LiveHRSource {}
 extension HuamiHRSource: LiveHRSource {}
 extension FTMSSource: LiveHRSource {}
 extension OuraLiveSource: LiveHRSource {}
+extension GarminSource: LiveHRSource {}
