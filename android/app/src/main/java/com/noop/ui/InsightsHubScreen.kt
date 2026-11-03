@@ -450,7 +450,7 @@ private fun DoseCurveChart(
             .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
             .clearAndSetSemantics {
                 contentDescription = description
-                callout?.let { (value, label) -> stateDescription = "$value, $label" }
+                callout?.let { (value, label) -> stateDescription = chartScrubSpoken(value, label) }
             },
     ) {
         if (points.isEmpty()) return@Canvas

@@ -431,9 +431,6 @@ object Metrics {
     val iconTiny = 12.dp
     val selectorPadding = 10.dp
     val selectorSpacing = 8.dp
-    val sparkWidthWide = 48.dp   // inline trend beside a tile value — kept compact so the value (which
-                                 // shrinks to fit, #332) keeps enough room to stay legible at full size
-    val sparkWidth = 58.dp
     val sparkHeight = 22.dp
     val stageStripHeight = 34.dp
     val motionStripHeight = 40.dp   // #407 — the subordinate movement/restlessness trace under the hypnogram

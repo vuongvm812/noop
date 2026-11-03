@@ -700,14 +700,15 @@ fun TodayScreen(
 
     // #616: the Calories tile's 14-day sparkline: the resolved series (caloriesByDay), windowed to the
     // trailing calendar window, so it matches the tile's value. Mirrors restCompositeSpark's build.
-    var caloriesSpark by remember { mutableStateOf<List<Double>>(emptyList()) }
+    // Each value keeps its day for the scrub callout (#58).
+    var caloriesSpark by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
     LaunchedEffect(caloriesByDay, selectedDay, keyMetricsWindowDays) {
         val cutoff = selectedDay.minusDays((keyMetricsWindowDays - 1).toLong()).toString()
         val end = selectedDay.toString()
         caloriesSpark = caloriesByDay.entries
             .filter { it.key in cutoff..end }
             .sortedBy { it.key }
-            .map { it.value }
+            .map { it.key to it.value }
     }
 
     // HYDRATION (opt-in, default OFF), the Today "Hydration" card + its detail are hidden unless the user
@@ -993,7 +994,7 @@ fun TodayScreen(
     // `sleep_performance` series here, windowed to the trailing 14 calendar days ending on the selected
     // day (oldest → newest, nulls dropped, mirrors remember14's windowing of the DailyMetric series), and
     // feed it to the Rest tile instead. Now the sparkline tracks the Rest score. Empty until loaded.
-    var restCompositeSpark by remember { mutableStateOf<List<Double>>(emptyList()) }
+    var restCompositeSpark by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
     LaunchedEffect(days, selectedDay, keyMetricsWindowDays) {
         val byDay = runCatching {
             viewModel.repo.resolvedSeries("sleep_performance", "my-whoop", "0000-00-00", "9999-99-99",
@@ -1005,7 +1006,7 @@ fun TodayScreen(
         restCompositeSpark = byDay.entries
             .filter { it.key in cutoff..end }
             .sortedBy { it.key }
-            .map { it.value }
+            .map { it.key to it.value }
     }
 
     // Provenance (COMPONENT 4): the REAL per-metric merge winner for the selected day's three hero scores,
@@ -5975,7 +5976,7 @@ internal fun resolveSkinTempReading(
 /**
  * The full 14-day metric grid, mirroring the macOS LazyVGrid order:
  * Charge, Effort, Rest, HRV, Resting HR, Blood Oxygen, Respiratory,
- * Steps, Weight, Calories. Each tile is a fixed-height [SparkStatTile] so the
+ * Steps, Weight, Calories. Each tile is a compact [LiquidKeyTile] so the
  * grid tiles perfectly with no empty cells.
  */
 @Composable
@@ -6026,7 +6027,7 @@ private fun MetricGrid(
     caloriesForDay: Double? = null,
     // #616: the Calories tile's 14-day trend (see caloriesSpark above), threaded like restSpark because it
     // isn't a plain DailyMetric column (it unions the phone and stored series).
-    caloriesSpark: List<Double> = emptyList(),
+    caloriesSpark: List<Pair<String, Double>> = emptyList(),
     // #316 / @63, the selected day's representative activity class (0=still, 1=walk, 2=run), shown as a small
     // still/walk/run glyph on a REAL (measured) Steps tile. null hides the icon (no classed sample for the day).
     stepActivityClassForDay: Int? = null,
@@ -6041,7 +6042,7 @@ private fun MetricGrid(
     // The Rest tile's sparkline: the trailing-window Rest composite (0–100, `sleep_performance`), so the
     // mini-graph tracks the Rest SCORE rather than raw sleep minutes (#614 follow-up). Other tiles still
     // read their series off `w` (the DailyMetric windows).
-    restSpark: List<Double> = emptyList(),
+    restSpark: List<Pair<String, Double>> = emptyList(),
     enabledMetrics: List<KeyMetric> = KeyMetric.defaultOrder,
     isToday: Boolean = false,
     // #1164: today's Rest is provisional while the strap has banked records not yet offloaded — the Rest
@@ -6089,6 +6090,8 @@ private fun MetricGrid(
                 tint = v?.let { Palette.recoveryColor(it) } ?: Palette.chargeColor,
                 frac = v?.let { (it / 100.0).coerceIn(0.0, 1.0) },
                 spark = w.recovery,
+                sparkDays = w.days { it.recovery },
+                formatSpark = { "${it.roundToInt()}%" },
             )
         },
         KeyMetric.EFFORT to KeyTileData(
@@ -6103,6 +6106,8 @@ private fun MetricGrid(
             tint = (effortForDay ?: d?.strain)?.let { Palette.effortTint(it / StrainScorer.maxStrain) } ?: Palette.effortColor,
             frac = (effortForDay ?: d?.strain)?.let { (it / 100.0).coerceIn(0.0, 1.0) },
             spark = w.strain,
+            sparkDays = w.days { it.strain },
+            formatSpark = { UnitFormatter.effortDisplay(it, effortScale) },
         ),
         KeyMetric.REST to KeyTileData(
             label = uiString(R.string.l10n_today_screen_rest_b79e5f48),
@@ -6114,7 +6119,9 @@ private fun MetricGrid(
             unit = if (restScore != null) "%" else "",
             tint = restScore?.let { Palette.recoveryColor(it) } ?: Palette.restColor,
             frac = restScore?.let { (it / 100.0).coerceIn(0.0, 1.0) },
-            spark = restSpark,
+            spark = restSpark.map { it.second },
+            sparkDays = restSpark.map { it.first },
+            formatSpark = { "${it.roundToInt()}%" },
             // Composed from the two shipped strings rather than a third one needing four translations.
             // Matches the single iOS caption "Pending sync · strap history still offloading": the second
             // half alone read as a fragment, and more so now that a real number sits above it (#2012).
@@ -6133,6 +6140,8 @@ private fun MetricGrid(
                 tint = Palette.metricCyan,
                 frac = v?.let { (it / 120.0).coerceIn(0.0, 1.0) },
                 spark = w.hrv,
+                sparkDays = w.days { it.avgHrv },
+                formatSpark = { "${it.roundToInt()} ms" },
             )
         },
         KeyMetric.RESTING_HR to run {
@@ -6144,6 +6153,8 @@ private fun MetricGrid(
                 tint = Palette.metricRose,
                 frac = v?.let { (it / 100.0).coerceIn(0.0, 1.0) },
                 spark = w.rhr,
+                sparkDays = w.days { it.restingHr?.toDouble() },
+                formatSpark = { "${it.roundToInt()} bpm" },
             )
         },
         KeyMetric.BLOOD_OXYGEN to run {
@@ -6167,6 +6178,8 @@ private fun MetricGrid(
                 // showed an unlabelled figure, which is the harder of the two to argue with.
                 caption = if (onCandidate) uiString(R.string.spo2_strap_estimate_caption) else null,
                 spark = spo2SparkSeries(w.spo2, w.spo2Candidate),
+                sparkDays = spo2SparkDays(w.spo2, w.spo2Candidate, w.days { it.spo2Pct }, w.spo2CandidateDays),
+                formatSpark = { String.format(Locale.getDefault(), "%.0f%%", it) },
             )
         },
         KeyMetric.RESPIRATORY to run {
@@ -6178,6 +6191,8 @@ private fun MetricGrid(
                 tint = Palette.accent,
                 frac = v?.let { (it / 24.0).coerceIn(0.0, 1.0) },
                 spark = w.resp,
+                sparkDays = w.days { it.respRateBpm },
+                formatSpark = { String.format(Locale.getDefault(), "%.1f rpm", it) },
             )
         },
         KeyMetric.STEPS to run {
@@ -6190,6 +6205,10 @@ private fun MetricGrid(
                 tint = Palette.metricCyan,
                 frac = steps?.let { (it / 10000.0).coerceIn(0.0, 1.0) },
                 spark = w.steps,   // #616: was missing → no trend line under the tile
+                sparkDays = w.days { it.steps?.toDouble() },
+                formatSpark = { intString(it) },
+                // #316 / @63: the still/walk/run glyph, only beside a measured count.
+                activityClass = if (realStepsForDay != null) stepActivityClassForDay else null,
                 // A measured count needs no explanation; an ESTIMATE says what it was fitted from
                 // (#760/#792); a BLANK tile on a strap that estimates says what would unblock it (#1491).
                 caption = when {
@@ -6243,7 +6262,9 @@ private fun MetricGrid(
                 unit = if (kcal != null) "kcal" else "",
                 tint = Palette.metricAmber,
                 frac = kcal?.let { (it / com.noop.analytics.DayCalories.TILE_SCALE_KCAL).coerceIn(0.0, 1.0) },
-                spark = caloriesSpark,   // #616: the resolved trend (was missing → no trend line)
+                spark = caloriesSpark.map { it.second },   // #616: the resolved trend (was missing → no trend line)
+                sparkDays = caloriesSpark.map { it.first },
+                formatSpark = { "${intString(it)} kcal" },
             )
         },
         KeyMetric.SKIN_TEMP to run {
@@ -6266,6 +6287,13 @@ private fun MetricGrid(
                 tint = Palette.metricAmber,
                 frac = null,
                 spark = w.skinTemp,
+                sparkDays = w.days { it.skinTempDevC },
+                formatSpark = {
+                    com.noop.analytics.SkinTempDisplay.formatReading(
+                        com.noop.analytics.SkinTempDisplay.Reading(it, com.noop.analytics.SkinTempDisplay.Kind.DEVIATION),
+                        fahrenheit = fahrenheit,
+                    )
+                },
             )
         },
     )
@@ -6374,6 +6402,12 @@ private data class KeyTileData(
      *  estimate's calibration status, or why a blank tile is blank. Null leaves the tile exactly as it was. */
     val caption: String? = null,
     val spark: List<Double> = emptyList(),
+    /** The yyyy-MM-dd day of each [spark] value, index-aligned; names the point under the scrub cursor. */
+    val sparkDays: List<String> = emptyList(),
+    /** Formats a [spark] value for the scrub callout, with the tile's unit. */
+    val formatSpark: ((Double) -> String)? = null,
+    /** #316 / @63: the Steps tile's still/walk/run activity class, drawn as a glyph after the label. */
+    val activityClass: Int? = null,
 )
 
 /** The per-metric glyph shown beside a Key-Metric tile's label — the Android twin of iOS
@@ -6460,6 +6494,17 @@ private fun LiquidKeyTile(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            data.activityClass?.let { cls ->
+                val (vector, descRes) = stepActivityIconFor(cls)
+                if (vector != null && descRes != null) {
+                    Icon(
+                        vector,
+                        contentDescription = uiString(descRes),
+                        tint = data.tint.copy(alpha = 0.72f),
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
         }
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
@@ -6510,6 +6555,8 @@ private fun LiquidKeyTile(
                 Sparkline(
                     values = tail,
                     color = data.tint,
+                    formatValue = data.formatSpark,
+                    selectionLabels = sparkTailDayLabels(data.spark, data.sparkDays, windowDays),
                     modifier = Modifier
                         .fillMaxWidth()
                         // A touch more air between the fill bar and the graph (tester feedback: the two
@@ -7845,106 +7892,6 @@ private fun stepActivityIconFor(activityClass: Int): Pair<ImageVector?, Int?> = 
     else -> null to null
 }
 
-// MARK: - SparkStatTile
-//
-// A fixed-height metric tile: overline label, big value + caption, and a 14-day
-// Sparkline anchored along the bottom edge. Mirrors the macOS StatTile-with-sparkline
-// while reusing the locked surfaces/typography (NoopCard, Overline, NoopType). Built
-// here rather than mutating the shared StatTile so other screens keep the plain tile.
-
-@Composable
-private fun SparkStatTile(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    caption: String? = null,
-    accent: Color = Palette.textPrimary,
-    spark: List<Double> = emptyList(),
-    sparkColor: Color = Palette.accent,
-    onInfo: (() -> Unit)? = null,
-    badge: String? = null,
-    // #316 / @63, an optional activity-class code (0=still, 1=walk, 2=run) rendered as a small still/walk/run
-    // glyph in the label row, tinted with the tile accent. null = no icon. Used by the Steps tile.
-    trailingIcon: Int? = null,
-) {
-    val displayValue = localizedMetricValue(value)
-    NoopCard(modifier = modifier.height(Metrics.tileHeight), padding = Metrics.space14) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Label row carries the overline, an optional low-confidence [badge] (H9, e.g. "Estimated"
-            // stages), an optional activity glyph ([trailingIcon], #316), and, for the three headline scores
-            // only, a trailing ⓘ that opens the scoring guide at this score. Other tiles render as before.
-            if (onInfo != null || badge != null || trailingIcon != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Overline(label)
-                    if (badge != null) {
-                        Spacer(Modifier.width(Metrics.space6))
-                        // A tertiary-tinted pill, honest "this is estimated, not measured" signal, the same
-                        // muted treatment as a provenance badge so it informs without alarming. (H9)
-                        SourceBadge(badge, tint = Palette.textTertiary)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    // #316, still/walk/run glyph, before the optional ⓘ. Self-hides for an unknown code.
-                    if (trailingIcon != null) {
-                        val (vector, descRes) = stepActivityIconFor(trailingIcon)
-                        if (vector != null && descRes != null) {
-                            Icon(
-                                vector,
-                                contentDescription = uiString(descRes),
-                                tint = accent,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        }
-                    }
-                    if (onInfo != null) ScoreInfoButton(section = null, onClick = onInfo, compact = true)
-                }
-            } else {
-                Overline(label)
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    // Shrink-to-fit (down to 0.6×) so a value never ellipsizes to "100%"→"10…" /
-                    // "15.5"→"15…" next to the inline sparkline, matching the Swift tile's
-                    // minimumScaleFactor (#332). fillMaxWidth() is load-bearing: AutoSizeValue only
-                    // shrinks when its Text is given a hard width to overflow against, without it the
-                    // single-line Text takes its intrinsic width, `didOverflowWidth` never trips, and
-                    // the value silently truncates at full size. The plain StatTile worked because it
-                    // passes weight(1f) (a hard width); this column-child needs fillMaxWidth instead.
-                    AutoSizeValue(
-                        displayValue,
-                        style = NoopType.tileValueLarge,
-                        color = accent,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (caption != null) {
-                        Text(
-                            caption,
-                            style = NoopType.footnote,
-                            color = Palette.textTertiary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = Metrics.space2),
-                        )
-                    }
-                }
-                if (spark.size >= 2) {
-                    // Sparkline forces fillMaxWidth + a fixed height internally, so we
-                    // bound it in a sized Box to keep it a compact inline trend.
-                    SparkTailBox(wide = true) {
-                        Sparkline(values = spark, color = sparkColor)
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - Illness banner (ported from HealthAlertBanner.swift)
 
 @Composable
@@ -7993,7 +7940,14 @@ private data class Window(
     // Added 2026-08-24 (queue 11c follow-up) for the new Skin Temp Key Metrics tile — matches the iOS
     // `sparks["skin_temp"]` sparkline added at the same time.
     val skinTemp: List<Double>,
-)
+    /** The window's rows, so a tile can name the day of each sparkline point. */
+    val recent: List<DailyMetric> = emptyList(),
+    /** The days behind [spo2Candidate], index-aligned. */
+    val spo2CandidateDays: List<String> = emptyList(),
+) {
+    /** The days of the series [pick] builds, index-aligned with it (the same null filter). */
+    fun days(pick: (DailyMetric) -> Double?): List<String> = recent.filter { pick(it) != null }.map { it.day }
+}
 
 /**
  * Build the trailing trend windows from `recentDays` over the chosen span (7 / 14 / 30 calendar days —
@@ -8033,6 +7987,8 @@ private fun rememberTrendWindow(
             resp = series { it.respRateBpm },
             steps = series { it.steps?.toDouble() },   // #616
             skinTemp = series { it.skinTempDevC },
+            recent = recent,
+            spo2CandidateDays = recent.filter { spo2Candidate[it.day] != null }.map { it.day },
         )
     }
 

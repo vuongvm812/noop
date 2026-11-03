@@ -514,7 +514,7 @@ private fun HydrationHistoryBars(
                 .height(96.dp)
                 .onSizeChanged { chartW = it.width.toFloat() }
                 .chartScrub(history, onRelease = { scrubX = null }) { scrubX = it }
-                .semantics { if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel" },
+                .semantics { if (calloutValue != null) stateDescription = chartScrubSpoken(calloutValue, calloutLabel) },
         ) {
             val n = history.size
             val gap = 10.dp.toPx()

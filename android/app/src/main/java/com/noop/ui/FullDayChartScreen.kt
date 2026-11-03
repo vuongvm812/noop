@@ -303,6 +303,8 @@ fun FullDayChartScreen(vm: AppViewModel, onBack: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth().height(280.dp),
                                 onWindowChange = { window = it },
                                 timeTicks = timeTicks,
+                                // The scrub callout reads like the latest-value readout above: same digits, same unit.
+                                formatValue = { formatValue(metric, it) + unitSuffix(metric, tempUnit) },
                             )
                         }
                     }

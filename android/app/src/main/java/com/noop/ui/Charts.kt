@@ -1,6 +1,6 @@
 package com.noop.ui
 
-import com.noop.analytics.StagePercentages
+import com.noop.R
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -55,19 +55,19 @@ import kotlin.math.roundToInt
 //
 // Implements the shared chart contract used across the port. Every chart is
 // null/empty-safe: with no usable data it renders nothing but a faint baseline
-// (or, for the hypnogram, the inset well) so layouts never collapse or crash.
+// (or, for the segment bar, the inset well) so layouts never collapse or crash.
 //
 //   Sparkline  — tiny inline trend line, no axes
 //   LineChart  — line with optional soft gradient fill, height driven by Modifier
 //   BarChart   — vertical bars from a zero baseline
-//   Hypnogram  — proportional sleep-stage strip (deep / rem / light / awake)
+//   SegmentBar — proportional colour strip
 
 // MARK: - Accessibility summaries
 //
 // Each chart primitive contributes exactly ONE semantics node via `Modifier.clearAndSetSemantics`, so the
 // Compose accessibility delegate never walks a per-bar/per-band/per-point subtree (the giant semantics
 // tree the a11y walk re-copied on every scroll was a contributor to the #707 OOM). The node carries a
-// concise spoken summary (count + latest/low/high, or per-stage totals) — O(1) instead of O(elements).
+// concise spoken summary (count + latest/low/high) — O(1) instead of O(elements).
 // These are pure helpers; they change NO drawing.
 
 /** One-line spoken summary of a numeric series: count + latest + low/high. Empty → "No data". */
@@ -82,53 +82,6 @@ private fun seriesSummary(values: List<Double>, noun: String): String {
 }
 
 /**
- * Per-stage total summary for the Hypnogram, naming only the stages present.
- *
- * Spoken in the SAME order the rows are drawn in, awake · REM · light · deep (#2534). It used to announce
- * deep first, so a screen-reader user heard a different order from the one on screen.
- *
- * `internal` only so the order and the apportionment can be pinned by a test; nothing else calls it.
- */
-internal fun hypnogramSummary(stages: List<Pair<String, Float>>): String {
-    if (stages.isEmpty()) return "Sleep stages, no data"
-    // Weights are relative widths, not minutes, so report the share of the night in each stage.
-    val total = stages.map { if (it.second.isFinite() && it.second > 0f) it.second else 0f }.sum()
-    if (total <= 0f) return "Sleep stages, no data"
-    // TWO orders, deliberately separate, because they answer different questions.
-    //
-    // `spoken` is what a screen-reader user hears, and it matches the visible row stacks (#2534).
-    //
-    // `apportion` is the input order to the largest-remainder split, and it must stay the one EVERY visible
-    // surface uses. `wholePercentages` breaks ties by lower index, so the input order decides which stage
-    // gets the spare point: feeding it a different order is how the spoken percentages could disagree by
-    // one with the rows on screen for the same night. Reordering this list to match `spoken` would look
-    // tidier and would silently reintroduce that.
-    val spoken = listOf("awake", "rem", "light", "deep")
-    val apportion = listOf("awake", "light", "deep", "rem")
-    val byStage = LinkedHashMap<String, Float>()
-    for (key in apportion) byStage[key] = 0f
-    stages.forEach { (name, w) ->
-        val v = if (w.isFinite() && w > 0f) w else 0f
-        val key = when (name.trim().lowercase()) {
-            "deep" -> "deep"; "rem" -> "rem"; "light" -> "light"; "awake", "wake" -> "awake"; else -> "light"
-        }
-        byStage[key] = (byStage[key] ?: 0f) + v
-    }
-    // One apportionment (largest-remainder) over the four stages so the read-out shares sum to 100 rather
-    // than 99/101 — same helper the visible breakdown rows use; absent stages get 0 and are skipped below.
-    val shares = StagePercentages.wholePercentages(apportion.map { (byStage[it] ?: 0f).toDouble() })
-    val parts = spoken.mapNotNull { key ->
-        val v = byStage[key] ?: 0f
-        if (v <= 0f || shares == null) null else {
-            val label = if (key == "rem") "REM" else key.replaceFirstChar { it.uppercase() }
-            // Indexed by APPORTIONMENT position, iterated in SPOKEN order.
-            "${shares[apportion.indexOf(key)]} percent $label"
-        }
-    }
-    return if (parts.isEmpty()) "Sleep stages, no data" else "Sleep stages, " + parts.joinToString(", ")
-}
-
-/**
  * Per-reading TalkBack access on a chart's ONE collapsed node (#58), keeping the single-node design
  * above: the selected reading's callout text as the node's state, and Next/Previous point actions that
  * move the selection, so a screen-reader user can step through the readings a finger would scrub.
@@ -136,8 +89,8 @@ internal fun hypnogramSummary(stages: List<Pair<String, Float>>): String {
 private fun SemanticsPropertyReceiver.chartScrubSemantics(spoken: String?, onStep: (forward: Boolean) -> Unit) {
     if (spoken != null) stateDescription = spoken
     customActions = listOf(
-        CustomAccessibilityAction("Next point") { onStep(true); true },
-        CustomAccessibilityAction("Previous point") { onStep(false); true },
+        CustomAccessibilityAction(chartScrubString(R.string.chart_scrub_next_point, "Next point")) { onStep(true); true },
+        CustomAccessibilityAction(chartScrubString(R.string.chart_scrub_previous_point, "Previous point")) { onStep(false); true },
     )
 }
 
@@ -734,60 +687,6 @@ fun LineChart(
     }
 }
 
-data class LineSeries(
-    val values: List<Double>,
-    val color: Color,
-)
-
-@Composable
-fun MultiLineChart(
-    series: List<LineSeries>,
-    modifier: Modifier,
-) {
-    val cleanSeries = remember(series) {
-        series.map { it.copy(values = it.values.filter { value -> value.isFinite() }) }
-            .filter { it.values.size >= 2 }
-    }
-
-    // ONE collapsed semantics node: summarise across all series (count of lines + overall low/high) so
-    // the a11y delegate reads a single line rather than walking the canvas. Changes no drawing.
-    val axSummary = run {
-        val all = cleanSeries.flatMap { it.values }
-        if (all.isEmpty()) "Trends, no data"
-        else "Trends, ${cleanSeries.size} series, low ${formatLineValue(all.min())}, high ${formatLineValue(all.max())}"
-    }
-
-    Canvas(modifier = modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = axSummary }) {
-        if (cleanSeries.isEmpty()) {
-            drawBaseline()
-            return@Canvas
-        }
-
-        val allValues = cleanSeries.flatMap { it.values }
-        val minV = allValues.minOrNull() ?: return@Canvas
-        val maxV = allValues.maxOrNull() ?: return@Canvas
-        val strokePx = 2.5f
-        val topPad = strokePx + 4f
-        val bottomPad = strokePx + 4f
-
-        cleanSeries.forEach { line ->
-            // MultiLineChart keeps index spacing: its series are index-aligned to each other, not to a
-            // shared clock, so positioning by time would need a per-series timeline it does not have.
-            val pts = pointsFor(line.values, size.width, size.height, topPad, bottomPad, null, minV, maxV)
-            if (pts.isEmpty()) return@forEach
-            val path = Path().apply {
-                moveTo(pts.first().x, pts.first().y)
-                for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
-            }
-            drawPath(
-                path = path,
-                color = line.color,
-                style = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round),
-            )
-        }
-    }
-}
-
 /**
  * Where each point sits horizontally, as a 0..1 fraction of the width.
  *
@@ -810,26 +709,10 @@ internal fun xFractions(count: Int, timestamps: List<Long>?): List<Float> {
     return timestamps.map { ((it - timestamps.first()) / span).toFloat() }
 }
 
-/** The tap/drag pinpoint label: the caller's display formatter when supplied (#463), else the raw
- *  near-integer-collapsing default. A non-blank [pointLabel] prefixes the formatted value; otherwise
- *  [epochSec] prefixes its local clock time ("14:32 · 87 bpm"). Split out so each choice is
- *  JVM-testable. */
-internal fun lineChartSelectionLabel(
-    value: Double,
-    formatValue: ((Double) -> String)?,
-    epochSec: Long? = null,
-    zone: ZoneId = ZoneId.systemDefault(),
-    pointLabel: String? = null,
-): String {
-    val (base, label) = lineChartSelectionParts(value, formatValue, epochSec, zone, pointLabel)
-    return if (label == null) base else "$label · $base"
-}
-
 /**
- * The scrub callout's two lines (#58): the formatted value, and the label naming WHEN (the caller's
- * non-blank [pointLabel], else [epochSec]'s local "HH:mm", else null). Same choices as
- * [lineChartSelectionLabel], which joins the pair onto one line, so the callout and the old one-line
- * read-out cannot disagree.
+ * The scrub callout's two lines (#58): the value through the caller's display formatter when supplied
+ * (#463), else the raw near-integer-collapsing default; and the label naming WHEN (the caller's non-blank
+ * [pointLabel], else [epochSec]'s local "HH:mm", else null). Split out so each choice is JVM-testable.
  */
 internal fun lineChartSelectionParts(
     value: Double,
@@ -866,7 +749,7 @@ internal fun chartScrubGapLabel(
 
 /** What TalkBack says for the selected reading: "16 Jul, 87 bpm", or the bare value with no label. */
 internal fun chartScrubSpoken(value: String, label: String?): String =
-    if (label.isNullOrBlank()) value else "$label, $value"
+    if (label.isNullOrBlank()) value else chartScrubString(R.string.chart_scrub_spoken, "%1\$s, %2\$s", label, value)
 
 /** One a11y step through [count] readings from [current] (-1 = none selected): forward from none lands on
  *  the first, backward from none on the last, and both ends hold. */
@@ -1182,117 +1065,106 @@ internal fun meanBucketIndexOf(index: Int, n: Int, target: Int): Int {
     return b
 }
 
-// MARK: - Hypnogram
-
-/**
- * Proportional sleep-stage strip. [stages] is an ordered list of (stageName,
- * fractionOfWidth) where fractions are taken as relative weights and normalized to
- * fill the available width. Stage names are matched case-insensitively to the
- * design-system sleep palette:
- *
- *   "deep"  → Palette.sleepDeep      "rem"   → Palette.sleepREM
- *   "light" → Palette.sleepLight     "awake" → Palette.sleepAwake
- *
- * Unknown names fall back to the light tone. Empty/zero-weight input renders the
- * inset well so the row keeps its height.
- */
-@Composable
-fun Hypnogram(
-    stages: List<Pair<String, Float>>,
-    modifier: Modifier,
-) {
-    // PERF (#scroll-jank): the weights sum + per-segment fraction/width geometry was recomputed inside
-    // the Canvas draw lambda every frame. Hoist it into drawWithCache (keyed on stages + the implicit
-    // size) as a list of (color,left,width) segments; the onDrawBehind just replays them. The inset
-    // well + the empty/zero-weight state are preserved exactly.
-    // ONE collapsed semantics node (per-stage share) so the a11y delegate reads a single sleep-stage
-    // summary instead of walking each band — the Android twin of the iOS Hypnogram's single node.
-    val axSummary = hypnogramSummary(stages)
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(Metrics.segmentBarHeight)
-            .clearAndSetSemantics { contentDescription = axSummary }
-            .drawWithCache {
-                val w = size.width
-                val h = size.height
-                val weights = stages.map { it.second }.map { if (it.isFinite() && it > 0f) it else 0f }
-                val total = weights.sum()
-                if (w <= 0f || h <= 0f || stages.isEmpty() || total <= 0f) {
-                    // Inset well only (or nothing if degenerate) — matches the old baseline-only state.
-                    onDrawBehind {
-                        if (w > 0f && h > 0f) drawRoundedTrack(Palette.surfaceInset)
-                    }
-                } else {
-                    val segs = ArrayList<Triple<Color, Float, Float>>(stages.size)
-                    var x = 0f
-                    val gap = if (stages.size > 1) 1.5f else 0f
-                    stages.forEachIndexed { i, (name, _) ->
-                        val frac = weights[i] / total
-                        val segW = (w * frac)
-                        if (segW <= 0f) return@forEachIndexed
-                        val drawW = (segW - if (i < stages.size - 1) gap else 0f).coerceAtLeast(0f)
-                        if (drawW > 0f) segs.add(Triple(stageColor(name), x, drawW))
-                        x += segW
-                    }
-                    onDrawBehind {
-                        // Inset well background so the strip reads as a recessed track.
-                        drawRoundedTrack(Palette.surfaceInset)
-                        segs.forEach { (c, left, width) ->
-                            drawSegment(color = c, left = left, width = width, height = h)
-                        }
-                    }
-                }
-            },
-    )
-}
-
 // MARK: - SegmentBar
 
 /**
- * Generic proportional color strip (the Hypnogram geometry with caller-supplied colors).
+ * Generic proportional color strip.
  * [segments] is an ordered list of (color, weight); weights are normalized to fill the
  * width. Zero/NaN weights are skipped. Empty/zero input renders the inset well so rows
  * keep their height.
+ *
+ * [callouts], index-aligned with [segments] as (value, label) pairs, turns on the scrub cursor (#58): the
+ * segment under the finger is kept at full colour, the others dim, and a callout above the strip names it.
  */
 @Composable
 fun SegmentBar(
     segments: List<Pair<Color, Float>>,
     modifier: Modifier,
     height: Dp = Metrics.segmentBarHeight,
+    callouts: List<Pair<String, String>>? = null,
 ) {
-    // PERF (#scroll-jank): same hoist as Hypnogram — the weight sum + per-segment widths move into
+    // PERF (#scroll-jank): the weight sum + per-segment widths move into
     // drawWithCache (keyed on segments + the implicit size); the draw lambda replays the segment list.
     // ONE collapsed semantics node so the a11y delegate doesn't walk each segment. The segments are a
     // caller-supplied colour breakdown with no inherent label, so the summary is just the segment count.
     val axSummary = if (segments.isEmpty()) "Breakdown, no data" else "Breakdown, ${segments.size} segments"
-    Box(modifier = modifier.fillMaxWidth().height(height).clearAndSetSemantics { contentDescription = axSummary }.drawWithCache {
+    val weights = remember(segments) { segments.map { it.second } }
+    val scrubCallouts = callouts?.takeIf { it.size == segments.size }
+    var selected by remember(segments) { mutableIntStateOf(-1) }
+    var barWidth by remember { mutableIntStateOf(0) }
+    ChartScrubHaptic(selected.takeIf { it >= 0 })
+    val paints = rememberChartScrubPaints()
+    val spoken = scrubCallouts?.getOrNull(selected)?.let { (value, label) -> chartScrubSpoken(value, label) }
+    val scrub = if (scrubCallouts == null) Modifier else Modifier
+        .onSizeChanged { barWidth = it.width }
+        .chartScrub(weights, onRelease = { selected = -1 }) { x ->
+            selected = segmentBarIndexAt(weights, barWidth.toFloat(), x)
+        }
+    Box(modifier = modifier.fillMaxWidth().height(height)
+        .clearAndSetSemantics {
+            contentDescription = axSummary
+            if (spoken != null) stateDescription = spoken
+        }
+        .then(scrub)
+        .drawWithCache {
         val w = size.width
         val h = size.height
-        val weights = segments.map { it.second }.map { if (it.isFinite() && it > 0f) it else 0f }
-        val total = weights.sum()
+        val clean = weights.map { if (it.isFinite() && it > 0f) it else 0f }
+        val total = clean.sum()
         if (w <= 0f || h <= 0f || segments.isEmpty() || total <= 0f) {
             onDrawBehind {
                 if (w > 0f && h > 0f) drawRoundedTrack(Palette.surfaceInset)
             }
         } else {
-            val segs = ArrayList<Triple<Color, Float, Float>>(segments.size)
+            val segs = ArrayList<SegmentGeometry>(segments.size)
             var x = 0f
             val gap = if (segments.size > 1) 1.5f else 0f
             segments.forEachIndexed { i, (color, _) ->
-                val frac = weights[i] / total
+                val frac = clean[i] / total
                 val segW = w * frac
                 if (segW <= 0f) return@forEachIndexed
                 val drawW = (segW - if (i < segments.size - 1) gap else 0f).coerceAtLeast(0f)
-                if (drawW > 0f) segs.add(Triple(color, x, drawW))
+                if (drawW > 0f) segs.add(SegmentGeometry(i, color, x, drawW, x + segW / 2f))
                 x += segW
             }
             onDrawBehind {
                 drawRoundedTrack(Palette.surfaceInset)
-                segs.forEach { (c, left, width) -> drawSegment(color = c, left = left, width = width, height = h) }
+                segs.forEach { seg ->
+                    val c = if (selected >= 0 && seg.index != selected) seg.color.copy(alpha = 0.3f) else seg.color
+                    drawSegment(color = c, left = seg.left, width = seg.width, height = h)
+                }
+                val hit = scrubCallouts?.getOrNull(selected)
+                val seg = segs.firstOrNull { it.index == selected }
+                if (hit != null && seg != null) {
+                    drawScrubCallout(seg.centre, 0f, hit.first, hit.second, paints, overflowAbove = true)
+                }
             }
         }
     })
+}
+
+private class SegmentGeometry(val index: Int, val color: Color, val left: Float, val width: Float, val centre: Float)
+
+/**
+ * The segment under [x] on a strip [width] wide, with [weights] normalised to fill it the way [SegmentBar]
+ * draws them. Zero or non-finite weights take no width and can never be hit. A point past either end snaps
+ * to the outermost drawn segment. -1 when nothing is drawn.
+ */
+internal fun segmentBarIndexAt(weights: List<Float>, width: Float, x: Float): Int {
+    val clean = weights.map { if (it.isFinite() && it > 0f) it else 0f }
+    val total = clean.sum()
+    if (total <= 0f || width <= 0f) return -1
+    var left = 0f
+    var last = -1
+    clean.forEachIndexed { i, wt ->
+        if (wt <= 0f) return@forEachIndexed
+        val right = left + width * wt / total
+        if (last < 0 && x < left) return i
+        if (x < right) return i
+        last = i
+        left = right
+    }
+    return last
 }
 
 private fun DrawScope.drawRoundedTrack(color: Color) {
@@ -1314,15 +1186,6 @@ private fun DrawScope.drawSegment(color: Color, left: Float, width: Float, heigh
         strokeWidth = height,
         cap = StrokeCap.Round,
     )
-}
-
-/** Map a stage name to its design-system sleep tone (case-insensitive). */
-private fun stageColor(name: String): Color = when (name.trim().lowercase()) {
-    "deep" -> Palette.sleepDeep
-    "rem" -> Palette.sleepREM
-    "light" -> Palette.sleepLight
-    "awake", "wake" -> Palette.sleepAwake
-    else -> Palette.sleepLight
 }
 
 // MARK: - Deep Timeline chart (#575) — time-indexed, zoom + pan

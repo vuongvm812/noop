@@ -2871,4 +2871,8 @@
     <string name="weight_log_done">Готово</string>
     <string name="weight_log_previous_day">Предыдущий день</string>
     <string name="weight_log_next_day">Следующий день</string>
+    <string name="chart_scrub_no_data">Нет данных</string>
+    <string name="chart_scrub_next_point">Следующая точка</string>
+    <string name="chart_scrub_previous_point">Предыдущая точка</string>
+    <string name="chart_scrub_spoken">%1$s, %2$s</string>
 </resources>

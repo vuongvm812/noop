@@ -98,6 +98,7 @@ import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.noop.analytics.ClockFormat
@@ -2126,6 +2127,8 @@ internal fun StageTimeline(
                 selected = selectedStage == label,
                 dimmed = selectedStage != null && selectedStage != label,
                 onTap = { selectedStage = if (selectedStage == label) null else label },
+                onsetTs = onsetTs?.takeIf { wakeTs != null && wakeTs > it },
+                spanSec = spanSec,
             )
         }
         // #407 — MotionStrip component + data path untouched; relocated UNDER the rows on the SAME
@@ -2164,10 +2167,19 @@ private fun StageTimelineRow(
     selected: Boolean,
     dimmed: Boolean,
     onTap: () -> Unit,
+    onsetTs: Long?,
+    spanSec: Double,
 ) {
     val segColor = if (dimmed) Palette.textTertiary.copy(alpha = 0.55f) else color
     val pctColor = if (dimmed) Palette.textTertiary else color
     val shape = RoundedCornerShape(Metrics.stageRowCorner)
+    // Scrub cursor (#58): touch and hold the track to read the segment under the finger. The row's
+    // duration swaps for that segment's clock range (or its length when the night has no session window)
+    // while the finger is down. Hold-only, so a tap still toggles the highlight and a swipe still scrolls.
+    var scrubSeg by remember(spans) { mutableStateOf<Int?>(null) }
+    val is24h = ClockPrefs.uses24Hour(LocalContext.current)
+    val scrubText = scrubSeg?.let { spans.getOrNull(it) }?.let { stageRowSegmentText(it, onsetTs, spanSec, is24h) }
+    ChartScrubHaptic(scrubSeg)
     Column(
         verticalArrangement = Arrangement.spacedBy(Metrics.space6),
         modifier = Modifier
@@ -2179,6 +2191,7 @@ private fun StageTimelineRow(
             .padding(horizontal = Metrics.stageRowPadH, vertical = Metrics.stageRowPadV)
             .semantics(mergeDescendants = true) {
                 contentDescription = uiString(R.string.l10n_sleep_screen_label_durationtext_minutes_percent_percent_of_6ab7ae87, label, durationText(minutes), percent)
+                scrubText?.let { stateDescription = chartScrubSpoken(it, label) }
             },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2192,13 +2205,13 @@ private fun StageTimelineRow(
             Text(uiString(R.string.l10n_sleep_screen_percent_2281d326, percent), style = NoopType.captionNumber, color = pctColor, maxLines = 1)
             Spacer(modifier = Modifier.weight(1f))
             Text(
-                durationText(minutes),
+                scrubText ?: durationText(minutes),
                 style = NoopType.captionNumber,
                 color = Palette.textPrimary,
                 maxLines = 1,
             )
         }
-        StageRowTrack(spans = spans, color = segColor)
+        StageRowTrack(spans = spans, color = segColor, selected = scrubSeg, onScrub = { scrubSeg = it })
     }
 }
 
@@ -2210,8 +2223,22 @@ private fun StageTimelineRow(
  * (same #36 lesson as HypnogramWithAxis).
  */
 @Composable
-private fun StageRowTrack(spans: List<Pair<Float, Float>>, color: Color) {
-    Canvas(modifier = Modifier.fillMaxWidth().height(Metrics.stageRowTrackHeight)) {
+private fun StageRowTrack(
+    spans: List<Pair<Float, Float>>,
+    color: Color,
+    selected: Int?,
+    onScrub: (Int?) -> Unit,
+) {
+    var width by remember { mutableStateOf(0f) }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(Metrics.stageRowTrackHeight)
+            .onSizeChanged { width = it.width.toFloat() }
+            .chartScrub(spans, holdOnly = true, onRelease = { onScrub(null) }) { x ->
+                onScrub(if (width > 0f) stageRowSegmentAt(spans, x / width) else null)
+            },
+    ) {
         val w = size.width
         val h = size.height
         if (w <= 0f || h <= 0f) return@Canvas
@@ -2245,7 +2272,52 @@ private fun StageRowTrack(spans: List<Pair<Float, Float>>, color: Color) {
                 cornerRadius = segRadius,
             )
         }
+        // The scrubbed segment gets an outline so the reading in the header has a visible owner.
+        selected?.let { spans.getOrNull(it) }?.let { (fracStart, fracWidth) ->
+            if (!fracStart.isFinite() || !fracWidth.isFinite() || fracWidth <= 0f) return@let
+            val segW = maxOf(w * fracWidth, minW).coerceAtMost(w)
+            val x0 = (w * fracStart).coerceIn(0f, w - segW)
+            drawRoundRect(
+                color = Palette.textPrimary,
+                topLeft = Offset(x0, 0f),
+                size = Size(segW, h),
+                cornerRadius = segRadius,
+                style = Stroke(width = 1.5.dp.toPx()),
+            )
+        }
     }
+}
+
+/**
+ * The segment of a stage row nearest the cursor at [frac] (0..1 of the night): the one containing it, else
+ * the one whose nearer edge is closest; an exact tie picks the earlier segment. Null when the row has none.
+ */
+internal fun stageRowSegmentAt(spans: List<Pair<Float, Float>>, frac: Float): Int? {
+    var best: Int? = null
+    var bestDist = Float.MAX_VALUE
+    spans.forEachIndexed { i, (start, width) ->
+        if (!start.isFinite() || !width.isFinite() || width <= 0f) return@forEachIndexed
+        val end = start + width
+        val d = when {
+            frac < start -> start - frac
+            frac > end -> frac - end
+            else -> 0f
+        }
+        if (d < bestDist) { bestDist = d; best = i }
+    }
+    return best
+}
+
+/**
+ * The header text for a scrubbed stage segment: its clock range ("01:12–01:47") when the night has an
+ * onset to anchor it, else its length in the row's duration format ("35m").
+ */
+internal fun stageRowSegmentText(span: Pair<Float, Float>, onsetTs: Long?, spanSec: Double, is24h: Boolean): String {
+    val (start, width) = span
+    if (onsetTs == null || spanSec <= 0.0 || !spanSec.isFinite()) return durationText(width * spanSec / 60.0)
+    val from = onsetTs + (start * spanSec).roundToLong()
+    val to = onsetTs + ((start + width) * spanSec).roundToLong()
+    return "${clockTimeLabel(from, is24h)}–${clockTimeLabel(to, is24h)}"
 }
 
 /**

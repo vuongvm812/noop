@@ -83,7 +83,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.performance.latest),
                 caption = tileCaption(m.performance.latestDay, m.performance.latest, m.performance.typical, "%"),
                 accent = m.performance.latest?.let { Palette.recoveryColor(it) } ?: Palette.textPrimary,
-                spark = m.performance.series, sparkColor = Palette.restColor,
+                spark = m.performance.series, sparkDays = m.performance.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("performance") },
             )
         },
@@ -93,7 +93,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.efficiency.latest),
                 caption = tileCaption(m.efficiency.latestDay, m.efficiency.latest, m.efficiency.typical, "%"),
                 accent = Palette.statusPositive,
-                spark = m.efficiency.series, sparkColor = Palette.statusPositive,
+                spark = m.efficiency.series, sparkDays = m.efficiency.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.statusPositive,
                 onClick = { onMetricClick("efficiency") },
             )
         },
@@ -103,7 +103,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.consistency.latest),
                 caption = tileCaption(m.consistency.latestDay, m.consistency.latest, m.consistency.typical, "%"),
                 accent = m.consistency.latest?.let { Palette.recoveryColor(it) } ?: Palette.textPrimary,
-                spark = m.consistency.series, sparkColor = Palette.metricCyan,
+                spark = m.consistency.series, sparkDays = m.consistency.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.metricCyan,
                 onClick = { onMetricClick("consistency") },
             )
         },
@@ -113,7 +113,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.hoursVsNeeded.latest),
                 caption = tileCaption(m.hoursVsNeeded.latestDay, m.hoursVsNeeded.latest, m.hoursVsNeeded.typical, "%"),
                 accent = m.hoursVsNeeded.latest?.let { Palette.recoveryColor(minOf(100.0, it)) } ?: Palette.textPrimary,
-                spark = m.hoursVsNeeded.series, sparkColor = Palette.restColor,
+                spark = m.hoursVsNeeded.series, sparkDays = m.hoursVsNeeded.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("hours_vs_needed") },
             )
         },
@@ -123,7 +123,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.restorative.latest),
                 caption = tileCaption(m.restorative.latestDay, m.restorative.latest, m.restorative.typical, "%"),
                 accent = Palette.sleepREM,
-                spark = m.restorative.series, sparkColor = Palette.sleepREM,
+                spark = m.restorative.series, sparkDays = m.restorative.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.sleepREM,
                 onClick = { onMetricClick("restorative") },
             )
         },
@@ -133,7 +133,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = m.respiratory.latest?.let { String.format(Locale.US, "%.1f", it) } ?: "—",
                 caption = tileCaption(m.respiratory.latestDay, m.respiratory.latest, m.respiratory.typical, " rpm", decimals = 1),
                 accent = Palette.metricPurple,
-                spark = m.respiratory.series, sparkColor = Palette.metricPurple,
+                spark = m.respiratory.series, sparkDays = m.respiratory.seriesDays, formatSpark = { String.format(Locale.US, "%.1f rpm", it) }, sparkColor = Palette.metricPurple,
                 onClick = { onMetricClick("respiratory") },
             )
         },
@@ -149,7 +149,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
             value = m.sleepDebt.latest?.let { durationText(it) } ?: "—",
             caption = debtCaption(m.sleepDebt.latest),
             accent = debtColor(m.sleepDebt.latest),
-            spark = m.sleepDebt.series, sparkColor = Palette.metricRose,
+            spark = m.sleepDebt.series, sparkDays = m.sleepDebt.seriesDays, formatSpark = { durationText(it) }, sparkColor = Palette.metricRose,
             onClick = { onMetricClick("sleep_debt") },
         )
 
@@ -259,7 +259,7 @@ private fun DebtDeltaBars(ledger: SleepDebtLedger) {
             .semantics {
                 contentDescription =
                     uiString(R.string.l10n_sleep_screen_per_night_sleep_balance_ledger_nightcount_f339d0ab, ledger.nightCount, debtSigned(ledger.balanceMin))
-                if (scrubValue != null) stateDescription = "$scrubValue, $scrubLabel"
+                if (scrubValue != null) stateDescription = chartScrubSpoken(scrubValue, scrubLabel)
             }
             .drawBehind {
                 val n = max(deltas.size, 1)
@@ -777,6 +777,8 @@ private fun SparkTile(
     accent: Color,
     spark: List<Double>,
     sparkColor: Color,
+    sparkDays: List<String>,
+    formatSpark: (Double) -> String,
     onClick: (() -> Unit)? = null,
 ) {
     // liquidPress on the tappable tile: it settles inward on press (the pilot's card feel). The SAME
@@ -820,10 +822,12 @@ private fun SparkTile(
             val tail = spark.takeLast(30)
             if (tail.size >= 2) {
                 // Full-width bottom spark. Outer height(sparkHeight) deliberately overrides Sparkline's
-                // internal 28dp default down to the 22dp tile spark (same override SparkTailBox does).
+                // internal 28dp default down to the 22dp tile spark.
                 Sparkline(
                     values = tail,
                     color = sparkColor,
+                    formatValue = formatSpark,
+                    selectionLabels = sparkTailDayLabels(spark, sparkDays, 30),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Metrics.space8)
@@ -1001,7 +1005,12 @@ internal fun ConsistencyHostCard(m: SleepModel) {
             }
             // Sparkline of the consistency history, in metricCyan to match the Sleep-tab Night-detail tile.
             if (cons.series.size > 1) {
-                Sparkline(values = cons.series.takeLast(30), color = Palette.metricCyan)
+                Sparkline(
+                    values = cons.series.takeLast(30),
+                    color = Palette.metricCyan,
+                    formatValue = { uiString(R.string.l10n_sleep_screen_score_roundtoint_a2d1cc99, it.roundToInt()) },
+                    selectionLabels = sparkTailDayLabels(cons.series, cons.seriesDays, 30),
+                )
             }
         }
     }
@@ -1121,7 +1130,7 @@ internal fun SleepConsistencyCard(
                     .chartScrub(timings, onRelease = { scrubX = null }) { scrubX = it }
                     .semantics {
                         contentDescription = uiString(R.string.l10n_sleep_screen_sleep_consistency_nightly_bed_and_wake_14526f89)
-                        scrubText?.let { (v, l) -> stateDescription = "$v, $l" }
+                        scrubText?.let { (v, l) -> stateDescription = chartScrubSpoken(v, l) }
                     }
                     .drawBehind {
                         val yAxisW = yAxisPx

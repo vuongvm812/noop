@@ -554,6 +554,14 @@ internal fun spo2SparkSeries(
     candidate: List<Double>,
 ): List<Double> = if (calibrated.size >= 2 || candidate.size < 2) calibrated else candidate
 
+/** The days behind whichever series [spo2SparkSeries] picks, so the scrub callout names the right day. */
+internal fun spo2SparkDays(
+    calibrated: List<Double>,
+    candidate: List<Double>,
+    calibratedDays: List<String>,
+    candidateDays: List<String>,
+): List<String> = if (calibrated.size >= 2 || candidate.size < 2) calibratedDays else candidateDays
+
 /**
  * True when the tile's VALUE is the strap estimate rather than a measured reading, so the caption can
  * say so.

@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -340,18 +341,38 @@ fun LabBookScreen(vm: AppViewModel) {
 
 @Composable
 private fun MarkerRow(key: String, readings: List<LabMarkerRow>, onClick: () -> Unit) {
-    val numeric = readings.mapNotNull { it.value }
+    val withValue = readings.filter { it.value != null }
+    val numeric = withValue.mapNotNull { it.value }
     val latest = readings.lastOrNull()
+    // Scrub cursor (#58): the 64×28 dp spark is too small to hold a callout, so while a finger reads it the
+    // row's own value and caption name the reading under it instead, and return to the latest on release.
+    var scrubbed by remember(readings) { mutableStateOf<Int?>(null) }
+    val scrubbedRow = scrubbed?.let { withValue.getOrNull(it) }
     NoopCard(modifier = Modifier.clickable(onClick = onClick)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(displayName(key), style = NoopType.headline, color = Palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(lastTakenCaption(latest), style = NoopType.footnote, color = Palette.textTertiary)
+                Text(
+                    scrubbedRow?.let { labDayFromKey(it.day) } ?: lastTakenCaption(latest),
+                    style = NoopType.footnote,
+                    color = Palette.textTertiary,
+                )
             }
             if (numeric.size > 1) {
-                MiniSpark(values = numeric, color = Palette.metricCyan, modifier = Modifier.width(64.dp).height(28.dp))
+                MiniSpark(
+                    values = numeric,
+                    color = Palette.metricCyan,
+                    modifier = Modifier.width(64.dp).height(28.dp),
+                    onScrubIndex = { scrubbed = it },
+                )
             }
-            Text(latestLabel(latest, key), style = NoopType.number(18f), color = Palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                scrubbedRow?.let { valueLabel(key, it) } ?: latestLabel(latest, key),
+                style = NoopType.number(18f),
+                color = Palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Palette.textTertiary, modifier = Modifier.size(16.dp))
         }
     }
@@ -824,9 +845,12 @@ internal fun PrimaryActionButton(
 /**
  * A tiny inline sparkline for a short numeric series, sized by the modifier (width × height).
  *
- * [callouts], one (value, date) pair per point, turns on the shared scrub cursor (#58). Only the detail
- * sheet's full-width trend passes them; the 64×28 dp spark in a marker row is a glyph inside a tappable
- * row, too small to hold a callout, and that row's tap already opens the scrubbable detail.
+ * Two ways to turn on the shared scrub cursor (#58):
+ * - [callouts], one (value, date) pair per point: the detail sheet's full-width trend, which draws the
+ *   callout itself.
+ * - [onScrubIndex]: the 64×28 dp spark in a marker row, too small to hold a callout. It reports the index
+ *   under the finger (null on release) so the row shows that reading in its own value and caption. A
+ *   plain tap is left to the row, whose click opens the detail.
  */
 @Composable
 internal fun MiniSpark(
@@ -834,8 +858,10 @@ internal fun MiniSpark(
     color: Color,
     modifier: Modifier = Modifier,
     callouts: List<Pair<String, String>>? = null,
+    onScrubIndex: ((Int?) -> Unit)? = null,
 ) {
-    val scrubbable = callouts != null && callouts.size == values.size && values.size > 1
+    val inline = onScrubIndex != null
+    val scrubbable = values.size > 1 && (inline || (callouts != null && callouts.size == values.size))
     var scrubX by remember(values) { mutableStateOf<Float?>(null) }
     var chartWidth by remember { mutableStateOf(0f) }
     val paints = rememberChartScrubPaints()
@@ -845,10 +871,12 @@ internal fun MiniSpark(
     }
     val callout = selected?.let { callouts?.getOrNull(it) }
     ChartScrubHaptic(selected)
+    val report by rememberUpdatedState(onScrubIndex)
+    LaunchedEffect(selected) { report?.invoke(selected) }
     Canvas(
         modifier = modifier
             .onSizeChanged { chartWidth = it.width.toFloat() }
-            .chartScrub(values, enabled = scrubbable, onRelease = { scrubX = null }) { scrubX = it }
+            .chartScrub(values, enabled = scrubbable, selectOnTap = !inline, onRelease = { scrubX = null }) { scrubX = it }
             .semantics { callout?.let { (value, label) -> stateDescription = "$value, $label" } },
     ) {
         if (values.size < 2) return@Canvas
@@ -870,6 +898,12 @@ internal fun MiniSpark(
         if (selected != null && callout != null) {
             val pt = pts[selected]
             drawScrubCursor(pt.x, pt.y, color, callout.first, callout.second, paints)
+        } else if (selected != null && inline) {
+            // The row names the reading; the spark only marks where it sits.
+            val pt = pts[selected]
+            drawLine(Palette.hairlineStrong, Offset(pt.x, 0f), Offset(pt.x, size.height), strokeWidth = 1f)
+            drawCircle(Palette.surfaceBase, radius = 4f * density, center = pt)
+            drawCircle(color, radius = 2.5f * density, center = pt)
         }
     }
 }

@@ -14,15 +14,12 @@ class ChartScrubLabelTest {
 
     private val utc: ZoneId = ZoneOffset.UTC
 
-    @Test fun partsCarryTheSameChoicesAsTheOneLineLabel() {
+    @Test fun partsPickTheFormatterAndTheWhenLabel() {
         val ts = 1_752_676_320L // 2025-07-16 14:32 UTC
         assertEquals("87 bpm" to "14:32", lineChartSelectionParts(87.2, { "${it.toInt()} bpm" }, ts, utc))
         assertEquals("87" to "16 Jul", lineChartSelectionParts(87.0, null, ts, utc, pointLabel = "16 Jul"))
         assertEquals("87" to null, lineChartSelectionParts(87.0, null))
         assertEquals("87" to null, lineChartSelectionParts(87.0, null, pointLabel = " "))
-        // The one-line label is the pair joined, so the two cannot drift apart.
-        assertEquals("14:32 · 87 bpm", lineChartSelectionLabel(87.2, { "${it.toInt()} bpm" }, ts, utc))
-        assertEquals("16 Jul · 87", lineChartSelectionLabel(87.0, null, ts, utc, pointLabel = "16 Jul"))
     }
 
     @Test fun anIntradayGapReadsAsClockTime() {

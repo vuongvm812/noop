@@ -816,7 +816,7 @@ internal fun StressTodayCard(
                                 .height(Metrics.chartHeight)
                                 .onSizeChanged { traceWidth = it.width.toFloat() }
                                 .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
-                                .semantics { callout?.let { stateDescription = "${it.first}, ${it.second}" } },
+                                .semantics { callout?.let { stateDescription = chartScrubSpoken(it.first, it.second) } },
                         ) {
                             val w = size.width
                             val h = size.height
@@ -1031,7 +1031,7 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
             .clip(RoundedCornerShape(Metrics.cornerSm))
             .semantics {
                 contentDescription = daytimeLineDescription(hours)
-                callout?.let { stateDescription = "${it.first}, ${it.second}" }
+                callout?.let { stateDescription = chartScrubSpoken(it.first, it.second) }
             }
             .onSizeChanged { lineWidth = it.width.toFloat() }
             .chartScrub(hours, onRelease = { scrubX = null }) { scrubX = it },

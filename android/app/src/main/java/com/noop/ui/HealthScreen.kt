@@ -1754,6 +1754,8 @@ private fun VitalTile(
             if (vital.sparkline.size > 1) {
                 TileSparkline(
                     values = vital.sparkline,
+                    days = vital.sparklineDays,
+                    format = { v -> "${vital.format(v)} ${vital.unit}" },
                     color = vital.metricColor,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1777,11 +1779,80 @@ private fun VitalTile(
  * A compact metric-tinted sparkline for a tile trail: a soft gradient fill under a coloured line,
  * capped with a glowing end-cap (a halo + white core) at the latest point so it reads as "now".
  * Built locally with Canvas + Palette colours (there is no shared tile-spark composable), mirroring
- * the Bevel chart end-cap used on the macOS sparkline and the Today HR chart. Decorative — the tile
- * already carries a combined contentDescription, so the spark is not separately announced.
+ * the Bevel chart end-cap used on the macOS sparkline and the Today HR chart.
+ *
+ * Scrub cursor (#58): a drag or a hold reads the night under the finger ("58 bpm" over "3 Nov"). A plain
+ * tap is left alone so the tile's click still opens the vital's detail. The callout floats above the
+ * strip, which is too short to hold it. The reading is added to the tile's merged node as a
+ * stateDescription.
  */
 @Composable
-private fun TileSparkline(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
+private fun TileSparkline(
+    values: List<Double>,
+    days: List<String>,
+    format: (Double) -> String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    var scrubX by remember(values) { mutableStateOf<Float?>(null) }
+    var width by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val index = scrubX?.let { tileSparkIndexAt(values.size, width, it) }
+    val readout = index?.let { tileSparkReadout(values, days, it, format) }
+    ChartScrubHaptic(index)
+    Box(
+        modifier = modifier
+            .onSizeChanged { width = it.width.toFloat() }
+            .chartScrub(values, selectOnTap = false, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { readout?.let { stateDescription = listOfNotNull(it.first, it.second).joinToString(", ") } },
+    ) {
+        TileSparklineTrace(values, color, Modifier.fillMaxSize())
+        if (index != null && readout != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val n = values.size
+                val x = if (n > 1) size.width * index / (n - 1) else 0f
+                drawScrubCursor(
+                    x = x,
+                    y = tileSparkY(values, values[index], size.height),
+                    accent = color,
+                    value = readout.first,
+                    label = readout.second,
+                    paints = paints,
+                    overflowAbove = true,
+                )
+            }
+        }
+    }
+}
+
+/** Index of the tile-spark point nearest [x] on a strip [width] px wide (points span the full width). */
+internal fun tileSparkIndexAt(count: Int, width: Float, x: Float): Int? =
+    if (count < 2 || width <= 0f) null
+    else chartScrubNearestIndex(chartScrubIndexFractions(count), width, x)
+
+/** The tile-spark callout for point [index]: the formatted value, and its night as "d MMM" when known. */
+internal fun tileSparkReadout(
+    values: List<Double>,
+    days: List<String>,
+    index: Int,
+    format: (Double) -> String,
+): Pair<String, String?>? {
+    val v = values.getOrNull(index) ?: return null
+    return format(v) to days.getOrNull(index)?.let(::lastChargeDateLabel)
+}
+
+/** The y [TileSparklineTrace] draws [v] at, so the cursor dot sits on the line. */
+private fun tileSparkY(values: List<Double>, v: Double, height: Float): Float {
+    val pad = 4f
+    val usableH = (height - pad * 2).coerceAtLeast(1f)
+    val lo = values.min()
+    val span = (values.max() - lo).takeIf { it > 0.0 } ?: 1.0
+    val norm = ((v - lo) / span).toFloat().coerceIn(0f, 1f)
+    return pad + (1f - norm) * usableH
+}
+
+@Composable
+private fun TileSparklineTrace(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.clipToBounds()) {
         if (values.size < 2 || size.width <= 0f || size.height <= 0f) return@Canvas
         val strokePx = 2f
@@ -2273,8 +2344,8 @@ fun VitalDetailScreen(vm: AppViewModel, key: String) {
                     color = detail.color,
                     fill = true,
                     selectionEnabled = true, // the Vital Signs detail chart is meant to be tappable
-                    // #1600: name the DAY on the scrub readout. `lineChartSelectionLabel` prints
-                    // "label · value" when given one and the bare value otherwise, so a chart that opts
+                    // #1600: name the DAY on the scrub readout. `lineChartSelectionParts` puts the label
+                    // under the value when given one and leaves it out otherwise, so a chart that opts
                     // into selection without labels answers "96" — a number with nothing to say which day
                     // it belongs to, against a Trends chart that reads "16 Jul · 92" beside it.
                     //

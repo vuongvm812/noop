@@ -104,7 +104,12 @@ fun StressSummaryCard(
                         StressFigure(uiString(R.string.stress_summary_average), r.average, r, null)
                     }
                     if (r.points.size >= 2) {
-                        Sparkline(values = r.points.map { it.level }, color = Palette.stressColor)
+                        Sparkline(
+                            values = r.points.map { it.level },
+                            color = Palette.stressColor,
+                            formatValue = { formatStressSummaryValue(it, r.source) + stressScaleSuffix(r.scaleMax) },
+                            selectionLabels = r.points.map { stressTimeLabel(it.ts) },
+                        )
                     }
                 }
             }

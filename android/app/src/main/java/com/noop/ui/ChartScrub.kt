@@ -1,6 +1,7 @@
 package com.noop.ui
 
 import android.view.HapticFeedbackConstants
+import androidx.annotation.StringRes
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.sp
+import com.noop.R
 import kotlin.math.abs
 
 // MARK: - Chart scrub (one interaction for every chart, #58)
@@ -108,8 +110,27 @@ internal fun chartScrubNearestIndex(fractions: List<Float>, width: Float, x: Flo
 internal fun chartScrubIndexFractions(count: Int): List<Float> =
     if (count <= 1) List(count) { 0f } else List(count) { it.toFloat() / (count - 1) }
 
-/** The callout's value line for a gap. */
-internal const val CHART_SCRUB_NO_DATA = "No data"
+/**
+ * "d MMM" labels for the last [count] values of [series] (the tail a tile sparkline draws), from the
+ * index-aligned yyyy-MM-dd [days]. Null when the days do not line up with the series, so the callout shows
+ * the value alone rather than a wrong date.
+ */
+internal fun sparkTailDayLabels(series: List<Double>, days: List<String>, count: Int): List<String>? =
+    if (days.size != series.size) null else days.takeLast(count).map { shortDayLabel(it) }
+
+/** The callout's value line for a gap, in the user's language. */
+internal val CHART_SCRUB_NO_DATA: String
+    get() = chartScrubString(R.string.chart_scrub_no_data, "No data")
+
+/**
+ * A chart-scrub string from the app's resources. The pure callout helpers that read these also run in plain
+ * JVM unit tests, where no Application is attached; there the English source text, which is identical to
+ * the default `values/strings.xml` entry, stands in.
+ */
+internal fun chartScrubString(@StringRes id: Int, english: String, vararg formatArgs: Any): String =
+    runCatching { uiString(id, *formatArgs) }.getOrElse {
+        if (formatArgs.isEmpty()) english else String.format(java.util.Locale.ROOT, english, *formatArgs)
+    }
 
 /** How long a touch must hold still before the scrub engages in every direction. Matches Apple's 0.25 s. */
 private const val CHART_SCRUB_HOLD_MS = 250L

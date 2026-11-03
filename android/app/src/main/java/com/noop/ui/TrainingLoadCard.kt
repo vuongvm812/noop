@@ -123,7 +123,7 @@ private fun TwoLineChart(points: List<TrainingLoadEngine.Point>, modifier: Modif
         modifier
             .onSizeChanged { chartW = it.width.toFloat() }
             .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
-            .semantics { if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel" },
+            .semantics { if (calloutValue != null) stateDescription = chartScrubSpoken(calloutValue, calloutLabel) },
     ) {
         val n = points.size
         if (n < 2) return@Canvas

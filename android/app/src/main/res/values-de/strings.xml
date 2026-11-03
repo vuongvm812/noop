@@ -930,7 +930,6 @@
     <string name="l10n_strand_components_previous_day_e2b6b0a1">Vorheriger Tag</string>
     <string name="l10n_stress_screen_band_title_hours_hours_f9779fd3">%1$s %2$s Stunden</string>
     <string name="l10n_stress_screen_calm_time_fa546d52">Ruhezeit</string>
-    <string name="l10n_stress_screen_hourlabel_pt_hour_tenths_10_tenths_cd4c9c16">%1$s · %2$s.%3$s</string>
     <string name="l10n_stress_screen_hours_h_7610ac7c">%1$sh</string>
     <string name="l10n_stress_screen_no_stress_history_yet_ec962e3c">Keine Stress-Geschichte noch</string>
     <string name="l10n_stress_screen_reading_your_heart_rate_variability_and_c0249246">Deine Herzfrequenzvariabilität und Ruheherzfrequenz werden gelesen…</string>
@@ -2989,4 +2988,8 @@
     <string name="weight_log_done">Fertig</string>
     <string name="weight_log_previous_day">Vorheriger Tag</string>
     <string name="weight_log_next_day">Nächster Tag</string>
+    <string name="chart_scrub_no_data">Keine Daten</string>
+    <string name="chart_scrub_next_point">Nächster Punkt</string>
+    <string name="chart_scrub_previous_point">Vorheriger Punkt</string>
+    <string name="chart_scrub_spoken">%1$s, %2$s</string>
 </resources>

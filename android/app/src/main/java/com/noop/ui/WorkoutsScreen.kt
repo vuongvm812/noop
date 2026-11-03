@@ -883,7 +883,7 @@ private fun CalorieHeatmapSection(recentDays: List<com.noop.data.DailyMetric>) {
                         }
                         .semantics {
                             contentDescription = "Active-calorie heatmap, last 13 weeks"
-                            if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel"
+                            if (calloutValue != null) stateDescription = chartScrubSpoken(calloutValue, calloutLabel)
                         },
                 ) {
                     val gapPx = gap.toPx()
@@ -1179,6 +1179,7 @@ private fun SportCard(g: SportGroup, zones: ZoneSummary?) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                     height = 8.dp,
+                    callouts = zoneSegmentCallouts(zones.minutes, zones.totalMinutes, ::zonePercentText),
                 )
             }
             CardDivider()
@@ -1227,6 +1228,7 @@ private fun ZonesSection(rows: List<WorkoutRow>) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                     height = 24.dp,
+                    callouts = zoneSegmentCallouts(z.minutes, z.totalMinutes, ::zonePercentText),
                 )
                 CardDivider()
                 // 5-up stat strip, identical rhythm to the sport cards' MiniStat row.
@@ -1243,6 +1245,22 @@ private fun ZonesSection(rows: List<WorkoutRow>) {
             }
         }
     }
+}
+
+/** "23%", the same share text the zone stat row prints. */
+private fun zonePercentText(pct: Int): String = uiString(R.string.l10n_workouts_screen_minutes_total_100_roundtoint_5bb7c6d8, pct)
+
+/**
+ * The HR-zone strip's scrub callouts (#58), one per zone: the share and time ("23% · 12m") over the zone's
+ * name as the stat row below the strip writes it ("Z3"). [percent] formats the whole-number share.
+ */
+internal fun zoneSegmentCallouts(
+    minutes: List<Double>,
+    total: Double,
+    percent: (Int) -> String,
+): List<Pair<String, String>> = minutes.mapIndexed { i, m ->
+    val share = if (total > 0.0) (m / total * 100).roundToInt() else 0
+    "${percent(share)} · ${durationLabel(m * 60)}" to "Z${i + 1}"
 }
 
 @Composable
@@ -1768,6 +1786,7 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
                         segments = z.mapIndexed { i, m -> Palette.hrZoneColor(i + 1) to (m / total).toFloat() },
                         modifier = Modifier.fillMaxWidth(),
                         height = 24.dp,
+                        callouts = zoneSegmentCallouts(z, total, ::zonePercentText),
                     )
                     Row(modifier = Modifier.fillMaxWidth()) {
                         z.forEachIndexed { i, m -> ZoneStat(i + 1, m, total, Modifier.weight(1f)) }
@@ -2055,7 +2074,7 @@ private fun RecoveryTrendChart(
             .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
             .semantics {
                 contentDescription = chartDescription
-                if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel"
+                if (calloutValue != null) stateDescription = chartScrubSpoken(calloutValue, calloutLabel)
             },
     ) {
         val gridColor = Palette.hairline

@@ -7,6 +7,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.stateDescription
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -415,8 +420,11 @@ private fun PlotCard(points: List<RhythmScreener.PoincarePoint>) {
 /**
  * The Poincaré scatter: successive (NN[i], NN[i+1]) pairs. A steady rhythm draws a tight
  * elongated comet along the diagonal; a more variable one draws a rounder, diffuse cloud.
- * Purely descriptive, drawn in the calm Rest-blue world (never red). Decorative for
- * accessibility — the numbers + label carry the meaning.
+ * Purely descriptive, drawn in the calm Rest-blue world (never red). The numbers + label carry the
+ * meaning; the plot itself is silent to accessibility except for a scrubbed reading.
+ *
+ * Scrub cursor (#58): touch and hold, then drag, to snap to the nearest dot in both axes; the callout
+ * names the pair of successive intervals it plots ("812 → 830 ms").
  */
 @Composable
 private fun PoincarePlot(
@@ -427,24 +435,37 @@ private fun PoincarePlot(
     val axis = Palette.hairlineStrong
     // Fixed physiological bounds (ms) so the same rhythm reads at the same scale night-to-
     // night — 300…1500 ms covers ~40…200 bpm, the readable resting band.
-    val lo = 300.0
-    val hi = 1500.0
+    val lo = POINCARE_LO_MS
+    val hi = POINCARE_HI_MS
+    var touch by remember(points) { mutableStateOf<Offset?>(null) }
+    var side by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val selected = touch?.let { poincareNearestIndex(points, side, POINCARE_INSET_PX, it.x, it.y) }
+    val readout = selected?.let { points.getOrNull(it) }?.let(::poincareScrubText)
+    ChartScrubHaptic(selected)
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                .clearAndSetSemantics {},
+                .onSizeChanged { side = min(it.width, it.height).toFloat() }
+                .pointerInput(points) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { touch = it },
+                        onDragEnd = { touch = null },
+                        onDragCancel = { touch = null },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            touch = change.position
+                        },
+                    )
+                }
+                .clearAndSetSemantics { readout?.let { stateDescription = it } },
         ) {
             val s = min(size.width, size.height)
-            val inset = 8f
-            val plot = s - inset * 2
+            val inset = POINCARE_INSET_PX
 
-            fun map(v: Double): Float {
-                val clamped = v.coerceIn(lo, hi)
-                val frac = (clamped - lo) / (hi - lo)
-                return inset + frac.toFloat() * plot
-            }
+            fun map(v: Double): Float = poincareMap(v, s, inset)
 
             // Identity diagonal (NN[i] == NN[i+1]) — the line a perfectly metronomic beat
             // would sit on. Faint hairline, reference only.
@@ -463,9 +484,58 @@ private fun PoincarePlot(
                 val y = s - map(p.y)
                 drawCircle(color = tint.copy(alpha = 0.55f), radius = r, center = Offset(x, y))
             }
+
+            val sel = selected?.let { points.getOrNull(it) }
+            if (sel != null && readout != null) {
+                val x = map(sel.x)
+                val y = s - map(sel.y)
+                drawCircle(color = Palette.surfaceBase, radius = 4.5f * density, center = Offset(x, y))
+                drawCircle(color = tint, radius = 3f * density, center = Offset(x, y))
+                drawScrubCallout(x, y, readout, null, paints)
+            }
         }
     }
 }
+
+private const val POINCARE_LO_MS = 300.0
+private const val POINCARE_HI_MS = 1500.0
+private const val POINCARE_INSET_PX = 8f
+
+/** Where [PoincarePlot] places an interval of [v] ms along either axis of a plot [side] px square. */
+private fun poincareMap(v: Double, side: Float, inset: Float): Float {
+    val frac = (v.coerceIn(POINCARE_LO_MS, POINCARE_HI_MS) - POINCARE_LO_MS) / (POINCARE_HI_MS - POINCARE_LO_MS)
+    return inset + frac.toFloat() * (side - inset * 2)
+}
+
+/**
+ * The Poincaré dot nearest the touch at ([x], [y]) on a plot [side] px square, measured in screen space
+ * (x = NN[i], y = NN[i+1] growing upward). An exact tie picks the earlier pair. Null with no points or no
+ * size. [inset] must be the plot's inset, kept as a parameter so the test can pin the geometry.
+ */
+internal fun poincareNearestIndex(
+    points: List<RhythmScreener.PoincarePoint>,
+    side: Float,
+    inset: Float,
+    x: Float,
+    y: Float,
+): Int? {
+    if (points.isEmpty() || side <= 0f) return null
+    fun map(v: Double): Float = poincareMap(v, side, inset)
+    var best = 0
+    var bestD = Float.MAX_VALUE
+    points.forEachIndexed { i, p ->
+        val dx = map(p.x) - x
+        val dy = (side - map(p.y)) - y
+        val d = dx * dx + dy * dy
+        if (d < bestD) { bestD = d; best = i }
+    }
+    return best
+}
+
+/** The callout for one Poincaré dot: the interval and the one after it, "812 → 830 ms". */
+internal fun poincareScrubText(p: RhythmScreener.PoincarePoint): String =
+    "${p.x.roundToInt()} → ${p.y.roundToInt()} ms"
+
 
 // ── Stats card — the descriptive numbers (equal-height tiles) ─────────────────────────────
 
