@@ -118,14 +118,11 @@ object GarminWatchIngest {
     /**
      * Asleep share of the time in bed as a 0-1 FRACTION, the unit every other writer of
      * `sleepSession.efficiency` / `dailyMetric.efficiency` uses (#49). Unmeasurable time is in neither
-     * term. Rounded to three decimals from the same permille as [efficiencyPct], not divided from it, so
-     * the stored double is the shortest one. Swift twin: `GarminWatchIngest.efficiency`.
+     * term. Derived from [efficiencyPct] by re-rounding the tenths, not by dividing: 33.3 / 100 is
+     * 0.33299999999999996, while 333 / 1000 is the shortest 0.333. Swift twin: `GarminWatchIngest.efficiency`.
      */
-    fun efficiency(asleep: Long, awake: Long): Double? {
-        val inBed = asleep + awake
-        if (inBed <= 0) return null
-        return Math.round(asleep.toDouble() * 1000 / inBed.toDouble()).toDouble() / 1000
-    }
+    fun efficiency(asleep: Long, awake: Long): Double? =
+        efficiencyPct(asleep, awake)?.let { Math.round(it * 10).toDouble() / 1000 }
 
     /**
      * Asleep share of the time in bed, percent rounded to one decimal, the unit the watch shows. Not a

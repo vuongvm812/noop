@@ -141,12 +141,10 @@ public enum GarminWatchIngest {
     /// `sleepSession.efficiency` / `dailyMetric.efficiency` uses (WHOOP import, Oura, on-device staging).
     /// Unmeasurable time (level 0) is in neither term. Storing the percent read as 100% efficient
     /// everywhere the value is clamped to [0, 1] (#49). Kotlin twin: `GarminWatchIngest.efficiency`.
-    /// Rounded to three decimals from the same permille as `efficiencyPct`, not divided from it, so the
-    /// stored double is the shortest one (0.333, not 0.33299999999999996).
+    /// Derived from `efficiencyPct` (one decimal of percent is three of fraction) by re-rounding the
+    /// tenths, not by dividing: 33.3 / 100 is 0.33299999999999996, while 333 / 1000 is the shortest 0.333.
     static func efficiency(asleep: Int64, awake: Int64) -> Double? {
-        let inBed = asleep + awake
-        guard inBed > 0 else { return nil }
-        return (Double(asleep) * 1000 / Double(inBed)).rounded() / 1000
+        efficiencyPct(asleep: asleep, awake: awake).map { ($0 * 10).rounded() / 1000 }
     }
 
     /// Asleep share of the time in bed (asleep + awake), percent rounded to one decimal, the unit the
