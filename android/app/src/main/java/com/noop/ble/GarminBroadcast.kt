@@ -1,7 +1,7 @@
 package com.noop.ble
 
 /**
- * EXPERIMENTAL Garmin support — the in-app "enable Broadcast Heart Rate" hint.
+ * Garmin support — the in-app "enable Broadcast Heart Rate" hint.
  *
  * Faithful Kotlin twin of Strand/BLE/GarminBroadcast.swift.
  *

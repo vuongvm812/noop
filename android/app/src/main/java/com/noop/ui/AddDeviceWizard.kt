@@ -90,10 +90,10 @@ import kotlinx.coroutines.launch
 /** What the user is adding. Drives the prep copy AND which scan/register path runs. */
 private enum class DeviceType {
     Whoop5MG, Whoop4, HrStrap, GymEquipment,
-    // EXPERIMENTAL tier - best-effort, clean-room, can't be hardware-verified here. Each fails to an
-    // honest message and never fabricates data.
     // Garmin is the watch's own GFDI protocol (history sync + live channels); GarminBroadcast is the
     // standard Broadcast Heart Rate fallback, reached from the Garmin flow.
+    // EXPERIMENTAL tier (Amazfit / MiBand / Oura) - best-effort, clean-room, can't be hardware-verified
+    // here. Each fails to an honest message and never fabricates data.
     Amazfit, MiBand, Garmin, GarminBroadcast, Oura;
 
     val isWhoop: Boolean get() = this == Whoop4 || this == Whoop5MG
@@ -105,10 +105,10 @@ private enum class DeviceType {
         }
 
     /** True for the EXPERIMENTAL tier (shown under a clearly-labelled "Experimental" heading). */
-    val isExperimental: Boolean get() = this == Amazfit || this == MiBand || this == Garmin || this == GarminBroadcast || this == Oura
+    val isExperimental: Boolean get() = this == Amazfit || this == MiBand || this == Oura
 
-    /** The experimental-tier brand this type registers as, or null for the non-experimental types
-     *  (WHOOP / generic strap / gym). Bridges the type picker to the [com.noop.data.DeviceBrandCatalog]
+    /** The custom-protocol brand this type registers as (Garmin, or an experimental-tier brand), or null
+     *  for WHOOP / generic strap / gym. Bridges the type picker to the [com.noop.data.DeviceBrandCatalog]
      *  facts (stored brand string, sourceKind, id prefix) so those are no longer hardcoded per branch. */
     val experimentalBrand: ExperimentalBrand?
         get() = when (this) {
@@ -280,7 +280,7 @@ fun AddDeviceWizard(
     val confirmBrand = when {
         type?.isWhoop == true -> "WHOOP"
         type == DeviceType.GymEquipment -> "Gym equipment"
-        // Experimental non-Oura types (Amazfit / Mi Band / Garmin) take their stored brand string from the
+        // Custom-protocol non-Oura types (Amazfit / Mi Band / Garmin) take their stored brand string from the
         // catalog via the type->brand bridge. Oura confirms with its detected generation label elsewhere.
         type == DeviceType.Amazfit || type == DeviceType.MiBand || type == DeviceType.GarminBroadcast ->
             type!!.experimentalBrand!!.displayBrand
@@ -823,6 +823,9 @@ private fun TypeStep(onPick: (DeviceType) -> Unit) {
         TypeRow(Icons.AutoMirrored.Filled.DirectionsRun, DeviceType.GymEquipment.title, "Treadmill, indoor bike, rower or cross-trainer (Bluetooth FTMS)") {
             onPick(DeviceType.GymEquipment)
         }
+        TypeRow(Icons.Filled.Watch, DeviceType.Garmin.title, uiString(R.string.l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb)) {
+            onPick(DeviceType.Garmin)
+        }
 
         // EXPERIMENTAL tier - clearly labelled, opt-in, best-effort. Each is honest about what it can
         // actually read; none fabricates data.
@@ -836,9 +839,6 @@ private fun TypeStep(onPick: (DeviceType) -> Unit) {
         }
         TypeRow(Icons.Filled.GraphicEq, DeviceType.MiBand.title, "Live heart rate on bands that don't need pairing. Help us test.") {
             onPick(DeviceType.MiBand)
-        }
-        TypeRow(Icons.Filled.Watch, DeviceType.Garmin.title, uiString(R.string.l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690)) {
-            onPick(DeviceType.Garmin)
         }
 
         WhoopFirstNote()
@@ -1857,7 +1857,6 @@ private fun GarminPrepStep(onScan: () -> Unit, onUseBroadcast: () -> Unit) {
             Icon(Icons.Filled.Watch, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(28.dp))
             Text(DeviceType.Garmin.title, style = NoopType.title2, color = Palette.textPrimary)
         }
-        ExperimentalTierNote()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1911,7 +1910,7 @@ private fun GarminPickStep(
             DiscoveredRow(
                 name = watch.name,
                 subtitle = if (watch.connected) uiString(R.string.l10n_add_device_wizard_connected_to_this_device_755ed69e)
-                else uiString(R.string.l10n_add_device_wizard_experimental_b718f8c3),
+                else uiString(R.string.l10n_add_device_wizard_garmin_watch_a866104a),
                 rssi = watch.rssi,
                 onTap = { onSelect(watch) },
             )

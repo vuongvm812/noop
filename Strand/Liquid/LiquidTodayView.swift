@@ -1940,9 +1940,9 @@ struct LiquidTodayView: View {
     /// Pure aggregation seam for the Liquid hero. The provider mapper names the sensors/imports that
     /// supplied the score inputs; identical names collapse and the compact badge is capped at two.
     ///
-    /// Garmin child 9: when the displayed Effort was scored from a Garmin watch's heart rate, the badge says
-    /// it is experimental (`GarminScoringInputs.effortIsExperimental`) until a multi-day comparison
-    /// validates it. Kotlin twin: `scoreHeroSourceLabel` + `heroEffortExperimental`.
+    /// Garmin child 9: the badge appends "Effort experimental" only when
+    /// `GarminScoringInputs.effortIsExperimental` says so. Garmin is official (#43, `effortValidated`), so a
+    /// Garmin-scored Effort carries no label. Kotlin twin: `scoreHeroSourceLabel` + `heroEffortExperimental`.
     static func heroSourceLabel(providers: [ScoreInputProvider],
                                 effortProvider: ScoreInputProvider? = nil) -> String? {
         let names = heroSourceNames(providers: providers)

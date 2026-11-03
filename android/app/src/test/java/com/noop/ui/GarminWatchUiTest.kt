@@ -126,8 +126,8 @@ class GarminWatchUiTest {
             return m!!.groupValues[1].replace("\\'", "'").replace("\\\"", "\"").replace("&amp;", "&")
         }
         val expected = mapOf(
-            "l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690" to
-                "Pairs over the watch's own protocol: history sync and live data, read-only. Help us test.",
+            "l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb" to
+                "Pairs over the watch's own protocol: history sync and live data, read-only.",
             "l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606" to
                 "On the watch, open Settings, then Phone (or Connectivity), and choose Pair Phone. You can ignore any QR code the watch shows.",
             "l10n_add_device_wizard_noop_was_tested_with_garmin_connect_c365d5af" to
@@ -138,8 +138,11 @@ class GarminWatchUiTest {
             "l10n_add_device_wizard_last_error_ee28d44b" to "Last error: %1\$s",
             "l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee" to
                 "Heart rate · R-R · Sleep · Steps · SpO₂ · Respiration · Stress · Body Battery · HRV",
-            "l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896" to
-                "Powers Charge, Effort and Rest from the watch's own data. Effort is experimental",
+            "l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2" to
+                "Powers Charge, Effort and Rest from the watch's own data.",
+            "l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd" to
+                "Read-only: NOOP downloads the watch's files and never deletes or changes them. Garmin's stress " +
+                "and Body Battery are shown as Garmin reports them.",
             "l10n_garmin_watch_panel_new_files_already_in_noop_on_5d9e06f1" to
                 "%1\$d new files, %2\$d already in NOOP, %3\$d on the watch",
             "l10n_garmin_watch_panel_last_sync_6dc327c7" to "Last sync %1\$s",

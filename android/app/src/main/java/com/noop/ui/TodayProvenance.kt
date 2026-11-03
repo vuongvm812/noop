@@ -147,7 +147,7 @@ internal fun heroSourceLabel(
 
 /**
  * Garmin child 9: true when the hero's Effort was scored from a provider whose Effort is still experimental
- * ([com.noop.analytics.GarminScoringInputs.effortIsExperimental]), so the badge says so. Swift twin:
+ * ([com.noop.analytics.GarminScoringInputs.effortIsExperimental]); false for Garmin since #43. Swift twin:
  * `LiquidTodayView.heroEffortExperimental`.
  */
 internal fun heroEffortExperimental(providerByMetric: Map<String, ScoreInputProvider>): Boolean {

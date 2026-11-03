@@ -3,7 +3,7 @@ import GarminProtocol
 import StrandAnalytics
 import WhoopProtocol
 
-/// Feeds an EXPERIMENTAL Garmin watch's live channels into NOOP's shared live state and store, through the
+/// Feeds a Garmin watch's live channels into NOOP's shared live state and store, through the
 /// same funnels every other source uses, so nothing downstream needs to know the beats came from a watch:
 ///   - heart rate -> `live.heartRate` + the silence timer, and an `hrSample` row per reading;
 ///   - beat intervals -> `live.setRRIntervals` (the R-R intake the live HRV, strain and stress math reads)

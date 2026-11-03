@@ -63,7 +63,7 @@ import java.util.TimeZone
 import java.util.UUID
 
 /**
- * EXPERIMENTAL Garmin watch source over the watch's own GFDI protocol (`com.noop.garmin`). Twin of
+ * Garmin watch source over the watch's own GFDI protocol (`com.noop.garmin`). Twin of
  * Strand/BLE/GarminSource.swift.
  *
  * Holds one stable, low-power session: connect by stored address, request MTU 515, pick the transport the

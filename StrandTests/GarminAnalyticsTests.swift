@@ -181,7 +181,7 @@ final class GarminAnalyticsTests: XCTestCase {
         }
     }
 
-    func testEffortVariesWithTheDayAndIsLabelledExperimental() async throws {
+    func testEffortVariesWithTheDayAndCarriesNoExperimentalLabel() async throws {
         try await withPreferences {
             let (store, repo, _) = try await seedGarminProfile()
             let strains = try await store.dailyMetrics(deviceId: canonical + "-noop",
@@ -195,8 +195,8 @@ final class GarminAnalyticsTests: XCTestCase {
             let provider = try XCTUnwrap(maybeProvider)
             XCTAssertEqual(provider.sourceId, watch, "Effort's inputs are attributed to the watch")
             XCTAssertEqual(provider.brand, "Garmin")
-            let label = try XCTUnwrap(LiquidTodayView.heroSourceLabel(providers: [provider], effortProvider: provider))
-            XCTAssertEqual(label, "Garmin · \(String(localized: "Effort experimental"))")
+            XCTAssertEqual(LiquidTodayView.heroSourceLabel(providers: [provider], effortProvider: provider), "Garmin",
+                           "a Garmin-scored Effort carries no experimental label (#43)")
             XCTAssertEqual(TodayView.todayScoreProviderLabel(sourceId: watch, brand: nil), "Garmin")
             XCTAssertEqual(TodayView.provenanceDisplayLabel(rawSource: watch, deviceId: watch), "Garmin",
                            "the watch's own rows never read as Whoop, even when it is the active device")

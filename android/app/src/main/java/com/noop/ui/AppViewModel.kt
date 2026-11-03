@@ -2778,7 +2778,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         syncGarminLiveDemand()
     }
 
-    /** An EXPERIMENTAL Garmin watch opens its live channels only while someone is watching: a live-HR screen is
+    /** A Garmin watch opens its live channels only while someone is watching: a live-HR screen is
      *  on screen, or a workout is recording (the one demand that survives backgrounding). The coordinator
      *  forwards this to the Garmin source, whose [com.noop.ble.GarminRadioPolicy] decides the channels. Twin of
      *  macOS `AppModel.syncGarminLiveDemand`. */

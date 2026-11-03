@@ -2,7 +2,7 @@ import SwiftUI
 import StrandDesign
 import GarminProtocol
 
-// MARK: - Garmin watch UI (experimental)
+// MARK: - Garmin watch UI
 //
 // The pieces of the Garmin watch UI shared by the Add Device wizard, Devices, Data Sources, Live and Test
 // Centre. Every view observes the coordinator's live `GarminSource` (`AppModel.garminSource`) and shows

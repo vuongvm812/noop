@@ -120,10 +120,11 @@ object GarminScoringInputs {
     }
 
     /**
-     * Effort from Garmin monitoring HR stays EXPERIMENTAL until a multi-day comparison shows it tracks
-     * varying days (rest, easy, hard). Flip only with that comparison on the PR.
+     * Garmin support is official in this fork (#43), so a Garmin-derived Effort carries no experimental
+     * label: it shows "calibrating" while its baselines are not usable, the same as WHOOP. Setting this
+     * back to false restores the label on both platforms.
      */
-    const val EFFORT_VALIDATED = false
+    const val EFFORT_VALIDATED = true
 
     /** True when an Effort whose inputs came from [sourceId] (registry [brand]) carries the experimental label. */
     fun effortIsExperimental(sourceId: String, brand: String?): Boolean {

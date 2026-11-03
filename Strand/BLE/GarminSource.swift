@@ -26,7 +26,7 @@ struct GarminConnectReadout: Equatable {
     var lastFailure: String?
 }
 
-/// EXPERIMENTAL Garmin watch source over the watch's own GFDI protocol (the `GarminProtocol` package).
+/// Garmin watch source over the watch's own GFDI protocol (the `GarminProtocol` package).
 ///
 /// Holds one stable, low-power session: connect by stored identifier, pick the transport the watch offers
 /// (V2 multi-link, else V1, else V0, else stop and say "unsupported watch protocol"), subscribe, then let

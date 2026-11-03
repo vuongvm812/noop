@@ -1,13 +1,14 @@
 import Foundation
 import WhoopStore
 
-/// CLEAN-ROOM best-effort recognition of the EXPERIMENTAL band families from an advertised device name.
+/// CLEAN-ROOM best-effort recognition of the custom-protocol band families from an advertised device name.
 ///
 /// This is a thin TYPED VIEW over `DeviceBrandCatalog` (the pure, `swift test`-covered single source of
 /// truth in WhoopStore): the advertised-name tokens and capability facts live there once, and this enum
-/// only names the four experimental families so the drivers can switch on them (`== .garmin`, etc.).
-/// Deliberately conservative: a name we don't recognise returns `nil` rather than a wrong guess. NOTHING
-/// here fabricates data — it only labels a discovered peripheral so the experimental add-device flow can
+/// only names the four custom-protocol families so the drivers can switch on them (`== .garmin`, etc.).
+/// Amazfit, Mi Band and Oura are the experimental tier; Garmin is supported (#43). The type keeps its
+/// historical name. Deliberately conservative: a name we don't recognise returns `nil` rather than a wrong
+/// guess. NOTHING here fabricates data — it only labels a discovered peripheral so the add-device flow can
 /// show the honest per-brand guidance.
 public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
     /// Amazfit / Zepp / Huami family (incl. the Helio ring/band). Live HR is best-effort: standard
@@ -25,12 +26,10 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
     case oura
 
     /// Best-effort brand from an advertised name. Returns `nil` for an unrecognised name, OR for a name the
-    /// catalog recognises as a NON-experimental generic strap (Polar / Wahoo / …) — `ExperimentalBrand`
-    /// names only the experimental tier. All token matching lives in `DeviceBrandCatalog`.
+    /// catalog recognises as a generic standard-HR strap (Polar / Wahoo / …) — `ExperimentalBrand` names
+    /// only the four custom-protocol families. All token matching lives in `DeviceBrandCatalog`.
     public static func recognise(name: String) -> ExperimentalBrand? {
-        guard let spec = DeviceBrandCatalog.spec(forAdvertisedName: name), spec.isExperimentalTier else {
-            return nil
-        }
+        guard let spec = DeviceBrandCatalog.spec(forAdvertisedName: name) else { return nil }
         return ExperimentalBrand(displayBrand: spec.brand)
     }
 
@@ -46,7 +45,7 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
         }
     }
 
-    /// Whether this brand can stream LIVE heart rate at all in NOOP's experimental tier. Derived from the
+    /// Whether this brand can stream LIVE heart rate at all in NOOP. Derived from the
     /// catalog (`false` for Oura — no open live stream — so the wizard routes those to file import instead
     /// of pretending to connect). Defaults to `false` if the catalog row is somehow missing (a test pins
     /// that every case resolves).
@@ -62,12 +61,12 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
 
     /// The registry id prefix for a device of this brand (from the catalog); "strap" fallback. The device
     /// `id` (== sample deviceId) is `"<idPrefix>-<uuid>"`, so this MUST stay byte-identical to the value the
-    /// wizard previously hardcoded — a test pins each experimental brand's prefix.
+    /// wizard previously hardcoded — a test pins each brand's prefix.
     public var idPrefix: String {
         DeviceBrandCatalog.spec(forBrand: displayBrand)?.idPrefix ?? "strap"
     }
 
-    /// Map a catalog brand string back to the typed case (nil for a non-experimental brand).
+    /// Map a catalog brand string back to the typed case (nil for a generic standard-HR strap brand).
     private init?(displayBrand brand: String) {
         switch brand {
         case "Amazfit": self = .amazfit

@@ -1,6 +1,6 @@
 # Garmin battery policy and measurements
 
-Garmin support is experimental and is being built in layers under the Garmin parent issue. This page
+Garmin support is built in layers under the Garmin parent issue. This page
 records the battery policy every Garmin layer follows, how that policy is measured, and the results.
 Keep it current when a measurement lands or a constant changes.
 

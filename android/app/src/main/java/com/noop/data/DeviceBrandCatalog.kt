@@ -9,7 +9,7 @@ import java.text.Normalizer
  * twin of Packages/WhoopStore/Sources/WhoopStore/DeviceBrandCatalog.swift.
  *
  * Adding a recognised brand is ONE row in [all]: the wizard's brand labelling ([brandGuess]), the
- * experimental-tier gate ([com.noop.ble.ExperimentalBrand]), and the source routing all derive from here
+ * custom-protocol brand view ([com.noop.ble.ExperimentalBrand]), and the source routing all derive from here
  * instead of re-listing the advertised-name tokens per call site.
  */
 data class DeviceBrandSpec(
@@ -20,15 +20,15 @@ data class DeviceBrandSpec(
     val nameTokens: List<String>,
     /** The routing kind stored on the device (drives `SourceCoordinator.makeSource`). [SourceKind.liveBLE]
      *  for a brand whose live HR is the standard 0x180D broadcast (generic straps); [SourceKind.huami]
-     *  / [SourceKind.oura] / [SourceKind.garmin] for the experimental custom-protocol sources. */
+     *  / [SourceKind.oura] / [SourceKind.garmin] for the custom-protocol sources. */
     val sourceKind: SourceKind,
     /** The registry id prefix for a device of this brand ("huami", "oura", "garmin", "strap"). */
     val idPrefix: String,
     /** Whether this brand can stream LIVE heart rate at all in NOOP. false for Oura (no open live stream) —
      *  the wizard routes those to import instead of pretending to connect. */
     val canStreamLiveHR: Boolean,
-    /** True for the opt-in EXPERIMENTAL tier (Amazfit / Mi Band / Garmin / Oura); false for the shipped
-     *  generic HR straps (Polar / Wahoo / …). `ExperimentalBrand.recognise` returns only these. */
+    /** True for the opt-in EXPERIMENTAL tier (Amazfit / Mi Band / Oura); false for the supported brands
+     *  (Garmin, and the generic HR straps Polar / Wahoo / …). Garmin left this tier in #43. */
     val isExperimentalTier: Boolean,
 )
 
@@ -37,14 +37,15 @@ object DeviceBrandCatalog {
      *  Mi Band (a Huami sub-brand) precedes Amazfit so a "Mi Smart Band" is not mis-labelled Amazfit. Tokens
      *  are otherwise disjoint across rows, so the remaining order is cosmetic. */
     val all: List<DeviceBrandSpec> = listOf(
-        // EXPERIMENTAL tier — custom-protocol or broadcast live sources, opt-in and best-effort.
+        // Custom-protocol live sources. Mi Band / Amazfit / Oura are the EXPERIMENTAL tier (opt-in and
+        // best-effort); Garmin is supported.
         DeviceBrandSpec("Mi Band", listOf("mi band", "miband", "smart band", "xiaomi"),
             SourceKind.huami, "huami", canStreamLiveHR = true, isExperimentalTier = true),
         DeviceBrandSpec("Amazfit", listOf("amazfit", "zepp", "helio", "huami"),
             SourceKind.huami, "huami", canStreamLiveHR = true, isExperimentalTier = true),
         DeviceBrandSpec("Garmin",
             listOf("garmin", "forerunner", "fenix", "vivoactive", "venu", "instinct", "epix", "vivosmart", "hrm"),
-            SourceKind.garmin, "garmin", canStreamLiveHR = true, isExperimentalTier = true),
+            SourceKind.garmin, "garmin", canStreamLiveHR = true, isExperimentalTier = false),
         DeviceBrandSpec("Oura", listOf("oura"),
             SourceKind.oura, "oura", canStreamLiveHR = false, isExperimentalTier = true),
         // Shipped generic HR straps — standard 0x180D broadcast, labelled for display only.

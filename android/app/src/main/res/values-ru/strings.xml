@@ -2765,7 +2765,7 @@
     <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Пока NOOP открыт, прослушивает живые каналы часов с калориями, минутами интенсивности и стрессом и записывает каждое сообщение в журнал браслета с непроверенным значением. Больше ничто не использует эти значения. Пока включено, расходует больше заряда часов.</string>
     <string name="today_effort_experimental">Нагрузка: экспериментально</string>
     <string name="l10n_add_device_wizard_garmin_watch_a866104a">Часы Garmin</string>
-    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690">Подключается по собственному протоколу часов: синхронизация истории и живые данные, только чтение. Помогите нам тестировать.</string>
+    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb">Подключается по собственному протоколу часов: синхронизация истории и живые данные, только чтение.</string>
     <string name="l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606">На часах откройте Настройки, затем Телефон (или Подключения) и выберите Сопряжение с телефоном. QR-код на часах можно игнорировать.</string>
     <string name="l10n_add_device_wizard_keep_the_watch_close_and_awake_480e2c09">Держите часы рядом и не давайте им уснуть. Если это устройство запросит сопряжение, проверьте, что PIN совпадает с часами, и подтвердите.</string>
     <string name="l10n_add_device_wizard_noop_only_reads_from_the_watch_6177a179">NOOP только читает данные с часов. Он никогда ничего на них не удаляет, не архивирует и не меняет.</string>
@@ -2795,11 +2795,9 @@
     <string name="l10n_add_device_wizard_last_error_ee28d44b">Последняя ошибка: %1$s</string>
     <string name="l10n_add_device_wizard_keep_waiting_9be1abba">Подождать ещё</string>
     <string name="l10n_add_device_wizard_connected_to_this_device_755ed69e">Подключены к этому устройству</string>
-    <string name="l10n_add_device_wizard_experimental_b718f8c3">Экспериментально</string>
-    <string name="l10n_devices_screen_experimental_4340debb">%1$s (экспериментально)</string>
     <string name="l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee">Пульс · R-R · Сон · Шаги · SpO₂ · Дыхание · Стресс · Body Battery · HRV</string>
-    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896">Даёт Заряд, Усилие и Отдых по собственным данным часов. Усилие экспериментально</string>
-    <string name="l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff">Экспериментально. Только чтение: NOOP загружает файлы часов и никогда их не удаляет и не меняет. Стресс и Body Battery Garmin показываются так, как их сообщает Garmin.</string>
+    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2">Даёт Заряд, Усилие и Отдых по собственным данным часов.</string>
+    <string name="l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd">Только чтение: NOOP загружает файлы часов и никогда их не удаляет и не меняет. Стресс и Body Battery Garmin показываются так, как их сообщает Garmin.</string>
     <string name="l10n_garmin_watch_panel_connected_c2f9b7b4">Подключено</string>
     <string name="l10n_garmin_watch_panel_syncing_history_03ec192e">Синхронизация истории…</string>
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Подключение…</string>

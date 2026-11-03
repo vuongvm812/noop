@@ -99,9 +99,9 @@ class SourceCoordinator(
      *  generic strap / FTMS machine surfaces its charge where the WHOOP strap battery does. Default no-op
      *  keeps existing call sites + JVM tests compiling unchanged. */
     private val batterySink: (Int) -> Unit = {},
-    /** Blank a non-WHOOP source's live HR when its HR channel closes (an EXPERIMENTAL Garmin watch). */
+    /** Blank a non-WHOOP source's live HR when its HR channel closes (a Garmin watch). */
     private val clearExternalLiveHr: () -> Unit = {},
-    /** An EXPERIMENTAL Garmin watch's live snapshot (Body Battery, respiration, SpO2, …); null clears it. */
+    /** A Garmin watch's live snapshot (Body Battery, respiration, SpO2, …); null clears it. */
     private val garminLiveSink: (com.noop.garmin.GarminLiveSnapshot?) -> Unit = {},
     /** A Garmin history sync stored new files: run the same refresh + analysis a completed WHOOP offload runs. */
     private val onGarminHistoryStored: () -> Unit = {},
@@ -429,7 +429,7 @@ class SourceCoordinator(
      * Build the isolated [LiveHrSource] for a device from its registered `sourceKind` — the ONE place that
      * maps a kind to a concrete driver. An FTMS gym machine runs the FtmsSource; an EXPERIMENTAL Huami
      * device (Amazfit / Zepp / Mi Band) runs the HuamiHrSource; an EXPERIMENTAL Oura ring runs the
-     * OuraLiveSource; an EXPERIMENTAL Garmin watch runs the GarminSource; everything else is a generic HR
+     * OuraLiveSource; a Garmin watch runs the GarminSource; everything else is a generic HR
      * strap on StandardHrSource. Adding a brand adds ONE arm
      * here (plus a conforming source); nothing else in the coordinator changes. Returns the source WITHOUT
      * connecting — the caller ([switchToStrap]) does the connect-by-address-else-scan bring-up. Mirrors
@@ -497,7 +497,7 @@ class SourceCoordinator(
     }
 
     /**
-     * Build the EXPERIMENTAL Garmin source for a watch paired over GFDI (`garmin`). It holds the session, the
+     * Build the Garmin source for a watch paired over GFDI (`garmin`). It holds the session, the
      * handshake and the read-only history sync; battery rides the SAME [batterySink] as the other sources. The first-pairing flag
      * is remembered per device so PAIR_COMPLETE / SETUP_WIZARD_COMPLETE go out once. Per-connect readouts
      * appear only while the Connection or Sources Test Centre domain is active; state changes, refusals and

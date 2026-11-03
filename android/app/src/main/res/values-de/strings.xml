@@ -2883,7 +2883,7 @@
     <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Garmin-Echtzeitaufzeichnung</string>
     <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Solange NOOP geöffnet ist, hört NOOP die Live-Kanäle der Uhr für Kalorien, Intensitätsminuten und Stress ab und schreibt jede Nachricht mit einem ungeprüften Wert ins Bandprotokoll. Nichts anderes verwendet diese Werte. Verbraucht zusätzlich Akku der Uhr, solange aktiv.</string>
     <string name="l10n_add_device_wizard_garmin_watch_a866104a">Garmin-Uhr</string>
-    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690">Koppelt über das eigene Protokoll der Uhr: Verlaufssynchronisierung und Live-Daten, nur lesend. Hilf uns beim Testen.</string>
+    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb">Koppelt über das eigene Protokoll der Uhr: Verlaufssynchronisierung und Live-Daten, nur lesend.</string>
     <string name="l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606">Öffne auf der Uhr Einstellungen, dann Telefon (oder Konnektivität), und wähle Telefon koppeln. Einen QR-Code auf der Uhr kannst du ignorieren.</string>
     <string name="l10n_add_device_wizard_keep_the_watch_close_and_awake_480e2c09">Halte die Uhr in der Nähe und wach. Wenn dieses Gerät eine Kopplung anfragt, prüfe, ob die PIN mit der Uhr übereinstimmt, und bestätige.</string>
     <string name="l10n_add_device_wizard_noop_only_reads_from_the_watch_6177a179">NOOP liest nur von der Uhr. Es löscht, archiviert oder ändert nie etwas darauf.</string>
@@ -2913,11 +2913,9 @@
     <string name="l10n_add_device_wizard_last_error_ee28d44b">Letzter Fehler: %1$s</string>
     <string name="l10n_add_device_wizard_keep_waiting_9be1abba">Weiter warten</string>
     <string name="l10n_add_device_wizard_connected_to_this_device_755ed69e">Mit diesem Gerät verbunden</string>
-    <string name="l10n_add_device_wizard_experimental_b718f8c3">Experimentell</string>
-    <string name="l10n_devices_screen_experimental_4340debb">%1$s (experimentell)</string>
     <string name="l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee">Herzfrequenz · R-R · Schlaf · Schritte · SpO₂ · Atmung · Stress · Body Battery · HRV</string>
-    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896">Liefert Charge, Effort und Rest aus den eigenen Daten der Uhr. Effort ist experimentell</string>
-    <string name="l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff">Experimentell. Nur lesend: NOOP lädt die Dateien der Uhr herunter und löscht oder ändert sie nie. Stress und Body Battery von Garmin werden so angezeigt, wie Garmin sie meldet.</string>
+    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2">Liefert Charge, Effort und Rest aus den eigenen Daten der Uhr.</string>
+    <string name="l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd">Nur lesend: NOOP lädt die Dateien der Uhr herunter und löscht oder ändert sie nie. Stress und Body Battery von Garmin werden so angezeigt, wie Garmin sie meldet.</string>
     <string name="l10n_garmin_watch_panel_connected_c2f9b7b4">Verbunden</string>
     <string name="l10n_garmin_watch_panel_syncing_history_03ec192e">Verlauf wird synchronisiert…</string>
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Verbinde…</string>

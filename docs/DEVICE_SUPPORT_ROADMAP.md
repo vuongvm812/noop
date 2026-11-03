@@ -12,7 +12,7 @@ source stands and the protocol facts we've verified, so the next build can pick 
 | **Xiaomi Smart Band 8 / 9 / 10** (Mi Band) | ✅ Shipped, **import lane** | Read the Mi Fitness iOS app's own SQLite, on-device (below) |
 | **Xiaomi Smart Band — live BLE sync** | 🔬 Protocol researched, decoder not built | Mi protobuf-v2 over BLE GATT + `encryptKey` handshake (below) — hardware-gated |
 | **Polar deep streams** (ECG / PPG / ACC / PPI) | 🔬 Pure PPI decoder built (`Packages/PolarProtocol` + `com.noop.polar`, tests green both platforms); live `PolarPMDSource` + ECG/PPG decode still to build | PMD service (below) — alpha, hardware-gated |
-| **Garmin watches** (GFDI: history files, live channels) | 🧪 **Experimental**, all platforms; hardware-tested on a Forerunner 165 (macOS). Shipped lanes: pairing wizard, read-only history sync (sleep / HR / steps / stress / Body Battery / SpO₂ / respiration / HRV), live HR + R-R + Body Battery / respiration / steps / floors / on-request SpO₂, Charge / Effort / Rest from the watch's data. Broadcast Heart Rate stays as the fallback | Clean-room GFDI over BLE (Gadgetbridge-informed facts only, **never** an AGPL code copy); see [GARMIN.md](GARMIN.md) |
+| **Garmin watches** (GFDI: history files, live channels) | ✅ **Supported**, all platforms (out of Experimental since #43); hardware-tested on a Forerunner 165 (macOS). Shipped lanes: pairing wizard, read-only history sync (sleep / HR / steps / stress / Body Battery / SpO₂ / respiration / HRV), live HR + R-R + Body Battery / respiration / steps / floors / on-request SpO₂, Charge / Effort / Rest from the watch's data. Broadcast Heart Rate stays as the fallback | Clean-room GFDI over BLE (Gadgetbridge-informed facts only, **never** an AGPL code copy); see [GARMIN.md](GARMIN.md) |
 | **Amazfit / Zepp** (incl. Helio deep) | 📋 Researched, not built | Encrypted Huami BLE — needs a one-time **user-pasted** vendor key (NOOP never logs into the vendor cloud) |
 | **Oura** (Gen 3/4/5) | 🔬 Cloud import shipped; local BLE ring **experimental** | Cloud API v2 (off-by-default OAuth backfill) **+** clean-room BLE ring — auth, live HR/IBI, history drain, sleep hypnogram, activity/HR research (below) |
 | **Fitbit / Google** | 📋 Researched, not built | Build against **Google Health** API (Fitbit Web API sunsets Sept 2026) — off-by-default import |
@@ -172,7 +172,7 @@ app SQLite (workouts/sleep) and, with `--suunto`, a `.fit` export — per-minute
 
 ## Notes on the deep-band lanes (Garmin / Amazfit / cloud)
 
-Garmin has since moved from this list to an experimental shipped lane: the protocol, history sync, live
+Garmin has since moved from this list to a supported shipped lane: the protocol, history sync, live
 channels, battery policy and validation status are in [GARMIN.md](GARMIN.md).
 
 These "earn their place" — pursue only while tractable, defer/drop if they threaten WHOOP stability or

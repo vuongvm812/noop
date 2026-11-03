@@ -135,10 +135,10 @@ public enum GarminScoringInputs {
     // MARK: - Effort label
 
     /// How a Garmin-derived Effort is presented. Garmin monitoring HR is sparser than a strap's (about one
-    /// sample a minute at rest), so Effort from it stays EXPERIMENTAL until a multi-day comparison shows it
-    /// tracks varying days (rest, easy, hard; the raw-signal rule in AGENTS.md). Flip `effortValidated`
-    /// only with that comparison on the PR.
-    public static let effortValidated = false
+    /// sample a minute at rest). Garmin support is official in this fork (#43), so a Garmin-derived Effort
+    /// carries no experimental label: it shows "calibrating" while its baselines are not usable, the same
+    /// as WHOOP. Setting this back to `false` restores the label on both platforms.
+    public static let effortValidated = true
 
     /// True when an Effort score whose inputs came from `sourceId` (registry `brand`) must carry the
     /// experimental label. Kotlin twin: `GarminScoringInputs.effortIsExperimental`.

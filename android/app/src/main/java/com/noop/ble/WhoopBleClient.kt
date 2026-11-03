@@ -142,7 +142,7 @@ data class LiveState(
      *  branch and false at every teardown. Twin of macOS LiveState.streamingLiveHR (#903). */
     val streamingLiveHR: Boolean = false,
     val heartRate: Int? = null,
-    /** The latest live values an EXPERIMENTAL Garmin watch reported on its realtime channels (Body Battery,
+    /** The latest live values a Garmin watch reported on its realtime channels (Body Battery,
      *  respiration, SpO2, steps, floors, resting HR). Null when no Garmin is streaming; a field is null when
      *  its channel is closed or the watch sent its "unknown" code. Twin of macOS LiveState.garminLive. */
     val garminLive: com.noop.garmin.GarminLiveSnapshot? = null,
@@ -2323,7 +2323,7 @@ class WhoopBleClient(
         if (pct in 0..100) _state.update { it.copy(batteryPct = pct.toDouble()) }
     }
 
-    /** Surface an EXPERIMENTAL Garmin watch's live snapshot (null clears it). Same seam as [publishExternalLiveHr]. */
+    /** Surface a Garmin watch's live snapshot (null clears it). Same seam as [publishExternalLiveHr]. */
     fun publishExternalGarminLive(snapshot: com.noop.garmin.GarminLiveSnapshot?) {
         _state.update { it.copy(garminLive = snapshot) }
     }

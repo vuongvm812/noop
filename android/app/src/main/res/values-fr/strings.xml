@@ -2869,7 +2869,7 @@
     <string name="l10n_test_centre_screen_garmin_realtime_capture_a3a664b8">Capture en temps réel Garmin</string>
     <string name="l10n_test_centre_screen_while_noop_is_open_listens_to_dfb2665f">Tant que NOOP est ouvert, écoute les canaux en direct de la montre pour les calories, les minutes d\'intensité et le stress, et écrit chaque message dans le journal du bracelet avec une valeur non vérifiée. Rien d\'autre n\'utilise ces valeurs. Consomme davantage la batterie de la montre tant que c\'est activé.</string>
     <string name="l10n_add_device_wizard_garmin_watch_a866104a">Montre Garmin</string>
-    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_e1c75690">S\'associe via le protocole propre à la montre : synchronisation de l\'historique et données en direct, en lecture seule. Aidez-nous à tester.</string>
+    <string name="l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb">S\'associe via le protocole propre à la montre : synchronisation de l\'historique et données en direct, en lecture seule.</string>
     <string name="l10n_add_device_wizard_on_the_watch_open_settings_then_a2c94606">Sur la montre, ouvrez Paramètres, puis Téléphone (ou Connectivité), et choisissez Coupler le téléphone. Vous pouvez ignorer le code QR affiché par la montre.</string>
     <string name="l10n_add_device_wizard_keep_the_watch_close_and_awake_480e2c09">Gardez la montre à proximité et allumée. Si cet appareil demande un couplage, vérifiez que le code PIN correspond à celui de la montre et acceptez.</string>
     <string name="l10n_add_device_wizard_noop_only_reads_from_the_watch_6177a179">NOOP ne fait que lire la montre. Il ne supprime, n\'archive ni ne modifie jamais rien dessus.</string>
@@ -2899,11 +2899,9 @@
     <string name="l10n_add_device_wizard_last_error_ee28d44b">Dernière erreur : %1$s</string>
     <string name="l10n_add_device_wizard_keep_waiting_9be1abba">Continuer d\'attendre</string>
     <string name="l10n_add_device_wizard_connected_to_this_device_755ed69e">Connectée à cet appareil</string>
-    <string name="l10n_add_device_wizard_experimental_b718f8c3">Expérimental</string>
-    <string name="l10n_devices_screen_experimental_4340debb">%1$s (expérimental)</string>
     <string name="l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee">Fréquence cardiaque · R-R · Sommeil · Pas · SpO₂ · Respiration · Stress · Body Battery · HRV</string>
-    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_3ea23896">Alimente la charge, l\'effort et le repos à partir des données de la montre. L\'effort est expérimental</string>
-    <string name="l10n_devices_screen_experimental_read_only_noop_downloads_the_fa88f1ff">Expérimental. Lecture seule : NOOP télécharge les fichiers de la montre et ne les supprime ni ne les modifie jamais. Le stress et la Body Battery de Garmin sont affichés tels que Garmin les indique.</string>
+    <string name="l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2">Alimente la charge, l\'effort et le repos à partir des données de la montre.</string>
+    <string name="l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd">Lecture seule : NOOP télécharge les fichiers de la montre et ne les supprime ni ne les modifie jamais. Le stress et la Body Battery de Garmin sont affichés tels que Garmin les indique.</string>
     <string name="l10n_garmin_watch_panel_connected_c2f9b7b4">Connectée</string>
     <string name="l10n_garmin_watch_panel_syncing_history_03ec192e">Synchronisation de l\'historique…</string>
     <string name="l10n_garmin_watch_panel_connecting_fd3e7969">Connexion…</string>

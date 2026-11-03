@@ -70,8 +70,9 @@ class DeviceBrandCatalogTest {
         assertTrue(spec("Garmin").canStreamLiveHR)
         assertTrue(spec("Polar").canStreamLiveHR)
 
-        for (b in listOf("Amazfit", "Mi Band", "Garmin", "Oura")) assertTrue(b, spec(b).isExperimentalTier)
-        for (b in listOf("Polar", "Wahoo", "Coospo", "Scosche", "Magene")) assertFalse(b, spec(b).isExperimentalTier)
+        // Amazfit / Mi Band / Oura are the opt-in experimental tier; Garmin (#43) and generic straps are not.
+        for (b in listOf("Amazfit", "Mi Band", "Oura")) assertTrue(b, spec(b).isExperimentalTier)
+        for (b in listOf("Garmin", "Polar", "Wahoo", "Coospo", "Scosche", "Magene")) assertFalse(b, spec(b).isExperimentalTier)
     }
 
     @Test

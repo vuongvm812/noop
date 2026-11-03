@@ -5,8 +5,8 @@ import Foundation
 /// covered by `swift test` — the recognition + capability facts are byte-parity-critical, so they must be
 /// asserted headlessly on both platforms. Faithful twin of `android com.noop.data.DeviceBrandCatalog`.
 ///
-/// Adding a recognised brand is ONE row in `all`: the wizard's brand labelling, the experimental-tier
-/// capability gate (`ExperimentalBrand`), and the source routing all derive from here instead of re-listing
+/// Adding a recognised brand is ONE row in `all`: the wizard's brand labelling, the custom-protocol brand
+/// view (`ExperimentalBrand`), and the source routing all derive from here instead of re-listing
 /// the advertised-name tokens per call site (previously duplicated across `ExperimentalBrand.recognise` and
 /// two copies of the wizard's `brandGuess`).
 public struct DeviceBrandSpec: Sendable, Equatable {
@@ -17,15 +17,15 @@ public struct DeviceBrandSpec: Sendable, Equatable {
     public let nameTokens: [String]
     /// The routing kind stored on the device (drives `SourceCoordinator.makeSource`). `.liveBLE` for a brand
     /// whose live HR is the standard 0x180D broadcast (generic straps); `.huami` / `.oura` / `.garmin` for the
-    /// experimental custom-protocol sources.
+    /// custom-protocol sources.
     public let sourceKind: SourceKind
     /// The registry id prefix for a device of this brand ("huami", "oura", "garmin", "strap").
     public let idPrefix: String
     /// Whether this brand can stream LIVE heart rate at all in NOOP. `false` for Oura (no open live stream)
     /// — the wizard routes those to import instead of pretending to connect.
     public let canStreamLiveHR: Bool
-    /// True for the opt-in EXPERIMENTAL tier (Amazfit / Mi Band / Garmin / Oura); false for the shipped
-    /// generic HR straps (Polar / Wahoo / …). `ExperimentalBrand.recognise` returns only these.
+    /// True for the opt-in EXPERIMENTAL tier (Amazfit / Mi Band / Oura); false for the supported brands
+    /// (Garmin, and the generic HR straps Polar / Wahoo / …). Garmin left this tier in #43.
     public let isExperimentalTier: Bool
 
     public init(brand: String, nameTokens: [String], sourceKind: SourceKind, idPrefix: String,
@@ -44,14 +44,15 @@ public enum DeviceBrandCatalog {
     /// Mi Band (a Huami sub-brand) precedes Amazfit so a "Mi Smart Band" is not mis-labelled Amazfit. Tokens
     /// are otherwise disjoint across rows, so the remaining order is cosmetic.
     public static let all: [DeviceBrandSpec] = [
-        // EXPERIMENTAL tier — custom-protocol or broadcast live sources, opt-in and best-effort.
+        // Custom-protocol live sources. Mi Band / Amazfit / Oura are the EXPERIMENTAL tier (opt-in and
+        // best-effort); Garmin is supported.
         DeviceBrandSpec(brand: "Mi Band", nameTokens: ["mi band", "miband", "smart band", "xiaomi"],
                         sourceKind: .huami, idPrefix: "huami", canStreamLiveHR: true, isExperimentalTier: true),
         DeviceBrandSpec(brand: "Amazfit", nameTokens: ["amazfit", "zepp", "helio", "huami"],
                         sourceKind: .huami, idPrefix: "huami", canStreamLiveHR: true, isExperimentalTier: true),
         DeviceBrandSpec(brand: "Garmin",
                         nameTokens: ["garmin", "forerunner", "fenix", "vivoactive", "venu", "instinct", "epix", "vivosmart", "hrm"],
-                        sourceKind: .garmin, idPrefix: "garmin", canStreamLiveHR: true, isExperimentalTier: true),
+                        sourceKind: .garmin, idPrefix: "garmin", canStreamLiveHR: true, isExperimentalTier: false),
         DeviceBrandSpec(brand: "Oura", nameTokens: ["oura"],
                         sourceKind: .oura, idPrefix: "oura", canStreamLiveHR: false, isExperimentalTier: true),
         // Shipped generic HR straps — standard 0x180D broadcast, labelled for display only. All route as a
