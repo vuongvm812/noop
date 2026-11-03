@@ -37,17 +37,25 @@ object EffortLoad {
     /**
      * EWMA acute:chronic load over CALENDAR days ending on [endOrdinal]. A day missing from [loads] was not
      * observed and the states HOLD across it (an unworn day is not a rest day). Seeded with the first
-     * observed load in the [runInDays]-day run; null until [minChronicObservedDays] of the last
-     * [chronicSpanDays] days are observed. Descriptive only, not an injury predictor (Impellizzeri 2020).
+     * observed load in the [runInDays]-day run; null until [minObserved] of the last [chronicSpan] days are
+     * observed. The spans default to [acuteSpanDays] / [chronicSpanDays] / [minChronicObservedDays]; a
+     * caller with its own named tunables passes them. Descriptive only, not an injury predictor
+     * (Impellizzeri 2020).
      *
      * Kotlin twin of Swift `EffortLoad.acuteChronic`.
      */
-    fun acuteChronic(loads: Map<Int, Double>, endOrdinal: Int): AcuteChronic? {
+    fun acuteChronic(
+        loads: Map<Int, Double>,
+        endOrdinal: Int,
+        acuteSpan: Int = acuteSpanDays,
+        chronicSpan: Int = chronicSpanDays,
+        minObserved: Int = minChronicObservedDays,
+    ): AcuteChronic? {
         var observed = 0
-        for (d in (endOrdinal - chronicSpanDays + 1)..endOrdinal) if (loads[d] != null) observed++
-        if (observed < minChronicObservedDays) return null
-        val lambdaAcute = ewmaLambda(acuteSpanDays)
-        val lambdaChronic = ewmaLambda(chronicSpanDays)
+        for (d in (endOrdinal - chronicSpan + 1)..endOrdinal) if (loads[d] != null) observed++
+        if (observed < minObserved) return null
+        val lambdaAcute = ewmaLambda(acuteSpan)
+        val lambdaChronic = ewmaLambda(chronicSpan)
         var acute: Double? = null
         var chronic = 0.0
         for (d in (endOrdinal - runInDays + 1)..endOrdinal) {
@@ -66,12 +74,12 @@ object EffortLoad {
     }
 
     /**
-     * Foster (1998) monotony, mean / sample SD, over the observed loads in the [acuteSpanDays] calendar
-     * days ending on [endOrdinal]. Kotlin twin of Swift `EffortLoad.monotony`.
+     * Foster (1998) monotony, mean / sample SD, over the observed loads in the [spanDays] (default
+     * [acuteSpanDays]) calendar days ending on [endOrdinal]. Kotlin twin of Swift `EffortLoad.monotony`.
      */
-    fun monotony(loads: Map<Int, Double>, endOrdinal: Int): Double? {
+    fun monotony(loads: Map<Int, Double>, endOrdinal: Int, spanDays: Int = acuteSpanDays): Double? {
         val week = ArrayList<Double>()
-        for (d in (endOrdinal - acuteSpanDays + 1)..endOrdinal) loads[d]?.let { week.add(it) }
+        for (d in (endOrdinal - spanDays + 1)..endOrdinal) loads[d]?.let { week.add(it) }
         if (week.size < minMonotonyDays) return null
         var sum = 0.0
         for (x in week) sum += x

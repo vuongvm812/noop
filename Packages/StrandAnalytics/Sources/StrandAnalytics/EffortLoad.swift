@@ -64,19 +64,22 @@ public enum EffortLoad {
     /// calendar days do change is the reach: the run is bounded to the last `runInDays` calendar days, so
     /// a sparse history can no longer stretch a "28-day" mean across half a year.
     ///
-    /// Both states are seeded with the first observed load in the run. nil until at least
-    /// `minChronicObservedDays` of the last `chronicSpanDays` calendar days are observed.
+    /// Both states are seeded with the first observed load in the run. nil until at least `minObserved` of
+    /// the last `chronicSpan` calendar days are observed. The spans default to `acuteSpanDays` /
+    /// `chronicSpanDays` / `minChronicObservedDays`; a caller with its own named tunables passes them.
     ///
     /// Descriptive only: the ratio describes how recent load compares with the recent norm. It is not an
     /// injury predictor (Impellizzeri et al. 2020).
     ///
     /// Kotlin twin: `EffortLoad.acuteChronic`.
-    public static func acuteChronic(loads: [Int: Double], endOrdinal: Int) -> AcuteChronic? {
+    public static func acuteChronic(loads: [Int: Double], endOrdinal: Int,
+                                    acuteSpan: Int = acuteSpanDays, chronicSpan: Int = chronicSpanDays,
+                                    minObserved: Int = minChronicObservedDays) -> AcuteChronic? {
         var observed = 0
-        for d in (endOrdinal - chronicSpanDays + 1)...endOrdinal where loads[d] != nil { observed += 1 }
-        guard observed >= minChronicObservedDays else { return nil }
-        let lambdaAcute = ewmaLambda(spanDays: acuteSpanDays)
-        let lambdaChronic = ewmaLambda(spanDays: chronicSpanDays)
+        for d in (endOrdinal - chronicSpan + 1)...endOrdinal where loads[d] != nil { observed += 1 }
+        guard observed >= minObserved else { return nil }
+        let lambdaAcute = ewmaLambda(spanDays: acuteSpan)
+        let lambdaChronic = ewmaLambda(spanDays: chronicSpan)
         var acute: Double? = nil
         var chronic = 0.0
         for d in (endOrdinal - runInDays + 1)...endOrdinal {
@@ -93,14 +96,14 @@ public enum EffortLoad {
         return AcuteChronic(acute: a, chronic: chronic, observedDays: observed)
     }
 
-    /// Foster (1998) monotony, mean / sample SD, over the observed loads in the `acuteSpanDays` calendar
-    /// days ending on `endOrdinal`. nil with fewer than `minMonotonyDays` observed days or no spread
+    /// Foster (1998) monotony, mean / sample SD, over the observed loads in the `spanDays` (default
+    /// `acuteSpanDays`) calendar days ending on `endOrdinal`. nil with fewer than `minMonotonyDays` observed days or no spread
     /// (SD at or below 1e-9 of the mean).
     ///
     /// Kotlin twin: `EffortLoad.monotony`.
-    public static func monotony(loads: [Int: Double], endOrdinal: Int) -> Double? {
+    public static func monotony(loads: [Int: Double], endOrdinal: Int, spanDays: Int = acuteSpanDays) -> Double? {
         var week: [Double] = []
-        for d in (endOrdinal - acuteSpanDays + 1)...endOrdinal {
+        for d in (endOrdinal - spanDays + 1)...endOrdinal {
             if let x = loads[d] { week.append(x) }
         }
         guard week.count >= minMonotonyDays else { return nil }

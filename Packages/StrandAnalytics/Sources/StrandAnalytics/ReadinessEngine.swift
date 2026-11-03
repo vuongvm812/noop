@@ -86,7 +86,7 @@ public enum ReadinessEngine {
 
     private static let acuteWindow    = 7
     private static let chronicWindow  = 28
-    private static let minChronic     = 14   // need at least this much strain history for ACWR
+    private static let minChronic     = 14   // observed days of the last `chronicWindow` needed for ACWR
 
     // MARK: Entry point
 
@@ -224,13 +224,14 @@ public enum ReadinessEngine {
         if let todayOrdinal = TrainingLoadEngine.dayOrdinal(latest.day) {
             let loads = EffortLoad.loadsByOrdinal(history.map { ($0.day, $0.strain) })
             let end = todayOrdinal - 1
-            if let ac = EffortLoad.acuteChronic(loads: loads, endOrdinal: end) {
+            if let ac = EffortLoad.acuteChronic(loads: loads, endOrdinal: end, acuteSpan: acuteWindow,
+                                                chronicSpan: chronicWindow, minObserved: minChronic) {
                 if let ratio = ac.ratio {
                     acwr = ratio
                     signals.append(acwrSignal(ratio, acute: ac.acute, chronic: ac.chronic))
                 }
                 // Foster monotony over the last calendar week of load.
-                if let mono = EffortLoad.monotony(loads: loads, endOrdinal: end) {
+                if let mono = EffortLoad.monotony(loads: loads, endOrdinal: end, spanDays: acuteWindow) {
                     monotony = mono
                     if mono >= 2.0 {
                         signals.append(Signal(key: "monotony", label: "Training variety",

@@ -107,7 +107,7 @@ object ReadinessEngine {
 
     private const val acuteWindow = 7
     private const val chronicWindow = 28
-    private const val minChronic = 14       // need at least this much strain history for ACWR
+    private const val minChronic = 14       // observed days of the last [chronicWindow] needed for ACWR
 
     // Resp-rate signal is sourced from either clean cloud RR or a higher-variance on-device RSA
     // estimate (no source flag on the field), so it uses wider z thresholds than HRV/RHR and a
@@ -295,7 +295,7 @@ object ReadinessEngine {
         if (todayOrdinal != null) {
             val loads = EffortLoad.loadsByOrdinal(history.map { it.day to it.strain })
             val end = todayOrdinal - 1
-            val ac = EffortLoad.acuteChronic(loads, end)
+            val ac = EffortLoad.acuteChronic(loads, end, acuteWindow, chronicWindow, minChronic)
             if (ac != null) {
                 val ratio = ac.ratio
                 if (ratio != null) {
@@ -303,7 +303,7 @@ object ReadinessEngine {
                     signals.add(acwrSignal(ratio, acute = ac.acute, chronic = ac.chronic))
                 }
                 // Foster monotony over the last calendar week of load.
-                val mono = EffortLoad.monotony(loads, end)
+                val mono = EffortLoad.monotony(loads, end, acuteWindow)
                 if (mono != null) {
                     monotony = mono
                     if (mono >= 2.0) {
