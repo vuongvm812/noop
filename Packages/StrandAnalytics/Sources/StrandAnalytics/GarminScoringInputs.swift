@@ -15,7 +15,8 @@ import Foundation
 // Overnight HRV: the watch's own last-night average (FIT 370) when present, else the mean of the 5-minute
 // HRV values (FIT 371) inside the night's sleep blocks. Beat intervals (FIT 290) are not used: their
 // decode is an unconfirmed candidate (GarminWellness), so they never reach rrInterval or this resolver.
-// Respiration: the mean of the watch's respiration samples (FIT 297) inside the sleep blocks.
+// Respiration: the watch day's stored overnight value (`WhoopStore.garminNightMean`, FIT 297 samples
+// inside the night that ends that day), the SAME number the row and the `resp_rate` series carry (#52).
 //
 // Pure, no I/O. Kotlin twin: android/app/src/main/java/com/noop/analytics/GarminScoringInputs.kt, held
 // byte-identical by the oracle in GarminScoringInputsTests / GarminScoringInputsTest.
@@ -85,10 +86,11 @@ public enum GarminScoringInputs {
 
     /// Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. `computed*` are NOOP's own
     /// estimates from the raw streams (what `analyzeDay` produced); the watch values come from its stored
-    /// day row and samples. Every fact is decided by `FusionResolver` over the two readings.
+    /// day row (`watchRespRateBpm` is that row's stored overnight respiration), and the HRV fallback from its
+    /// samples. Every fact is decided by `FusionResolver` over the two readings.
     /// Kotlin twin: `GarminScoringInputs.resolve`.
     public static func resolve(computedRestingHr: Int?, computedHrv: Double?, computedResp: Double?,
-                               watch: WatchDay?, hrvSamples: [Sample], respSamples: [Sample],
+                               watch: WatchDay?, hrvSamples: [Sample], watchRespRateBpm: Double?,
                                nights: [Night]) -> Resolution {
         // Kotlin twin: `GarminScoringInputs.pick`.
         func pick(_ key: String, watch w: Double?, computed c: Double?) -> FusedMetricPoint? {
@@ -110,7 +112,7 @@ public enum GarminScoringInputs {
         default: basis = .computed
         }
 
-        let resp = pick("resp_rate", watch: nightMean(respSamples, nights: nights), computed: computedResp)
+        let resp = pick("resp_rate", watch: watchRespRateBpm, computed: computedResp)
 
         return Resolution(
             restingHr: rhr.map { Int($0.value.rounded()) },

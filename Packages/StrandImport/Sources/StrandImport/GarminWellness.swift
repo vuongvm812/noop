@@ -51,6 +51,11 @@ import Foundation
 //   398 SKIN_TEMP_OVERNIGHT 0 local_timestamp, 1 average deviation, 2 7-day average deviation,
 //                           4 nightly value (float32), 3 calibrated days (u8)
 //
+// Plausible ranges (#52): SpO2 70-100 %, respiration 4-60 breaths/min (raw 400-6000), HRV values
+// 5-300 ms (raw 640-38400); a value outside is dropped as a sentinel or misread, never stored. The same
+// bounds are `WhoopStore.garminSpo2Min` / `garminSpo2Max` and the rest. SpO2 confidence and
+// mode are kept as decoded but not used: their scales are not confirmed on a watch.
+//
 // Timestamps: only field 253 and compressed-timestamp headers move the file's running timestamp. A
 // message without its own 253 takes the running one. MONITORING may instead carry `timestamp_16`, the
 // low 16 bits of its time, resolved forward from the previous monitoring time (FIT SDK rule), which is
@@ -484,7 +489,7 @@ public enum GarminWellnessParser {
                 if let v = Self.range(m.s(0), 0, 100) { out.stress.append(.init(ts: ts, value: v)) }
                 if let v = Self.range(m.s(3), 0, 100) { out.bodyBattery.append(.init(ts: ts, value: v)) }
             case 269:
-                guard let ts = Self.unix(running), let pct = Self.range(m.u(0), 1, 100) else { return drop() }
+                guard let ts = Self.unix(running), let pct = Self.range(m.u(0), 70, 100) else { return drop() }
                 out.spo2.append(.init(ts: ts, percent: pct, confidence: m.value(1), mode: m.value(2)))
             case 273:
                 noteOffset(local: m.u(2), fitTs: running)
@@ -498,7 +503,7 @@ public enum GarminWellnessParser {
                 // Awake and unmeasurable rows occupy a raw sample slot of their own.
                 if rawStart != nil, level <= 1 { rawSlot += 1 }
             case 297:
-                guard let ts = Self.unix(running), let raw = m.s(0), raw > 0 else { return drop() }
+                guard let ts = Self.unix(running), let raw = Self.range(m.s(0), 400, 6000) else { return drop() }
                 out.respiration.append(.init(ts: ts, value: Double(raw) / 100))
             case 346: sleepAssessment(m)
             case 370:
@@ -509,7 +514,7 @@ public enum GarminWellnessParser {
                                               baselineBalancedUpperMs: m.scaled(5, 128),
                                               status: Self.range(m.u(6), 0, 4)))
             case 371:
-                guard let ts = Self.unix(running), let v = m.u(0) else { return drop() }
+                guard let ts = Self.unix(running), let v = Self.range(m.u(0), 640, 38_400) else { return drop() }
                 out.hrvValues.append(.init(ts: ts, value: Double(v) / 128))
             case 290: beatIntervalsRow(m)
             case 397:

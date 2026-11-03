@@ -74,8 +74,11 @@ object GarminWatchIngest {
                 activeKcal = a.activeCalories?.toDouble(), totalKcal = a.calories?.toDouble(),
             )
         }
+        // A resting HR stamped exactly at local midnight describes the day that just ended: the new day has
+        // no data yet to rest on. Same rule as the 00:00:00 MONITORING totals (`dailyTotals`).
         for (v in s.restingHeartRate.sortedBy { it.ts }) {
-            val key = dayOf(v.ts); days[key] = day(key).copy(restingHr = v.value)
+            val key = dayOf(if ((v.ts + offset) % 86_400 == 0L) v.ts - 1 else v.ts)
+            days[key] = day(key).copy(restingHr = v.value)
         }
         for (h in s.hrvSummaries.sortedBy { it.ts }) {
             val avg = h.lastNightAverageMs ?: continue
@@ -111,8 +114,14 @@ object GarminWatchIngest {
                 remMin = night.remS / 60.0, awakeMin = night.awakeS / 60.0, efficiency = efficiency(asleep, night.awakeS),
             )
         }
+        val rollups = days.keys.sorted().map { days.getValue(it) }
+        // A night that began before midnight ends on the next day; re-derive that day's overnight vitals too.
+        val refresh = rollups.mapNotNull { d ->
+            val next = dayOf(d.dayEndTs)
+            if (days[next] == null) day(next) else null
+        }
         return GarminFileIngest(file = file, hr = hr, deviceMetric = deviceMetric,
-            days = days.keys.sorted().map { days.getValue(it) }, sleeps = sleeps)
+            days = rollups, sleeps = sleeps, nightRefreshDays = refresh)
     }
 
     /**

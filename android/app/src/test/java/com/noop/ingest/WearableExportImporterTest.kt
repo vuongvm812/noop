@@ -649,4 +649,23 @@ class WearableExportImporterTest {
         assertTrue(!WearableExportImporter.isWellnessFile("device_settings.json", bytes("{}")))
         assertTrue(!WearableExportImporter.isWellnessFile("readme.txt", bytes("hi")))
     }
+
+    @Test
+    fun garminFileOrderIsFixedAndUdsWins() {
+        // Twin of Swift `testGarminFileOrderIsFixedAndUdsWins` (#52).
+        val names = listOf("di_connect/di-connect-aggregator/udsfile_2026.json", "b_summary.json",
+            "a_userbiometricprofiledata.json", "di_connect/di-connect-aggregator/UDSFile_2025.json")
+        assertEquals(listOf("a_userbiometricprofiledata.json", "b_summary.json",
+            "di_connect/di-connect-aggregator/UDSFile_2025.json", "di_connect/di-connect-aggregator/udsfile_2026.json"),
+            WearableExportImporter.garminFileOrder(names))
+        val legacy = bytes("""[ { "calendarDate": "2026-06-01", "restingHeartRate": 61, "averageStressLevel": 140 } ]""")
+        val uds = bytes("""[ { "calendarDate": "2026-06-01", "restingHeartRate": 58, "averageStressLevel": 33 } ]""")
+        for (files in listOf(linkedMapOf("z_summary.json" to legacy, "a/udsfile_1.json" to uds),
+            linkedMapOf("a/udsfile_1.json" to uds, "z_summary.json" to legacy))) {
+            val d = WearableExportImporter.parseGarmin(files).days.first()
+            assertEquals(58, d.restingHr)
+            assertEquals(33, d.avgStress)
+        }
+        assertEquals(null, WearableExportImporter.parseGarmin(mapOf("z_summary.json" to legacy)).days.first().avgStress)
+    }
 }

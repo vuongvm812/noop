@@ -15,7 +15,8 @@ package com.noop.analytics
  *
  * Overnight HRV: the watch's last-night average (FIT 370) when present, else the mean of its 5-minute HRV
  * values (FIT 371) inside the night's sleep blocks. Beat intervals (FIT 290) are an unconfirmed candidate
- * decode and are not used. Respiration: the mean of the watch's samples (FIT 297) inside the sleep blocks.
+ * decode and are not used. Respiration: the watch day's stored overnight value ([com.noop.data.GarminSyncStore.nightMean]),
+ * the same number the row and the `resp_rate` series carry (#52).
  */
 object GarminScoringInputs {
 
@@ -81,7 +82,7 @@ object GarminScoringInputs {
         computedResp: Double?,
         watch: WatchDay?,
         hrvSamples: List<Sample>,
-        respSamples: List<Sample>,
+        watchRespRateBpm: Double?,
         nights: List<Night>,
     ): Resolution {
         val rhr = pick("rhr", watch?.restingHr?.toDouble(), computedRestingHr?.toDouble())
@@ -95,7 +96,7 @@ object GarminScoringInputs {
             else -> HrvBasis.COMPUTED
         }
 
-        val resp = pick("resp_rate", nightMean(respSamples, nights), computedResp)
+        val resp = pick("resp_rate", watchRespRateBpm, computedResp)
 
         return Resolution(
             // Swift `Double.rounded()` rounds half away from zero; so does Math.round for these positive values.

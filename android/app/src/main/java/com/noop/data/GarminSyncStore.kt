@@ -11,8 +11,9 @@ import androidx.room.withTransaction
  * the watch). Either all of it lands or none does.
  *
  * A watch splits a day across many files, so writes MERGE: per-second series add up by key; the day's
- * stress / Body Battery / SpO2 / respiration aggregates are re-derived from the stored samples of that
- * local day; cumulative counters (steps, distance, calories) keep the larger value; every other column
+ * stress / Body Battery aggregates are re-derived from the stored samples of that local day; its SpO2 and
+ * respiration are the OVERNIGHT mean over the stored nights ending that day ([nightMean], #52), written
+ * the same to dailyMetric and metricSeries; cumulative counters (steps, distance, calories) keep the larger value; every other column
  * keeps its stored value when the file has none (COALESCE). A night REPLACES any other stored night of
  * the watch it overlaps (unless the user edited that one), so one Garmin night stays one session when a
  * later fold places it differently (#47).
@@ -65,6 +66,8 @@ data class GarminFileIngest(
     val deviceMetric: List<DeviceMetricRow> = emptyList(),
     val days: List<GarminDayRollup> = emptyList(),
     val sleeps: List<GarminSleepRow> = emptyList(),
+    /** The day after each rollup day the file did not touch; its overnight vitals are re-derived if its row exists. */
+    val nightRefreshDays: List<GarminDayRollup> = emptyList(),
 )
 
 data class GarminIngestCounts(
@@ -119,7 +122,6 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                     deviceId, s.ts, s.kind.wire, s.value, s.source,
                 )
             }
-            for (d in ingest.days) mergeDay(d, deviceId, counts)
             for (s in ingest.sleeps) {
                 exec(
                     "DELETE FROM sleepSession WHERE deviceId = ? AND startTs <> ? AND startTs < ? AND endTs > ? AND userEdited = 0",
@@ -138,6 +140,9 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                     deviceId, s.startTs, s.endTs, s.efficiency, s.restingHr, s.avgHrv, s.stagesJSON,
                 )
             }
+            // After the nights: the overnight SpO2 / respiration read the stored nights.
+            for (d in ingest.days) mergeDay(d, deviceId, counts)
+            for (d in ingest.nightRefreshDays) counts.metricPoints += refreshNightVitals(d, deviceId)
             insertLedgerRow(ingest.file, deviceId, ingestedAt)
             counts
         }
@@ -156,6 +161,71 @@ class GarminSyncStore(private val db: WhoopDatabase) {
     suspend fun repairEfficiencyUnits(deviceId: String): Int = db.withTransaction {
         exec("UPDATE sleepSession SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1", deviceId) +
             exec("UPDATE dailyMetric SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1", deviceId)
+    }
+
+    /** The days this device has a `dailyMetric` row for, oldest first. Swift twin: `WhoopStore.garminDays`. */
+    suspend fun days(deviceId: String): List<String> = db.withTransaction {
+        sql.query("SELECT day FROM dailyMetric WHERE deviceId = ? ORDER BY day", arrayOf<Any?>(deviceId)).use { c ->
+            buildList { while (c.moveToNext()) add(c.getString(0)) }
+        }
+    }
+
+    /**
+     * Re-derive the overnight SpO2 and respiration of existing day rows from the stored samples and nights,
+     * in one transaction (#52); a day without a row is skipped. Returns the metricSeries rows changed.
+     * Swift twin: `WhoopStore.rederiveGarminNightVitals`.
+     */
+    suspend fun rederiveNightVitals(deviceId: String, days: List<GarminDayRollup>): Int = db.withTransaction {
+        days.sumOf { refreshNightVitals(it, deviceId) }
+    }
+
+    /**
+     * The overnight mean of one vital for the night(s) waking on [d]: the stored samples of [kind] inside any
+     * stored night of this device whose end falls in `d.dayStartTs ..< d.dayEndTs` (night bounds inclusive,
+     * each sample counted once), within [range], or null under [GARMIN_MIN_NIGHT_SAMPLES]. Samples are looked for
+     * from a day before the wake day's midnight. The ONE resolver for a Garmin day's SpO2 and respiration.
+     * Swift twin: `WhoopStore.garminNightMean`.
+     */
+    internal fun nightMean(deviceId: String, kind: DeviceMetricKind, range: ClosedFloatingPointRange<Double>, d: GarminDayRollup): Double? =
+        sql.query(
+            "SELECT AVG(m.value) AS mean, COUNT(*) AS n FROM deviceMetricSample m " +
+                "WHERE m.deviceId = ? AND m.kind = ? AND m.ts >= ? AND m.ts < ? AND m.value >= ? AND m.value <= ? " +
+                "AND EXISTS (SELECT 1 FROM sleepSession s " +
+                "WHERE s.deviceId = m.deviceId AND s.endTs >= ? AND s.endTs < ? " +
+                "AND m.ts >= s.startTs AND m.ts <= s.endTs)",
+            arrayOf<Any?>(deviceId, kind.wire, d.dayStartTs - 86_400, d.dayEndTs, range.start, range.endInclusive,
+                d.dayStartTs, d.dayEndTs),
+        ).use { c ->
+            if (c.moveToFirst() && !c.isNull(0) && c.getInt(1) >= GARMIN_MIN_NIGHT_SAMPLES) c.getDouble(0) else null
+        }
+
+    /** One day's overnight SpO2 / respiration onto its existing row and points. Swift twin: `WhoopStore.refreshGarminNightVitals`. */
+    private fun refreshNightVitals(d: GarminDayRollup, deviceId: String): Int {
+        val exists = sql.query(
+            "SELECT EXISTS (SELECT 1 FROM dailyMetric WHERE deviceId = ? AND day = ?)", arrayOf<Any?>(deviceId, d.day),
+        ).use { c -> c.moveToFirst() && c.getInt(0) == 1 }
+        if (!exists) return 0
+        val spo2 = nightMean(deviceId, DeviceMetricKind.SPO2_PCT, GARMIN_SPO2_MIN..GARMIN_SPO2_MAX, d)
+        val resp = nightMean(deviceId, DeviceMetricKind.RESPIRATION_BPM, GARMIN_RESP_MIN..GARMIN_RESP_MAX, d)
+        exec("UPDATE dailyMetric SET spo2Pct = ?, respRateBpm = ? WHERE deviceId = ? AND day = ?", spo2, resp, deviceId, d.day)
+        return writeNightVitalPoints(d.day, spo2, resp, deviceId)
+    }
+
+    /** A missing value removes the point, so the row and the series cannot disagree. Swift twin: `WhoopStore.writeNightVitalPoints`. */
+    private fun writeNightVitalPoints(day: String, spo2: Double?, resp: Double?, deviceId: String): Int {
+        var changed = 0
+        for ((key, value) in listOf("spo2" to spo2, "resp_rate" to resp)) {
+            changed += if (value != null) {
+                exec(
+                    "INSERT INTO metricSeries (deviceId, day, `key`, value) VALUES (?, ?, ?, ?) " +
+                        "ON CONFLICT(deviceId, day, `key`) DO UPDATE SET value = excluded.value",
+                    deviceId, day, key, value,
+                )
+            } else {
+                exec("DELETE FROM metricSeries WHERE deviceId = ? AND day = ? AND `key` = ?", deviceId, day, key)
+            }
+        }
+        return changed
     }
 
     /** Swift twin: `WhoopStore.insertLedgerRow`. */
@@ -187,8 +257,8 @@ class GarminSyncStore(private val db: WhoopDatabase) {
         val stress = aggregate(DeviceMetricKind.STRESS, "AVG")
         val bbMin = aggregate(DeviceMetricKind.BODY_BATTERY, "MIN")
         val bbMax = aggregate(DeviceMetricKind.BODY_BATTERY, "MAX")
-        val spo2 = aggregate(DeviceMetricKind.SPO2_PCT, "AVG")
-        val resp = aggregate(DeviceMetricKind.RESPIRATION_BPM, "AVG")
+        val spo2 = nightMean(deviceId, DeviceMetricKind.SPO2_PCT, GARMIN_SPO2_MIN..GARMIN_SPO2_MAX, d)
+        val resp = nightMean(deviceId, DeviceMetricKind.RESPIRATION_BPM, GARMIN_RESP_MIN..GARMIN_RESP_MAX, d)
 
         counts.days += exec(
             "INSERT INTO dailyMetric (deviceId, day, totalSleepMin, efficiency, deepMin, remMin, lightMin, " +
@@ -201,8 +271,8 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                 "lightMin = COALESCE(excluded.lightMin, dailyMetric.lightMin), " +
                 "restingHr = COALESCE(excluded.restingHr, dailyMetric.restingHr), " +
                 "avgHrv = COALESCE(excluded.avgHrv, dailyMetric.avgHrv), " +
-                "spo2Pct = COALESCE(excluded.spo2Pct, dailyMetric.spo2Pct), " +
-                "respRateBpm = COALESCE(excluded.respRateBpm, dailyMetric.respRateBpm), " +
+                "spo2Pct = excluded.spo2Pct, " +
+                "respRateBpm = excluded.respRateBpm, " +
                 "steps = CASE WHEN excluded.steps IS NULL THEN dailyMetric.steps " +
                 "WHEN dailyMetric.steps IS NULL THEN excluded.steps ELSE MAX(excluded.steps, dailyMetric.steps) END, " +
                 "activeKcalEst = CASE WHEN excluded.activeKcalEst IS NULL THEN dailyMetric.activeKcalEst " +
@@ -215,7 +285,7 @@ class GarminSyncStore(private val db: WhoopDatabase) {
         val points = listOf(
             "steps" to d.steps?.toDouble(), "distance_m" to d.distanceM, "energy_kcal" to d.activeKcal,
             "total_kcal" to d.totalKcal, "rhr" to d.restingHr?.toDouble(), "hrv" to d.avgHrvMs,
-            "spo2" to spo2, "resp_rate" to resp, GARMIN_STRESS_KEY to stress,
+            GARMIN_STRESS_KEY to stress,
             "body_battery_min" to bbMin, "body_battery_max" to bbMax,
             "sleep_total_min" to d.totalSleepMin, "sleep_deep_min" to d.deepMin,
             "sleep_light_min" to d.lightMin, "sleep_rem_min" to d.remMin, "sleep_awake_min" to d.awakeMin,
@@ -230,6 +300,7 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                 deviceId, d.day, key, value,
             )
         }
+        counts.metricPoints += writeNightVitalPoints(d.day, spo2, resp, deviceId)
     }
 
     /** Run one statement and return the rows it changed (SQLite `changes()`). */
@@ -248,5 +319,17 @@ class GarminSyncStore(private val db: WhoopDatabase) {
          * `WhoopStore.garminStressKey`.
          */
         const val GARMIN_STRESS_KEY = "garmin_stress"
+
+        // Plausible watch values (#52); outside is a sentinel or misread. Swift twins: `WhoopStore.garminSpo2Min`
+        // and the rest, same names.
+        const val GARMIN_SPO2_MIN = 70.0
+        const val GARMIN_SPO2_MAX = 100.0
+        const val GARMIN_RESP_MIN = 4.0
+        const val GARMIN_RESP_MAX = 60.0
+        const val GARMIN_HRV_MIN = 5.0
+        const val GARMIN_HRV_MAX = 300.0
+
+        /** Fewest in-night samples an overnight mean is formed from. Swift twin: `WhoopStore.garminMinNightSamples`. */
+        const val GARMIN_MIN_NIGHT_SAMPLES = 3
     }
 }

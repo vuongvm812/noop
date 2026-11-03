@@ -248,4 +248,109 @@ final class GarminSyncStoreTests: XCTestCase {
         let cleared = try await store.garminSyncedFiles(deviceId: id)
         XCTAssertTrue(cleared.isEmpty)
     }
+
+    // MARK: Overnight vitals (#52)
+
+    private func prevDay() -> GarminDayRollup {
+        GarminDayRollup(day: "2026-10-31", dayStartTs: dayStart - 86_400, dayEndTs: dayStart)
+    }
+
+    private func m(_ off: Int, _ kind: DeviceMetricKind, _ v: Double) -> DeviceMetricSample {
+        DeviceMetricSample(ts: dayStart + off, kind: kind, value: v, source: "test")
+    }
+
+    /// One night 22:00 -> 07:00 waking on 2026-11-01, with daytime, exercise, spot-check and out-of-range
+    /// readings around it. Shared with the Kotlin twin (`overnightVitalsScenario`), same values.
+    private var scenarioSamples: [DeviceMetricSample] {
+        [m(-21_600, .respirationBpm, 30),     // the evening before: exercise, outside the night
+         m(-3_600, .respirationBpm, 14.25), m(3_600, .respirationBpm, 15.5), m(20_000, .respirationBpm, 16),
+         m(10_000, .respirationBpm, 2),       // in the night but below the plausible range
+         m(43_200, .respirationBpm, 22),      // midday
+         m(-1_800, .spo2Pct, 95), m(7_200, .spo2Pct, 93), m(25_200, .spo2Pct, 97),   // 07:00 = night end, inclusive
+         m(12_000, .spo2Pct, 50),             // implausible
+         m(50_000, .spo2Pct, 88)]             // a daytime spot check
+    }
+
+    private var scenarioNight: CachedSleepSession {
+        CachedSleepSession(startTs: dayStart - 7_200, endTs: dayStart + 25_200, efficiency: 90,
+                           restingHr: nil, avgHrv: nil, stagesJSON: nil)
+    }
+
+    private func vitals(_ store: WhoopStore) async throws -> String {
+        let row = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        let spo2 = try await series(store, "spo2")
+        let resp = try await series(store, "resp_rate")
+        func f(_ v: Double?) -> String { v.map { String(format: "%.4f", $0) } ?? "nil" }
+        return "row spo2=\(f(row?.spo2Pct)) resp=\(f(row?.respRateBpm)) series spo2=\(f(spo2)) resp=\(f(resp))"
+    }
+
+    /// Pasted verbatim into the Kotlin twin.
+    static let overnightExpected = "row spo2=95.0000 resp=15.2500 series spo2=95.0000 resp=15.2500"
+
+    func testOvernightVitalsComeFromTheNightEndingThatDay() async throws {
+        let store = try await WhoopStore.inMemory()
+        // Monitoring first (no night stored yet), then the sleep file.
+        var a = GarminFileIngest(file: file(1))
+        a.deviceMetric = scenarioSamples
+        a.days = [prevDay(), day()]
+        _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
+        let noNight = try await vitals(store)
+        XCTAssertEqual(noNight, "row spo2=nil resp=nil series spo2=nil resp=nil", "no night, no overnight value")
+
+        var b = GarminFileIngest(file: file(2))
+        b.sleeps = [scenarioNight]
+        b.days = [day(sleep: 480)]
+        _ = try await store.ingestGarminFile(b, deviceId: id, ingestedAt: 1)
+        let got = try await vitals(store)
+        XCTAssertEqual(got, Self.overnightExpected)
+        let prev = try await store.dailyMetrics(deviceId: id, from: "2026-10-31", to: "2026-10-31").first
+        XCTAssertNil(prev?.respRateBpm, "the evening's half-night belongs to the wake day")
+    }
+
+    func testAnEveningFileRefreshesTheWakeDay() async throws {
+        let store = try await WhoopStore.inMemory()
+        var a = GarminFileIngest(file: file(1))
+        a.sleeps = [scenarioNight]
+        a.days = [day(sleep: 480)]
+        a.deviceMetric = scenarioSamples.filter { $0.ts >= dayStart }
+        _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
+        // The pre-midnight samples arrive in a file that only touches the evening's day.
+        var b = GarminFileIngest(file: file(2))
+        b.deviceMetric = scenarioSamples.filter { $0.ts < dayStart }
+        b.days = [prevDay()]
+        b.nightRefreshDays = [day()]
+        _ = try await store.ingestGarminFile(b, deviceId: id, ingestedAt: 1)
+        let got = try await vitals(store)
+        XCTAssertEqual(got, Self.overnightExpected)
+    }
+
+    func testRederiveCorrectsACalendarDayMean() async throws {
+        let store = try await WhoopStore.inMemory()
+        var a = GarminFileIngest(file: file(1))
+        a.sleeps = [scenarioNight]
+        a.deviceMetric = scenarioSamples
+        a.days = [day(sleep: 480)]
+        _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
+        // What an older ingest stored: the midnight-to-midnight mean of every sample.
+        try await store.dbWriter.write { db in
+            try db.execute(sql: "UPDATE dailyMetric SET spo2Pct = 84.6, respRateBpm = 13.95 WHERE deviceId = ?", arguments: [self.id])
+            try db.execute(sql: "UPDATE metricSeries SET value = 13.95 WHERE deviceId = ? AND key = 'resp_rate'", arguments: [self.id])
+        }
+        _ = try await store.rederiveGarminNightVitals(deviceId: id, days: [day(), prevDay()])
+        let got = try await vitals(store)
+        XCTAssertEqual(got, Self.overnightExpected)
+        let days = try await store.garminDays(deviceId: id)
+        XCTAssertEqual(days, ["2026-11-01"], "a day without a row is not created")
+    }
+
+    func testTooFewNightSamplesClearTheValue() async throws {
+        let store = try await WhoopStore.inMemory()
+        var a = GarminFileIngest(file: file(1))
+        a.sleeps = [scenarioNight]
+        a.deviceMetric = [m(3_600, .respirationBpm, 15), m(7_200, .respirationBpm, 16)]
+        a.days = [day(sleep: 480)]
+        _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
+        let got = try await vitals(store)
+        XCTAssertEqual(got, "row spo2=nil resp=nil series spo2=nil resp=nil")
+    }
 }

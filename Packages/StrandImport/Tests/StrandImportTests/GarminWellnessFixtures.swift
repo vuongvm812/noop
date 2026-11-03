@@ -282,10 +282,36 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// Plausible-range edges for SpO2, respiration and HRV values (#52), and a resting HR stamped exactly at
+    /// local midnight (t + 1504 at the +6 h offset the 103 message sets), which belongs to the ended day.
+    static func bounds() -> Data {
+        var f = WellnessFit()
+        f.def(0, 103, [(253, 4, u32), (0, 4, u32)])
+        f.data(0); f.u32(t); f.u32(t + offset)
+        f.def(1, 269, [(253, 4, u32), (0, 1, u8)])
+        f.data(1); f.u32(t + 10); f.u8(69)
+        f.data(1); f.u32(t + 20); f.u8(70)
+        f.data(1); f.u32(t + 30); f.u8(100)
+        f.def(2, 297, [(253, 4, u32), (0, 2, s16)])
+        f.data(2); f.u32(t + 40); f.u16(399)
+        f.data(2); f.u32(t + 50); f.u16(400)
+        f.data(2); f.u32(t + 60); f.u16(6000)
+        f.data(2); f.u32(t + 70); f.u16(6001)
+        f.def(3, 371, [(253, 4, u32), (0, 2, u16)])
+        f.data(3); f.u32(t + 80); f.u16(639)
+        f.data(3); f.u32(t + 90); f.u16(640)
+        f.data(3); f.u32(t + 100); f.u16(38_400)
+        f.data(3); f.u32(t + 110); f.u16(38_401)
+        f.def(4, 211, [(253, 4, u32), (1, 1, u8)])
+        f.data(4); f.u32(t + 1504); f.u8(48)
+        f.data(4); f.u32(t + 1505); f.u8(47)
+        return f.finish()
+    }
+
     static let all: [(String, () -> Data)] = [
         ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
         ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("hrv", hrv),
-        ("candidates", candidates), ("framing", framing),
+        ("candidates", candidates), ("framing", framing), ("bounds", bounds),
     ]
 
     // MARK: - Canonical dump

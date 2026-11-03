@@ -473,6 +473,24 @@ final class WearableExportImporterTests: XCTestCase {
         XCTAssertEqual(d.sleepScore, 71)
     }
 
+    func testGarminFileOrderIsFixedAndUdsWins() {
+        // #52: the fold must not depend on dictionary order. Legacy summaries first, UDS last (it wins).
+        let names = ["di_connect/di-connect-aggregator/udsfile_2026.json", "b_summary.json",
+                     "a_userbiometricprofiledata.json", "di_connect/di-connect-aggregator/UDSFile_2025.json"]
+        XCTAssertEqual(GarminExportParser.fileOrder(names), [
+            "a_userbiometricprofiledata.json", "b_summary.json",
+            "di_connect/di-connect-aggregator/UDSFile_2025.json", "di_connect/di-connect-aggregator/udsfile_2026.json"])
+        let legacy = Data(#"[ { "calendarDate": "2026-06-01", "restingHeartRate": 61, "averageStressLevel": 140 } ]"#.utf8)
+        let uds = Data(#"[ { "calendarDate": "2026-06-01", "restingHeartRate": 58, "averageStressLevel": 33 } ]"#.utf8)
+        for _ in 0..<20 {
+            let p = GarminExportParser.parse(["z_summary.json": legacy, "a/udsfile_1.json": uds])
+            XCTAssertEqual(p.days.first?.restingHr, 58)
+            XCTAssertEqual(p.days.first?.avgStress, 33)
+        }
+        let onlyLegacy = GarminExportParser.parse(["z_summary.json": legacy])
+        XCTAssertNil(onlyLegacy.days.first?.avgStress, "a stress average above 100 is not a stress level")
+    }
+
     func testGarminZonelessFractionTrim() {
         XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.0"), "2026-07-26T18:59:17")
         XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.186"), "2026-07-26T18:59:17")

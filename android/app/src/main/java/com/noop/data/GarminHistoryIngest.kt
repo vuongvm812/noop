@@ -51,6 +51,34 @@ object GarminHistoryIngest {
         }
     }
 
+    /**
+     * Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
+     * stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
+     * use the phone's current UTC offset, as the fold does for a file without one.
+     * Swift twin: `GarminHistoryIngest.rederiveNightVitalsOnce`.
+     */
+    suspend fun rederiveNightVitalsOnce(
+        store: GarminSyncStore,
+        deviceId: String,
+        prefs: SharedPreferences,
+        log: (String) -> Unit,
+        utcOffsetS: Int = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000,
+    ) {
+        val key = "noop.garmin.nightVitals.v1.$deviceId"
+        if (prefs.getBoolean(key, false)) return
+        try {
+            val days = store.days(deviceId).map { day ->
+                val start = GarminWatchIngest.dayStartUnix(day, utcOffsetS)
+                GarminDayRollup(day = day, dayStartTs = start, dayEndTs = start + 86_400)
+            }
+            val changed = store.rederiveNightVitals(deviceId, days)
+            prefs.edit().putBoolean(key, true).apply()
+            log("Garmin: re-derived overnight SpO2 / respiration for ${days.size} days ($changed points)")
+        } catch (e: Exception) {
+            log("Garmin: overnight vitals re-derive postponed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
     fun ledgerRow(key: GarminSyncFileKey) =
         GarminSyncedFileRow(key.fileIndex, key.dataType, key.subType, key.fileNumber, key.garminTimestamp, key.size)
 

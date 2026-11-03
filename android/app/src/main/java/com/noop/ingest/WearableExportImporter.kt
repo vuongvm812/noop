@@ -626,12 +626,24 @@ object WearableExportImporter {
     // Garmin
     // ------------------------------------------------------------------------
 
+    /**
+     * The order Garmin export files are folded in (#52), so the result never depends on ZIP order: legacy
+     * daily summaries before the newer `UDSFile_*` aggregator files (a UDS day's value wins, daily fields
+     * being last-wins); within a rank, by path in UTF-16 code-unit order. Swift twin: `GarminExportParser.fileOrder`.
+     */
+    internal fun garminFileOrder(names: Collection<String>): List<String> =
+        names.sortedWith(compareBy<String> { if (it.lowercase().contains("udsfile")) 1 else 0 }.thenBy { it })
+
+    /** A daily stress average on Garmin's 0-100 scale. Swift twin: `GarminExportParser.stress`. */
+    private fun garminStress(v: Int?): Int? = v?.takeIf { it <= 100 }
+
     internal fun parseGarmin(files: Map<String, ByteArray>): Parsed {
         val byDay = LinkedHashMap<String, DayAcc>()
         val sleeps = ArrayList<SleepAcc>()
         fun day(key: String) = byDay.getOrPut(key) { DayAcc(key) }
 
-        for ((name, data) in files) {
+        for (name in garminFileOrder(files.keys)) {
+            val data = files.getValue(name)
             val base = last(name)
             val records = garminRecords(data)
             val isSleep = base.contains("sleepdata") ||
@@ -661,8 +673,8 @@ object WearableExportImporter {
                     d.steps = rec.posInt("totalSteps") ?: rec.posInt("steps") ?: d.steps
                     d.distanceM = rec.posDbl("totalDistanceMeters") ?: rec.posDbl("totalDistanceInMeters") ?: d.distanceM
                     d.activeKcal = rec.posDbl("activeKilocalories") ?: rec.posDbl("activeCalories") ?: d.activeKcal
-                    d.avgStress = rec.posInt("averageStressLevel") ?: rec.posInt("avgStressLevel")
-                        ?: garminTotalStress(rec) ?: d.avgStress
+                    d.avgStress = garminStress(rec.posInt("averageStressLevel"))
+                        ?: garminStress(rec.posInt("avgStressLevel")) ?: garminStress(garminTotalStress(rec)) ?: d.avgStress
                     // healthStatusData: the overnight HRV sits in a `metrics` list. No other Garmin file
                     // carries a day HRV, so file order cannot change which value wins.
                     d.avgHrvMs = garminMetricValue(rec, "HRV") ?: d.avgHrvMs

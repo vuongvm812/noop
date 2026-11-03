@@ -442,10 +442,35 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /** Twin of Swift `WellnessFixtures.bounds` (#52). */
+        fun bounds(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 103, listOf(Triple(253, 4, U32), Triple(0, 4, U32)))
+            f.data(0); f.u32(T); f.u32(T + OFFSET)
+            f.def(1, 269, listOf(Triple(253, 4, U32), Triple(0, 1, U8)))
+            f.data(1); f.u32(T + 10); f.u8(69)
+            f.data(1); f.u32(T + 20); f.u8(70)
+            f.data(1); f.u32(T + 30); f.u8(100)
+            f.def(2, 297, listOf(Triple(253, 4, U32), Triple(0, 2, S16)))
+            f.data(2); f.u32(T + 40); f.u16(399)
+            f.data(2); f.u32(T + 50); f.u16(400)
+            f.data(2); f.u32(T + 60); f.u16(6000)
+            f.data(2); f.u32(T + 70); f.u16(6001)
+            f.def(3, 371, listOf(Triple(253, 4, U32), Triple(0, 2, U16)))
+            f.data(3); f.u32(T + 80); f.u16(639)
+            f.data(3); f.u32(T + 90); f.u16(640)
+            f.data(3); f.u32(T + 100); f.u16(38_400)
+            f.data(3); f.u32(T + 110); f.u16(38_401)
+            f.def(4, 211, listOf(Triple(253, 4, U32), Triple(1, 1, U8)))
+            f.data(4); f.u32(T + 1504); f.u8(48)
+            f.data(4); f.u32(T + 1505); f.u8(47)
+            return f.finish()
+        }
+
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
             "monitoring" to ::monitoring, "midnight" to ::midnight, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
             "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "sleepNap" to ::sleepNap, "respiration" to ::respiration, "hrv" to ::hrv,
-            "candidates" to ::candidates, "framing" to ::framing,
+            "candidates" to ::candidates, "framing" to ::framing, "bounds" to ::bounds,
         )
 
         // MARK: - Canonical dump (twin of Swift `WellnessFixtures.dump`)
@@ -644,6 +669,16 @@ class GarminWellnessParserTest {
             resp 1731087306 15.2500
             resp 1731087331 15.5000
             hrv 1731087296 40.0000
+            == bounds
+            offset 21600 complete true other 0 dropped 5
+            rhr 1731088800 48
+            rhr 1731088801 47
+            spo2 1731087316 70 conf=- mode=-
+            spo2 1731087326 100 conf=- mode=-
+            resp 1731087346 4.0000
+            resp 1731087356 60.0000
+            hrv 1731087386 5.0000
+            hrv 1731087396 300.0000
             == localDay
             0@0 1970-01-01
             -1@0 1969-12-31

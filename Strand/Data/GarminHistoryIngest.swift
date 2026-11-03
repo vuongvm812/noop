@@ -52,6 +52,28 @@ enum GarminHistoryIngest {
         }
     }
 
+    /// Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
+    /// stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
+    /// use the phone's current UTC offset, as the fold does for a file without one. Kotlin twin:
+    /// `GarminHistoryIngest.rederiveNightVitalsOnce`.
+    static func rederiveNightVitalsOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
+                                        utcOffsetS: Int = TimeZone.current.secondsFromGMT(),
+                                        log: (String) -> Void) async {
+        let key = "noop.garmin.nightVitals.v1.\(deviceId)"
+        guard !defaults.bool(forKey: key) else { return }
+        do {
+            let days = try await store.garminDays(deviceId: deviceId).map { day -> GarminDayRollup in
+                let start = GarminWatchIngest.dayStartUnix(day, utcOffsetS: utcOffsetS)
+                return GarminDayRollup(day: day, dayStartTs: start, dayEndTs: start + 86_400)
+            }
+            let changed = try await store.rederiveGarminNightVitals(deviceId: deviceId, days: days)
+            defaults.set(true, forKey: key)
+            log("Garmin: re-derived overnight SpO2 / respiration for \(days.count) days (\(changed) points)")
+        } catch {
+            log("Garmin: overnight vitals re-derive postponed: \(error.localizedDescription)")
+        }
+    }
+
     static func ledgerRow(_ key: GarminSyncFileKey) -> GarminSyncedFileRow {
         GarminSyncedFileRow(fileIndex: Int(key.fileIndex), dataType: Int(key.dataType), subType: Int(key.subType),
                             fileNumber: Int(key.fileNumber), ts: Int(key.garminTimestamp), size: Int(key.size))

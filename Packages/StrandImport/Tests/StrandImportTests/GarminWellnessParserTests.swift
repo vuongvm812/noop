@@ -113,6 +113,16 @@ final class GarminWellnessParserTests: XCTestCase {
         resp 1731087306 15.2500
         resp 1731087331 15.5000
         hrv 1731087296 40.0000
+        == bounds
+        offset 21600 complete true other 0 dropped 5
+        rhr 1731088800 48
+        rhr 1731088801 47
+        spo2 1731087316 70 conf=- mode=-
+        spo2 1731087326 100 conf=- mode=-
+        resp 1731087346 4.0000
+        resp 1731087356 60.0000
+        hrv 1731087386 5.0000
+        hrv 1731087396 300.0000
         == localDay
         0@0 1970-01-01
         -1@0 1969-12-31

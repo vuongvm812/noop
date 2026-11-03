@@ -12,8 +12,12 @@ import WhoopProtocol
 // A watch splits a day across many files (a Forerunner 165 writes a small MONITOR file every few
 // minutes), so one file's day totals are partial. The writes therefore MERGE rather than overwrite:
 //   - per-sample series (hrSample, deviceMetricSample) are keyed by second, so files simply add up;
-//   - the day's averages and ranges (stress, Body Battery, SpO2, respiration) are RE-DERIVED from the
-//     stored samples of that local day after the insert, so they cover every file seen, not just this one;
+//   - the day's stress average and Body Battery range are RE-DERIVED from the stored samples of that local
+//     day after the insert, so they cover every file seen, not just this one;
+//   - the day's SpO2 and respiration are the OVERNIGHT mean (`garminNightMean`): the stored samples inside
+//     the stored nights that end on that day (the wake day), not a midnight-to-midnight mean that mixes in
+//     daytime and exercise readings and two half-nights (#52). The same value goes to dailyMetric and
+//     metricSeries, and the scoring pass reads it back from the row, so Charge and Trends agree;
 //   - cumulative counters (steps, distance, calories) keep the larger of the stored and the new value:
 //     a later file carries the day's running total, and an older re-sync can never lower it;
 //   - every other column keeps its stored value when the file has none (COALESCE);
@@ -82,6 +86,9 @@ public struct GarminFileIngest: Equatable {
     public var deviceMetric: [DeviceMetricSample] = []
     public var days: [GarminDayRollup] = []
     public var sleeps: [CachedSleepSession] = []
+    /// The day after each rollup day, when the file did not touch it: a night that began before midnight
+    /// ends there, so its overnight SpO2 / respiration is re-derived if that day's row already exists.
+    public var nightRefreshDays: [GarminDayRollup] = []
     public var file: GarminSyncedFileRow
 
     public init(file: GarminSyncedFileRow) { self.file = file }
@@ -108,6 +115,20 @@ extension WhoopStore {
     /// stress on Apple and was invisible on Android (Garmin child 9). Kotlin twin:
     /// `GarminSyncStore.GARMIN_STRESS_KEY`.
     public static let garminStressKey = "garmin_stress"
+
+    // Plausible watch values (#52). Anything outside is a sensor sentinel or a misread, not a reading: the
+    // decoder drops it, and the overnight resolver skips older stored samples outside it. Kotlin twins:
+    // `GarminSyncStore.GARMIN_SPO2_MIN` and the rest, same names.
+    public static let garminSpo2Min = 70.0
+    public static let garminSpo2Max = 100.0
+    public static let garminRespMin = 4.0
+    public static let garminRespMax = 60.0
+    public static let garminHrvMin = 5.0
+    public static let garminHrvMax = 300.0
+
+    /// Fewest in-night samples an overnight mean is formed from; the same floor as
+    /// `GarminScoringInputs.minNightSamples`. Kotlin twin: `GarminSyncStore.GARMIN_MIN_NIGHT_SAMPLES`.
+    public static let garminMinNightSamples = 3
 
     /// Every file of this device recorded as ingested. Kotlin twin: `GarminSyncStore.syncedFiles`.
     public func garminSyncedFiles(deviceId: String) async throws -> [GarminSyncedFileRow] {
@@ -167,9 +188,6 @@ extension WhoopStore {
                 try metric.execute(arguments: [deviceId, s.ts, s.kind.rawValue, s.value, s.source])
                 counts.deviceMetric += db.changesCount
             }
-            for day in ingest.days {
-                try Self.mergeGarminDay(db, day, deviceId: deviceId, counts: &counts)
-            }
             for s in ingest.sleeps {
                 try db.execute(sql: """
                     DELETE FROM sleepSession
@@ -188,6 +206,13 @@ extension WhoopStore {
                                           ELSE COALESCE(excluded.stagesJSON, sleepSession.stagesJSON) END
                     """, arguments: [deviceId, s.startTs, s.endTs, s.efficiency, s.restingHr, s.avgHrv, s.stagesJSON])
                 counts.sleeps += db.changesCount
+            }
+            // After the nights: the overnight SpO2 / respiration read the stored nights.
+            for day in ingest.days {
+                try Self.mergeGarminDay(db, day, deviceId: deviceId, counts: &counts)
+            }
+            for day in ingest.nightRefreshDays {
+                counts.metricPoints += try Self.refreshGarminNightVitals(db, day, deviceId: deviceId)
             }
             try Self.insertLedgerRow(db, ingest.file, deviceId: deviceId, ingestedAt: ingestedAt)
             return counts
@@ -223,6 +248,78 @@ extension WhoopStore {
         }
     }
 
+    /// The days this device has a `dailyMetric` row for, oldest first. Kotlin twin: `GarminSyncStore.days`.
+    public func garminDays(deviceId: String) async throws -> [String] {
+        try syncRead { db in
+            try String.fetchAll(db, sql: "SELECT day FROM dailyMetric WHERE deviceId = ? ORDER BY day",
+                                arguments: [deviceId])
+        }
+    }
+
+    /// Re-derive the overnight SpO2 and respiration of existing day rows from the stored samples and nights,
+    /// in one transaction. Corrects rows an older ingest wrote as calendar-day means (#52); a day without a
+    /// row is skipped. Returns the metricSeries rows changed. Kotlin twin: `GarminSyncStore.rederiveNightVitals`.
+    @discardableResult
+    public func rederiveGarminNightVitals(deviceId: String, days: [GarminDayRollup]) async throws -> Int {
+        try syncWrite { db in
+            var changed = 0
+            for d in days { changed += try Self.refreshGarminNightVitals(db, d, deviceId: deviceId) }
+            return changed
+        }
+    }
+
+    /// The overnight mean of one vital for the night(s) waking on `d`: the stored samples of `kind` inside
+    /// any stored night of this device whose end falls in `d.dayStartTs ..< d.dayEndTs` (night bounds
+    /// inclusive, each sample counted once), within `range`, or nil under `garminMinNightSamples`. Samples
+    /// are looked for from a day before the wake day's midnight, which no real night outlasts. The ONE
+    /// resolver for a Garmin day's SpO2 and respiration. Kotlin twin: `GarminSyncStore.nightMean`.
+    static func garminNightMean(_ db: Database, deviceId: String, kind: DeviceMetricKind,
+                                range: ClosedRange<Double>, _ d: GarminDayRollup) throws -> Double? {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT AVG(m.value) AS mean, COUNT(*) AS n FROM deviceMetricSample m
+            WHERE m.deviceId = ? AND m.kind = ? AND m.ts >= ? AND m.ts < ? AND m.value >= ? AND m.value <= ?
+              AND EXISTS (SELECT 1 FROM sleepSession s
+                          WHERE s.deviceId = m.deviceId AND s.endTs >= ? AND s.endTs < ?
+                            AND m.ts >= s.startTs AND m.ts <= s.endTs)
+            """, arguments: [deviceId, kind.rawValue, d.dayStartTs - 86_400, d.dayEndTs,
+                             range.lowerBound, range.upperBound, d.dayStartTs, d.dayEndTs])
+        else { return nil }
+        let n: Int = row["n"]
+        return n >= garminMinNightSamples ? row["mean"] : nil
+    }
+
+    /// Write one day's overnight SpO2 and respiration to its existing row and its metricSeries points (a
+    /// missing value removes the point, so the two cannot disagree). Returns the metricSeries rows changed.
+    /// Kotlin twin: `GarminSyncStore.refreshNightVitals`.
+    private static func refreshGarminNightVitals(_ db: Database, _ d: GarminDayRollup, deviceId: String) throws -> Int {
+        guard try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM dailyMetric WHERE deviceId = ? AND day = ?)",
+                                arguments: [deviceId, d.day]) == true else { return 0 }
+        let spo2 = try garminNightMean(db, deviceId: deviceId, kind: .spo2Pct, range: garminSpo2Min...garminSpo2Max, d)
+        let resp = try garminNightMean(db, deviceId: deviceId, kind: .respirationBpm, range: garminRespMin...garminRespMax, d)
+        try db.execute(sql: "UPDATE dailyMetric SET spo2Pct = ?, respRateBpm = ? WHERE deviceId = ? AND day = ?",
+                       arguments: [spo2, resp, deviceId, d.day])
+        return try writeNightVitalPoints(db, d.day, spo2: spo2, resp: resp, deviceId: deviceId)
+    }
+
+    /// Kotlin twin: `GarminSyncStore.writeNightVitalPoints`.
+    private static func writeNightVitalPoints(_ db: Database, _ day: String, spo2: Double?, resp: Double?,
+                                              deviceId: String) throws -> Int {
+        var changed = 0
+        for (key, value) in [("spo2", spo2), ("resp_rate", resp)] {
+            if let value {
+                try db.execute(sql: """
+                    INSERT INTO metricSeries (deviceId, day, key, value) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(deviceId, day, key) DO UPDATE SET value = excluded.value
+                    """, arguments: [deviceId, day, key, value])
+            } else {
+                try db.execute(sql: "DELETE FROM metricSeries WHERE deviceId = ? AND day = ? AND key = ?",
+                               arguments: [deviceId, day, key])
+            }
+            changed += db.changesCount
+        }
+        return changed
+    }
+
     /// Kotlin twin: `GarminSyncStore.insertLedgerRow`.
     private static func insertLedgerRow(_ db: Database, _ f: GarminSyncedFileRow, deviceId: String, ingestedAt: Int) throws {
         try db.execute(sql: """
@@ -233,7 +330,8 @@ extension WhoopStore {
     }
 
     /// Merge one day: the dailyMetric row, then the metricSeries points, with the sample aggregates
-    /// re-derived from every stored sample of the day. Kotlin twin: `GarminSyncStore.mergeDay`.
+    /// re-derived from every stored sample of the day and the overnight vitals from its night.
+    /// Kotlin twin: `GarminSyncStore.mergeDay`.
     private static func mergeGarminDay(_ db: Database, _ rollup: GarminDayRollup, deviceId: String,
                                        counts: inout GarminIngestCounts) throws {
         var d = rollup
@@ -256,8 +354,8 @@ extension WhoopStore {
         let stress = try aggregate(.stress, "AVG")
         let bbMin = try aggregate(.bodyBattery, "MIN")
         let bbMax = try aggregate(.bodyBattery, "MAX")
-        let spo2 = try aggregate(.spo2Pct, "AVG")
-        let resp = try aggregate(.respirationBpm, "AVG")
+        let spo2 = try garminNightMean(db, deviceId: deviceId, kind: .spo2Pct, range: garminSpo2Min...garminSpo2Max, d)
+        let resp = try garminNightMean(db, deviceId: deviceId, kind: .respirationBpm, range: garminRespMin...garminRespMax, d)
 
         try db.execute(sql: """
             INSERT INTO dailyMetric (deviceId, day, totalSleepMin, efficiency, deepMin, remMin, lightMin,
@@ -271,8 +369,8 @@ extension WhoopStore {
                 lightMin = COALESCE(excluded.lightMin, dailyMetric.lightMin),
                 restingHr = COALESCE(excluded.restingHr, dailyMetric.restingHr),
                 avgHrv = COALESCE(excluded.avgHrv, dailyMetric.avgHrv),
-                spo2Pct = COALESCE(excluded.spo2Pct, dailyMetric.spo2Pct),
-                respRateBpm = COALESCE(excluded.respRateBpm, dailyMetric.respRateBpm),
+                spo2Pct = excluded.spo2Pct,
+                respRateBpm = excluded.respRateBpm,
                 steps = CASE WHEN excluded.steps IS NULL THEN dailyMetric.steps
                              WHEN dailyMetric.steps IS NULL THEN excluded.steps
                              ELSE MAX(excluded.steps, dailyMetric.steps) END,
@@ -286,7 +384,7 @@ extension WhoopStore {
         let points: [(String, Double?)] = [
             ("steps", d.steps.map(Double.init)), ("distance_m", d.distanceM), ("energy_kcal", d.activeKcal),
             ("total_kcal", d.totalKcal), ("rhr", d.restingHr.map(Double.init)), ("hrv", d.avgHrvMs),
-            ("spo2", spo2), ("resp_rate", resp), (garminStressKey, stress),
+            (garminStressKey, stress),
             ("body_battery_min", bbMin), ("body_battery_max", bbMax),
             ("sleep_total_min", d.totalSleepMin), ("sleep_deep_min", d.deepMin),
             ("sleep_light_min", d.lightMin), ("sleep_rem_min", d.remMin), ("sleep_awake_min", d.awakeMin),
@@ -301,5 +399,6 @@ extension WhoopStore {
                 """, arguments: [deviceId, d.day, key, value])
             counts.metricPoints += db.changesCount
         }
+        counts.metricPoints += try writeNightVitalPoints(db, d.day, spo2: spo2, resp: resp, deviceId: deviceId)
     }
 }

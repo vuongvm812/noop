@@ -3637,7 +3637,7 @@ final class IntelligenceEngine: ObservableObject {
 extension IntelligenceEngine {
     /// Garmin child 9: rebuild a Garmin-owned day's row with the watch's own resting HR, overnight HRV and
     /// respiration where the arbitration table prefers them (`GarminScoringInputs.resolve`). nil for any
-    /// other owner. Reads the watch's day row and its HRV / respiration samples inside `nights`.
+    /// other owner. Reads the watch's day row and its HRV samples inside `nights`.
     nonisolated static func garminResolvedDaily(_ daily: DailyMetric, owner: String,
                                                 nights: [GarminScoringInputs.Night],
                                                 store: WhoopStore) async
@@ -3645,18 +3645,15 @@ extension IntelligenceEngine {
         guard FusionSource.isGarminWatchId(owner) else { return nil }
         let watchRow = (try? await store.dailyMetrics(deviceId: owner, from: daily.day, to: daily.day))?.first
         var hrv: [GarminScoringInputs.Sample] = []
-        var resp: [GarminScoringInputs.Sample] = []
         if let lo = nights.map(\.start).min(), let hi = nights.map(\.end).max() {
             hrv = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .hrvMs, from: lo, to: hi)) ?? [])
                 .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
-            resp = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .respirationBpm,
-                                                          from: lo, to: hi)) ?? [])
-                .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
         }
+        // Respiration is the row's stored overnight value (#52), the one Trends shows for the day.
         let r = GarminScoringInputs.resolve(
             computedRestingHr: daily.restingHr, computedHrv: daily.avgHrv, computedResp: daily.respRateBpm,
             watch: watchRow.map { .init(restingHr: $0.restingHr, lastNightHrvMs: $0.avgHrv) },
-            hrvSamples: hrv, respSamples: resp, nights: nights)
+            hrvSamples: hrv, watchRespRateBpm: watchRow?.respRateBpm, nights: nights)
         return (daily.with(restingHr: r.restingHr, avgHrv: r.avgHrv, respRateBpm: r.respRateBpm), r)
     }
 

@@ -29,6 +29,7 @@ class GarminWatchIngestTest {
                 "awake=${num(d.awakeMin)} eff=${num(d.efficiency)} score=${num(d.sleepScore)}")
         }
         for (s in b.sleeps) out.add("sleep ${s.startTs}-${s.endTs} eff=${num(s.efficiency)} hrv=${num(s.avgHrv)} stages=${s.stagesJSON ?: "-"}")
+        for (d in b.nightRefreshDays) out.add("refresh ${d.day} ${d.dayStartTs}..${d.dayEndTs}")
         return out
     }
 
@@ -137,14 +138,17 @@ metric 1731087392 intensity_moderate_min 5.0000 fit55
 metric 1731087392 intensity_vigorous_min 2.0000 fit55
 day 2024-11-08 1731002400..1731088800 steps=1600 dist=800.0000 act=120.0000 tot=3510.0000 rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
 day 2024-11-09 1731088800..1731175200 steps=50 dist=- act=- tot=10.0000 rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-10 1731175200..1731261600
 == midnight
 file idx=2 dt=128 st=32 num=101 ts=1100000001 size=1001
 day 2024-11-08 1731002400..1731088800 steps=16100 dist=12100.0000 act=790.0000 tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
 day 2024-11-09 1731088800..1731175200 steps=31 dist=24.0000 act=1.0000 tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-10 1731175200..1731261600
 == restingHeartRate
 file idx=3 dt=128 st=32 num=102 ts=1100000002 size=1002
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=52 hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
 day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=57 hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-10 1731193200..1731279600
 == stress
 file idx=4 dt=128 st=32 num=103 ts=1100000003 size=1003
 metric 1731087296 body_battery 80.0000 fit227
@@ -153,33 +157,40 @@ metric 1731087476 body_battery 79.0000 fit227
 metric 1731087836 body_battery 55.0000 fit227
 metric 1731087836 hrv_ms 32.0000 fit371
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-09 1731106800..1731193200
 == spo2
 file idx=5 dt=128 st=32 num=104 ts=1100000004 size=1004
 metric 1731087296 spo2_pct 96.0000 fit269
 metric 1731087416 spo2_pct 94.0000 fit269
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-09 1731106800..1731193200
 == sleep
 file idx=6 dt=128 st=32 num=105 ts=1100000005 size=1005
 metric 1731107296 sleep_score 82.0000 fit346
 day 2024-11-09 1731088800..1731175200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=28.0000 deep=10.0000 light=8.0000 rem=10.0000 awake=10.0000 eff=0.7370 score=82
 sleep 1731087416-1731089696 eff=0.7370 hrv=- stages=[{"start":1731087416,"end":1731087896,"stage":"light"},{"start":1731087896,"end":1731088496,"stage":"deep"},{"start":1731088496,"end":1731089096,"stage":"rem"},{"start":1731089096,"end":1731089696,"stage":"wake"}]
+refresh 2024-11-10 1731175200..1731261600
 == sleepWindow
 file idx=7 dt=128 st=32 num=106 ts=1100000006 size=1006
 day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=bits:407d6b7777777777 deep=107.0000 light=265.0000 rem=bits:4058adddddddddde awake=23.0000 eff=0.9530 score=-
 sleep 1731087296-1731116919 eff=0.9530 hrv=- stages=[{"start":1731087296,"end":1731088316,"stage":"light"},{"start":1731088316,"end":1731090776,"stage":"deep"},{"start":1731090776,"end":1731090836,"stage":"wake"},{"start":1731090836,"end":1731093296,"stage":"light"},{"start":1731093296,"end":1731097256,"stage":"deep"},{"start":1731097256,"end":1731097736,"stage":"light"},{"start":1731097736,"end":1731098636,"stage":"rem"},{"start":1731098636,"end":1731106916,"stage":"light"},{"start":1731106916,"end":1731106976,"stage":"wake"},{"start":1731106976,"end":1731108056,"stage":"light"},{"start":1731108056,"end":1731109316,"stage":"wake"},{"start":1731109316,"end":1731110816,"stage":"light"},{"start":1731110816,"end":1731112376,"stage":"rem"},{"start":1731112376,"end":1731113456,"stage":"light"},{"start":1731113456,"end":1731116919,"stage":"rem"}]
+refresh 2024-11-10 1731193200..1731279600
 == sleepNap
 file idx=8 dt=128 st=32 num=107 ts=1100000007 size=1007
 day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=390.0000 deep=60.0000 light=210.0000 rem=120.0000 awake=30.0000 eff=0.9290 score=-
 sleep 1731087296-1731114296 eff=0.9290 hrv=- stages=[{"start":1731087296,"end":1731089096,"stage":"light"},{"start":1731089096,"end":1731092696,"stage":"deep"},{"start":1731094496,"end":1731101696,"stage":"rem"},{"start":1731101696,"end":1731103496,"stage":"wake"},{"start":1731103496,"end":1731114296,"stage":"light"}]
 sleep 1731137296-1731139696 eff=0.5000 hrv=- stages=[{"start":1731137296,"end":1731138496,"stage":"light"},{"start":1731138496,"end":1731139696,"stage":"wake"}]
+refresh 2024-11-10 1731193200..1731279600
 == respiration
 file idx=9 dt=128 st=32 num=108 ts=1100000008 size=1008
 metric 1731087296 respiration_bpm 14.5000 fit297
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-09 1731106800..1731193200
 == hrv
 file idx=10 dt=128 st=32 num=109 ts=1100000009 size=1009
 metric 1731087596 hrv_ms 39.0625 fit371
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=37.5000 sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-09 1731106800..1731193200
 == candidates
 file idx=11 dt=128 st=32 num=110 ts=1100000010 size=1010
 == framing
@@ -189,6 +200,18 @@ metric 1731087296 respiration_bpm 15.0000 fit297
 metric 1731087306 respiration_bpm 15.2500 fit297
 metric 1731087331 respiration_bpm 15.5000 fit297
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=50 hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-09 1731106800..1731193200
+== bounds
+file idx=13 dt=128 st=32 num=112 ts=1100000012 size=1012
+metric 1731087316 spo2_pct 70.0000 fit269
+metric 1731087326 spo2_pct 100.0000 fit269
+metric 1731087346 respiration_bpm 4.0000 fit297
+metric 1731087356 respiration_bpm 60.0000 fit297
+metric 1731087386 hrv_ms 5.0000 fit371
+metric 1731087396 hrv_ms 300.0000 fit371
+day 2024-11-08 1731002400..1731088800 steps=- dist=- act=- tot=- rhr=48 hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+day 2024-11-09 1731088800..1731175200 steps=- dist=- act=- tot=- rhr=47 hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
+refresh 2024-11-10 1731175200..1731261600
 == dayStart
 1970-01-01@0 0
 2024-02-29@-18000 1709182800

@@ -86,8 +86,10 @@ public enum GarminWatchIngest {
             d.totalKcal = a.calories.map(Double.init)
             days[a.day] = d
         }
+        // A resting HR stamped exactly at local midnight describes the day that just ended: the new day has
+        // no data yet to rest on. Same rule as the 00:00:00 MONITORING totals (`dailyTotals`).
         for v in s.restingHeartRate.sorted(by: { $0.ts < $1.ts }) {
-            let key = dayOf(v.ts)
+            let key = dayOf((v.ts + Int64(offset)) % 86_400 == 0 ? v.ts - 1 : v.ts)
             var d = day(key); d.restingHr = v.value; days[key] = d
         }
         for h in s.hrvSummaries.sorted(by: { $0.ts < $1.ts }) {
@@ -134,6 +136,11 @@ public enum GarminWatchIngest {
             days[key] = d
         }
         out.days = days.keys.sorted().map { days[$0]! }
+        // A night that began before midnight ends on the next day; re-derive that day's overnight vitals too.
+        out.nightRefreshDays = out.days.compactMap { d in
+            let next = dayOf(Int64(d.dayEndTs))
+            return days[next] == nil ? day(next) : nil
+        }
         return out
     }
 
@@ -179,7 +186,7 @@ public enum GarminWatchIngest {
 
     /// Unix seconds of local midnight starting `day` ("yyyy-MM-dd") at a fixed UTC offset.
     /// Kotlin twin: `GarminWatchIngest.dayStartUnix`.
-    static func dayStartUnix(_ day: String, utcOffsetS: Int) -> Int {
+    public static func dayStartUnix(_ day: String, utcOffsetS: Int) -> Int {
         let parts = day.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return 0 }
         let (y0, m, d) = (parts[0], parts[1], parts[2])

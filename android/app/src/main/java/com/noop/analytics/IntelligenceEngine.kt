@@ -2457,22 +2457,20 @@ object IntelligenceEngine {
             }
             val watchRow = repo.dailyMetrics(owner, day, day).firstOrNull()
             var hrv = emptyList<GarminScoringInputs.Sample>()
-            var resp = emptyList<GarminScoringInputs.Sample>()
             val lo = nights.minOfOrNull { it.start }
             val hi = nights.maxOfOrNull { it.end }
             if (lo != null && hi != null) {
                 hrv = repo.deviceMetricSamples(owner, com.noop.data.DeviceMetricKind.HRV_MS, lo, hi)
                     .map { GarminScoringInputs.Sample(it.ts, it.value) }
-                resp = repo.deviceMetricSamples(owner, com.noop.data.DeviceMetricKind.RESPIRATION_BPM, lo, hi)
-                    .map { GarminScoringInputs.Sample(it.ts, it.value) }
             }
+            // Respiration is the row's stored overnight value (#52), the one Trends shows for the day.
             val r = GarminScoringInputs.resolve(
                 computedRestingHr = res.daily.restingHr,
                 computedHrv = res.daily.avgHrv,
                 computedResp = res.daily.respRateBpm,
                 watch = watchRow?.let { GarminScoringInputs.WatchDay(it.restingHr, it.avgHrv) },
                 hrvSamples = hrv,
-                respSamples = resp,
+                watchRespRateBpm = watchRow?.respRateBpm,
                 nights = nights,
             )
             val daily = res.daily.copy(restingHr = r.restingHr, avgHrv = r.avgHrv, respRateBpm = r.respRateBpm)

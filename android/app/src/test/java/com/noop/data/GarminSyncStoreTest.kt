@@ -142,8 +142,8 @@ class GarminSyncStoreTest {
         assertEquals(listOf(file(7)), store.syncedFiles(id))
     }
 
-    private fun dailyDouble(column: String, device: String = id): Double? =
-        db.openHelper.readableDatabase.query("SELECT $column FROM dailyMetric WHERE deviceId = ? AND day = '2026-11-01'", arrayOf<Any?>(device))
+    private fun dailyDouble(column: String, device: String = id, day: String = "2026-11-01"): Double? =
+        db.openHelper.readableDatabase.query("SELECT $column FROM dailyMetric WHERE deviceId = ? AND day = ?", arrayOf<Any?>(device, day))
             .use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getDouble(0) else null }
 
     private fun sleepDay(total: Double, deep: Double, efficiency: Double) =
@@ -180,5 +180,72 @@ class GarminSyncStoreTest {
         assertEquals(listOf(0.8, 0.933), efficiencies(id))
         assertEquals(0.933, dailyDouble("efficiency")!!, 1e-12)
         assertEquals(listOf(88.0), efficiencies("garmin-other"))
+    }
+
+    // Overnight vitals (#52). Same scenario and expected text as the Swift twin.
+
+    private fun prevDay() = GarminDayRollup("2026-10-31", dayStart - 86_400, dayStart)
+
+    private fun m(off: Long, kind: DeviceMetricKind, v: Double) = DeviceMetricRow(dayStart + off, kind, v, "test")
+
+    private val scenarioSamples = listOf(
+        m(-21_600, DeviceMetricKind.RESPIRATION_BPM, 30.0),
+        m(-3_600, DeviceMetricKind.RESPIRATION_BPM, 14.25), m(3_600, DeviceMetricKind.RESPIRATION_BPM, 15.5),
+        m(20_000, DeviceMetricKind.RESPIRATION_BPM, 16.0),
+        m(10_000, DeviceMetricKind.RESPIRATION_BPM, 2.0),
+        m(43_200, DeviceMetricKind.RESPIRATION_BPM, 22.0),
+        m(-1_800, DeviceMetricKind.SPO2_PCT, 95.0), m(7_200, DeviceMetricKind.SPO2_PCT, 93.0),
+        m(25_200, DeviceMetricKind.SPO2_PCT, 97.0),
+        m(12_000, DeviceMetricKind.SPO2_PCT, 50.0),
+        m(50_000, DeviceMetricKind.SPO2_PCT, 88.0),
+    )
+
+    private val scenarioNight = GarminSleepRow(dayStart - 7_200, dayStart + 25_200, 90.0, null, null, null)
+
+    private fun vitals(): String {
+        fun f(v: Double?) = v?.let { String.format(java.util.Locale.ROOT, "%.4f", it) } ?: "nil"
+        return "row spo2=${f(dailyDouble("spo2Pct"))} resp=${f(dailyDouble("respRateBpm"))} " +
+            "series spo2=${f(series("spo2"))} resp=${f(series("resp_rate"))}"
+    }
+
+    @Test
+    fun overnightVitalsComeFromTheNightEndingThatDay() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), deviceMetric = scenarioSamples, days = listOf(prevDay(), day())), id, 1)
+        assertEquals("row spo2=nil resp=nil series spo2=nil resp=nil", vitals())
+        store.ingest(GarminFileIngest(file(2), sleeps = listOf(scenarioNight), days = listOf(day(sleep = 480.0))), id, 1)
+        assertEquals(OVERNIGHT_EXPECTED, vitals())
+        assertEquals(null, dailyDouble("respRateBpm", day = "2026-10-31"))
+    }
+
+    @Test
+    fun anEveningFileRefreshesTheWakeDay() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(scenarioNight), days = listOf(day(sleep = 480.0)),
+            deviceMetric = scenarioSamples.filter { it.ts >= dayStart }), id, 1)
+        store.ingest(GarminFileIngest(file(2), deviceMetric = scenarioSamples.filter { it.ts < dayStart },
+            days = listOf(prevDay()), nightRefreshDays = listOf(day())), id, 1)
+        assertEquals(OVERNIGHT_EXPECTED, vitals())
+    }
+
+    @Test
+    fun rederiveCorrectsACalendarDayMean() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(scenarioNight), deviceMetric = scenarioSamples,
+            days = listOf(day(sleep = 480.0))), id, 1)
+        db.openHelper.writableDatabase.execSQL("UPDATE dailyMetric SET spo2Pct = 84.6, respRateBpm = 13.95 WHERE deviceId = '$id'")
+        db.openHelper.writableDatabase.execSQL("UPDATE metricSeries SET value = 13.95 WHERE deviceId = '$id' AND `key` = 'resp_rate'")
+        store.rederiveNightVitals(id, listOf(day(), prevDay()))
+        assertEquals(OVERNIGHT_EXPECTED, vitals())
+        assertEquals(listOf("2026-11-01"), store.days(id))
+    }
+
+    @Test
+    fun tooFewNightSamplesClearTheValue() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(scenarioNight), days = listOf(day(sleep = 480.0)),
+            deviceMetric = listOf(m(3_600, DeviceMetricKind.RESPIRATION_BPM, 15.0), m(7_200, DeviceMetricKind.RESPIRATION_BPM, 16.0))), id, 1)
+        assertEquals("row spo2=nil resp=nil series spo2=nil resp=nil", vitals())
+    }
+
+    private companion object {
+        /** Swift `GarminSyncStoreTests.overnightExpected`, verbatim. */
+        const val OVERNIGHT_EXPECTED = "row spo2=95.0000 resp=15.2500 series spo2=95.0000 resp=15.2500"
     }
 }

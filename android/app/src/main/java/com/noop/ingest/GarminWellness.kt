@@ -19,6 +19,9 @@ package com.noop.ingest
  * imported by Gadgetbridge, so their scales and units are unconfirmed. They decode raw into the
  * `*Candidate` fields and must not back a shipped metric until checked against the watch.
  *
+ * Plausible ranges (#52): SpO2 70-100 %, respiration 4-60 breaths/min (raw 400-6000), HRV values 5-300 ms
+ * (raw 640-38400); a value outside is dropped. Same bounds as `GarminSyncStore.GARMIN_SPO2_MIN` etc.
+ *
  * Timestamps: only field 253 and compressed-timestamp headers move the running timestamp. MONITORING
  * may carry `timestamp_16`, resolved forward from the previous monitoring time across a 0xFFFF
  * rollover. Cumulative MONITORING counters reset at local midnight per activity type; a day's total is
@@ -450,7 +453,7 @@ object GarminWellnessParser {
                 }
                 269 -> {
                     val ts = unix(running)
-                    val pct = range(m.u(0), 1, 100)
+                    val pct = range(m.u(0), 70, 100)
                     if (ts == null || pct == null) return drop()
                     spo2.add(GarminWellnessSamples.Spo2(ts, pct, m.value(1), m.value(2)))
                 }
@@ -471,8 +474,8 @@ object GarminWellnessParser {
                 }
                 297 -> {
                     val ts = unix(running)
-                    val raw = m.s(0)
-                    if (ts == null || raw == null || raw <= 0) return drop()
+                    val raw = range(m.s(0), 400, 6000)
+                    if (ts == null || raw == null) return drop()
                     respiration.add(GarminWellnessSamples.TimedDouble(ts, raw.toDouble() / 100))
                 }
                 346 -> sleepAssessment(m)
@@ -487,7 +490,7 @@ object GarminWellnessParser {
                 }
                 371 -> {
                     val ts = unix(running)
-                    val v = m.u(0)
+                    val v = range(m.u(0), 640, 38_400)
                     if (ts == null || v == null) return drop()
                     hrvValues.add(GarminWellnessSamples.TimedDouble(ts, v.toDouble() / 128))
                 }
