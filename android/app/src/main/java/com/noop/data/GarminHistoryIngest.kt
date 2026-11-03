@@ -1,5 +1,6 @@
 package com.noop.data
 
+import android.content.SharedPreferences
 import com.noop.analytics.RouteMath
 import com.noop.garmin.GarminDownloadedFile
 import com.noop.garmin.GarminFitFileType
@@ -27,6 +28,23 @@ object GarminHistoryIngest {
         store.syncedFiles(deviceId).map {
             GarminSyncFileKey(it.fileIndex, it.dataType, it.subType, it.fileNumber, it.ts, it.size)
         }.toSet()
+
+    /**
+     * Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
+     * their nights over the watch's own sleep window (#47). Files older than the sync lookback are not
+     * listed again, so their nights keep the old fold. Swift twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+     */
+    suspend fun refetchSleepFilesOnce(store: GarminSyncStore, deviceId: String, prefs: SharedPreferences, log: (String) -> Unit) {
+        val key = "noop.garmin.sleepRefold.v1.$deviceId"
+        if (prefs.getBoolean(key, false)) return
+        try {
+            val forgotten = store.forgetFiles(deviceId, 255, GarminFitFileType.SLEEP.raw)
+            prefs.edit().putBoolean(key, true).apply()
+            log("Garmin: re-folding stored nights; $forgotten sleep files will download again")
+        } catch (e: Exception) {
+            log("Garmin: re-fold of stored nights postponed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
 
     fun ledgerRow(key: GarminSyncFileKey) =
         GarminSyncedFileRow(key.fileIndex, key.dataType, key.subType, key.fileNumber, key.garminTimestamp, key.size)

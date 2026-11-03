@@ -13,7 +13,9 @@ import androidx.room.withTransaction
  * A watch splits a day across many files, so writes MERGE: per-second series add up by key; the day's
  * stress / Body Battery / SpO2 / respiration aggregates are re-derived from the stored samples of that
  * local day; cumulative counters (steps, distance, calories) keep the larger value; every other column
- * keeps its stored value when the file has none (COALESCE).
+ * keeps its stored value when the file has none (COALESCE). A night REPLACES any other stored night of
+ * the watch it overlaps (unless the user edited that one), so one Garmin night stays one session when a
+ * later fold places it differently (#47).
  */
 data class GarminSyncedFileRow(
     val fileIndex: Int,
@@ -118,6 +120,10 @@ class GarminSyncStore(private val db: WhoopDatabase) {
             }
             for (d in ingest.days) mergeDay(d, deviceId, counts)
             for (s in ingest.sleeps) {
+                exec(
+                    "DELETE FROM sleepSession WHERE deviceId = ? AND startTs <> ? AND startTs < ? AND endTs > ? AND userEdited = 0",
+                    deviceId, s.startTs, s.endTs, s.startTs,
+                )
                 counts.sleeps += exec(
                     "INSERT INTO sleepSession (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, " +
                         "userEdited, startTsAdjusted, stagingSparse) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL) " +
@@ -134,6 +140,12 @@ class GarminSyncStore(private val db: WhoopDatabase) {
             insertLedgerRow(ingest.file, deviceId, ingestedAt)
             counts
         }
+
+    /** Forget every ledger row of one FIT file type, so the next sync downloads those files again (the
+     *  watch keeps them). Returns the rows removed. Swift twin: `WhoopStore.forgetGarminSyncedFiles`. */
+    suspend fun forgetFiles(deviceId: String, dataType: Int, subType: Int): Int = db.withTransaction {
+        exec("DELETE FROM garminSyncedFile WHERE deviceId = ? AND dataType = ? AND subType = ?", deviceId, dataType, subType)
+    }
 
     /** Swift twin: `WhoopStore.insertLedgerRow`. */
     private fun insertLedgerRow(f: GarminSyncedFileRow, deviceId: String, ingestedAt: Long) {

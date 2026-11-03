@@ -38,6 +38,8 @@ data class GarminWellnessSamples(
     val spo2: List<Spo2> = emptyList(),
     val respiration: List<TimedDouble> = emptyList(),
     val sleepLevels: List<TimedInt> = emptyList(),
+    /** The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop. */
+    val sleepMarks: List<TimedInt> = emptyList(),
     val sleepSessions: List<SleepSession> = emptyList(),
     val sleepRaw: List<SleepRaw> = emptyList(),
     val sleepAssessments: List<SleepAssessment> = emptyList(),
@@ -76,7 +78,10 @@ data class GarminWellnessSamples(
     data class Spo2(val ts: Long, val percent: Int, val confidence: Int?, val mode: Int?)
     data class SleepRaw(val ts: Long, val heartRate: Double?, val movement: Double?)
 
-    /** A night folded from SLEEP_LEVEL rows. Each row closes the span since the previous row. */
+    /**
+     * A night folded from SLEEP_LEVEL rows over the watch's sleep window. Each row closes the span since
+     * the previous row, the first one the span since `start`.
+     */
     data class SleepSession(
         val start: Long, val end: Long,
         val unmeasurableS: Long, val awakeS: Long, val lightS: Long, val deepS: Long, val remS: Long,
@@ -175,28 +180,74 @@ object GarminWellnessParser {
         }
     }
 
+    /** Rows further apart than this, with no sleep window around them, are two nights. */
+    const val FALLBACK_NIGHT_GAP_S = 4 * 3600L
+
     /**
-     * Folds SLEEP_LEVEL rows into nights. A gap over an hour (or time running backwards) starts a
-     * new night; each row's level is credited with the time since the previous row.
+     * Folds a file's SLEEP_LEVEL rows ([GarminWellnessSamples.sleepLevels]) into nights. A night is the
+     * watch's own sleep window (a start marker, then the next stop in [GarminWellnessSamples.sleepMarks]; a start with no stop ends at its last row), holding the rows after its start up to
+     * its stop: the first row closes the span from sleep onset, each later row the span since the row
+     * before. Rows outside every window fall back to splitting on a gap over [FALLBACK_NIGHT_GAP_S] or
+     * time running backwards, each such night starting at its first row.
+     * Swift twin: `GarminWellnessParser.sleepSessions`.
      */
-    fun sleepSessions(levels: List<GarminWellnessSamples.TimedInt>): List<GarminWellnessSamples.SleepSession> {
-        // Each night is [first row index, last row index], folded after the split points are known.
-        val nights = ArrayList<IntArray>()
-        for ((i, row) in levels.withIndex()) {
-            val open = nights.lastOrNull()
-            if (open != null && row.ts >= levels[open[1]].ts && row.ts - levels[open[1]].ts <= 3600) {
-                open[1] = i
-            } else {
-                nights.add(intArrayOf(i, i))
+    fun sleepSessions(samples: GarminWellnessSamples): List<GarminWellnessSamples.SleepSession> {
+        val levels = samples.sleepLevels
+        val marks = samples.sleepMarks
+        val windows = ArrayList<Pair<Long, Long?>>()
+        var open: Long? = null
+        for (m in marks) {
+            val start = open
+            if (m.value == 0) {
+                if (start == null) open = m.ts
+            } else if (m.value == 1 && start != null && m.ts > start) {
+                windows.add(start to m.ts)
+                open = null
             }
         }
-        return nights.map { (first, last) ->
-            val spans = LongArray(5)
-            for (i in first + 1..last) spans[levels[i].value] += levels[i].ts - levels[i - 1].ts
-            GarminWellnessSamples.SleepSession(
-                levels[first].ts, levels[last].ts, spans[0], spans[1], spans[2], spans[3], spans[4],
-            )
+        open?.let { windows.add(it to null) }
+
+        val nights = ArrayList<GarminWellnessSamples.SleepSession>()
+        val used = BooleanArray(levels.size)
+        for ((start, stop) in windows) {
+            val rows = levels.indices.filter { i ->
+                !used[i] && levels[i].ts > start && (stop == null || levels[i].ts <= stop)
+            }
+            if (rows.isEmpty()) continue
+            for (i in rows) used[i] = true
+            nights.add(session(levels, rows, start, stop ?: levels[rows.last()].ts))
         }
+
+        val runs = ArrayList<ArrayList<Int>>()
+        for (i in levels.indices) {
+            if (used[i]) continue
+            val prev = runs.lastOrNull()?.last()
+            if (prev != null && levels[i].ts >= levels[prev].ts && levels[i].ts - levels[prev].ts <= FALLBACK_NIGHT_GAP_S) {
+                runs.last().add(i)
+            } else {
+                runs.add(arrayListOf(i))
+            }
+        }
+        for (run in runs) nights.add(session(levels, run, levels[run.first()].ts, levels[run.last()].ts))
+        return nights.sortedWith(compareBy({ it.start }, { it.end }))
+    }
+
+    /** One night's stage totals: each row credits its level with the time since the previous boundary.
+     *  Swift twin: `GarminWellnessParser.session`. */
+    private fun session(
+        levels: List<GarminWellnessSamples.TimedInt>,
+        rows: List<Int>,
+        start: Long,
+        end: Long,
+    ): GarminWellnessSamples.SleepSession {
+        val spans = LongArray(5)
+        var prev = start
+        for (i in rows) {
+            if (levels[i].ts <= prev) continue
+            spans[levels[i].value] += levels[i].ts - prev
+            prev = levels[i].ts
+        }
+        return GarminWellnessSamples.SleepSession(start, end, spans[0], spans[1], spans[2], spans[3], spans[4])
     }
 
     /** Seconds between the FIT epoch (1989-12-31T00:00:00Z) and the Unix epoch. */
@@ -214,7 +265,7 @@ object GarminWellnessParser {
         val stream = FitRecordStream.open(data) ?: return GarminWellnessSamples(complete = false)
         val d = Decoder(stream)
         val stop = stream.walk(FitRecordStream.MAX_RECORDS) { def, offset, compressed -> d.consume(def, offset, compressed) }
-        return GarminWellnessSamples(
+        val samples = GarminWellnessSamples(
             utcOffsetS = d.utcOffsetS,
             monitoring = d.monitoring,
             dailyActivity = dailyTotals(d.monitoring, d.utcOffsetS ?: 0),
@@ -225,7 +276,7 @@ object GarminWellnessParser {
             spo2 = d.spo2,
             respiration = d.respiration,
             sleepLevels = d.sleepLevels,
-            sleepSessions = sleepSessions(d.sleepLevels),
+            sleepMarks = d.sleepMarks,
             sleepRaw = d.sleepRaw,
             sleepAssessments = d.sleepAssessments,
             hrvSummaries = d.hrvSummaries,
@@ -237,6 +288,7 @@ object GarminWellnessParser {
             droppedMessages = d.droppedMessages,
             complete = stop == FitRecordStream.Stop.END,
         )
+        return samples.copy(sleepSessions = sleepSessions(samples))
     }
 
     /**
@@ -325,6 +377,7 @@ object GarminWellnessParser {
         val spo2 = ArrayList<GarminWellnessSamples.Spo2>()
         val respiration = ArrayList<GarminWellnessSamples.TimedDouble>()
         val sleepLevels = ArrayList<GarminWellnessSamples.TimedInt>()
+        val sleepMarks = ArrayList<GarminWellnessSamples.TimedInt>()
         val sleepRaw = ArrayList<GarminWellnessSamples.SleepRaw>()
         val sleepAssessments = ArrayList<GarminWellnessSamples.SleepAssessment>()
         val hrvSummaries = ArrayList<GarminWellnessSamples.HrvSummary>()
@@ -365,6 +418,16 @@ object GarminWellnessParser {
             m.u(253)?.let { running = it }
 
             when (def.globalNum) {
+                21 -> {
+                    if (m.u(0) != 74L) {
+                        otherMessages++
+                        return
+                    }
+                    val ts = unix(running)
+                    val type = range(m.u(1), 0, 1)
+                    if (ts == null || type == null) return drop()
+                    sleepMarks.add(GarminWellnessSamples.TimedInt(ts, type))
+                }
                 55 -> monitoring(m)
                 103 -> {
                     noteOffset(m.u(0), running)

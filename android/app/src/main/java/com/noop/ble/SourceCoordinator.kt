@@ -540,7 +540,10 @@ class SourceCoordinator(
             },
             // History sync: the local ledger says what is already stored; each downloaded file is decoded
             // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
-            loadSynced = { GarminHistoryIngest.syncedKeys(syncStore, id) },
+            loadSynced = {
+                GarminHistoryIngest.refetchSleepFilesOnce(syncStore, id, prefs, straplog)
+                GarminHistoryIngest.syncedKeys(syncStore, id)
+            },
             ingest = { file ->
                 val repo = repository
                 repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)

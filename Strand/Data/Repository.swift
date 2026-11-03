@@ -193,6 +193,11 @@ final class Repository: ObservableObject {
     /// hypnogram) instead of the generic "On-device", and flag the split as the ring's RAW on-device stages.
     /// Not a stored value and never crosses `.noopbak`, so no Android twin is required.
     var activeDeviceIsOura: Bool { DeviceBrandCatalog.isOura(deviceId) }
+    /// True when the ACTIVE device is a paired Garmin watch, resolved through the canonical
+    /// `FusionSource.isGarminWatchId` (the same check the fusion/provenance layer uses). Read/UI side only:
+    /// a Garmin night's stages are the WATCH's own classification, so the sleep surfaces name its provenance
+    /// "Garmin" and caption the split "Garmin watch stages" instead of NOOP's "On-device" approximation.
+    var activeDeviceIsGarmin: Bool { FusionSource.isGarminWatchId(deviceId) }
     private var store: WhoopStore?
 
     /// Daily metrics (recovery/strain/sleep/HRV/RHR…) over the recent window, oldest→newest.

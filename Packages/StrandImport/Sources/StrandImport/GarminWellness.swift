@@ -23,12 +23,18 @@ import Foundation
 //   227 STRESS_LEVEL        0 stress_level_value (sint16, negative = no reading), 1 stress_level_time,
 //                           3 body_energy (Body Battery, sint8)
 //   269 SPO2_DATA           0 reading_spo2 (%), 1 reading_confidence, 2 mode (1 manual, 3 automatic)
+//   21  EVENT               0 event, 1 event_type (0 start, 1 stop). Only event 74 is read: the watch's
+//                           own sleep window. OBSERVED on a Forerunner 165 (fw 29.05, 2026-11-03): the
+//                           sleep file carries one start and one stop, and they match the window the
+//                           watch shows (onset 01:36, wake 09:50), which no SLEEP_LEVEL row does.
 //   273 SLEEP_DATA_INFO     1 sample_length (s), 2 local_timestamp
 //   274 SLEEP_DATA_RAW      0 bytes: one row of ten little-endian IEEE half floats per sample slot;
 //                           index 8 movement, index 9 heart rate. Rows carry no timestamp: each takes
 //                           the next slot after the info message, as do awake/unmeasurable level rows.
 //   275 SLEEP_LEVEL         0 sleep_level (0 unmeasurable, 1 awake, 2 light, 3 deep, 4 REM); each row
-//                           closes the span it covers
+//                           closes the span since the previous row (or since sleep onset). OBSERVED on a
+//                           Forerunner 165: a row is written only when the stage changes, so one stage
+//                           can run for hours between rows (138 min of light sleep in one night).
 //   297 RESPIRATION_RATE    0 respiration_rate (sint16, /100 breaths/min)
 //   346 SLEEP_ASSESSMENT    0-5, 7-10, 14 sub-scores, 6 overall score, 11 awakenings count,
 //                           15 average stress during sleep (/100)
@@ -105,7 +111,8 @@ public struct GarminWellnessSamples: Equatable, Sendable {
         public let movement: Double?
     }
 
-    /// A night folded from SLEEP_LEVEL rows. Each row closes the span since the previous row.
+    /// A night folded from SLEEP_LEVEL rows over the watch's sleep window. Each row closes the span since
+    /// the previous row, the first one the span since `start`.
     public struct SleepSession: Equatable, Sendable {
         public let start: Int64
         public let end: Int64
@@ -173,6 +180,8 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public var spo2: [Spo2] = []
     public var respiration: [TimedDouble] = []
     public var sleepLevels: [TimedInt] = []
+    /// The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop.
+    public var sleepMarks: [TimedInt] = []
     public var sleepSessions: [SleepSession] = []
     public var sleepRaw: [SleepRaw] = []
     public var sleepAssessments: [SleepAssessment] = []
@@ -241,30 +250,69 @@ public enum GarminWellnessParser {
         }
     }
 
-    /// Folds SLEEP_LEVEL rows into nights. A gap over an hour (or time running backwards) starts a
-    /// new night; each row's level is credited with the time since the previous row.
+    /// Rows further apart than this, with no sleep window around them, are two nights. Generous because
+    /// the watch writes a row only when the stage changes.
+    static let fallbackNightGapS: Int64 = 4 * 3600
+
+    /// Folds a file's SLEEP_LEVEL rows (`sleepLevels`) into nights. A night is the watch's own sleep window (a start marker, then
+    /// the next stop in `sleepMarks`; a start with no stop ends at its last row), holding the rows after its start up to
+    /// its stop: the first row closes the span from sleep onset, each later row the span since the row
+    /// before. Rows outside every window (a file with no markers) fall back to splitting on a gap over
+    /// `fallbackNightGapS` or time running backwards, each such night starting at its first row.
     /// Kotlin twin: `GarminWellnessParser.sleepSessions`.
-    public static func sleepSessions(_ levels: [GarminWellnessSamples.TimedInt]) -> [GarminWellnessSamples.SleepSession] {
-        // Each night is [start row index, end row index], folded after the split points are known.
-        var nights: [(first: Int, last: Int)] = []
-        for (i, row) in levels.enumerated() {
-            if let open = nights.last, row.ts >= levels[open.last].ts, row.ts - levels[open.last].ts <= 3600 {
-                nights[nights.count - 1].last = i
+    public static func sleepSessions(_ samples: GarminWellnessSamples) -> [GarminWellnessSamples.SleepSession] {
+        let levels = samples.sleepLevels
+        let marks = samples.sleepMarks
+        var windows: [(start: Int64, stop: Int64?)] = []
+        var open: Int64?
+        for m in marks {
+            if m.value == 0 {
+                if open == nil { open = m.ts }
+            } else if m.value == 1, let start = open, m.ts > start {
+                windows.append((start, m.ts))
+                open = nil
+            }
+        }
+        if let start = open { windows.append((start, nil)) }
+
+        var nights: [GarminWellnessSamples.SleepSession] = []
+        var used = [Bool](repeating: false, count: levels.count)
+        for w in windows {
+            var rows: [Int] = []
+            for (i, row) in levels.enumerated() where !used[i] && row.ts > w.start && (w.stop == nil || row.ts <= w.stop!) {
+                rows.append(i)
+            }
+            guard let last = rows.last else { continue }
+            for i in rows { used[i] = true }
+            nights.append(session(levels, rows, start: w.start, end: w.stop ?? levels[last].ts))
+        }
+
+        var runs: [[Int]] = []
+        for (i, row) in levels.enumerated() where !used[i] {
+            if let prev = runs.last?.last, row.ts >= levels[prev].ts, row.ts - levels[prev].ts <= fallbackNightGapS {
+                runs[runs.count - 1].append(i)
             } else {
-                nights.append((i, i))
+                runs.append([i])
             }
         }
-        return nights.map { night in
-            var spans = [Int64](repeating: 0, count: 5)
-            if night.first < night.last {
-                for i in (night.first + 1)...night.last {
-                    spans[levels[i].value] += levels[i].ts - levels[i - 1].ts
-                }
-            }
-            return GarminWellnessSamples.SleepSession(start: levels[night.first].ts, end: levels[night.last].ts,
-                                unmeasurableS: spans[0], awakeS: spans[1], lightS: spans[2],
-                                deepS: spans[3], remS: spans[4])
+        for run in runs {
+            nights.append(session(levels, run, start: levels[run[0]].ts, end: levels[run[run.count - 1]].ts))
         }
+        return nights.sorted { ($0.start, $0.end) < ($1.start, $1.end) }
+    }
+
+    /// One night's stage totals: each row credits its level with the time since the previous boundary.
+    /// Kotlin twin: `GarminWellnessParser.session`.
+    private static func session(_ levels: [GarminWellnessSamples.TimedInt], _ rows: [Int],
+                                start: Int64, end: Int64) -> GarminWellnessSamples.SleepSession {
+        var spans = [Int64](repeating: 0, count: 5)
+        var prev = start
+        for i in rows where levels[i].ts > prev {
+            spans[levels[i].value] += levels[i].ts - prev
+            prev = levels[i].ts
+        }
+        return GarminWellnessSamples.SleepSession(start: start, end: end, unmeasurableS: spans[0], awakeS: spans[1],
+                                                  lightS: spans[2], deepS: spans[3], remS: spans[4])
     }
 
     /// Seconds between the FIT epoch (1989-12-31T00:00:00Z) and the Unix epoch.
@@ -289,7 +337,7 @@ public enum GarminWellnessParser {
         var out = decoder.out
         out.complete = stop == .end
         out.dailyActivity = dailyTotals(out.monitoring, utcOffsetS: out.utcOffsetS ?? 0)
-        out.sleepSessions = sleepSessions(out.sleepLevels)
+        out.sleepSessions = sleepSessions(out)
         return out
     }
 
@@ -417,6 +465,10 @@ public enum GarminWellnessParser {
             if let ts = m.u(253) { running = ts }
 
             switch def.globalNum {
+            case 21:
+                guard m.u(0) == 74 else { return out.otherMessages += 1 }
+                guard let ts = Self.unix(running), let type = Self.range(m.u(1), 0, 1) else { return drop() }
+                out.sleepMarks.append(.init(ts: ts, value: type))
             case 55: monitoring(m)
             case 103:
                 noteOffset(local: m.u(0), fitTs: running)

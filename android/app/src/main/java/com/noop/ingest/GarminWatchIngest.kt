@@ -116,19 +116,25 @@ object GarminWatchIngest {
         return Math.round(asleep.toDouble() * 1000 / inBed.toDouble()).toDouble() / 10
     }
 
-    /** The night's stage timeline, hand-written with a fixed key order. Swift twin: `GarminWatchIngest.stagesJSON`. */
+    /**
+     * The night's stage timeline, hand-written with a fixed key order. Each row after `start` closes the
+     * span since the previous boundary, the first one the span from `start` (the watch's sleep onset).
+     * Swift twin: `GarminWatchIngest.stagesJSON`.
+     */
     fun stagesJSON(levels: List<GarminWellnessSamples.TimedInt>, start: Long, end: Long): String? {
         val names = mapOf(1 to "wake", 2 to "light", 3 to "deep", 4 to "rem")
-        val rows = levels.filter { it.ts in start..end }
         val segments = ArrayList<Triple<Long, Long, String>>()
-        for (i in 1 until rows.size) {
-            val name = names[rows[i].value] ?: continue
-            if (rows[i].ts <= rows[i - 1].ts) continue
+        var prev = start
+        for (row in levels) {
+            if (row.ts <= prev || row.ts > end) continue
+            val from = prev
+            prev = row.ts
+            val name = names[row.value] ?: continue
             val last = segments.lastOrNull()
-            if (last != null && last.third == name && last.second == rows[i - 1].ts) {
-                segments[segments.size - 1] = Triple(last.first, rows[i].ts, name)
+            if (last != null && last.third == name && last.second == from) {
+                segments[segments.size - 1] = Triple(last.first, row.ts, name)
             } else {
-                segments.add(Triple(rows[i - 1].ts, rows[i].ts, name))
+                segments.add(Triple(from, row.ts, name))
             }
         }
         if (segments.isEmpty()) return null

@@ -71,9 +71,12 @@ struct StageDetailView: View {
         // An Oura night's stages are the ring's RAW on-device SleepNet classification (decoded off the 0x49
         // phase stream), NOT a NOOP approximation — so it gets its own honest caption instead of the
         // "stages approximate (on-device)" one that describes NOOP's own sparse-motion staging.
+        // A Garmin night's stages are the watch's own classification (#47), so it is captioned likewise.
         let stageCaption = repo.activeDeviceIsOura
             ? String(localized: "raw on-device stages")
-            : String(localized: "stages approximate (on-device)")
+            : repo.activeDeviceIsGarmin
+                ? String(localized: "Garmin watch stages")
+                : String(localized: "stages approximate (on-device)")
         let subtitle = isPersisted
             ? String(localized: "\(durationText(night.timeInBed)) in bed · \(efficiencyText(night)) efficiency · \(stageCaption)")
             : String(localized: "\(durationText(night.timeInBed)) in bed · \(efficiencyText(night)) efficiency")

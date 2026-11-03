@@ -576,7 +576,7 @@ struct SleepView: View {
             }
 
             SourceBadge(
-                score != nil ? heroSource(for: night) : (repo.activeDeviceIsOura ? "Oura" : "On-device"),
+                score != nil ? heroSource(for: night) : deviceSourceKey,
                 tint: StrandPalette.restColor
             )
             .padding(.top, 8)
@@ -617,7 +617,15 @@ struct SleepView: View {
     private func heroSource(for night: Night) -> LocalizedStringKey {
         let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
         if repo.importedSleep[wakeDay]?.performancePct != nil { return "Whoop" }
-        return repo.activeDeviceIsOura ? "Oura" : "On-device"
+        return deviceSourceKey
+    }
+
+    /// The non-import provenance word for the active device: "Oura" for a ring, "Garmin" for a paired
+    /// Garmin watch (its stages are the watch's own, #47), else NOOP's "On-device" computation.
+    private var deviceSourceKey: LocalizedStringKey {
+        if repo.activeDeviceIsOura { return "Oura" }
+        if repo.activeDeviceIsGarmin { return "Garmin" }
+        return "On-device"
     }
 
     // MARK: - Provenance for the displayed night (COMPONENT 4, spec 2026-06-20)
@@ -637,6 +645,8 @@ struct SleepView: View {
         // NOOP computation. WHOOP import still wins above; only a night surfaced under a live Oura strap
         // reaches here as "Oura".
         if repo.activeDeviceIsOura { return String(localized: "Oura") }
+        // Likewise a paired Garmin watch provides its own staged night (#47).
+        if repo.activeDeviceIsGarmin { return "Garmin" }
         return String(localized: "On-device")
     }
 
@@ -838,9 +848,12 @@ struct SleepView: View {
         // An Oura night's stages are the ring's RAW on-device SleepNet classification (decoded off the 0x49
         // phase stream), NOT a NOOP approximation — so it gets its own honest caption instead of the
         // "stages approximate (on-device)" one that describes NOOP's own sparse-motion staging.
+        // A Garmin night's stages are the watch's own classification (#47), so it is captioned likewise.
         let stageCaption = repo.activeDeviceIsOura
             ? String(localized: "raw on-device stages")
-            : String(localized: "stages approximate (on-device)")
+            : repo.activeDeviceIsGarmin
+                ? String(localized: "Garmin watch stages")
+                : String(localized: "stages approximate (on-device)")
         let subtitle = isPersisted
             ? String(localized: "\(durationText(night.timeInBed)) in bed · \(efficiencyText(night)) efficiency · \(stageCaption)")
             : String(localized: "\(durationText(night.timeInBed)) in bed · \(efficiencyText(night)) efficiency")
