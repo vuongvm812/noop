@@ -110,6 +110,10 @@ public enum GarminWatchIngest {
             let key = dayOf(a.ts)
             var d = day(key); d.sleepScore = a.overallScore; days[key] = d
         }
+        for v in s.vo2max.sorted(by: { $0.ts < $1.ts }) {
+            let key = dayOf(v.ts)
+            var d = day(key); d.vo2max = v.value; days[key] = d
+        }
         // Every day a sample landed in gets a rollup, so the store re-derives that day's aggregates.
         for m in out.deviceMetric {
             let key = dayOf(Int64(m.ts))

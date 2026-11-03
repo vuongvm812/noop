@@ -34,22 +34,31 @@ final class TotalEnergyMigrationTests: XCTestCase {
             try daily("garmin-1", "2026-11-01", 512); try point("garmin-1", "2026-11-01", "energy_kcal", 512)
             try point("garmin-1", "2026-11-01", "total_kcal", 2_380)
             // An import that stored no value but has a total: the total fills it.
-            try daily("oura-1", "2026-11-01", nil); try point("oura-1", "2026-11-01", "total_kcal", 2_150)
+            try daily("oura-import", "2026-11-01", nil); try point("oura-import", "2026-11-01", "total_kcal", 2_150)
             // An active value with no total anywhere: cleared, so NOOP's own total can fill the day.
-            try daily("xiaomi-1", "2026-11-01", 340); try point("xiaomi-1", "2026-11-01", "energy_kcal", 340)
-            // NOOP's own estimate (no series points) and a row whose series disagrees: untouched.
+            try daily("xiaomi-band", "2026-11-01", 340); try point("xiaomi-band", "2026-11-01", "energy_kcal", 340)
+            // The Oura cloud sync stored active energy with no total beside it: cleared.
+            try daily("oura-api", "2026-11-01", 455)
+            // NOOP's own estimate (no series points): untouched. WHOOP's energy_kcal is a TOTAL, so a row equal
+            // to it is not an active-energy source and keeps both.
             try daily("my-whoop-noop", "2026-11-01", 2_410)
-            try daily("whoop-import", "2026-11-01", 2_600); try point("whoop-import", "2026-11-01", "energy_kcal", 2_550)
+            try daily("whoop-import", "2026-11-01", 2_550); try point("whoop-import", "2026-11-01", "energy_kcal", 2_550)
             // A total for another day never crosses over.
             try daily("garmin-1", "2026-11-02", 480); try point("garmin-1", "2026-11-03", "total_kcal", 2_000)
         }
         try q.read { db in
             XCTAssertEqual(try kcal(db, "garmin-1", "2026-11-01"), 2_380)
-            XCTAssertEqual(try kcal(db, "oura-1", "2026-11-01"), 2_150)
-            XCTAssertNil(try kcal(db, "xiaomi-1", "2026-11-01"))
+            XCTAssertEqual(try kcal(db, "oura-import", "2026-11-01"), 2_150)
+            XCTAssertNil(try kcal(db, "xiaomi-band", "2026-11-01"))
+            XCTAssertNil(try kcal(db, "oura-api", "2026-11-01"))
             XCTAssertEqual(try kcal(db, "my-whoop-noop", "2026-11-01"), 2_410)
-            XCTAssertEqual(try kcal(db, "whoop-import", "2026-11-01"), 2_600)
+            XCTAssertEqual(try kcal(db, "whoop-import", "2026-11-01"), 2_550)
             XCTAssertEqual(try kcal(db, "garmin-1", "2026-11-02"), 480)
+            // The active-energy sources' energy_kcal points move to active_kcal; WHOOP's total stays.
+            let keys = try Row.fetchAll(db, sql: "SELECT deviceId, key FROM metricSeries WHERE day = '2026-11-01' "
+                                        + "AND key IN ('energy_kcal', 'active_kcal') ORDER BY deviceId")
+                .map { "\($0["deviceId"] as String) \($0["key"] as String)" }
+            XCTAssertEqual(keys, ["garmin-1 active_kcal", "whoop-import energy_kcal", "xiaomi-band active_kcal"])
             XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM garminActivityPeak"), 0)
         }
     }
@@ -65,8 +74,12 @@ final class TotalEnergyMigrationTests: XCTestCase {
                 + "WHERE EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId "
                 + "AND m.day = dailyMetric.day AND m.key = 'total_kcal')",
             "UPDATE dailyMetric SET activeKcalEst = NULL WHERE activeKcalEst IS NOT NULL "
+                + "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%') "
                 + "AND EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId "
                 + "AND m.day = dailyMetric.day AND m.key = 'energy_kcal' AND m.value = dailyMetric.activeKcalEst)",
+            "UPDATE dailyMetric SET activeKcalEst = NULL WHERE deviceId = 'oura-api'",
+            "UPDATE metricSeries SET key = 'active_kcal' WHERE key = 'energy_kcal' "
+                + "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%')",
         ])
     }
 }

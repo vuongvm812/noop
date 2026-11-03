@@ -1370,7 +1370,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">Reiniciar esta bracelete?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Nada para fundir ainda</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Os teus dados, fundidos</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Energia Ativa</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">Sangue O₂</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Oxigénio no sangue</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Impulsiona a tua idade de fitness</string>
@@ -2274,7 +2273,6 @@
     <string name="today_card_steps">Passos</string>
     <string name="today_card_steps_subtitle">Hoje</string>
     <string name="today_card_calories">Calorias</string>
-    <string name="today_card_calories_subtitle">Energia ativa</string>
     <string name="today_card_stress">Stress</string>
     <string name="today_card_stress_subtitle">Carga autonómica</string>
     <string name="today_card_fitness_age">Idade de fitness</string>

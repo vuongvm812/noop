@@ -125,7 +125,7 @@ final class GarminSyncStoreTests: XCTestCase {
         let metric = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
         XCTAssertEqual(metric?.activeKcalEst, 2_400)
         let total = try await series(store, "total_kcal")
-        let active = try await series(store, "energy_kcal")
+        let active = try await series(store, "active_kcal")
         XCTAssertEqual(total, 2_400)
         XCTAssertEqual(active, 500)
     }
@@ -160,7 +160,7 @@ final class GarminSyncStoreTests: XCTestCase {
         let steps = try await series(store, "steps")
         let distance = try await series(store, "distance_m")
         let total = try await series(store, "total_kcal")
-        let active = try await series(store, "energy_kcal")
+        let active = try await series(store, "active_kcal")
         XCTAssertEqual(steps, 8_000)
         XCTAssertEqual(distance, 2_500.5 + 3_600.125 + 10_000)
         XCTAssertEqual(total, 2_300)

@@ -201,6 +201,12 @@ final class GarminScoringInputsTests: XCTestCase {
                             ("garmin-import", "Garmin"), ("my-whoop", nil), ("garmin-A-noop", nil)] as [(String, String?)] {
             lines.append("effort \(id) \(brand ?? "nil") \(GarminScoringInputs.effortIsExperimental(sourceId: id, brand: brand))")
         }
+        // The watch's own VO2max for a week (#51): latest on or before the key, within the age window.
+        let vo2Points: [(day: String, value: Double)] = [("2026-10-01", 50.1), ("2026-10-04", 51.0), ("2026-10-31", 52.4),
+                                                         ("2026-11-08", 53.0), ("2026-10-20", -1)]
+        for week in ["2026-10-31", "2026-10-30", "2026-11-07", "2026-11-08", "2026-12-31", "bad"] {
+            lines.append("vo2 \(week) \(GarminScoringInputs.watchVo2max(vo2Points, weekKey: week).map { String($0) } ?? "nil")")
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -588,5 +594,11 @@ final class GarminScoringInputsTests: XCTestCase {
     effort garmin-import Garmin false
     effort my-whoop nil false
     effort garmin-A-noop nil false
+    vo2 2026-10-31 52.4
+    vo2 2026-10-30 51.0
+    vo2 2026-11-07 52.4
+    vo2 2026-11-08 53.0
+    vo2 2026-12-31 nil
+    vo2 bad nil
     """
 }

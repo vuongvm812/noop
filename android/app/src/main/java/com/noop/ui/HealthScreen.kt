@@ -1809,7 +1809,7 @@ internal data class VitalDetailModel(
 // so its detail must route to buildSeriesVitalDetail (which reads metricSeriesComputedUnion), NOT the
 // DailyMetric-backed buildVitalDetail. #1404 added the vo2max_est CASE to the series builder but omitted it
 // here, so isSeriesBacked was false and the tap-through fell to the DailyMetric builder → empty trend.
-private val SERIES_BACKED_VITAL_KEYS = setOf("fitness_age", "vitality", "steps_est", "active_kcal", "rest", "vo2max_est")
+private val SERIES_BACKED_VITAL_KEYS = setOf("fitness_age", "vitality", "steps_est", "energy_kcal", "rest", "vo2max_est")
 
 /**
  * #1617: which empty-state copy a vital with fewer than two readings should show.
@@ -2635,33 +2635,34 @@ internal suspend fun buildSeriesVitalDetail(vm: AppViewModel, key: String): Vita
             format = { java.text.NumberFormat.getIntegerInstance().format(it.roundToInt()) },
         )
     }
-    "active_kcal" -> {
-        // #616: calories, like steps (#377), come from TWO disjoint stores — the on-device HR estimate
-        // (DailyMetric.activeKcalEst, exposed by resolvedSeries("active_kcal")) and imported Apple/Health-
-        // Connect active energy (AppleDaily.activeKcal, where Health Connect writes it — NOT an active_kcal
-        // metricSeries row). Reading imports ALONE opened an empty / HealthConnect-only detail for a WHOOP
-        // 5.0 user whose calories are on-device, and disagreed with the Key-Metrics tile. Resolve per day
-        // IMPORTED-FIRST (the phone's activeKcal, else NOOP's on-device estimate) — matching the tile + card
-        // so the chart + Readings agree, while keeping every imported day in the union.
-        val real = vm.repo.resolvedSeries("active_kcal", "my-whoop", "0000-00-00", "9999-99-99",
-            strapDeviceId = vm.activeStrapId)
-            .points.associateBy({ it.day }, { VitalReading(it.day, it.value, it.source) })
-        val imported = LinkedHashMap<String, VitalReading>()
-        for (r in vm.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +
-            vm.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31")) {
-            val k = r.activeKcal
-            if (k != null && k > 0) imported.putIfAbsent(r.day, VitalReading(r.day, k, r.deviceId))
-        }
+    "energy_kcal" -> {
+        // #616 / #51: the Today Calories detail. Calories come from TWO stores, the phone's import
+        // (AppleDaily active + basal energy) and the stored total (DailyMetric.activeKcalEst, NOOP's
+        // estimate or a brand's watch total); [caloriesReadings] resolves each day through
+        // [com.noop.analytics.DayCalories], the same resolver the tile and card read, so all three agree.
         VitalDetailModel(
             key = key,
-            title = uiString(R.string.l10n_health_screen_active_energy_2d3288f9),
+            title = uiString(R.string.l10n_today_screen_calories_3e62ecfe),
             unit = "kcal",
             color = Palette.metricAmber,
-            readings = mergeReadings(imported, real),   // imported wins its day, else on-device estimate
+            readings = caloriesReadings(vm.repo, vm.activeStrapId),
             format = { it.roundToInt().toString() },
         )
     }
     else -> null
+}
+
+/**
+ * #616 / #51: the Calories readings every Today calorie surface reads (tile, card, detail): the stored
+ * total ("energy_kcal", which resolves `DailyMetric.activeKcalEst`) and the phone's Apple Health / Health
+ * Connect rows, resolved per day by [caloriesReadingsFrom].
+ */
+internal suspend fun caloriesReadings(repo: com.noop.data.WhoopRepository, strapId: String): List<VitalReading> {
+    val stored = repo.resolvedSeries("energy_kcal", "my-whoop", "0000-00-00", "9999-99-99", strapDeviceId = strapId)
+        .points.map { VitalReading(it.day, it.value, it.source) }
+    val phone = repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +
+        repo.appleDaily("health-connect", "0000-01-01", "9999-12-31")
+    return caloriesReadingsFrom(stored, phone)
 }
 
 // MARK: - Empty state

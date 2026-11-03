@@ -142,6 +142,28 @@ public enum GarminScoringInputs {
     /// as WHOOP. Setting this back to `false` restores the label on both platforms.
     public static let effortValidated = true
 
+    /// How long a watch VO2max still stands for a week (#51). The watch re-estimates it only after an
+    /// activity that qualifies, so its latest value is its current one for weeks at a time.
+    public static let watchVo2maxMaxAgeDays = 28
+
+    /// The watch's own VO2max for the week keyed `weekKey` ("yyyy-MM-dd"): its latest positive point on or
+    /// before that day and within `watchVo2maxMaxAgeDays` of it, or nil. The VO2max card prefers it over
+    /// NOOP's estimate (`IntelligenceEngine.fitnessAgeRows`). Kotlin twin: `GarminScoringInputs.watchVo2max`.
+    public static func watchVo2max(_ points: [(day: String, value: Double)], weekKey: String) -> Double? {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let f = DateFormatter()
+        f.calendar = utc
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = utc.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        guard let week = f.date(from: weekKey),
+              let oldest = utc.date(byAdding: .day, value: -(watchVo2maxMaxAgeDays - 1), to: week) else { return nil }
+        let from = f.string(from: oldest)
+        return points.filter { $0.day >= from && $0.day <= weekKey && $0.value > 0 && $0.value.isFinite }
+            .max { $0.day < $1.day }?.value
+    }
+
     /// True when an Effort score whose inputs came from `sourceId` (registry `brand`) must carry the
     /// experimental label. Kotlin twin: `GarminScoringInputs.effortIsExperimental`.
     public static func effortIsExperimental(sourceId: String, brand: String?) -> Bool {

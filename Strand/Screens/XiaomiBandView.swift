@@ -49,7 +49,7 @@ struct XiaomiBandView: View {
 
     /// The metricSeries keys written by `XiaomiImporter`.
     private static let seriesKeys = [
-        "steps", "distance_m", "energy_kcal", "intensity_min",
+        "steps", "distance_m", "active_kcal", "intensity_min",
         "rhr", "avg_hr", "max_hr", "spo2",
         "sleep_total_min", "sleep_deep_min", "sleep_rem_min", "sleep_light_min", "sleep_score",
         "stress", "vitality",
@@ -175,7 +175,7 @@ struct XiaomiBandView: View {
             .chart("Distance", "distance_m", cyanGradient, 0...10000, {
                 UnitFormatter.distanceFromMeters($0, system: distanceUnitSystem)
             }),
-            .chart("Active energy", "energy_kcal", amberGradient, 0...1000, { "\(intString($0)) kcal" }),
+            .chart("Active energy", "active_kcal", amberGradient, 0...1000, { "\(intString($0)) kcal" }),
             .chart("Intensity minutes", "intensity_min", amberGradient, 0...120, { "\(Int($0.rounded())) min" }),
             .header("Wellbeing", "Body energy"),
             .chart("Stress", "stress", amberGradient, 0...100, { "\(Int($0.rounded()))" }),

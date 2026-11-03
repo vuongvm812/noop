@@ -64,6 +64,21 @@ class Vo2maxFallbackTest {
         assertEquals(Vo2MaxEstimator.NES, Vo2MaxEstimator.fromProvenanceId(nes.sourceId))
     }
 
+    /** #51: the watch's own VO₂max wins over the estimate and needs no fitness-age gate; its tag names the
+     *  watch. Swift twin: `testWatchVo2maxWinsWithoutTheGateAndIsTaggedGarmin`. */
+    @Test
+    fun watchVo2max_winsWithoutTheGateAndIsTaggedGarmin() {
+        val withWaist = UserProfile(age = 40.0, sex = "male", waistCm = 90.0, heightCm = 175.0, weightKg = 80.0)
+        val gated = IntelligenceEngine.fitnessAgeRows(gate(60), withWaist, "garmin-1-noop", "2026-08-15", 54.2)
+        assertEquals(54.2, gated.first { it.key == "vo2max_est" }.value, 0.0)
+        assertTrue(gated.any { it.key == "fitness_age" })
+        val noProfile = UserProfile(age = 0.0, sex = "", waistCm = 0.0)
+        val ungated = IntelligenceEngine.fitnessAgeRows(emptyList(), noProfile, "garmin-1-noop", "2026-08-15", 54.2)
+        assertEquals(listOf("vo2max_est"), ungated.map { it.key })
+        val tag = IntelligenceEngine.vo2MaxProvenance(ungated, 0.0, "garmin-1-noop", 54.2).single()
+        assertEquals(Vo2MaxEstimator.GARMIN, Vo2MaxEstimator.fromProvenanceId(tag.sourceId))
+    }
+
     @Test
     fun missingLegacyProvenance_remainsUnknown() {
         assertEquals(null, Vo2MaxEstimator.fromProvenanceId(null))

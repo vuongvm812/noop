@@ -97,6 +97,8 @@ public struct GarminDayRollup: Equatable, Sendable {
     /// Asleep / (asleep + awake) as a 0-1 fraction, the unit of `dailyMetric.efficiency` (#49).
     public var efficiency: Double?
     public var sleepScore: Int?
+    /// The watch's own VO2max estimate (mL/kg/min), its latest update that day (#51).
+    public var vo2max: Double?
 
     public init(day: String, dayStartTs: Int, dayEndTs: Int) {
         self.day = day
@@ -133,7 +135,7 @@ extension WhoopStore {
 
     /// The `metricSeries` keys a Garmin day writes, with how each merges. Shared with Kotlin
     /// (`GarminSyncStore.MAX_KEYS`); the names match what `WearableImporter` writes for a Garmin export.
-    static let garminMaxKeys: Set<String> = ["steps", "distance_m", "energy_kcal", "total_kcal"]
+    static let garminMaxKeys: Set<String> = ["steps", "distance_m", "active_kcal", "total_kcal"]
 
     /// The day's average of the watch's own 0-100 stress score. NOT "stress": that key carries WHOOP's 0-3
     /// stress series, which the Stress model clamps to 0-3, so a Garmin 72 stored there read as maximum
@@ -441,18 +443,18 @@ extension WhoopStore {
             """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin, d.remMin, d.lightMin,
                              // activeKcalEst is whole-day TOTAL energy on every source (#51): the watch's
                              // total, resting metabolic rate included. Its active calories stay in the
-                             // energy_kcal series.
+                             // active_kcal series.
                              d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.totalKcal])
         counts.days += db.changesCount
 
         let points: [(String, Double?)] = [
-            ("steps", d.steps.map(Double.init)), ("distance_m", d.distanceM), ("energy_kcal", d.activeKcal),
+            ("steps", d.steps.map(Double.init)), ("distance_m", d.distanceM), ("active_kcal", d.activeKcal),
             ("total_kcal", d.totalKcal), ("rhr", d.restingHr.map(Double.init)), ("hrv", d.avgHrvMs),
             (garminStressKey, stress),
             ("body_battery_min", bbMin), ("body_battery_max", bbMax),
             ("sleep_total_min", d.totalSleepMin), ("sleep_deep_min", d.deepMin),
             ("sleep_light_min", d.lightMin), ("sleep_rem_min", d.remMin), ("sleep_awake_min", d.awakeMin),
-            ("ref_sleep_score", d.sleepScore.map(Double.init)),
+            ("ref_sleep_score", d.sleepScore.map(Double.init)), ("vo2max", d.vo2max),
         ]
         for (key, value) in points {
             guard let value, value.isFinite else { continue }

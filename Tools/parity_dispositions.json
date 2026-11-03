@@ -514,7 +514,7 @@
       "identity": "swift\u0000Packages/WhoopStore/Sources/WhoopStore/Database.swift::totalEnergyMigrationSQL",
       "identity_sha256": "7f58ea72e7a9a23ac50ac295840273ba5119048618341c01b5ccae974ea928f0",
       "platform": "swift",
-      "rationale": "The v50 migration statements (vuongvm812/noop#51). The Kotlin twin is WhoopDatabase.TOTAL_ENERGY_MIGRATION_SQL, a List, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. Both suites pin the same three strings verbatim."
+      "rationale": "The v50 migration statements (vuongvm812/noop#51). The Kotlin twin is WhoopDatabase.TOTAL_ENERGY_MIGRATION_SQL, a List, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. Both suites pin the same five statements verbatim."
     },
     {
       "type": "out_of_scope_twin",
@@ -751,6 +751,24 @@
       "identity_sha256": "b239f6cdc8b887b615771f2dcaa9a18a53fe9544d486aabfad43a518aab84380",
       "platform": "swift",
       "rationale": "WearableHistory.referenceKeys (#31, vuongvm812/noop#31) is a collection, so its Kotlin twin WearableHistory.referenceKeys in com.noop.analytics is a plain val (Kotlin const val cannot hold a List or Set) and the ledger's const-val rule cannot pair it. Both are pinned through the shared oracle Tools/parity_cases/wearable_history.json (WearableHistoryTests / WearableHistoryParityTest)."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::fitnessAgeRows/5#1",
+      "identity_sha256": "22e3056594cb5a9e9745576a06d67fa5b249182e88b2abff29420ff51343ec67",
+      "platform": "kotlin",
+      "rationale": "Gained the watch VO2max argument (vuongvm812/noop#51); the Swift twin, IntelligenceEngine.fitnessAgeRows, lives in the excluded app layer with the same parameter, and Vo2maxFallbackTests / Vo2maxFallbackTest pin the same behaviour.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::vo2MaxProvenance/4#1",
+      "identity_sha256": "bfc8e9262965a5a141d399726562f365f350d4d4e08f559533e6d94c9e6f2236",
+      "platform": "kotlin",
+      "rationale": "Gained the watch VO2max argument that tags a watch value as Garmin (vuongvm812/noop#51); the Swift twin, IntelligenceEngine.vo2MaxProvenance, lives in the excluded app layer with the same parameter.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
     }
   ]
 }

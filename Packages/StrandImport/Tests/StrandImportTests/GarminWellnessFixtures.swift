@@ -254,6 +254,17 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// MAX_MET_DATA (229): a VO2max of 52.3, then one under the plausible floor and one with no update time,
+    /// both dropped.
+    static func vo2max() -> Data {
+        var f = WellnessFit()
+        f.def(0, 229, [(0, 4, u32), (2, 2, u16), (9, 1, en)])
+        f.data(0); f.u32(t); f.u16(523); f.u8(1)
+        f.data(0); f.u32(t + 86_400); f.u16(50); f.u8(1)
+        f.data(0); f.u32(0); f.u16(480); f.u8(0)
+        return f.finish()
+    }
+
     static func hrv() -> Data {
         var f = WellnessFit()
         f.def(0, 370, [(253, 4, u32), (0, 2, u16), (1, 2, u16), (2, 2, u16), (3, 2, u16), (4, 2, u16), (5, 2, u16), (6, 1, en)])
@@ -324,7 +335,7 @@ enum WellnessFixtures {
 
     static let all: [(String, () -> Data)] = [
         ("monitoring", monitoring), ("midnight", midnight), ("multiSport", multiSport), ("restingHeartRate", restingHeartRate), ("stress", stress),
-        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("hrv", hrv),
+        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("vo2max", vo2max), ("hrv", hrv),
         ("candidates", candidates), ("framing", framing), ("bounds", bounds),
     ]
 
@@ -356,12 +367,12 @@ enum WellnessFixtures {
         for d in s.dailyActivity {
             out.append("day \(d.day) steps=\(num(d.steps)) dist=\(num(d.distanceM)) cal=\(num(d.calories)) act=\(num(d.activeCalories))")
         }
-        for r in s.restingMetabolicRate { out.append("rmr \(r.ts) \(r.value)") }
         for r in s.restingHeartRate { out.append("rhr \(r.ts) \(r.value)") }
         for r in s.stress { out.append("stress \(r.ts) \(r.value)") }
         for r in s.bodyBattery { out.append("bb \(r.ts) \(r.value)") }
         for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent)") }
         for r in s.respiration { out.append("resp \(r.ts) \(num(r.value))") }
+        for r in s.vo2max { out.append("vo2max \(r.ts) \(num(r.value))") }
         for r in s.sleepLevels { out.append("level \(r.ts) \(r.value)") }
         for r in s.sleepMarks { out.append("mark \(r.ts) \(r.value)") }
         for r in s.sleepSessions {

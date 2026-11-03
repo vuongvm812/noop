@@ -114,6 +114,12 @@ class GarminScoringInputsTest {
         )) {
             lines.add("effort $id ${brand ?: "nil"} ${GarminScoringInputs.effortIsExperimental(id, brand)}")
         }
+        // The watch's own VO2max for a week (#51): latest on or before the key, within the age window.
+        val vo2Points = listOf("2026-10-01" to 50.1, "2026-10-04" to 51.0, "2026-10-31" to 52.4,
+            "2026-11-08" to 53.0, "2026-10-20" to -1.0)
+        for (week in listOf("2026-10-31", "2026-10-30", "2026-11-07", "2026-11-08", "2026-12-31", "bad")) {
+            lines.add("vo2 $week ${GarminScoringInputs.watchVo2max(vo2Points, week)?.toString() ?: "nil"}")
+        }
         return lines.joinToString("\n")
     }
 
@@ -527,6 +533,12 @@ class GarminScoringInputsTest {
             effort garmin-import Garmin false
             effort my-whoop nil false
             effort garmin-A-noop nil false
+            vo2 2026-10-31 52.4
+            vo2 2026-10-30 51.0
+            vo2 2026-11-07 52.4
+            vo2 2026-11-08 53.0
+            vo2 2026-12-31 nil
+            vo2 bad nil
         """.trimIndent()
     }
 }

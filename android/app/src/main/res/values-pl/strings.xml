@@ -1364,7 +1364,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">Uruchomić ponownie ten pasek?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Nie ma jeszcze nic do łączenia</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Twoje dane, połączone</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Aktywna energia</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">Krew O₂</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Tlen we krwi</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Napędza Twój wiek sprawnościowy</string>
@@ -2280,7 +2279,6 @@
     <string name="today_card_steps">Kroki</string>
     <string name="today_card_steps_subtitle">Dzisiaj</string>
     <string name="today_card_calories">Kalorie</string>
-    <string name="today_card_calories_subtitle">Energia aktywna</string>
     <string name="today_card_stress">Stres</string>
     <string name="today_card_stress_subtitle">Obciążenie autonomiczne</string>
     <string name="today_card_fitness_age">Wiek sprawnościowy</string>

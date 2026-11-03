@@ -927,7 +927,11 @@ struct TodayView: View {
     static func provenanceDisplayLabel(rawSource: String, deviceId: String) -> String {
         if rawSource.hasPrefix(vo2MaxAttributionPrefix) {
             let raw = String(rawSource.dropFirst(vo2MaxAttributionPrefix.count))
-            let method = vo2MaxEstimatorDisplayName(Vo2MaxEstimator(rawValue: raw))
+            let estimator = Vo2MaxEstimator(rawValue: raw)
+            let method = vo2MaxEstimatorDisplayName(estimator)
+            // The watch's own value (#51) was not computed on this device: it reads as the watch alone,
+            // as Android's `vo2MaxAttributionLabelRes` does.
+            if estimator == .garmin { return method }
             return "\(String(localized: "On-device")) · \(method)"
         }
         // #103/queue-11a follow-up: the Explorer's spo2 candidate-fallback rows (see
@@ -2774,7 +2778,7 @@ struct TodayView: View {
             let est = stepsEstByDay[selectedDayKey].map { intString(Double($0)) }
             return real ?? est ?? "—"
         case .calories:
-            return withUnit(caloriesValue(appleDays.last))
+            return withUnit(caloriesValue())
         case .stress:
             #if DEBUG
             // DEBUG promo harness: pin the Stress card (0–3) to the active frame's value. No-op otherwise.
@@ -4150,10 +4154,9 @@ struct TodayView: View {
         case .calories:
             StatTile(
                 label: "Calories",
-                value: caloriesValue(aLatest),
-                caption: String(localized: "active"),
+                value: caloriesValue(),
                 accent: StrandPalette.metricAmber,
-                sparkline: sparks["active_kcal"],
+                sparkline: sparks["energy_kcal"],
                 sparkColor: StrandPalette.metricAmber
             )
         case .skinTemp:
@@ -4700,7 +4703,8 @@ struct TodayView: View {
         async let respRateSpark      = sparkValuesExplore("resp_rate", source: "my-whoop", window: 14)
         async let stepsAppleSpark    = sparkValues("steps", source: "apple-health", window: 14)
         async let weightSpark        = sparkValues("weight", source: "apple-health", window: 90)
-        async let activeKcalSpark    = sparkValues("active_kcal", source: "apple-health", window: 14)
+        // #51: the day's TOTAL energy, which `exploreSeries` resolves per day through `DayCalories`.
+        async let energyKcalSpark    = sparkValuesExplore("energy_kcal", source: "my-whoop", window: 14)
 
         sparks["recovery"]        = await recoverySpark
         sparks["strain"]          = await strainSpark
@@ -4719,7 +4723,7 @@ struct TodayView: View {
         let strapSteps = repo.days.suffix(14).compactMap { $0.steps.map(Double.init) }
         if !strapSteps.isEmpty { sparks["steps"] = strapSteps }
         sparks["weight"]      = await weightSpark
-        sparks["active_kcal"] = await activeKcalSpark
+        sparks["energy_kcal"] = await energyKcalSpark
 
         // Steps ESTIMATE per day (WHOOP 4.0 motion → calibrated steps), the Mi-Band series, workout +
         // Apple-daily rows, and the three "your cards" series, all history-wide (none depends on the
@@ -5385,10 +5389,14 @@ struct TodayView: View {
         }
     }
 
-    /// Active calories (Apple) for the latest day, falling back to the sparkline tail.
-    private func caloriesValue(_ a: AppleDaily?) -> String {
-        if let kcal = a?.activeKcal { return intString(kcal) }
-        return latestString("active_kcal", decimals: 0)
+    /// The selected day's TOTAL energy (#51), resolved by `DayCalories` like the Liquid Today tile: the
+    /// phone's total (active + basal) when it has one, else the stored total. Day-scoped, so a past day
+    /// never shows today's figure.
+    private func caloriesValue() -> String {
+        let phone = appleDays.filter { $0.day == selectedDayKey }
+            .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
+        let stored = displayDay.flatMap { d in d.activeKcalEst.map { [d.day: $0] } } ?? [:]
+        return DayCalories.byDay(imported: phone, stored: stored).first.map { intString($0.kcal) } ?? "—"
     }
 
     private func workoutDuration(_ w: WorkoutRow) -> String {

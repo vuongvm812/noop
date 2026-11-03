@@ -2553,11 +2553,12 @@ final class Repository: ObservableObject {
         }
     }
 
-    /// Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only the two daily
-    /// totals the strap genuinely estimates (steps, calories) , never a derived WHOOP score.
+    /// Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only steps, the one daily
+    /// total the strap estimates as the same quantity: its calorie estimate is total energy, never the
+    /// active energy an Apple metric holds (#51), and never a derived WHOOP score.
     private static func noopComputedCanFillAppleMetric(_ key: String) -> Bool {
         switch key {
-        case "steps", "active_kcal": return true
+        case "steps": return true
         default:                     return false
         }
     }
@@ -2613,6 +2614,14 @@ final class Repository: ObservableObject {
         // first so the active strap's value wins per day).
         for id in importedReadIds.reversed() {
             for p in (try? await store.metricSeries(deviceId: id, key: key, from: from, to: to)) ?? [] { byDay[p.day] = p.value }
+        }
+        // Calories (#51): the day's TOTAL energy, resolved by `DayCalories` exactly as the Today tile does —
+        // the phone's total (active + basal) where it has one, else the stored total above.
+        if key == "energy_kcal" {
+            let phone = await appleDailyRows(days: fullHistory ? 4000 : days)
+                .filter { $0.day >= from && $0.day <= to }
+                .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
+            return DayCalories.byDay(imported: phone, stored: byDay).map { (day: $0.day, value: $0.kcal) }
         }
 
         return Self.oneSkinTempScale(key: key, byDay.sorted { $0.key < $1.key }.map { (day: $0.key, value: $0.value) })
@@ -2716,7 +2725,8 @@ final class Repository: ObservableObject {
         case "sleep_light_min", "core_min": return d.lightMin
         case "sleep_performance": return AnalyticsEngine.Rest.composite(daily: d)
         case "steps":            return d.steps.map(Double.init)
-        case "active_kcal", "energy_kcal": return d.activeKcalEst
+        // Whole-day TOTAL energy (#51); "active_kcal" is the active part only and has no daily column.
+        case "energy_kcal":      return d.activeKcalEst
         default:                 return nil
         }
     }

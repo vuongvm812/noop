@@ -1206,13 +1206,19 @@ extension WhoopStore {
         // #51: one quantity in `dailyMetric.activeKcalEst`, and Garmin day counters kept per activity type.
         //
         // The column is whole-day TOTAL energy (resting + active): that is what NOOP's own estimate writes.
-        // Some imports wrote a brand's ACTIVE calories there instead (the Garmin watch sync, Oura, and on
-        // Android the wearable-export and Xiaomi importers), so a Garmin day charted ~500 kcal beside
-        // ~2,400 on a NOOP day. Those writers now store the brand's total. This repairs stored rows from
-        // the importer's own `metricSeries` points for the same device and day: a `total_kcal` point
-        // replaces the value; failing that, a value equal to that row's `energy_kcal` point (the brand's
-        // active figure) is cleared, so NOOP's computed total fills the day instead. Rows of any other
-        // origin carry neither point and are untouched.
+        // Some imports wrote a brand's ACTIVE calories there instead (the Garmin watch sync, the Oura cloud
+        // sync, and on Android the wearable-export and Xiaomi importers), so a Garmin day charted ~500 kcal
+        // beside ~2,400 on a NOOP day. Those writers now store the brand's total. This repairs stored rows
+        // from the importer's own `metricSeries` points for the same device and day: a `total_kcal` point
+        // replaces the value; failing that, on a source that writes active energy, a value equal to that
+        // row's `energy_kcal` point (the brand's active figure) is cleared, so NOOP's computed total fills
+        // the day instead. The Oura cloud sync stored no total to repair from, so its values are cleared and
+        // the next sync writes the total.
+        //
+        // `metricSeries` then names each quantity once: `energy_kcal` is total energy (WHOOP's figure),
+        // `active_kcal` active energy (Apple Health's figure). The active-energy sources (Garmin, the Oura /
+        // Fitbit exports, Xiaomi) wrote theirs under `energy_kcal`; it moves to `active_kcal`, the key those
+        // writers now use, so Explore's Calories never charts a brand's active energy as a total.
         //
         // `garminActivityPeak` is additive: one row per (device, local day, FIT activity type) holding
         // that type's largest cumulative counters, so the day's totals can be summed across files that
@@ -1234,7 +1240,11 @@ extension WhoopStore {
             + "WHERE EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId "
             + "AND m.day = dailyMetric.day AND m.key = 'total_kcal')",
         "UPDATE dailyMetric SET activeKcalEst = NULL WHERE activeKcalEst IS NOT NULL "
+            + "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%') "
             + "AND EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId "
             + "AND m.day = dailyMetric.day AND m.key = 'energy_kcal' AND m.value = dailyMetric.activeKcalEst)",
+        "UPDATE dailyMetric SET activeKcalEst = NULL WHERE deviceId = 'oura-api'",
+        "UPDATE metricSeries SET key = 'active_kcal' WHERE key = 'energy_kcal' "
+            + "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%')",
     ]
 }

@@ -28,6 +28,8 @@ public struct ScoreInputProvenanceRow: Equatable, Codable, Sendable {
 public enum Vo2MaxEstimator: String, Codable, Sendable {
     case nes
     case uth
+    /// The Garmin watch's own estimate (FIT MAX_MET_DATA), preferred when the watch has one (#51).
+    case garmin
 
     public static func forWaistCm(_ waistCm: Double) -> Self { waistCm > 0 ? .nes : .uth }
 }

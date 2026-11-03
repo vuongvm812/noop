@@ -2150,14 +2150,16 @@ object IntelligenceEngine {
         for (d in faPriorDaily) faGateByDay[d.day] = d
         for (d in dailies) faGateByDay[d.day] = d
         val faGate7 = faGateByDay.values.sortedBy { it.day }.takeLast(7)
-        val faPts = fitnessAgeRows(faGate7, profile, computedId, saturdayKeyOnOrBefore(newestDay))
+        val faSatKey = saturdayKeyOnOrBefore(newestDay)
+        val faWatchVo2 = watchVo2max(repo, importedDeviceId, faSatKey)
+        val faPts = fitnessAgeRows(faGate7, profile, computedId, faSatKey, faWatchVo2)
         // Strap-log proof: the RHR-night count the engine sees for the gate , should equal the "N of last 7
         // nights" the readiness card shows; `computed` says whether the value was (re)written this pass.
         diag("fitnessAge gate day=$newestDay rhrNights=${faGate7.mapNotNull { it.restingHr }.size} activityDays=${faGate7.mapNotNull { it.strain }.size} computed=${faPts.isNotEmpty()}")
         if (faPts.isNotEmpty()) {
             repo.upsertMetricSeriesWithProvenance(
                 rows = faPts,
-                provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId),
+                provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId, faWatchVo2),
             )
         }
 
@@ -2935,6 +2937,7 @@ object IntelligenceEngine {
      *  Fitness Age" button so the two can never drift. */
     fun fitnessAgeRows(
         gateDays: List<DailyMetric>, profile: UserProfile, computedId: String, satKey: String,
+        watchVo2max: Double? = null,
     ): List<MetricSeriesRow> {
         val rhrs = gateDays.mapNotNull { it.restingHr }.map { it.toDouble() }
         val strains = gateDays.mapNotNull { it.strain }.filter { it >= 30.0 }
@@ -2944,39 +2947,56 @@ object IntelligenceEngine {
             hasAge = profile.age > 0, hasSex = profile.sex.isNotEmpty(),
             rhrDays = rhrs.size, activityDays = gateDays.mapNotNull { it.strain }.size,
             hasHeightWeight = profile.heightCm > 0 && profile.weightKg > 0, hasWaist = waist != null)
-        if (!ready.canCompute) return emptyList()
-        val res = FitnessAgeEngine.compute(
-            age = profile.age, sex = profile.sex,
-            restingHR = medianOfDoubles(rhrs),
-            paIndex = FitnessAgeEngine.physicalActivityIndexFromStrain(strains.size, meanStrain),
-            waistCm = waist) ?: return emptyList()
-        val rows = mutableListOf(MetricSeriesRow(deviceId = computedId, day = satKey, key = "fitness_age", value = res.fitnessAge))
-        // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (null
-        // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/RHR — waist-free,
-        // the SAME formula the calorie path already uses), so any user past the age+RHR fitness-age gate gets
-        // a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka estimator (no HR history here →
-        // age-predicted); RHR = the same median the Nes value used. Both persist under "vo2max_est"; the card
-        // labels it "Estimated". Mirrors the Swift twin.
-        val vo2: Double? = res.vo2max ?: run {
-            val hrmax: Double = StrainScorer.estimateHRmax(emptyList<Double>(), profile.age).first
-            Calories.vo2maxFor(hrmax, medianOfDoubles(rhrs))
+        val rows = mutableListOf<MetricSeriesRow>()
+        var estimate: Double? = null
+        val res = if (ready.canCompute) {
+            FitnessAgeEngine.compute(
+                age = profile.age, sex = profile.sex,
+                restingHR = medianOfDoubles(rhrs),
+                paIndex = FitnessAgeEngine.physicalActivityIndexFromStrain(strains.size, meanStrain),
+                waistCm = waist)
+        } else null
+        if (res != null) {
+            rows.add(MetricSeriesRow(deviceId = computedId, day = satKey, key = "fitness_age", value = res.fitnessAge))
+            // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (null
+            // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/(RHR + 5), #51 —
+            // waist-free, the SAME formula the calorie path already uses), so any user past the age+RHR
+            // fitness-age gate gets a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka
+            // estimator (no HR history here → age-predicted); RHR = the same median the Nes value used.
+            estimate = res.vo2max ?: run {
+                val hrmax: Double = StrainScorer.estimateHRmax(emptyList<Double>(), profile.age).first
+                Calories.vo2maxFor(hrmax, medianOfDoubles(rhrs))
+            }
         }
-        if (vo2 != null) rows.add(MetricSeriesRow(deviceId = computedId, day = satKey, key = "vo2max_est", value = vo2))
+        // #51: the watch's own VO₂max ([watchVo2max], from [GarminScoringInputs.watchVo2max]) wins over NOOP's
+        // estimate, and needs no fitness-age gate: the watch measured it. Persisted under the same
+        // "vo2max_est" key; [vo2MaxProvenance] tags which one it is. Mirrors the Swift twin.
+        (watchVo2max ?: estimate)?.let {
+            rows.add(MetricSeriesRow(deviceId = computedId, day = satKey, key = "vo2max_est", value = it))
+        }
         return rows
+    }
+
+    /** The active Garmin watch's own VO₂max for the week keyed [satKey], or null for any other device (#51).
+     *  Swift twin: `IntelligenceEngine.watchVo2max`. */
+    suspend fun watchVo2max(repo: WhoopRepository, deviceId: String, satKey: String): Double? {
+        if (!FusionSource.isGarminWatchId(deviceId)) return null
+        val points = repo.metricSeries(deviceId, "vo2max", "0000-01-01", satKey).map { it.day to it.value }
+        return GarminScoringInputs.watchVo2max(points, satKey)
     }
 
     /** Method metadata for a newly computed VO₂max point. Empty when [rows] contains no VO₂max value.
      *  Method selection is captured at compute time; UI readers must never reconstruct it from today's
      *  profile because changing/removing a waist is a legitimate transition between estimators. */
     fun vo2MaxProvenance(
-        rows: List<MetricSeriesRow>, waistCm: Double, computedId: String,
+        rows: List<MetricSeriesRow>, waistCm: Double, computedId: String, watchVo2max: Double? = null,
     ): List<ScoreInputProvenanceRow> = rows.firstOrNull { it.key == "vo2max_est" }?.let { point ->
         listOf(
             ScoreInputProvenanceRow(
                 deviceId = computedId,
                 day = point.day,
                 key = point.key,
-                sourceId = Vo2MaxEstimator.forWaistCm(waistCm).provenanceId,
+                sourceId = (if (watchVo2max != null) Vo2MaxEstimator.GARMIN else Vo2MaxEstimator.forWaistCm(waistCm)).provenanceId,
             ),
         )
     }.orEmpty()
@@ -2997,11 +3017,13 @@ object IntelligenceEngine {
         val oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * SECONDS_PER_DAY, tzOffsetSeconds)
         val gate7 = repo.daysMerged(importedDeviceId)
             .filter { it.day in oldestDay..newestDay }.sortedBy { it.day }.takeLast(7)
-        val rows = fitnessAgeRows(gate7, profile, computedId, saturdayKeyOnOrBefore(newestDay))
+        val satKey = saturdayKeyOnOrBefore(newestDay)
+        val watchVo2 = watchVo2max(repo, importedDeviceId, satKey)
+        val rows = fitnessAgeRows(gate7, profile, computedId, satKey, watchVo2)
         if (rows.isNotEmpty()) {
             repo.upsertMetricSeriesWithProvenance(
                 rows = rows,
-                provenance = vo2MaxProvenance(rows, profile.waistCm, computedId),
+                provenance = vo2MaxProvenance(rows, profile.waistCm, computedId, watchVo2),
             )
         }
         return rows.isNotEmpty()

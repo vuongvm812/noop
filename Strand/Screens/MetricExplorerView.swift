@@ -390,6 +390,7 @@ func vo2MaxEstimatorDisplayName(_ estimator: Vo2MaxEstimator?) -> String {
     switch estimator {
     case .nes: return "Nes 2011"
     case .uth: return "Uth 2004"
+    case .garmin: return "Garmin"
     case nil:  return String(localized: "Unknown")
     }
 }

@@ -2953,10 +2953,11 @@ class WhoopRepository(
             else -> null
         }
 
-        /** Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only the two
-         *  daily totals the strap genuinely estimates (steps, calories) , never a derived score. */
+        /** Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only steps, the one
+         *  daily total the strap estimates as the same quantity: its calorie estimate is total energy,
+         *  never the active energy an Apple metric holds (#51), and never a derived score. */
         private fun noopComputedCanFillAppleMetric(key: String): Boolean = when (key) {
-            "steps", "active_kcal" -> true
+            "steps" -> true
             else -> false
         }
 
@@ -2991,7 +2992,8 @@ class WhoopRepository(
             "sleep_light_min", "core_min" -> d.lightMin
             "sleep_performance" -> com.noop.analytics.RestScorer.restFromDaily(d)
             "steps" -> d.steps?.toDouble()
-            "active_kcal", "energy_kcal" -> d.activeKcalEst
+            // Whole-day TOTAL energy (#51); "active_kcal" is the active part only and has no daily column.
+            "energy_kcal" -> d.activeKcalEst
             else -> null
         }
 

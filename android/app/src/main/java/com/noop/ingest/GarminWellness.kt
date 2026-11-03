@@ -11,7 +11,7 @@ package com.noop.ingest
  * Message and field numbers, scales and units are protocol facts re-derived (no code, literals or
  * fixtures copied) from Gadgetbridge's FIT profile and importer (AGPLv3, at edbea98c), per the
  * facts-vs-code rule in docs/CONTRIBUTING.md. The per-message field table is in the Swift file's
- * header. In short: 55 MONITORING, 103 MONITORING_INFO, 211 MONITORING_HR_DATA, 227 STRESS_LEVEL
+ * header. In short: 55 MONITORING, 103 MONITORING_INFO, 211 MONITORING_HR_DATA, 227 STRESS_LEVEL, 229 MAX_MET_DATA
  * (+ Body Battery), 269 SPO2_DATA, 273/274/275 sleep info / raw rows / levels, 297 RESPIRATION_RATE,
  * 346 SLEEP_ASSESSMENT, 370 HRV_STATUS_SUMMARY, 371 HRV_VALUE.
  *
@@ -36,12 +36,13 @@ data class GarminWellnessSamples(
     val monitoring: List<Monitoring> = emptyList(),
     /** Folded with [utcOffsetS], or UTC when the file carries no offset. */
     val dailyActivity: List<DailyActivity> = emptyList(),
-    val restingMetabolicRate: List<TimedInt> = emptyList(),
     val restingHeartRate: List<TimedInt> = emptyList(),
     val stress: List<TimedInt> = emptyList(),
     val bodyBattery: List<TimedInt> = emptyList(),
     val spo2: List<Spo2> = emptyList(),
     val respiration: List<TimedDouble> = emptyList(),
+    /** The watch's own VO2max estimates (MAX_MET_DATA), mL/kg/min, stamped at their update time. */
+    val vo2max: List<TimedDouble> = emptyList(),
     val sleepLevels: List<TimedInt> = emptyList(),
     /** The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop. */
     val sleepMarks: List<TimedInt> = emptyList(),
@@ -143,7 +144,7 @@ data class GarminWellnessSamples(
     )
 
     val isEmpty: Boolean
-        get() = monitoring.isEmpty() && restingMetabolicRate.isEmpty() && restingHeartRate.isEmpty() &&
+        get() = monitoring.isEmpty() && restingHeartRate.isEmpty() && vo2max.isEmpty() &&
             stress.isEmpty() && bodyBattery.isEmpty() && spo2.isEmpty() && respiration.isEmpty() &&
             sleepLevels.isEmpty() && sleepRaw.isEmpty() && sleepAssessments.isEmpty() && hrvSummaries.isEmpty() &&
             hrvValues.isEmpty() && beatIntervalsCandidate.isEmpty() && skinTempRawCandidate.isEmpty() &&
@@ -312,12 +313,12 @@ object GarminWellnessParser {
             utcOffsetS = d.utcOffsetS,
             monitoring = d.monitoring,
             dailyActivity = dailyTotals(d.monitoring, d.utcOffsetS ?: 0),
-            restingMetabolicRate = d.restingMetabolicRate,
             restingHeartRate = d.restingHeartRate,
             stress = d.stress,
             bodyBattery = d.bodyBattery,
             spo2 = d.spo2,
             respiration = d.respiration,
+            vo2max = d.vo2max,
             sleepLevels = d.sleepLevels,
             sleepMarks = d.sleepMarks,
             sleepRaw = d.sleepRaw,
@@ -413,12 +414,12 @@ object GarminWellnessParser {
 
         var utcOffsetS: Int? = null
         val monitoring = ArrayList<GarminWellnessSamples.Monitoring>()
-        val restingMetabolicRate = ArrayList<GarminWellnessSamples.TimedInt>()
         val restingHeartRate = ArrayList<GarminWellnessSamples.TimedInt>()
         val stress = ArrayList<GarminWellnessSamples.TimedInt>()
         val bodyBattery = ArrayList<GarminWellnessSamples.TimedInt>()
         val spo2 = ArrayList<GarminWellnessSamples.Spo2>()
         val respiration = ArrayList<GarminWellnessSamples.TimedDouble>()
+        val vo2max = ArrayList<GarminWellnessSamples.TimedDouble>()
         val sleepLevels = ArrayList<GarminWellnessSamples.TimedInt>()
         val sleepMarks = ArrayList<GarminWellnessSamples.TimedInt>()
         val sleepRaw = ArrayList<GarminWellnessSamples.SleepRaw>()
@@ -472,13 +473,14 @@ object GarminWellnessParser {
                     sleepMarks.add(GarminWellnessSamples.TimedInt(ts, type))
                 }
                 55 -> monitoring(m)
-                103 -> {
-                    noteOffset(m.u(0), running)
-                    if (m.u(5) == null) return
-                    val ts = unix(running)
-                    val rmr = range(m.u(5), 1, 20_000)
-                    if (ts == null || rmr == null) return drop()
-                    restingMetabolicRate.add(GarminWellnessSamples.TimedInt(ts, rmr))
+                // Field 5, resting_metabolic_rate, is not read: field 1 `calories` of the same file's
+                // MONITORING totals already includes it (#51). Swift twin: the 103 case.
+                103 -> noteOffset(m.u(0), running)
+                229 -> {
+                    val ts = unix(m.u(0) ?: running)
+                    val raw = range(m.u(2), 100, 900)
+                    if (ts == null || raw == null) return drop()
+                    vo2max.add(GarminWellnessSamples.TimedDouble(ts, raw / 10.0))
                 }
                 211 -> {
                     val ts = unix(running)

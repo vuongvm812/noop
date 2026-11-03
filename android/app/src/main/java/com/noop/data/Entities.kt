@@ -453,7 +453,10 @@ data class ScoreInputProvenanceRow(
  *  from the user's current profile because a waist measurement may have changed since they were scored. */
 enum class Vo2MaxEstimator(val provenanceId: String) {
     NES("nes"),
-    UTH("uth");
+    UTH("uth"),
+
+    /** The Garmin watch's own estimate (FIT MAX_MET_DATA), preferred when the watch has one (#51). */
+    GARMIN("garmin");
 
     companion object {
         fun fromProvenanceId(value: String?): Vo2MaxEstimator? = entries.firstOrNull {

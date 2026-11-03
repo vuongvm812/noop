@@ -1432,7 +1432,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">Перезапустить этот браслет?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Пока нечего объединять</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Ваши данные, объединённые</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Активная энергия</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">Кислород в крови</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Кислород в крови</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Влияет на ваш Фитнес-возраст</string>
@@ -2236,7 +2235,6 @@
     <string name="today_card_steps">Шаги</string>
     <string name="today_card_steps_subtitle">Сегодня</string>
     <string name="today_card_calories">Калории</string>
-    <string name="today_card_calories_subtitle">Активная энергия</string>
     <string name="today_card_stress">Стресс</string>
     <string name="today_card_stress_subtitle">Вегетативная нагрузка</string>
     <string name="today_card_fitness_age">Фитнес-возраст</string>

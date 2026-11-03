@@ -1176,13 +1176,18 @@ abstract class WhoopDatabase : RoomDatabase() {
          * migration; the statements are the same text ([WhoopStore.totalEnergyMigrationSQL]).
          *
          * The column is whole-day TOTAL energy (resting + active), which is what NOOP's own estimate
-         * writes. Some imports wrote a brand's ACTIVE calories there (the Garmin watch sync, Oura, and on
-         * Android the wearable-export and Xiaomi importers), so a Garmin day charted ~500 kcal beside
-         * ~2,400 on a NOOP day. Those writers now store the total. The two UPDATEs repair stored rows from
-         * the importer's own `metricSeries` points for the same device and day: a `total_kcal` point
-         * replaces the value; failing that, a value equal to that row's `energy_kcal` point is cleared,
-         * so NOOP's computed total fills the day. Rows of any other origin carry neither point and are
-         * untouched. The CREATE TABLE is additive and matches Room's shape for [GarminActivityPeakEntity].
+         * writes. Some imports wrote a brand's ACTIVE calories there (the Garmin watch sync, the Oura cloud
+         * sync on Swift, and the wearable-export and Xiaomi importers), so a Garmin day charted ~500 kcal
+         * beside ~2,400 on a NOOP day. Those writers now store the total. The UPDATEs repair stored rows
+         * from the importer's own `metricSeries` points for the same device and day: a `total_kcal` point
+         * replaces the value; failing that, on a source that writes active energy, a value equal to that
+         * row's `energy_kcal` point is cleared, so NOOP's computed total fills the day. The Oura cloud
+         * sync ("oura-api", Swift only) stored no total to repair from, so its values are cleared.
+         *
+         * `metricSeries` then names each quantity once: `energy_kcal` is total energy, `active_kcal` active
+         * energy. The active-energy sources (Garmin, the Oura / Fitbit exports, Xiaomi) wrote theirs under
+         * `energy_kcal`; it moves to `active_kcal`, the key those writers now use. The CREATE TABLE is
+         * additive and matches Room's shape for [GarminActivityPeakEntity].
          */
         internal val TOTAL_ENERGY_MIGRATION_SQL: List<String> = listOf(
             "CREATE TABLE IF NOT EXISTS garminActivityPeak (deviceId TEXT NOT NULL, day TEXT NOT NULL, " +
@@ -1193,8 +1198,12 @@ abstract class WhoopDatabase : RoomDatabase() {
                 "WHERE EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId " +
                 "AND m.day = dailyMetric.day AND m.key = 'total_kcal')",
             "UPDATE dailyMetric SET activeKcalEst = NULL WHERE activeKcalEst IS NOT NULL " +
+                "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%') " +
                 "AND EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId " +
                 "AND m.day = dailyMetric.day AND m.key = 'energy_kcal' AND m.value = dailyMetric.activeKcalEst)",
+            "UPDATE dailyMetric SET activeKcalEst = NULL WHERE deviceId = 'oura-api'",
+            "UPDATE metricSeries SET key = 'active_kcal' WHERE key = 'energy_kcal' " +
+                "AND (deviceId IN ('oura-api', 'oura-import', 'fitbit-import', 'xiaomi-band') OR deviceId LIKE 'garmin-%')",
         )
 
         internal val MIGRATION_43_44 = object : Migration(43, 44) {

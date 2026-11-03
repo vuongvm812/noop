@@ -1407,7 +1407,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">Starte dieses Band neu?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Noch nichts zum Zusammenführen</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Deine Daten, zusammengeführt</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Aktive Energie</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">Blut-O₂</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Blutsauerstoff</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Speist dein Fitnessalter</string>
@@ -2295,7 +2294,6 @@
     <string name="today_card_steps">Schritte</string>
     <string name="today_card_steps_subtitle">Heute</string>
     <string name="today_card_calories">Kalorien</string>
-    <string name="today_card_calories_subtitle">Aktive Energie</string>
     <string name="today_card_stress">Stress</string>
     <string name="today_card_stress_subtitle">Autonome Belastung</string>
     <string name="today_card_fitness_age">Fitnessalter</string>

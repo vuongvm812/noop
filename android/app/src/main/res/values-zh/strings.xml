@@ -1346,7 +1346,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">重启该手环？</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">暂无可融合的数据</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">您的数据融合视图</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">活动能量消耗</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">血氧饱和度 (SpO₂)</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">血氧饱和度</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">决定您的体能年龄(Fitness Age)</string>
@@ -2202,7 +2201,6 @@
     <string name="today_card_steps">步数</string>
     <string name="today_card_steps_subtitle">今天</string>
     <string name="today_card_calories">卡路里</string>
-    <string name="today_card_calories_subtitle">活动能量</string>
     <string name="today_card_stress">压力</string>
     <string name="today_card_stress_subtitle">自主神经负荷</string>
     <string name="today_card_fitness_age">体能年龄</string>

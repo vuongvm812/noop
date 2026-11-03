@@ -18,7 +18,11 @@ import Foundation
 //                           (/1000 s), 5 activity_type, 11 local_timestamp, 19 active_calories
 //                           (kcal, cumulative), 24 type+intensity (bits 0-4 type, 5-7 intensity),
 //                           26 timestamp_16, 27 heart_rate, 33/34 moderate/vigorous minutes
-//   103 MONITORING_INFO     0 local_timestamp, 5 resting_metabolic_rate (kcal/day)
+//   103 MONITORING_INFO     0 local_timestamp (the file's UTC offset). Field 5, resting_metabolic_rate, is
+//                           not read: it rides in the same files as the MONITORING totals, and field 1
+//                           `calories` already includes it, so it has no day the watch total lacks (#51).
+//   229 MAX_MET_DATA        0 update_time, 2 vo2_max (/10 mL/kg/min), the watch's own VO2max estimate.
+//                           From the public FIT SDK profile; not yet observed in a watch file here.
 //   211 MONITORING_HR_DATA  0 resting_heart_rate, 1 current_day_resting_heart_rate (preferred)
 //   227 STRESS_LEVEL        0 stress_level_value (sint16, negative = no reading), 1 stress_level_time,
 //                           3 body_energy (Body Battery, sint8)
@@ -191,12 +195,13 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public var monitoring: [Monitoring] = []
     /// Folded with `utcOffsetS`, or UTC when the file carries no offset.
     public var dailyActivity: [DailyActivity] = []
-    public var restingMetabolicRate: [TimedInt] = []
     public var restingHeartRate: [TimedInt] = []
     public var stress: [TimedInt] = []
     public var bodyBattery: [TimedInt] = []
     public var spo2: [Spo2] = []
     public var respiration: [TimedDouble] = []
+    /// The watch's own VO2max estimates (MAX_MET_DATA), mL/kg/min, stamped at their update time.
+    public var vo2max: [TimedDouble] = []
     public var sleepLevels: [TimedInt] = []
     /// The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop.
     public var sleepMarks: [TimedInt] = []
@@ -218,7 +223,7 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public init() {}
 
     public var isEmpty: Bool {
-        monitoring.isEmpty && restingMetabolicRate.isEmpty && restingHeartRate.isEmpty && stress.isEmpty
+        monitoring.isEmpty && restingHeartRate.isEmpty && stress.isEmpty && vo2max.isEmpty
             && bodyBattery.isEmpty && spo2.isEmpty && respiration.isEmpty && sleepLevels.isEmpty
             && sleepRaw.isEmpty && sleepAssessments.isEmpty && hrvSummaries.isEmpty && hrvValues.isEmpty
             && beatIntervalsCandidate.isEmpty && skinTempRawCandidate.isEmpty
@@ -513,9 +518,9 @@ public enum GarminWellnessParser {
             case 55: monitoring(m)
             case 103:
                 noteOffset(local: m.u(0), fitTs: running)
-                guard m.u(5) != nil else { return }
-                guard let ts = Self.unix(running), let rmr = Self.range(m.u(5), 1, 20_000) else { return drop() }
-                out.restingMetabolicRate.append(.init(ts: ts, value: rmr))
+            case 229:
+                guard let ts = Self.unix(m.u(0) ?? running), let raw = Self.range(m.u(2), 100, 900) else { return drop() }
+                out.vo2max.append(.init(ts: ts, value: Double(raw) / 10))
             case 211:
                 guard let ts = Self.unix(running),
                       let rhr = Self.range(m.u(1), 1, 300) ?? Self.range(m.u(0), 1, 300) else { return drop() }

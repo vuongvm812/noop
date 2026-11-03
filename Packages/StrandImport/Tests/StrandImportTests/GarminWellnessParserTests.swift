@@ -16,7 +16,6 @@ final class GarminWellnessParserTests: XCTestCase {
         mon 1731090896 type=6 int=- cyc=50 dist=- cal=10 act=- time=- hr=58 mod=0 vig=0
         day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
         day 2024-11-09 steps=50 dist=- cal=10 act=-
-        rmr 1731087296 1650
         == midnight
         offset 21600 complete true other 0 dropped 0
         mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
@@ -102,6 +101,9 @@ final class GarminWellnessParserTests: XCTestCase {
         == respiration
         offset - complete true other 0 dropped 2
         resp 1731087296 14.5000
+        == vo2max
+        offset - complete true other 0 dropped 2
+        vo2max 1731087296 52.3000
         == hrv
         offset - complete true other 0 dropped 1
         hrvsum 1731087296 40.0000,37.5000,54.6875,-,34.0000,50.0000 status=4

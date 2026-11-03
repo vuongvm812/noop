@@ -417,6 +417,16 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /** MAX_MET_DATA (229): 52.3, then one under the floor and one with no update time, both dropped. */
+        fun vo2max(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 229, listOf(Triple(0, 4, U32), Triple(2, 2, U16), Triple(9, 1, EN)))
+            f.data(0); f.u32(T); f.u16(523); f.u8(1)
+            f.data(0); f.u32(T + 86_400); f.u16(50); f.u8(1)
+            f.data(0); f.u32(0L); f.u16(480); f.u8(0)
+            return f.finish()
+        }
+
         fun hrv(): ByteArray {
             val f = WellnessFit()
             f.def(0, 370, listOf(Triple(253, 4, U32), Triple(0, 2, U16), Triple(1, 2, U16), Triple(2, 2, U16), Triple(3, 2, U16), Triple(4, 2, U16), Triple(5, 2, U16), Triple(6, 1, EN)))
@@ -485,7 +495,7 @@ class GarminWellnessParserTest {
 
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
             "monitoring" to ::monitoring, "midnight" to ::midnight, "multiSport" to ::multiSport, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
-            "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "sleepNap" to ::sleepNap, "respiration" to ::respiration, "hrv" to ::hrv,
+            "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "sleepNap" to ::sleepNap, "respiration" to ::respiration, "vo2max" to ::vo2max, "hrv" to ::hrv,
             "candidates" to ::candidates, "framing" to ::framing, "bounds" to ::bounds,
         )
 
@@ -522,12 +532,12 @@ class GarminWellnessParserTest {
             for (d in s.dailyActivity) {
                 out.add("day ${d.day} steps=${num(d.steps)} dist=${num(d.distanceM)} cal=${num(d.calories)} act=${num(d.activeCalories)}")
             }
-            for (r in s.restingMetabolicRate) out.add("rmr ${r.ts} ${r.value}")
             for (r in s.restingHeartRate) out.add("rhr ${r.ts} ${r.value}")
             for (r in s.stress) out.add("stress ${r.ts} ${r.value}")
             for (r in s.bodyBattery) out.add("bb ${r.ts} ${r.value}")
             for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent}")
             for (r in s.respiration) out.add("resp ${r.ts} ${num(r.value)}")
+            for (r in s.vo2max) out.add("vo2max ${r.ts} ${num(r.value)}")
             for (r in s.sleepLevels) out.add("level ${r.ts} ${r.value}")
             for (r in s.sleepMarks) out.add("mark ${r.ts} ${r.value}")
             for (r in s.sleepSessions) {
@@ -588,7 +598,6 @@ class GarminWellnessParserTest {
             mon 1731090896 type=6 int=- cyc=50 dist=- cal=10 act=- time=- hr=58 mod=0 vig=0
             day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
             day 2024-11-09 steps=50 dist=- cal=10 act=-
-            rmr 1731087296 1650
             == midnight
             offset 21600 complete true other 0 dropped 0
             mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
@@ -674,6 +683,9 @@ class GarminWellnessParserTest {
             == respiration
             offset - complete true other 0 dropped 2
             resp 1731087296 14.5000
+            == vo2max
+            offset - complete true other 0 dropped 2
+            vo2max 1731087296 52.3000
             == hrv
             offset - complete true other 0 dropped 1
             hrvsum 1731087296 40.0000,37.5000,54.6875,-,34.0000,50.0000 status=4

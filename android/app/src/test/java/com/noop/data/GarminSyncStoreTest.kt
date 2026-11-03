@@ -119,7 +119,7 @@ class GarminSyncStoreTest {
         store.ingest(GarminFileIngest(file(1), days = listOf(d)), id, 1)
         assertEquals(2_400.0, dailyDouble("activeKcalEst"))
         assertEquals(2_400.0, series("total_kcal"))
-        assertEquals(500.0, series("energy_kcal"))
+        assertEquals(500.0, series("active_kcal"))
     }
 
     /**
@@ -147,7 +147,7 @@ class GarminSyncStoreTest {
         assertEquals(8_000.0, series("steps"))
         assertEquals(2_500.5 + 3_600.125 + 10_000.0, series("distance_m"))
         assertEquals(2_300.0, series("total_kcal"))
-        assertEquals(850.0, series("energy_kcal"))
+        assertEquals(850.0, series("active_kcal"))
         assertEquals(3, count("garminActivityPeak"))
     }
 

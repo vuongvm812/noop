@@ -574,7 +574,7 @@ final class IntelligenceEngine: ObservableObject {
     /// Mirrors the Android `IntelligenceEngine.fitnessAgeRows`.
     static func fitnessAgeRows(
         gateDays: [DailyMetric], age: Int, sex: String, waistCm: Double, heightCm: Double, weightKg: Double,
-        computedId: String, satKey: String,
+        computedId: String, satKey: String, watchVo2max: Double? = nil,
     ) -> [MetricPoint] {
         let rhrs = gateDays.compactMap { $0.restingHr }.map(Double.init)
         let strains = gateDays.compactMap { $0.strain }.filter { $0 >= 30 }
@@ -584,38 +584,52 @@ final class IntelligenceEngine: ObservableObject {
             hasAge: age > 0, hasSex: !sex.isEmpty,
             rhrDays: rhrs.count, activityDays: gateDays.compactMap { $0.strain }.count,
             hasHeightWeight: heightCm > 0 && weightKg > 0, hasWaist: waist != nil)
-        guard ready.canCompute,
-              let res = FitnessAgeEngine.compute(
+        var rows: [MetricPoint] = []
+        var estimate: Double?
+        if ready.canCompute,
+           let res = FitnessAgeEngine.compute(
                 age: Double(age), sex: sex,
                 restingHR: medianOf(rhrs),
                 paIndex: FitnessAgeEngine.physicalActivityIndexFromStrain(
                     activeDaysPerWeek: strains.count, meanActiveStrain: meanStrain),
-                waistCm: waist) else { return [] }
-        var rows = [MetricPoint(day: satKey, key: "fitness_age", value: res.fitnessAge)]
-        // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (nil
-        // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/RHR — waist-free,
-        // the SAME formula the calorie path already uses), so any user past the age+RHR fitness-age gate gets
-        // a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka estimator (no HR history here →
-        // age-predicted); RHR = the same median the Nes value used. Both persist under "vo2max_est"; the card
-        // labels it "Estimated". Mirrors the Android twin.
-        let vo2 = res.vo2max
-            ?? Calories.vo2maxFor(hrmax: StrainScorer.estimateHRmax([], age: Double(age)).0, restingHR: medianOf(rhrs))
-        if let v = vo2 { rows.append(MetricPoint(day: satKey, key: "vo2max_est", value: v)) }
+                waistCm: waist) {
+            rows.append(MetricPoint(day: satKey, key: "fitness_age", value: res.fitnessAge))
+            // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (nil
+            // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/(RHR + 5), #51 —
+            // waist-free, the SAME formula the calorie path already uses), so any user past the age+RHR
+            // fitness-age gate gets a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka
+            // estimator (no HR history here → age-predicted); RHR = the same median the Nes value used.
+            estimate = res.vo2max
+                ?? Calories.vo2maxFor(hrmax: StrainScorer.estimateHRmax([], age: Double(age)).0, restingHR: medianOf(rhrs))
+        }
+        // #51: the watch's own VO₂max (`watchVo2max`, from `GarminScoringInputs.watchVo2max`) wins over
+        // NOOP's estimate, and needs no fitness-age gate: the watch measured it. Persisted under the same
+        // "vo2max_est" key; `vo2MaxProvenance` tags which one it is. Mirrors the Android twin.
+        if let v = watchVo2max ?? estimate { rows.append(MetricPoint(day: satKey, key: "vo2max_est", value: v)) }
         return rows
     }
 
     /// Method metadata for a newly computed VO₂max point. Empty when `points` contains no VO₂max value.
     /// Method selection is captured at compute time; UI readers must never reconstruct it from today's
     /// profile because changing/removing a waist is a legitimate transition between estimators.
+    /// `watchVo2max` is the value `fitnessAgeRows` was given, so the tag names the watch exactly when its
+    /// value was the one written.
     static func vo2MaxProvenance(
-        points: [MetricPoint], waistCm: Double
+        points: [MetricPoint], waistCm: Double, watchVo2max: Double? = nil
     ) -> [ScoreInputProvenanceRow] {
         guard let point = points.first(where: { $0.key == "vo2max_est" }) else { return [] }
         return [ScoreInputProvenanceRow(
             day: point.day,
             key: point.key,
-            sourceId: Vo2MaxEstimator.forWaistCm(waistCm).rawValue
+            sourceId: (watchVo2max != nil ? Vo2MaxEstimator.garmin : Vo2MaxEstimator.forWaistCm(waistCm)).rawValue
         )]
+    }
+
+    /// The active Garmin watch's own VO₂max for the week keyed `satKey`, or nil for any other device (#51).
+    func watchVo2max(store: WhoopStore, satKey: String) async -> Double? {
+        guard FusionSource.isGarminWatchId(deviceId) else { return nil }
+        let points = (try? await store.metricSeries(deviceId: deviceId, key: "vo2max", from: "0000-01-01", to: satKey)) ?? []
+        return GarminScoringInputs.watchVo2max(points.map { (day: $0.day, value: $0.value) }, weekKey: satKey)
     }
 
     /// Manual "refresh Fitness Age" (the button on the not-ready card): recompute the weekly Fitness Age NOW
@@ -633,14 +647,16 @@ final class IntelligenceEngine: ObservableObject {
         let oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * 86_400, offsetSec: tzOffset)
         let gate7 = Array((await repo.dailyMetrics(fromDay: oldestDay, toDay: newestDay))
             .sorted { $0.day < $1.day }.suffix(7))
+        let satKey = Self.saturdayKey(onOrBefore: newestDay)
+        let watchVo2 = await watchVo2max(store: store, satKey: satKey)
         let rows = Self.fitnessAgeRows(
             gateDays: gate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
-            satKey: Self.saturdayKey(onOrBefore: newestDay))
+            satKey: satKey, watchVo2max: watchVo2)
         if !rows.isEmpty {
             try? await store.persistMetricSeriesWithProvenance(
                 points: rows,
-                provenance: Self.vo2MaxProvenance(points: rows, waistCm: profile.waistCm),
+                provenance: Self.vo2MaxProvenance(points: rows, waistCm: profile.waistCm, watchVo2max: watchVo2),
                 deviceId: computedId
             )
         }
@@ -2685,14 +2701,16 @@ final class IntelligenceEngine: ObservableObject {
         for d in faPriorDaily { faGateByDay[d.day] = d }
         for d in dailies { faGateByDay[d.day] = d }
         let faGate7 = Array(faGateByDay.values.sorted { $0.day < $1.day }.suffix(7))
+        let faSatKey = IntelligenceEngine.saturdayKey(onOrBefore: newestDay)
+        let faWatchVo2 = await watchVo2max(store: store, satKey: faSatKey)
         let faPts = Self.fitnessAgeRows(
             gateDays: faGate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
-            satKey: IntelligenceEngine.saturdayKey(onOrBefore: newestDay))
+            satKey: faSatKey, watchVo2max: faWatchVo2)
         if !faPts.isEmpty {
             try? await store.persistMetricSeriesWithProvenance(
                 points: faPts,
-                provenance: Self.vo2MaxProvenance(points: faPts, waistCm: profile.waistCm),
+                provenance: Self.vo2MaxProvenance(points: faPts, waistCm: profile.waistCm, watchVo2max: faWatchVo2),
                 deviceId: computedId
             )
         }

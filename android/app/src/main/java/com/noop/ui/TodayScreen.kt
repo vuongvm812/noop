@@ -681,29 +681,20 @@ fun TodayScreen(
         }
     }
 
-    // #616: ONE calorie definition across the card, the Key-Metrics tile and the detail — resolve per day,
-    // IMPORTED-FIRST (the phone's Apple/Health-Connect activeKcal, the figure these surfaces already showed),
-    // falling back to NOOP's on-device HR estimate (activeKcalEst) only for days the phone didn't cover.
-    // Keyed by day; `caloriesByDay` feeds the SELECTED-day value the dashboard card + Key-Metrics tile both
-    // read — day-scoped like every other card, and like steps.
+    // #616 / #51: ONE calorie figure across the card, the Key-Metrics tile and the detail: the day's TOTAL
+    // energy, resolved per day by [com.noop.analytics.DayCalories] (the phone's Apple/Health-Connect total,
+    // active + basal, else the stored total). `caloriesByDay` feeds the SELECTED-day value the dashboard
+    // card + Key-Metrics tile both read, day-scoped like every other card. The detail reads the same
+    // resolver ([caloriesReadings]).
     var caloriesByDay by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
     LaunchedEffect(days) {
         caloriesByDay = runCatching {
-            val onDevice = viewModel.repo.resolvedSeries("active_kcal", "my-whoop", "0000-00-00", "9999-99-99",
-                strapDeviceId = viewModel.activeStrapId).points.associate { it.day to it.value }
-            val imported = LinkedHashMap<String, Double>()
-            for (r in viewModel.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +
-                viewModel.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31")) {
-                r.activeKcal?.takeIf { it > 0 }?.let { imported.putIfAbsent(r.day, it) }
-            }
-            (onDevice.keys + imported.keys)
-                .mapNotNull { day -> (imported[day] ?: onDevice[day])?.let { day to it } }.toMap()
+            caloriesReadings(viewModel.repo, viewModel.activeStrapId).associate { it.day to it.value }
         }.getOrDefault(emptyMap())
     }
 
-    // #616: the Calories tile's 14-day sparkline — the IMPORTED-FIRST resolved series (caloriesByDay),
-    // windowed to the trailing calendar window, so a Health-Connect / Apple-only calorie user gets a trend
-    // that matches the tile's value (not the on-device estimate alone). Mirrors restCompositeSpark's build.
+    // #616: the Calories tile's 14-day sparkline: the resolved series (caloriesByDay), windowed to the
+    // trailing calendar window, so it matches the tile's value. Mirrors restCompositeSpark's build.
     var caloriesSpark by remember { mutableStateOf<List<Double>>(emptyList()) }
     LaunchedEffect(caloriesByDay, selectedDay, keyMetricsWindowDays) {
         val cutoff = selectedDay.minusDays((keyMetricsWindowDays - 1).toLong()).toString()
@@ -4332,7 +4323,7 @@ internal fun dashboardCardMetricKey(card: DashboardCard): String? = when (card) 
     DashboardCard.VO2MAX -> "vo2max_est"
     DashboardCard.VITALITY -> "vitality"
     DashboardCard.STEPS, DashboardCard.STEPS_AVERAGE_30 -> "steps_est"
-    DashboardCard.CALORIES -> "active_kcal"
+    DashboardCard.CALORIES -> "energy_kcal"
     // These carry their own full screen, not a per-metric trend.
     DashboardCard.STRESS, DashboardCard.SLEEP, DashboardCard.HYDRATION, DashboardCard.COUPLED,
     // #1862: a launcher row, not a metric — no explorer key.
@@ -5969,12 +5960,11 @@ private fun MetricGrid(
     profileWeightKg: Double = 75.0,
     importedStepsForDay: Int? = null,
     estimatedStepsForDay: Int? = null,
-    // #616: the selected day's calorie value resolved imported-first (imported Apple/Health-Connect
-    // activeKcal ?: NOOP's on-device estimate), so the Calories tile matches the card + detail instead of
-    // reading the on-device estimate alone (which left it NO_DATA / inconsistent). Mirrors the steps params.
+    // #616 / #51: the selected day's TOTAL energy ([com.noop.analytics.DayCalories]), so the Calories tile
+    // matches the card + detail. Mirrors the steps params.
     caloriesForDay: Double? = null,
-    // #616: the Calories tile's imported-first 14-day trend (see caloriesSpark above) — threaded like
-    // restSpark because it isn't a plain DailyMetric column (it unions the imported + on-device series).
+    // #616: the Calories tile's 14-day trend (see caloriesSpark above), threaded like restSpark because it
+    // isn't a plain DailyMetric column (it unions the phone and stored series).
     caloriesSpark: List<Double> = emptyList(),
     // #316 / @63, the selected day's representative activity class (0=still, 1=walk, 2=run), shown as a small
     // still/walk/run glyph on a REAL (measured) Steps tile. null hides the icon (no classed sample for the day).
@@ -6159,16 +6149,16 @@ private fun MetricGrid(
             )
         },
         KeyMetric.CALORIES to run {
-            // #616: the per-day resolved calorie value (caloriesForDay = imported Apple/Health-Connect
-            // first, else NOOP's on-device estimate) — one number across tile, card and detail.
+            // #616 / #51: the day's resolved TOTAL energy (caloriesForDay, [com.noop.analytics.DayCalories]),
+            // one number across tile, card and detail.
             val kcal = caloriesForDay
             KeyTileData(
                 label = uiString(R.string.l10n_today_screen_calories_3e62ecfe),
                 value = kcal?.let { intString(it) } ?: NO_DATA,
                 unit = if (kcal != null) "kcal" else "",
                 tint = Palette.metricAmber,
-                frac = kcal?.let { (it / 800.0).coerceIn(0.0, 1.0) },
-                spark = caloriesSpark,   // #616: imported-first trend (was missing → no trend line)
+                frac = kcal?.let { (it / com.noop.analytics.DayCalories.TILE_SCALE_KCAL).coerceIn(0.0, 1.0) },
+                spark = caloriesSpark,   // #616: the resolved trend (was missing → no trend line)
             )
         },
         KeyMetric.SKIN_TEMP to run {
@@ -6212,7 +6202,7 @@ private fun MetricGrid(
         KeyMetric.BLOOD_OXYGEN -> ({ onOpenMetric("spo2") })
         KeyMetric.RESPIRATORY -> ({ onOpenMetric("resp") })
         KeyMetric.STEPS -> if (stepsOpenCalibration) onOpenStepsCalibration else ({ onOpenMetric("steps_est") })
-        KeyMetric.CALORIES -> ({ onOpenMetric("active_kcal") })
+        KeyMetric.CALORIES -> ({ onOpenMetric("energy_kcal") })
         KeyMetric.WEIGHT -> null
         // Same "skin" vital_detail key `dashboardCardMetricKey(DashboardCard.SKIN_TEMP)` already routes
         // to — confirmed a working destination there, so this tile opens the SAME screen "Your Cards"

@@ -99,6 +99,9 @@ object GarminWatchIngest {
         for (a in s.sleepAssessments.sortedBy { it.ts }) {
             val key = dayOf(a.ts); days[key] = day(key).copy(sleepScore = a.overallScore)
         }
+        for (v in s.vo2max.sortedBy { it.ts }) {
+            val key = dayOf(v.ts); days[key] = day(key).copy(vo2max = v.value)
+        }
         for (m in deviceMetric) {
             val key = dayOf(m.ts); days[key] = day(key)
         }

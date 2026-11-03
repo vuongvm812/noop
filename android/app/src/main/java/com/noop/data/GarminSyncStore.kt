@@ -65,6 +65,8 @@ data class GarminDayRollup(
     /** Asleep / (asleep + awake) as a 0-1 fraction, the unit of `dailyMetric.efficiency` (#49). */
     val efficiency: Double? = null,
     val sleepScore: Int? = null,
+    /** The watch's own VO2max estimate (mL/kg/min), its latest update that day (#51). */
+    val vo2max: Double? = null,
 )
 
 /** One night as the ingest writes it to `sleepSession`. */
@@ -339,18 +341,18 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                 "ELSE MAX(excluded.activeKcalEst, dailyMetric.activeKcalEst) END",
             deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin, d.remMin, d.lightMin,
             // activeKcalEst is whole-day TOTAL energy on every source (#51): the watch's total, resting
-            // metabolic rate included. Its active calories stay in the energy_kcal series.
+            // metabolic rate included. Its active calories stay in the active_kcal series.
             d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.totalKcal,
         )
 
         val points = listOf(
-            "steps" to d.steps?.toDouble(), "distance_m" to d.distanceM, "energy_kcal" to d.activeKcal,
+            "steps" to d.steps?.toDouble(), "distance_m" to d.distanceM, "active_kcal" to d.activeKcal,
             "total_kcal" to d.totalKcal, "rhr" to d.restingHr?.toDouble(), "hrv" to d.avgHrvMs,
             GARMIN_STRESS_KEY to stress,
             "body_battery_min" to bbMin, "body_battery_max" to bbMax,
             "sleep_total_min" to d.totalSleepMin, "sleep_deep_min" to d.deepMin,
             "sleep_light_min" to d.lightMin, "sleep_rem_min" to d.remMin, "sleep_awake_min" to d.awakeMin,
-            "ref_sleep_score" to d.sleepScore?.toDouble(),
+            "ref_sleep_score" to d.sleepScore?.toDouble(), "vo2max" to d.vo2max,
         )
         for ((key, value) in points) {
             if (value == null || !value.isFinite()) continue
@@ -372,7 +374,7 @@ class GarminSyncStore(private val db: WhoopDatabase) {
 
     companion object {
         /** `metricSeries` keys that merge with MAX (cumulative counters). Swift twin: `garminMaxKeys`. */
-        val MAX_KEYS = setOf("steps", "distance_m", "energy_kcal", "total_kcal")
+        val MAX_KEYS = setOf("steps", "distance_m", "active_kcal", "total_kcal")
 
         /**
          * The day's average of the watch's own 0-100 stress score. NOT "stress": that key carries WHOOP's 0-3

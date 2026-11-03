@@ -300,7 +300,7 @@ class HomeLocalizationTest(unittest.TestCase):
             "today_card_blood_oxygen": "Blood Oxygen", "today_card_blood_oxygen_subtitle": "Blood oxygen",
             "today_card_skin_temp": "Skin Temp", "today_card_skin_temp_subtitle": "Skin temperature",
             "today_card_sleep": "Sleep", "today_card_sleep_subtitle": "Last night",
-            "today_card_calories": "Calories", "today_card_calories_subtitle": "Active energy",
+            "today_card_calories": "Calories",
             "today_card_hydration": "Hydration", "today_card_hydration_subtitle": "Today's fluid",
             "today_card_coupled": "Coupled view",
             "today_card_coupled_subtitle": "Recovery, strain and sleep in one glance",

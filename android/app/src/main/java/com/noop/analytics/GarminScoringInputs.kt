@@ -127,6 +127,22 @@ object GarminScoringInputs {
      */
     const val EFFORT_VALIDATED = true
 
+    /** How long a watch VO2max still stands for a week (#51). The watch re-estimates it only after an
+     *  activity that qualifies, so its latest value is its current one for weeks at a time. */
+    const val WATCH_VO2MAX_MAX_AGE_DAYS = 28
+
+    /**
+     * The watch's own VO2max for the week keyed [weekKey] ("yyyy-MM-dd"): its latest positive point on or
+     * before that day and within [WATCH_VO2MAX_MAX_AGE_DAYS] of it, or null. The VO2max card prefers it
+     * over NOOP's estimate ([IntelligenceEngine.fitnessAgeRows]). Swift twin: `GarminScoringInputs.watchVo2max`.
+     */
+    fun watchVo2max(points: List<Pair<String, Double>>, weekKey: String): Double? {
+        val week = runCatching { java.time.LocalDate.parse(weekKey) }.getOrNull() ?: return null
+        val from = week.minusDays((WATCH_VO2MAX_MAX_AGE_DAYS - 1).toLong()).toString()
+        return points.filter { (day, v) -> day >= from && day <= weekKey && v > 0.0 && v.isFinite() }
+            .maxByOrNull { it.first }?.second
+    }
+
     /** True when an Effort whose inputs came from [sourceId] (registry [brand]) carries the experimental label. */
     fun effortIsExperimental(sourceId: String, brand: String?): Boolean {
         if (EFFORT_VALIDATED) return false

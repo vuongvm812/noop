@@ -59,7 +59,7 @@ enum class DashboardCard(
     BLOOD_OXYGEN("bloodOxygen", R.string.today_card_blood_oxygen, R.string.today_card_blood_oxygen_subtitle, "", Icons.Filled.WaterDrop),
     SKIN_TEMP("skinTemp", R.string.today_card_skin_temp, R.string.today_card_skin_temp_subtitle, "", Icons.Filled.Thermostat),
     SLEEP("sleep", R.string.today_card_sleep, R.string.today_card_sleep_subtitle, "", Icons.Filled.Bedtime),
-    CALORIES("calories", R.string.today_card_calories, R.string.today_card_calories_subtitle, "kcal", Icons.Filled.LocalFireDepartment),
+    CALORIES("calories", R.string.today_card_calories, R.string.today_card_steps_subtitle, "kcal", Icons.Filled.LocalFireDepartment),
     HYDRATION("hydration", R.string.today_card_hydration, R.string.today_card_hydration_subtitle, "", Icons.Filled.LocalDrink),
 
     // Optional, default-OFF (task #43): a tap-through to the Coupled view (the WHOOP-style day read). Unlike
