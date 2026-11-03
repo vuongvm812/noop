@@ -3582,6 +3582,19 @@ final class Repository: ObservableObject {
                                            maxHR: maxHR)
     }
 
+    /// What the watch that recorded a workout reported about it (Training Effect, training load, intensity
+    /// minutes), read from `deviceMetricSample` over [from, to] under the row's own source id, which is the
+    /// watch's device id for a synced Garmin activity and `activity-file` for an imported FIT file. nil when
+    /// that source stored none. Kotlin twin: `AppViewModel.workoutWatchReference`.
+    func workoutWatchReference(from: Int, to: Int, source: String) async -> WorkoutWatchReference? {
+        guard to > from, !source.isEmpty, let store = await ensureStore() else { return nil }
+        var samples: [DeviceMetricSample] = []
+        for kind in WorkoutWatchReference.kinds {
+            samples += (try? await store.deviceMetricSamples(deviceId: source, kind: kind, from: from, to: to)) ?? []
+        }
+        return WorkoutWatchReference.summarize(samples)
+    }
+
     /// Apple Health daily aggregates (steps/energy/vo2/hr).
     func appleDailyRows(days: Int = 4000) async -> [AppleDaily] {
         guard let store = await ensureStore() else { return [] }

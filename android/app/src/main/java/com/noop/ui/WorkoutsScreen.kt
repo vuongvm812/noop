@@ -129,6 +129,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.noop.analytics.WorkoutSport
 import com.noop.analytics.HeartRateRecovery
+import com.noop.analytics.WorkoutWatchReference
 import com.noop.data.WorkoutRow
 import java.time.Instant
 import java.time.ZoneId
@@ -1473,6 +1474,8 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
     var zoneMinutes by remember(row.startTs) { mutableStateOf<List<Double>?>(null) }
     var zonesFromImport by remember(row.startTs) { mutableStateOf(false) }
     var heartRateRecovery by remember(row.startTs) { mutableStateOf<HeartRateRecovery.Result?>(null) }
+    // What the recording watch reported about this session; null for every non-Garmin workout.
+    var watchReference by remember(row.startTs) { mutableStateOf<WorkoutWatchReference?>(null) }
     // Steps for an on-foot sport (#398): the strap's own counter over the window, computed at display time
     // so it "fills in after sync". null for non-foot sports or when no strap counter covers the window.
     var steps by remember(row.startTs) { mutableStateOf<Int?>(null) }
@@ -1492,6 +1495,7 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
             zonesFromImport = false
         }
         heartRateRecovery = vm.workoutHeartRateRecovery(row.startTs, row.endTs, row.source, row.deviceId)
+        watchReference = vm.workoutWatchReference(row.startTs, row.endTs, row.deviceId)
     }
 
     ModalBottomSheet(
@@ -1662,6 +1666,11 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
                 HeartRateRecoveryCard(it)
             }
 
+            watchReference?.let {
+                CardDivider()
+                WatchReferenceCard(it)
+            }
+
             // Export the recorded GPS route as a GPX/FIT file (Strava / Garmin Connect / any GPS app).
             // Only when a route with a drawable path was recorded; the file is built on-device and shared.
             row.routePolyline?.let { poly ->
@@ -1737,6 +1746,55 @@ private fun HeartRateRecoveryCard(result: HeartRateRecovery.Result) {
                 CardDivider()
                 Text(
                     uiString(R.string.l10n_workouts_screen_hrr_explanation_516),
+                    style = NoopType.footnote,
+                    color = Palette.textTertiary,
+                )
+            }
+        }
+    }
+}
+
+/** The recording watch's own figures for the session (#54), shown as reference values beside NOOP's
+ *  numbers. Only what the watch reported appears. Swift twin: `WorkoutDetailView.watchReferenceCard`. */
+@Composable
+private fun WatchReferenceCard(ref: WorkoutWatchReference) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(
+            title = uiString(R.string.workout_watch_reference_title),
+            overline = uiString(R.string.workout_watch_reference_overline),
+        )
+        NoopCard(tint = Palette.effortColor) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Metrics.space12)) {
+                    ref.aerobicTrainingEffect?.let {
+                        MiniStat(uiString(R.string.workout_watch_reference_aerobic_te), String.format(Locale.US, "%.1f", it),
+                            Modifier.weight(1f), tint = Palette.effortColor)
+                    }
+                    ref.anaerobicTrainingEffect?.let {
+                        MiniStat(uiString(R.string.workout_watch_reference_anaerobic_te), String.format(Locale.US, "%.1f", it),
+                            Modifier.weight(1f), tint = Palette.metricRose)
+                    }
+                    ref.trainingLoad?.let {
+                        MiniStat(uiString(R.string.workout_watch_reference_training_load), it.roundToInt().toString(),
+                            Modifier.weight(1f), tint = Palette.metricAmber)
+                    }
+                }
+                ref.intensityMinutes?.let { minutes ->
+                    MiniStat(uiString(R.string.workout_watch_reference_intensity_minutes), minutes.roundToInt().toString(),
+                        tint = Palette.metricCyan)
+                    Text(
+                        uiString(
+                            R.string.workout_watch_reference_intensity_split,
+                            (ref.moderateMinutes ?: 0.0).roundToInt(),
+                            (ref.vigorousMinutes ?: 0.0).roundToInt(),
+                        ),
+                        style = NoopType.footnote,
+                        color = Palette.textSecondary,
+                    )
+                }
+                CardDivider()
+                Text(
+                    uiString(R.string.workout_watch_reference_explanation),
                     style = NoopType.footnote,
                     color = Palette.textTertiary,
                 )

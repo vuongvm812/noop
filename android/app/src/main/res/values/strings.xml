@@ -2980,4 +2980,12 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">not yet</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">Ingested in NOOP: %1$d files</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">Per-message detail goes to the strap log while the Connection or Sources test mode is on.</string>
+    <string name="workout_watch_reference_title">Watch Reference</string>
+    <string name="workout_watch_reference_overline">Reported by your watch</string>
+    <string name="workout_watch_reference_aerobic_te">Aerobic TE</string>
+    <string name="workout_watch_reference_anaerobic_te">Anaerobic TE</string>
+    <string name="workout_watch_reference_training_load">Training Load</string>
+    <string name="workout_watch_reference_intensity_minutes">Intensity Minutes</string>
+    <string name="workout_watch_reference_intensity_split">%1$d moderate · %2$d vigorous</string>
+    <string name="workout_watch_reference_explanation">Figures your watch computed for this session. Training Effect runs from 0 to 5, training load is based on EPOC, and a vigorous minute counts twice toward intensity minutes. NOOP shows them for reference and does not use them in Effort or Charge.</string>
 </resources>

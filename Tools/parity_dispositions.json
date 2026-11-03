@@ -997,6 +997,14 @@
       "platform": "kotlin",
       "rationale": "restoreCachedNightMaps repopulates the per-day maps pass 2 reads when the day-scan cache reuses a night. The Swift engine reuses the cached DayScan value directly in analyzeRecent in Strand/Data/IntelligenceEngine.swift, outside the ledger's scope. Lifted out of analyzeRecentOnCpu unchanged (vuongvm812/noop#54) only to keep that method inside its #1524 bytecode budget.",
       "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/WorkoutWatchReference.swift::kinds",
+      "identity_sha256": "3c23b11461d968bab207cf2777b59fead6ebf267577ffa36bec866c6ea99b65f",
+      "platform": "swift",
+      "rationale": "Its Kotlin twin is the companion-object `val WorkoutWatchReference.kinds`; the ledger inventories only Kotlin `const val`, which cannot hold a list. Both lists are pinned to the same wire values by WorkoutWatchReferenceTests and WorkoutWatchReferenceTest."
     }
   ]
 }

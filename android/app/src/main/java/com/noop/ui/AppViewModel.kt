@@ -2316,6 +2316,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    /** What the watch that recorded a workout reported about it (Training Effect, training load, intensity
+     *  minutes), read from `deviceMetricSample` over `[from, to]` under the row's own device id: the watch for
+     *  a synced Garmin activity, `activity-file` for an imported FIT file. null when that device stored none.
+     *  Swift twin: `Repository.workoutWatchReference`. */
+    suspend fun workoutWatchReference(from: Long, to: Long, rowDeviceId: String): com.noop.analytics.WorkoutWatchReference? {
+        if (to <= from || rowDeviceId.isEmpty()) return null
+        val samples = com.noop.analytics.WorkoutWatchReference.kinds.flatMap { kind ->
+            runCatching { repository.deviceMetricSamples(rowDeviceId, kind, from, to) }.getOrDefault(emptyList())
+                .map { com.noop.data.DeviceMetricRow(it.ts, kind, it.value, it.source) }
+        }
+        return com.noop.analytics.WorkoutWatchReference.summarize(samples)
+    }
+
     /** Steps over a manual-workout window `[from, to]` from the strap's own `step_motion_counter@57`
      *  (#398): the shared wrap-aware `StepsCounter` delta-sum, then the per-user `stepTicksPerStep`
      *  calibration the daily total applies (#139, floor 0.5). null when no strap counter covers the window

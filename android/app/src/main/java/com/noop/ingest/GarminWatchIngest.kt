@@ -27,6 +27,21 @@ object GarminWatchIngest {
     const val SOURCE_HRV = "fit371"
     const val SOURCE_SLEEP_SCORE = "fit346"
     const val SOURCE_INTENSITY = "fit55"
+    const val SOURCE_SESSION = "fit18"
+
+    /**
+     * The watch's own reference values for one decoded activity (Training Effect and training load from the
+     * FIT session), as `deviceMetricSample` rows stamped at the workout start. The workout detail reads them
+     * back over the workout window; nothing scores from them. Swift twin: `GarminWatchIngest.activityReference`.
+     */
+    fun activityReference(a: ActivityFileImporter.Activity): List<DeviceMetricRow> =
+        listOf(
+            DeviceMetricKind.AEROBIC_TRAINING_EFFECT to a.aerobicTrainingEffect,
+            DeviceMetricKind.ANAEROBIC_TRAINING_EFFECT to a.anaerobicTrainingEffect,
+            DeviceMetricKind.TRAINING_LOAD to a.trainingLoad,
+        ).mapNotNull { (kind, value) ->
+            value?.takeIf { it.isFinite() }?.let { DeviceMetricRow(a.startTs, kind, it, SOURCE_SESSION) }
+        }
 
     /** Heart rates outside this range are sensor sentinels (0, 255), not beats. */
     private val HR_RANGE = 25..240

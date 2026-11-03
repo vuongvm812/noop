@@ -13,7 +13,8 @@ import WhoopStore
 ///   transaction (`WhoopStore.ingestGarminFile`).
 /// - ACTIVITY files go through the existing workout path (`ActivityFileImporter`, the same parse the
 ///   manual workout-file import uses), stored under the watch's own device id, then recorded. A GPS
-///   route goes to `RouteStore` under the row's natural key, so the workout detail draws its map.
+///   route goes to `RouteStore` under the row's natural key, so the workout detail draws its map; the
+///   watch's Training Effect and training load go to `deviceMetricSample` for the same detail.
 /// Kotlin twin: `GarminHistoryIngest` (android/.../data/GarminHistoryIngest.kt).
 enum GarminHistoryIngest {
 
@@ -134,9 +135,11 @@ enum GarminHistoryIngest {
             notes: activity.importNote(),
             steps: activity.steps)
         try await store.upsertWorkouts([row], deviceId: deviceId)
-        if !activity.hrSamples.isEmpty {
-            _ = try await store.insert(Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) }),
-                                       deviceId: deviceId)
+        // The per-sample HR, plus the watch's Training Effect and training load for the workout detail.
+        let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
+                              deviceMetric: GarminWatchIngest.activityReference(activity))
+        if !streams.isEmpty {
+            _ = try await store.insert(streams, deviceId: deviceId)
         }
         let route = workoutRoute(from: activity)
         log("Garmin: stored workout \(row.sport) \(row.startTs)-\(row.endTs) hr=\(activity.hrSamples.count) "

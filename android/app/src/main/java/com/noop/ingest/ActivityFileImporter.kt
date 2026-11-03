@@ -7,6 +7,7 @@ import com.noop.analytics.RouteMath
 import com.noop.data.DailyMetric
 import com.noop.data.HrSample
 import com.noop.data.ImportSummary
+import com.noop.data.StreamBatch
 import com.noop.data.WhoopRepository
 import com.noop.data.WorkoutRow
 import org.xmlpull.v1.XmlPullParser
@@ -91,6 +92,12 @@ object ActivityFileImporter {
         // appear here (a sample with no time can't key into the (deviceId, ts) HR store), so in general
         // hrSamples.size <= hrSampleCount. Defaulted so the no-data build paths need no change.
         val hrSamples: List<HrPoint> = emptyList(),
+        /** The watch's own aerobic Training Effect (FIT session, 0.0-5.0), a reference value; null when absent. */
+        val aerobicTrainingEffect: Double? = null,
+        /** The watch's own anaerobic Training Effect (FIT session, 0.0-5.0), a reference value. */
+        val anaerobicTrainingEffect: Double? = null,
+        /** The watch's own EPOC-based training load for the activity (FIT session), a reference value. */
+        val trainingLoad: Double? = null,
     ) {
         val durationS: Double? get() = (endTs - startTs).takeIf { it > 0 }?.toDouble()
 
@@ -235,6 +242,10 @@ object ActivityFileImporter {
         if (activity.hrSamples.isNotEmpty()) {
             repo.insertHr(activity.hrSamples.map { HrSample(deviceId = deviceId, ts = it.ts, bpm = it.bpm) })
         }
+        // The watch's own Training Effect / training load (a FIT session's reference values), so the workout
+        // detail can show them.
+        val reference = GarminWatchIngest.activityReference(activity)
+        if (reference.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = reference), deviceId)
         // #1058: recompute the day's activity-file step total as the SUM over ALL that day's sessions
         // (each now carries its own steps), so a second file for the same day ADDS to the first instead
         // of clobbering it. Idempotent on re-import: the file's workout row (keyed on startTs+sport) is
@@ -618,6 +629,9 @@ internal class FitDecoder(private val raw: ByteArray) {
     private var sessionAscent: Double? = null
     private var sessionAvgHr: Int? = null
     private var sessionMaxHr: Int? = null
+    private var sessionAerobicTE: Double? = null
+    private var sessionAnaerobicTE: Double? = null
+    private var sessionTrainingLoad: Double? = null
 
     private var lapDistanceSum = 0.0
     private var lapCalorieSum = 0.0
@@ -695,6 +709,10 @@ internal class FitDecoder(private val raw: ByteArray) {
                 22 -> u(off, f.size, def.bigEndian)?.let { if (it != 0xFFFFL) sessionAscent = it.toDouble() }
                 16 -> u(off, f.size, def.bigEndian)?.let { sessionAvgHr = ActivityFileImporter.validHr(it.toDouble()) }
                 17 -> u(off, f.size, def.bigEndian)?.let { sessionMaxHr = ActivityFileImporter.validHr(it.toDouble()) }
+                // total_training_effect / total_anaerobic_training_effect (u8, scale 10), training_load_peak (s32, scale 65536).
+                24 -> u(off, f.size, def.bigEndian)?.let { sessionAerobicTE = trainingEffect(it, f.size) }
+                137 -> u(off, f.size, def.bigEndian)?.let { sessionAnaerobicTE = trainingEffect(it, f.size) }
+                168 -> s(off, f.size, def.bigEndian)?.let { sessionTrainingLoad = trainingLoad(it, f.size) }
             }
             off += f.size
         }
@@ -723,6 +741,16 @@ internal class FitDecoder(private val raw: ByteArray) {
         17L -> "Hiking"; 4L -> "Fitness Equipment"; 10L -> "Training"
         else -> null
     }
+
+    /** A Training Effect byte as the 0.0-5.0 score, or null for the invalid sentinel or an out-of-range value.
+     *  Swift twin: `FitDecoder.trainingEffect`. */
+    private fun trainingEffect(v: Long, size: Int): Double? =
+        if (size == 1 && v in 0..50L) v.toDouble() / 10 else null
+
+    /** A training-load field as the watch's load figure, or null for the invalid sentinel, a negative value or
+     *  a field of the wrong width. Swift twin: `FitDecoder.trainingLoad`. */
+    private fun trainingLoad(v: Long, size: Int): Double? =
+        if (size == 4 && v != 0x7FFFFFFFL && v >= 0) v.toDouble() / 65_536 else null
 
     private fun validSteps(v: Long, size: Int): Int? {
         val invalid = if (size >= 8) -1L else (1L shl (size * 8)) - 1L
@@ -778,6 +806,9 @@ internal class FitDecoder(private val raw: ByteArray) {
             // #137: the real per-record HR series, via the SHARED extractor so FIT persists a
             // byte-identical HR stream to the GPX/TCX paths (and the Swift twin).
             hrSamples = ActivityFileImporter.hrSamples(samples),
+            aerobicTrainingEffect = sessionAerobicTE,
+            anaerobicTrainingEffect = sessionAnaerobicTE,
+            trainingLoad = sessionTrainingLoad,
         )
         return ActivityFileImporter.Result(activity, ActivityFileImporter.Kind.FIT, skipped)
     }

@@ -82,6 +82,13 @@ public struct ActivityFile: Sendable, Equatable {
     /// carried BOTH a timestamp and a valid HR appear here (a sample with no time can't key into the
     /// (deviceId, ts) HR store), so `hrSamples.count <= hrSampleCount` in general.
     public var hrSamples: [ActivityHRSample]
+    /// The watch's own aerobic Training Effect (FIT session, 0.0-5.0), a reference value. nil for GPX/TCX
+    /// and for a FIT file whose session does not carry it.
+    public var aerobicTrainingEffect: Double?
+    /// The watch's own anaerobic Training Effect (FIT session, 0.0-5.0), a reference value.
+    public var anaerobicTrainingEffect: Double?
+    /// The watch's own EPOC-based training load for the activity (FIT session), a reference value.
+    public var trainingLoad: Double?
 
     public init(
         kind: Kind,
@@ -97,7 +104,10 @@ public struct ActivityFile: Sendable, Equatable {
         gpsPointCount: Int = 0,
         hrSampleCount: Int = 0,
         route: [RoutePoint] = [],
-        hrSamples: [ActivityHRSample] = []
+        hrSamples: [ActivityHRSample] = [],
+        aerobicTrainingEffect: Double? = nil,
+        anaerobicTrainingEffect: Double? = nil,
+        trainingLoad: Double? = nil
     ) {
         self.kind = kind
         self.start = start
@@ -113,6 +123,9 @@ public struct ActivityFile: Sendable, Equatable {
         self.hrSampleCount = hrSampleCount
         self.route = route
         self.hrSamples = hrSamples
+        self.aerobicTrainingEffect = aerobicTrainingEffect
+        self.anaerobicTrainingEffect = anaerobicTrainingEffect
+        self.trainingLoad = trainingLoad
     }
 
     /// Duration in seconds, or nil when start == end (no real interval to claim).

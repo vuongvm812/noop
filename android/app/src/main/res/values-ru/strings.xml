@@ -2846,4 +2846,12 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">ещё нет</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">Загружено в NOOP: %1$d файлов</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">Подробности каждого сообщения пишутся в журнал браслета, пока включён тестовый режим «Подключение» или «Источники».</string>
+    <string name="workout_watch_reference_title">Данные часов</string>
+    <string name="workout_watch_reference_overline">По данным ваших часов</string>
+    <string name="workout_watch_reference_aerobic_te">Аэробный TE</string>
+    <string name="workout_watch_reference_anaerobic_te">Анаэробный TE</string>
+    <string name="workout_watch_reference_training_load">Тренировочная нагрузка</string>
+    <string name="workout_watch_reference_intensity_minutes">Минуты интенсивности</string>
+    <string name="workout_watch_reference_intensity_split">%1$d умеренных · %2$d интенсивных</string>
+    <string name="workout_watch_reference_explanation">Значения, рассчитанные вашими часами для этой тренировки. Training Effect принимает значения от 0 до 5, тренировочная нагрузка основана на EPOC, а интенсивная минута засчитывается в минуты интенсивности вдвойне. NOOP показывает их для справки и не использует в Effort или Charge.</string>
 </resources>

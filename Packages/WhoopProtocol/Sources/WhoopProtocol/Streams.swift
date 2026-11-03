@@ -476,6 +476,12 @@ public enum DeviceMetricKind: String, CaseIterable, Codable, Sendable {
     case hrvMs = "hrv_ms"
     /// The watch's own overall sleep score, 0-100, stamped at the time the watch gives it.
     case sleepScore = "sleep_score"
+    /// The watch's aerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start.
+    case aerobicTrainingEffect = "aerobic_training_effect"
+    /// The watch's anaerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start.
+    case anaerobicTrainingEffect = "anaerobic_training_effect"
+    /// The watch's EPOC-based training load for one activity (unitless), stamped at the workout start.
+    case trainingLoad = "training_load"
 }
 
 /// One time-stamped value of a watch-computed series, persisted to `deviceMetricSample` keyed by

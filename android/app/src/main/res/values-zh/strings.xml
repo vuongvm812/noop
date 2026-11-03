@@ -2921,4 +2921,12 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">尚未</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">已导入 NOOP：%1$d 个文件</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">当“连接”或“来源”测试模式开启时，每条消息的详情会写入设备日志。</string>
+    <string name="workout_watch_reference_title">手表参考</string>
+    <string name="workout_watch_reference_overline">由你的手表提供</string>
+    <string name="workout_watch_reference_aerobic_te">有氧训练效果</string>
+    <string name="workout_watch_reference_anaerobic_te">无氧训练效果</string>
+    <string name="workout_watch_reference_training_load">训练负荷</string>
+    <string name="workout_watch_reference_intensity_minutes">强度分钟数</string>
+    <string name="workout_watch_reference_intensity_split">%1$d 分钟中等 · %2$d 分钟高强度</string>
+    <string name="workout_watch_reference_explanation">这些数值由你的手表为本次训练计算。训练效果范围为 0 到 5，训练负荷基于 EPOC，高强度分钟在强度分钟数中按两倍计算。NOOP 仅作参考展示，不会将其用于 Effort 或 Charge。</string>
 </resources>

@@ -2964,4 +2964,12 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">noch nicht</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">In NOOP übernommen: %1$d Dateien</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">Details zu jeder Nachricht landen im Strap-Log, solange der Testmodus Verbindung oder Quellen aktiv ist.</string>
+    <string name="workout_watch_reference_title">Uhr-Referenz</string>
+    <string name="workout_watch_reference_overline">Von deiner Uhr gemeldet</string>
+    <string name="workout_watch_reference_aerobic_te">Aerober TE</string>
+    <string name="workout_watch_reference_anaerobic_te">Anaerober TE</string>
+    <string name="workout_watch_reference_training_load">Trainingslast</string>
+    <string name="workout_watch_reference_intensity_minutes">Intensitätsminuten</string>
+    <string name="workout_watch_reference_intensity_split">%1$d moderat · %2$d intensiv</string>
+    <string name="workout_watch_reference_explanation">Werte, die deine Uhr für diese Einheit berechnet hat. Der Trainingseffekt reicht von 0 bis 5, die Trainingslast basiert auf EPOC, und eine intensive Minute zählt bei den Intensitätsminuten doppelt. NOOP zeigt sie nur als Referenz und nutzt sie nicht für Effort oder Charge.</string>
 </resources>

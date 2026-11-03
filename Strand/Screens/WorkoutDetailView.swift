@@ -70,6 +70,10 @@ struct WorkoutDetailView: View {
     private struct StepReadout { let count: Int; let fromStrap: Bool }
     @State private var steps: StepReadout?
 
+    /// What the recording watch reported about this session (Training Effect, training load, intensity
+    /// minutes). nil = the row's source stored none, which is every non-Garmin workout.
+    @State private var watchReference: WorkoutWatchReference?
+
     var body: some View {
         ScreenScaffold(title: "\(WorkoutSource.displaySport(row.sport))",
                        subtitle: "\(dateLabel(row.startTs))",
@@ -89,6 +93,7 @@ struct WorkoutDetailView: View {
             hrCurveCard
             zonesCard
             heartRateRecoveryCard
+            watchReferenceCard
             if let strain = row.strain {
                 effortCard(strain: strain)
             }
@@ -157,7 +162,10 @@ struct WorkoutDetailView: View {
             }
         }
 
+        let reference = await repo.workoutWatchReference(from: row.startTs, to: row.endTs, source: row.source)
+
         await MainActor.run {
+            self.watchReference = reference
             self.route = routePoints
             self.hrPoints = points
             self.zoneMinutes = minutes
@@ -165,6 +173,44 @@ struct WorkoutDetailView: View {
             self.heartRateRecovery = hrr
             self.steps = stepReadout
             self.loaded = true
+        }
+    }
+
+    // MARK: - Watch reference (#54)
+
+    /// The recording watch's own figures for the session, shown as reference values beside NOOP's numbers.
+    /// Only the tiles the watch reported appear; the card is absent when it reported none.
+    @ViewBuilder private var watchReferenceCard: some View {
+        if let ref = watchReference {
+            VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                SectionHeader("Watch Reference", overline: "Reported by your watch")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: NoopMetrics.gap)],
+                          alignment: .leading, spacing: NoopMetrics.gap) {
+                    if let te = ref.aerobicTrainingEffect {
+                        StatTile(label: "Aerobic TE", value: String(format: "%.1f", te),
+                                 accent: StrandPalette.effortColor)
+                    }
+                    if let te = ref.anaerobicTrainingEffect {
+                        StatTile(label: "Anaerobic TE", value: String(format: "%.1f", te),
+                                 accent: StrandPalette.metricRose)
+                    }
+                    if let load = ref.trainingLoad {
+                        StatTile(label: "Training Load", value: "\(Int(load.rounded()))",
+                                 accent: StrandPalette.metricAmber)
+                    }
+                    if let minutes = ref.intensityMinutes {
+                        let moderate = Int((ref.moderateMinutes ?? 0).rounded())
+                        let vigorous = Int((ref.vigorousMinutes ?? 0).rounded())
+                        StatTile(label: "Intensity Minutes", value: "\(Int(minutes.rounded()))",
+                                 caption: String(localized: "\(moderate) moderate · \(vigorous) vigorous"),
+                                 accent: StrandPalette.metricCyan)
+                    }
+                }
+                Text("Figures your watch computed for this session. Training Effect runs from 0 to 5, training load is based on EPOC, and a vigorous minute counts twice toward intensity minutes. NOOP shows them for reference and does not use them in Effort or Charge.")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

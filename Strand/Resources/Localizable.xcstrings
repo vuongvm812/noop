@@ -35378,6 +35378,390 @@
         }
       }
     },
+    "Watch Reference": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uhr-Referenz"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watch Reference"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Referencia del reloj"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Référence de la montre"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Riferimento dell'orologio"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Referência do relógio"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dane z zegarka"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Данные часов"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手表参考"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手錶參考"
+          }
+        }
+      }
+    },
+    "Reported by your watch": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von deiner Uhr gemeldet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reported by your watch"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Según tu reloj"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selon votre montre"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rilevato dal tuo orologio"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indicado pelo seu relógio"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Według twojego zegarka"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "По данным ваших часов"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由你的手表提供"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由你的手錶提供"
+          }
+        }
+      }
+    },
+    "Aerobic TE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aerober TE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aerobic TE"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE aeróbico"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE aérobie"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE aerobico"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE aeróbico"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE tlenowy"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Аэробный TE"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有氧训练效果"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有氧訓練效果"
+          }
+        }
+      }
+    },
+    "Anaerobic TE": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anaerober TE"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anaerobic TE"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE anaeróbico"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE anaérobie"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE anaerobico"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE anaeróbico"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TE beztlenowy"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Анаэробный TE"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无氧训练效果"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無氧訓練效果"
+          }
+        }
+      }
+    },
+    "%lld moderate · %lld vigorous": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld moderat · %lld intensiv"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld moderate · %lld vigorous"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld moderados · %lld intensos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld modérées · %lld intenses"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld moderati · %lld intensi"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld moderados · %lld vigorosos"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld umiarkowane · %lld intensywne"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld умеренных · %lld интенсивных"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分钟中等 · %lld 分钟高强度"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分鐘中等 · %lld 分鐘高強度"
+          }
+        }
+      }
+    },
+    "Figures your watch computed for this session. Training Effect runs from 0 to 5, training load is based on EPOC, and a vigorous minute counts twice toward intensity minutes. NOOP shows them for reference and does not use them in Effort or Charge.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Werte, die deine Uhr für diese Einheit berechnet hat. Der Trainingseffekt reicht von 0 bis 5, die Trainingslast basiert auf EPOC, und eine intensive Minute zählt bei den Intensitätsminuten doppelt. NOOP zeigt sie nur als Referenz und nutzt sie nicht für Effort oder Charge."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Figures your watch computed for this session. Training Effect runs from 0 to 5, training load is based on EPOC, and a vigorous minute counts twice toward intensity minutes. NOOP shows them for reference and does not use them in Effort or Charge."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cifras que tu reloj calculó para esta sesión. El Training Effect va de 0 a 5, la carga de entrenamiento se basa en el EPOC y un minuto intenso cuenta doble en los minutos de intensidad. NOOP las muestra como referencia y no las usa en Effort ni en Charge."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valeurs calculées par votre montre pour cette séance. Le Training Effect va de 0 à 5, la charge d'entraînement repose sur l'EPOC et une minute intense compte double dans les minutes d'intensité. NOOP les affiche à titre de référence et ne les utilise ni dans Effort ni dans Charge."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valori calcolati dal tuo orologio per questa sessione. Il Training Effect va da 0 a 5, il carico di allenamento si basa sull'EPOC e un minuto intenso conta doppio nei minuti di intensità. NOOP li mostra come riferimento e non li usa in Effort o Charge."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valores que o seu relógio calculou para esta sessão. O Training Effect vai de 0 a 5, a carga de treino baseia-se no EPOC e um minuto vigoroso conta a dobrar nos minutos de intensidade. A NOOP mostra-os como referência e não os usa no Effort nem no Charge."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartości obliczone przez twój zegarek dla tej sesji. Training Effect mieści się w zakresie od 0 do 5, obciążenie treningowe opiera się na EPOC, a minuta intensywna liczy się podwójnie w minutach intensywności. NOOP pokazuje je jako odniesienie i nie używa ich w Effort ani Charge."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Значения, рассчитанные вашими часами для этой тренировки. Training Effect принимает значения от 0 до 5, тренировочная нагрузка основана на EPOC, а интенсивная минута засчитывается в минуты интенсивности вдвойне. NOOP показывает их для справки и не использует в Effort или Charge."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些数值由你的手表为本次训练计算。训练效果范围为 0 到 5，训练负荷基于 EPOC，高强度分钟在强度分钟数中按两倍计算。NOOP 仅作参考展示，不会将其用于 Effort 或 Charge。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這些數值由你的手錶為本次訓練計算。訓練效果範圍為 0 到 5，訓練負荷基於 EPOC，高強度分鐘在強度分鐘數中按兩倍計算。NOOP 僅作參考展示，不會將其用於 Effort 或 Charge。"
+          }
+        }
+      }
+    },
     "Auto-detect workouts": {
       "localizations": {
         "de": {

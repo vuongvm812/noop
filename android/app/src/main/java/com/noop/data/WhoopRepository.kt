@@ -392,6 +392,12 @@ enum class DeviceMetricKind(val wire: String) {
     HRV_MS("hrv_ms"),
     /** The watch's own overall sleep score, 0-100, stamped at the time the watch gives it. */
     SLEEP_SCORE("sleep_score"),
+    /** The watch's aerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start. */
+    AEROBIC_TRAINING_EFFECT("aerobic_training_effect"),
+    /** The watch's anaerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start. */
+    ANAEROBIC_TRAINING_EFFECT("anaerobic_training_effect"),
+    /** The watch's EPOC-based training load for one activity (unitless), stamped at the workout start. */
+    TRAINING_LOAD("training_load"),
 }
 
 /**

@@ -280,6 +280,48 @@ class ActivityFileImporterTest {
         assertEquals(listOf(fitBase, fitBase + 10, fitBase + 20), a.hrSamples.map { it.ts })
     }
 
+    /** The watch's own reference values from the FIT session (#54). Swift twin:
+     *  `ActivityFileImporterTests.testFitSessionTrainingEffectAndLoad`, same bytes and literals. */
+    @Test
+    fun fitSessionTrainingEffectAndLoad() {
+        fun session(aerobic: Int, anaerobic: Int, load: Int): ActivityFileImporter.Activity? {
+            val fit = FitFixture()
+            fit.definition(0, 18, listOf(
+                Triple(2, 4, 0x86), Triple(5, 1, 0x00), Triple(7, 4, 0x86), Triple(24, 1, 0x02),
+                Triple(137, 1, 0x02), Triple(168, 4, 0x85),
+            ))
+            fit.dataHeader(0)
+            fit.u32(100_000L)      // start_time
+            fit.u8(1)              // sport = running
+            fit.u32(1_800_000L)    // total_elapsed_time = 1800 s
+            fit.u8(aerobic)
+            fit.u8(anaerobic)
+            fit.i32(load)
+            return ActivityFileImporter.parse(fit.finish(), "run.fit").activity
+        }
+        val a = session(32, 11, 85 * 65_536 + 32_768)!!
+        assertEquals(3.2, a.aerobicTrainingEffect)
+        assertEquals(1.1, a.anaerobicTrainingEffect)
+        assertEquals(85.5, a.trainingLoad)
+        assertEquals(
+            listOf(
+                "aerobic_training_effect 631165600 3.2 fit18",
+                "anaerobic_training_effect 631165600 1.1 fit18",
+                "training_load 631165600 85.5 fit18",
+            ),
+            GarminWatchIngest.activityReference(a).map { "${it.kind.wire} ${it.ts} ${it.value} ${it.source}" },
+        )
+
+        // Invalid sentinels (0xFF, 0x7FFFFFFF), an out-of-range Training Effect and a negative load read as absent.
+        val none = session(0xFF, 51, 0x7FFFFFFF)!!
+        assertNull(none.aerobicTrainingEffect)
+        assertNull(none.anaerobicTrainingEffect)
+        assertNull(none.trainingLoad)
+        assertEquals(emptyList<Any>(), GarminWatchIngest.activityReference(none))
+        assertNull(session(0, 0, -1)!!.trainingLoad)
+        assertEquals(5.0, session(0, 50, 0)!!.anaerobicTrainingEffect)
+    }
+
     @Test
     fun fitDetectionFromMagicBytes() {
         val fit = FitFixture()

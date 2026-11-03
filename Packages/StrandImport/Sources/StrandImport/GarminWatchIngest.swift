@@ -30,6 +30,7 @@ public enum GarminWatchIngest {
     static let sourceHrv = "fit371"
     static let sourceSleepScore = "fit346"
     static let sourceIntensity = "fit55"
+    static let sourceSession = "fit18"
 
     /// Heart rates outside this range are sensor sentinels (0, 255), not beats.
     static let hrRange = 25...240
@@ -155,6 +156,23 @@ public enum GarminWatchIngest {
             return days[next] == nil ? day(next) : nil
         }
         return out
+    }
+
+    /// The watch's own reference values for one decoded activity (Training Effect and training load from the
+    /// FIT session), as `deviceMetricSample` rows stamped at the workout start. The workout detail reads
+    /// them back over the workout window; nothing scores from them. Empty for a file that carries none.
+    /// Kotlin twin: `GarminWatchIngest.activityReference`.
+    public static func activityReference(_ a: ActivityFile) -> [DeviceMetricSample] {
+        let ts = Int(a.start.timeIntervalSince1970)
+        let values: [(DeviceMetricKind, Double?)] = [
+            (.aerobicTrainingEffect, a.aerobicTrainingEffect),
+            (.anaerobicTrainingEffect, a.anaerobicTrainingEffect),
+            (.trainingLoad, a.trainingLoad),
+        ]
+        return values.compactMap { kind, value in
+            guard let value, value.isFinite else { return nil }
+            return DeviceMetricSample(ts: ts, kind: kind, value: value, source: sourceSession)
+        }
     }
 
     /// Asleep share of the time in bed (asleep + awake) as a 0-1 FRACTION, the unit every other writer of

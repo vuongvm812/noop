@@ -2919,4 +2919,12 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">non ancora</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">Importati in NOOP: %1$d file</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">Il dettaglio di ogni messaggio va nel log della fascia mentre è attiva la modalità di test Connessione o Sorgenti.</string>
+    <string name="workout_watch_reference_title">Riferimento dell\'orologio</string>
+    <string name="workout_watch_reference_overline">Rilevato dal tuo orologio</string>
+    <string name="workout_watch_reference_aerobic_te">TE aerobico</string>
+    <string name="workout_watch_reference_anaerobic_te">TE anaerobico</string>
+    <string name="workout_watch_reference_training_load">Carico di allenamento</string>
+    <string name="workout_watch_reference_intensity_minutes">Minuti di intensità</string>
+    <string name="workout_watch_reference_intensity_split">%1$d moderati · %2$d intensi</string>
+    <string name="workout_watch_reference_explanation">Valori calcolati dal tuo orologio per questa sessione. Il Training Effect va da 0 a 5, il carico di allenamento si basa sull\'EPOC e un minuto intenso conta doppio nei minuti di intensità. NOOP li mostra come riferimento e non li usa in Effort o Charge.</string>
 </resources>

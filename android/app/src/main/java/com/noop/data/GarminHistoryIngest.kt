@@ -124,6 +124,9 @@ object GarminHistoryIngest {
         if (activity.hrSamples.isNotEmpty()) {
             repo.insertHr(activity.hrSamples.map { HrSample(deviceId = deviceId, ts = it.ts, bpm = it.bpm) })
         }
+        // The watch's Training Effect and training load, read back by the workout detail.
+        val reference = GarminWatchIngest.activityReference(activity)
+        if (reference.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = reference), deviceId)
         log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} " +
             "route=${if (row.routePolyline == null) 0 else activity.route.size} from ${file.key.label}")
     }
