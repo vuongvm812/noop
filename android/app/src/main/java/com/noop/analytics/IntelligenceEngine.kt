@@ -2109,7 +2109,7 @@ object IntelligenceEngine {
         // so out[0] is today and the tail is the oldest day in the window. Taking the last match would have
         // scored today's workout against a resting HR up to `maxDays` old.
         val measuredResting = out.firstOrNull { it.rhr != null }?.rhr?.toDouble()
-        rescoreManualWorkouts(repo, profile, importedDeviceId, maxHROverride, nowSeconds,
+        rescoreWorkouts(repo, profile, importedDeviceId, candidatePriorities, maxHROverride, nowSeconds,
             measuredResting, effortMethod)
 
         return out to healDropped.size
@@ -2322,6 +2322,7 @@ object IntelligenceEngine {
             s == "lifting" -> "lifting"
             s == "activity-file" -> "activityFile"
             s == "apple-health" || s == "apple_health" || s == "health-connect" -> "apple"
+            GarminWorkoutEffort.isWatchSource(s) -> "garmin"
             s.contains("whoop") -> "strap"
             else -> "apple"
         }
@@ -2366,7 +2367,7 @@ object IntelligenceEngine {
     ) {
         val since = nowSeconds - 14L * 86_400L
         val rows = runCatching { repo.workouts(deviceId, since, nowSeconds) }.getOrNull() ?: return
-        val hrMax = maxHROverride ?: (208.0 - 0.7 * profile.age)   // Tanaka, matching endWorkout
+        val hrMax = ManualWorkoutRescore.hrMax(maxHROverride, profile.age)   // Tanaka, matching endWorkout
         val updated = ArrayList<WorkoutRow>()
         for (row in rows) {
             if (row.source != "manual") continue
@@ -2386,6 +2387,61 @@ object IntelligenceEngine {
             updated.add(row.copy(energyKcal = energyKcal, avgHr = s.avgHr, maxHr = s.maxHr, strain = s.strain))
         }
         if (updated.isNotEmpty()) repo.upsertWorkouts(updated)
+    }
+
+    /**
+     * The post-pass workout rescores, kept out of [analyzeRecentOnCpu] so that method stays inside its
+     * instrumented bytecode budget (IntelligenceEngineJacocoBudgetTest). #137 manual rows first, then
+     * #50: a Garmin watch workout is stored by the history sync with no Effort, so score it from the
+     * watch's own trace against the same HRmax, resting HR and Effort method as the manual rescore.
+     * Swift twin: `IntelligenceEngine.rescoreWorkouts`.
+     */
+    private suspend fun rescoreWorkouts(
+        repo: WhoopRepository,
+        profile: UserProfile,
+        importedDeviceId: String,
+        candidatePriorities: List<Pair<String, Int>>,
+        maxHROverride: Double?,
+        nowSeconds: Long,
+        restingHR: Double?,
+        effortMethod: StrainScorer.Method,
+    ) {
+        rescoreManualWorkouts(repo, profile, importedDeviceId, maxHROverride, nowSeconds,
+            restingHR, effortMethod)
+        scoreGarminWorkouts(repo, candidatePriorities.map { it.first }, profile,
+            ManualWorkoutRescore.hrMax(maxHROverride, profile.age), nowSeconds, restingHR, effortMethod)
+    }
+
+    /**
+     * #50: fill the Effort of stored Garmin watch workouts. The history sync stores each activity with no
+     * strain and its per-second HR under the watch's own device id, which is also the row's `source`. Only
+     * rows still missing a strain are read, so a scored row is never touched again, and the whole history
+     * is covered, so workouts stored before this pass existed are backfilled on its first run. A row whose
+     * trace is too thin to score stays null. Twin of the Swift `scoreGarminWorkouts`.
+     */
+    private suspend fun scoreGarminWorkouts(
+        repo: WhoopRepository,
+        deviceIds: List<String>,
+        profile: UserProfile,
+        hrMax: Double,
+        nowSeconds: Long,
+        restingHR: Double?,
+        effortMethod: StrainScorer.Method,
+    ) {
+        for (id in deviceIds.distinct()) {
+            if (!GarminWorkoutEffort.isWatchSource(id)) continue
+            val rows = runCatching { repo.workouts(id, 0L, nowSeconds, 2_000) }.getOrNull() ?: continue
+            val updated = ArrayList<WorkoutRow>()
+            for (row in rows) {
+                if (row.strain != null || row.endTs <= row.startTs) continue
+                val samples = runCatching { repo.hrSamplesForDevice(id, row.startTs, row.endTs, 200_000) }
+                    .getOrNull() ?: continue
+                val strain = GarminWorkoutEffort.strainToFill(
+                    row.strain, samples, profile, hrMax, restingHR, effortMethod) ?: continue
+                updated.add(row.copy(strain = strain))
+            }
+            if (updated.isNotEmpty()) repo.upsertWorkouts(updated)
+        }
     }
 
     /**

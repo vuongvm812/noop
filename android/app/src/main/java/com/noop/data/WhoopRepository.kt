@@ -1436,6 +1436,7 @@ class WhoopRepository(
      * the lookups so a huge history can't jank first paint. NEVER persisted , the derived value is a
      * read-time projection of the trace (the workout PK upsert would wipe it anyway, and re-deriving on
      * every load keeps display == graph == zones == effort by construction).
+     * Swift twin: `Repository.reconcileWorkoutHrWithTrace`.
      */
     suspend fun fillWorkoutHrFromStrap(
         rows: List<WorkoutRow>,
@@ -1475,6 +1476,10 @@ class WhoopRepository(
         // because this class holds no Context; the two UI callers pass the user's choice. EDWARDS by
         // default so a caller that does not care stays byte-identical.
         effortMethod: com.noop.analytics.StrainScorer.Method = com.noop.analytics.StrainScorer.Method.EDWARDS,
+        // #50: the measured resting HR the engine scores the day and the manual rescore against (#950). The
+        // fill used the default 60, so a backfilled workout's Effort disagreed with the stored one for the
+        // same session. null (no measured day yet) keeps the default.
+        strainRestingHR: Double? = null,
     ): List<WorkoutRow> {
         var budget = cap
         return rows.map { row ->
@@ -1503,9 +1508,13 @@ class WhoopRepository(
             // this row actually needs a strain (keeps the common no-fill path a single aggregate query), and
             // let StrainScorer return null on a still-too-thin window (never a fabricated number).
             val filledStrain = if (needsStrainFill && strainMaxHR != null) {
-                val samples = dao.hrSamples(hrIds[0], row.startTs, row.endTs, 8000)
+                // #50: the 200,000 cap the Today Effort read uses; 8000 dropped everything after ~2h13m of
+                // 1 Hz HR, so a long session scored only its opening.
+                val samples = dao.hrSamples(hrIds[0], row.startTs, row.endTs, 200_000)
                 com.noop.analytics.StrainScorer.strain(
-                    samples, maxHR = strainMaxHR, method = effortMethod, sex = strainSex)
+                    samples, maxHR = strainMaxHR,
+                    restingHR = strainRestingHR ?: com.noop.analytics.StrainScorer.defaultRestingHR,
+                    method = effortMethod, sex = strainSex)
             } else null
             if (strapNative) {
                 // True mean / peak of the very samples the graph + zones + effort use; FILL a null Effort
@@ -2623,8 +2632,13 @@ class WhoopRepository(
          *  fresh id. A single-WHOOP install still resolves to one id, so nothing changes there.
          *  (This fill only sets avgHr/maxHr/strain; calories come from the detector.) */
         fun workoutHrDeviceIds(source: String, rowDeviceId: String, activeStrapId: String): List<String> =
-            if (isDetectedWorkout(source)) listOf(rowDeviceId.removeSuffix("-noop"))
-            else importedSourceIdsFor(activeStrapId)
+            when {
+                isDetectedWorkout(source) -> listOf(rowDeviceId.removeSuffix("-noop"))
+                // #50: a Garmin row's source IS the watch's device id, and the sync stored the activity's
+                // own trace under it. Reading the worn strap instead charted and zoned another device's HR.
+                com.noop.analytics.GarminWorkoutEffort.isWatchSource(source) -> listOf(source)
+                else -> importedSourceIdsFor(activeStrapId)
+            }
 
         /** Default row cap on range reads. Matches the Swift call sites' bounded scans. */
         const val DEFAULT_LIMIT = 100_000

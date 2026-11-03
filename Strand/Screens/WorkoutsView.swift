@@ -592,7 +592,7 @@ struct WorkoutsView: View {
 
     /// The origin classes offered in the Source filter (imported + on-device), in a stable menu order.
     private static let sourceFilterOptions: [WorkoutSource] =
-        [.whoop, .apple, .detected, .manual, .lifting, .activityFile]
+        [.whoop, .apple, .detected, .manual, .lifting, .activityFile, .garmin]
 
     /// The Source-filter menu label for an origin class (matches the row source badges).
     private static func sourceFilterLabel(_ c: WorkoutSource) -> String {
@@ -603,6 +603,7 @@ struct WorkoutsView: View {
         case .manual:       return String(localized: "Manual")
         case .lifting:      return String(localized: "Lifting")
         case .activityFile: return String(localized: "File")
+        case .garmin:       return String(localized: "Garmin")
         }
     }
 
@@ -1636,7 +1637,7 @@ struct WorkoutsView: View {
             Button("Edit…") { editWorkout(row) }
             Divider()
             Button("Delete", role: .destructive) { delete(row) }
-        case .whoop, .apple, .lifting, .activityFile:
+        case .whoop, .apple, .lifting, .activityFile, .garmin:
             // Imported history is read-only; offer a copy-to-manual edit path that doesn't touch it.
             Button("Duplicate as manual…") { editWorkout(asManualCopy(row), isCopy: true) }
         }
@@ -1678,6 +1679,7 @@ struct WorkoutsView: View {
             case .manual:   return (String(localized: "Manual"), StrandPalette.statusWarning, String(localized: "Source manual entry"))
             case .lifting:  return (String(localized: "Lifting"), StrandPalette.zone2, String(localized: "Source imported lifting log"))
             case .activityFile: return (String(localized: "File"), StrandPalette.metricAmber, String(localized: "Source imported activity file"))
+            case .garmin:   return (String(localized: "Garmin"), StrandPalette.zone3, String(localized: "Garmin"))
             }
         }()
         // String interpolation lifts the computed label into a LocalizedStringKey (SourceBadge's type).

@@ -8,6 +8,7 @@ import StrandAnalytics   // WorkoutsTrace: the dedup-decision line formatter for
 ///   - "whoop"        — WhoopImporter (imported WHOOP session)
 ///   - "apple_health" / "apple-health" — AppleHealthImport
 ///   - "manual"       — AppModel.endWorkout (v1.67 live session) AND the retro add/edit sheet
+///   - "garmin-<uuid>"— Garmin history sync (the watch's registry id; GarminHistoryIngest, #50)
 ///   - "my-whoop-noop"— legacy IntelligenceEngine detected bouts (source == the computed deviceId,
 ///                       i.e. it ends in "-noop"). These remain readable/editable but are no longer
 ///                       created or reconciled by `analyzeRecent`.
@@ -15,7 +16,7 @@ import StrandAnalytics   // WorkoutsTrace: the dedup-decision line formatter for
 /// Classification order matters: "-noop" is checked BEFORE "whoop" because the computed id
 /// "my-whoop-noop" also contains the substring "whoop".
 enum WorkoutSource: Equatable {
-    case whoop, apple, detected, manual, lifting, activityFile
+    case whoop, apple, detected, manual, lifting, activityFile, garmin
 
     /// Canonical Apple Health source id written by new imports. The early rows used the underscore
     /// spelling, so reads must accept both — see `isAppleHealth`.
@@ -29,6 +30,7 @@ enum WorkoutSource: Equatable {
         if s == "lifting" { return .lifting }          // imported Hevy / Liftosaur strength session
         if s == "activity-file" { return .activityFile } // imported GPX / TCX / FIT activity file
         if isAppleHealth(s) { return .apple }          // both spellings → Apple Health
+        if GarminWorkoutEffort.isWatchSource(s) { return .garmin } // Garmin history sync (#50)
         if s.contains("whoop") { return .whoop }
         return .apple
     }
@@ -273,6 +275,7 @@ enum WorkoutSource: Equatable {
         case .manual:       return "manual"
         case .lifting:      return "lifting"
         case .activityFile: return "activityFile"
+        case .garmin:       return "garmin"
         }
     }
 
@@ -496,7 +499,7 @@ enum WorkoutMerge {
     static func isMergeable(_ row: WorkoutRow) -> Bool {
         switch WorkoutSource.classify(row.source) {
         case .manual, .detected: return true
-        case .whoop, .apple, .lifting, .activityFile: return false
+        case .whoop, .apple, .lifting, .activityFile, .garmin: return false
         }
     }
 

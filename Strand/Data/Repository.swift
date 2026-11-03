@@ -3023,6 +3023,10 @@ final class Repository: ObservableObject {
         // #961: capture the injected profile ONCE (a Sendable scalar pair) so each child task can compute a
         // backfill strain off the main actor. nil ⇒ no fill, and the strain slot always comes back nil.
         let strainProfile = self.strainProfile
+        // #50: the measured resting HR of the newest day that has one, the value the engine scores the day
+        // and the manual rescore against (#950). The fill used the default 60, so a backfilled workout's
+        // Effort disagreed with the stored one for the same session. nil (no measured day yet) keeps 60.
+        let restingHR = days.last(where: { $0.restingHr != nil })?.restingHr.map(Double.init)
         var reduced: [Int: (avg: Int, peak: Int, strain: Double?)] = [:]
         for chunkStart in stride(from: 0, to: eligibleIndices.count, by: readChunk) {
             let chunk = eligibleIndices[chunkStart..<min(chunkStart + readChunk, eligibleIndices.count)]
@@ -3059,14 +3063,16 @@ final class Repository: ObservableObject {
                         // #961: recompute Effort from the SAME samples the graph/zones use, off-main. Uses the
                         // app's StrainScorer with the injected HRmax + sex so it matches endWorkout's own score;
                         // StrainScorer returns nil on a still-too-thin window (never a fabricated number).
-                        // Reads rows ONLY for this — StrainScorer needs the series, not an aggregate. The 8000
-                        // cap stays here: it bounds the strain window, not the average. (Kotlin does the same.)
+                        // Reads rows ONLY for this — StrainScorer needs the series, not an aggregate. #50: the
+                        // cap is the 200,000 the Today Effort read uses; 8000 dropped everything after ~2h13m
+                        // of 1 Hz HR, so a long session scored only its opening. (Kotlin does the same.)
                         let strain: Double?
                         if wantStrain, let p = strainProfile {
                             let samples = (try? await store.hrSamples(deviceId: hrIds[0],
                                                                       from: startTs, to: endTs,
-                                                                      limit: 8000)) ?? []
+                                                                      limit: 200_000)) ?? []
                             strain = StrainScorer.strain(samples, maxHR: p.hrMax,
+                                                restingHR: restingHR ?? StrainScorer.defaultRestingHR,
                                                 method: PuffinExperiment.effortMethod, sex: p.sex)
                         } else {
                             strain = nil
@@ -3121,8 +3127,13 @@ final class Repository: ObservableObject {
     /// install collapses to one in both branches — so every existing number is unchanged.
     nonisolated static func workoutHrDeviceIds(source: String, activeStrapId: String,
                                                importedIds: [String]) -> [String] {
-        guard WorkoutSource.classify(source) == .detected else { return importedIds }
-        return [source.hasSuffix("-noop") ? String(source.dropLast(5)) : source]
+        switch WorkoutSource.classify(source) {
+        case .detected: return [source.hasSuffix("-noop") ? String(source.dropLast(5)) : source]
+        // #50: a Garmin row's source IS the watch's device id, and the sync stored the activity's own
+        // trace under it. Reading the worn strap instead charted and zoned another device's heart rate.
+        case .garmin: return [source]
+        default: return importedIds
+        }
     }
 
     // MARK: - Workout editing (manual add/edit · relabel · dismiss · delete)
@@ -3284,7 +3295,7 @@ final class Repository: ObservableObject {
             switch WorkoutSource.classify(r.source) {
             case .detected: await dismissDetected(r)
             case .manual:   await deleteWorkout(r)
-            case .whoop, .apple, .lifting, .activityFile:
+            case .whoop, .apple, .lifting, .activityFile, .garmin:
                 // Defensive: canMerge already excludes imported rows; never rewrite imported history.
                 continue
             }
@@ -3309,7 +3320,7 @@ final class Repository: ObservableObject {
             switch WorkoutSource.classify(r.source) {
             case .detected: await dismissDetected(r)
             case .manual:   await deleteWorkout(r)
-            case .whoop, .apple, .lifting, .activityFile: continue
+            case .whoop, .apple, .lifting, .activityFile, .garmin: continue
             }
         }
     }

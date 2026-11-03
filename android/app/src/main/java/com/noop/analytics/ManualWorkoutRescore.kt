@@ -27,6 +27,11 @@ object ManualWorkoutRescore {
      *  window (recompute ≈ current) is a no-op and the pass is idempotent. */
     const val IMPROVEMENT_MARGIN_KCAL = 1.0
 
+    /** The HRmax a rescore scores against: the user's override when one is set, else Tanaka from age,
+     *  unrounded. Swift used to pass the profile's Int-rounded Tanaka here while Kotlin passed the
+     *  unrounded value, so one workout scored to two different Efforts (#50). Swift twin: `hrMax`. */
+    fun hrMax(override: Double?, age: Double): Double = override ?: StrainScorer.tanakaHRmax(age)
+
     /** Does this manual workout currently look under-scored? The gate the post-sync pass uses so a
      *  well-scored workout (a 4.0's dense live HR) is never touched. */
     fun looksUnderScored(currentKcal: Double?): Boolean =

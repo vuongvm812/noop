@@ -3091,8 +3091,8 @@ final class IntelligenceEngine: ObservableObject {
         // today and the tail is the oldest day in the window. Taking the last match would have scored
         // today's workout against a resting HR up to `maxDays` old.
         let measuredResting = out.first(where: { $0.rhr != nil })?.rhr.map(Double.init)
-        await rescoreManualWorkouts(store: store, profile: up, restingHR: measuredResting,
-                                    effortMethod: effortMethodGlobal)
+        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id), maxHROverride: maxHR,
+                              restingHR: measuredResting, effortMethod: effortMethodGlobal)
 
         results = out
         note = out.isEmpty
@@ -3280,7 +3280,10 @@ final class IntelligenceEngine: ObservableObject {
         let since = now - 14 * 86_400
         guard let rows = try? await store.workouts(deviceId: deviceId, from: since, to: now, limit: 200)
         else { return }
-        let hrMax = Double(profile.hrMax)
+        // #50: the unrounded resolver Kotlin uses. `profile.hrMax` rounds Tanaka to an Int, which scored
+        // the same workout to a different Effort on each platform.
+        let hrMax = ManualWorkoutRescore.hrMax(
+            override: profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil, age: up.age)
         var updated: [WorkoutRow] = []
         // A manual row is eligible when it looks under-scored (negligible kcal, #137) OR it's missing
         // strain (the merged-workout case, where kcal is the SUM of inputs so it never looks under-scored
@@ -3306,6 +3309,47 @@ final class IntelligenceEngine: ObservableObject {
                 steps: row.steps))
         }
         if !updated.isEmpty { _ = try? await store.upsertWorkouts(updated, deviceId: deviceId) }
+    }
+
+    /// The post-pass workout rescores: #137 manual rows first, then #50: a Garmin watch workout is stored by
+    /// the history sync with no Effort, so score it from the watch's own trace against the same HRmax,
+    /// resting HR and Effort method as the manual rescore. Kotlin twin: `IntelligenceEngine.rescoreWorkouts`.
+    private func rescoreWorkouts(store: WhoopStore, profile up: UserProfile, deviceIds: [String],
+                                 maxHROverride: Double?, restingHR: Double?,
+                                 effortMethod: StrainScorer.Method) async {
+        await rescoreManualWorkouts(store: store, profile: up, restingHR: restingHR, effortMethod: effortMethod)
+        await scoreGarminWorkouts(store: store, deviceIds: deviceIds, profile: up,
+                                  hrMax: ManualWorkoutRescore.hrMax(override: maxHROverride, age: up.age),
+                                  restingHR: restingHR, effortMethod: effortMethod)
+    }
+
+    /// #50: fill the Effort of stored Garmin watch workouts. The history sync stores each activity with no
+    /// strain and its per-second HR under the watch's own device id, which is also the row's `source`.
+    /// Only rows still missing a strain are read, so a scored row is never touched again, and the whole
+    /// history is covered, so workouts stored before this pass existed are backfilled on its first run.
+    /// A row whose trace is too thin to score stays nil. Twin of the Kotlin `scoreGarminWorkouts`.
+    private func scoreGarminWorkouts(store: WhoopStore, deviceIds: [String], profile up: UserProfile,
+                                     hrMax: Double, restingHR: Double?,
+                                     effortMethod: StrainScorer.Method) async {
+        let now = Int(Date().timeIntervalSince1970)
+        for id in deviceIds where GarminWorkoutEffort.isWatchSource(id) {
+            guard let rows = try? await store.workouts(deviceId: id, from: 0, to: now, limit: 2_000) else { continue }
+            var updated: [WorkoutRow] = []
+            for row in rows where row.strain == nil && row.endTs > row.startTs {
+                guard let samples = try? await store.hrSamples(deviceId: id, from: row.startTs, to: row.endTs,
+                                                               limit: 200_000),
+                      let strain = GarminWorkoutEffort.strainToFill(
+                          currentStrain: row.strain, windowSamples: samples, profile: up, hrMax: hrMax,
+                          restingHR: restingHR, effortMethod: effortMethod)
+                else { continue }
+                updated.append(WorkoutRow(
+                    startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
+                    durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr, maxHr: row.maxHr,
+                    strain: strain, distanceM: row.distanceM, zonesJSON: row.zonesJSON, notes: row.notes,
+                    steps: row.steps))
+            }
+            if !updated.isEmpty { _ = try? await store.upsertWorkouts(updated, deviceId: id) }
+        }
     }
 
     /// Pass 1 has no seeded skin baseline. Attach the deviation before scoring so the score,

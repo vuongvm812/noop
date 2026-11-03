@@ -2169,6 +2169,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 strainMaxHR = profileStore.hrMax.toDouble(),
                 strainSex = profileStore.sex,
                 effortMethod = NoopPrefs.effortMethod(appContext),
+                // #50: newest measured resting HR (recentDays is oldest-first), as Swift reads `days`.
+                strainRestingHR = recentDays.value.lastOrNull { it.restingHr != null }?.restingHr?.toDouble(),
             )
             // #687: collapse the SAME activity tracked live under the strap AND imported from Health
             // Connect / Apple Health into one richer entry — they sit under different sources so without
