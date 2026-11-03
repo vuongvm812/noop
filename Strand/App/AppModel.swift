@@ -2029,10 +2029,12 @@ final class AppModel: ObservableObject {
         return (c.hour ?? 0) * 3600 + (c.minute ?? 0) * 60 + (c.second ?? 0)
     }
 
-    /// The illness builder's view of one cached day.
-    nonisolated static func illnessNight(_ d: DailyMetric) -> IllnessInputs.Night {
+    /// The illness builder's view of one cached day; `midpoints` are `IllnessInputs.sleepMidpoints` by
+    /// wake day, the body-clock jump's input.
+    nonisolated static func illnessNight(_ d: DailyMetric, midpoints: [String: Double]) -> IllnessInputs.Night {
         IllnessInputs.Night(day: d.day, restingHR: d.restingHr.map(Double.init), hrv: d.avgHrv,
-                            respiration: d.respRateBpm, skinTemp: d.skinTempDevC, strain: d.strain)
+                            respiration: d.respRateBpm, skinTemp: d.skinTempDevC, strain: d.strain,
+                            sleepMidpointUtcMin: midpoints[d.day])
     }
 
     private func evaluateIllness(_ days: [DailyMetric]) {
@@ -2042,9 +2044,15 @@ final class AppModel: ObservableObject {
         }
         Task { [weak self] in
             guard let self else { return }
+            // Sleep timing for the body-clock jump: the main block per wake day, keyed the way the
+            // daily rows are (local end day). The window covers the builder's baseline plus slack.
+            let sessions = await self.repo.allSleepSessions(days: 40)
+            let midpoints = IllnessInputs.sleepMidpoints(sessions.map {
+                IllnessInputs.SleepBlock(day: Repository.localEndDayKey($0), start: $0.effectiveStartTs, end: $0.endTs)
+            })
             // Confounder answers from the recent nights' journal days. Read once, off the engine's hot
             // path; IllnessInputs matches them on canonical catalog keys, never on substrings.
-            let nights = days.map(Self.illnessNight)
+            let nights = days.map { Self.illnessNight($0, midpoints: midpoints) }
             let recentDays = IllnessInputs.recentDays(nights)
             let journal = await self.repo.journalEntries(days: 7)
             let yes = journal.filter { $0.answeredYes && recentDays.contains($0.day) }.map(\.question)

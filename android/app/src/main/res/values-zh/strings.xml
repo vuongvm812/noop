@@ -2929,4 +2929,8 @@
     <string name="workout_watch_reference_intensity_minutes">强度分钟数</string>
     <string name="workout_watch_reference_intensity_split">%1$d 分钟中等 · %2$d 分钟高强度</string>
     <string name="workout_watch_reference_explanation">这些数值由你的手表为本次训练计算。训练效果范围为 0 到 5，训练负荷基于 EPOC，高强度分钟在强度分钟数中按两倍计算。NOOP 仅作参考展示，不会将其用于 Effort 或 Charge。</string>
+    <string name="l10n_compare_screen_pearson_r">皮尔逊 r</string>
+    <string name="l10n_compare_screen_spearman_rho">斯皮尔曼 ρ</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">相关方法</string>
 </resources>

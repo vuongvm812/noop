@@ -2927,4 +2927,8 @@
     <string name="workout_watch_reference_intensity_minutes">Minuti di intensità</string>
     <string name="workout_watch_reference_intensity_split">%1$d moderati · %2$d intensi</string>
     <string name="workout_watch_reference_explanation">Valori calcolati dal tuo orologio per questa sessione. Il Training Effect va da 0 a 5, il carico di allenamento si basa sull\'EPOC e un minuto intenso conta doppio nei minuti di intensità. NOOP li mostra come riferimento e non li usa in Effort o Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">r di Pearson</string>
+    <string name="l10n_compare_screen_spearman_rho">ρ di Spearman</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Metodo di correlazione</string>
 </resources>

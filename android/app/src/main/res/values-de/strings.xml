@@ -2972,4 +2972,8 @@
     <string name="workout_watch_reference_intensity_minutes">Intensitätsminuten</string>
     <string name="workout_watch_reference_intensity_split">%1$d moderat · %2$d intensiv</string>
     <string name="workout_watch_reference_explanation">Werte, die deine Uhr für diese Einheit berechnet hat. Der Trainingseffekt reicht von 0 bis 5, die Trainingslast basiert auf EPOC, und eine intensive Minute zählt bei den Intensitätsminuten doppelt. NOOP zeigt sie nur als Referenz und nutzt sie nicht für Effort oder Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">Pearson r</string>
+    <string name="l10n_compare_screen_spearman_rho">Spearman ρ</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Korrelationsmethode</string>
 </resources>

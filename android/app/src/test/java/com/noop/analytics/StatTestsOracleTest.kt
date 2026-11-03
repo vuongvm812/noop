@@ -172,6 +172,16 @@ class StatTestsOracleTest {
         "IL|empty|nil|nil|nil|nil|false|false",
         "CTX|true|true|true|false|false|true",
         "CTX|false|false|false|true|true|true",
+        "PJ|home|false|false",
+        "PJ|east|true|true",
+        "PJ|west2|true|true",
+        "PJ|edge179|false|false",
+        "PJ|edge180|true|true",
+        "PJ|thin|false|false",
+        "PJ|seven|true|true",
+        "PJ|rotating|false|false",
+        "PJ|spread|true|true",
+        "SM|1969-12-31=1350.0;2026-01-02=240.0;2026-01-04=180.0",
     )
 
     private fun close(label: String, want: String, got: Double) {
@@ -248,6 +258,34 @@ class StatTestsOracleTest {
             listOf("Did you drink water?", "Feeling still?", "Did you feel sick or ill?"), IllnessInputs.build(d),
         )
         out.add("CTX|${ctx2.alcohol}|${ctx2.stress}|${ctx2.sauna}|${ctx2.hardOrLateWorkout}|${ctx2.alreadyUnwell}|${ctx2.baselineTrusted}")
+
+        fun withMid(n: List<IllnessInputs.Night>, mid: (Int) -> Double?) =
+            n.mapIndexed { i, x -> x.copy(sleepMidpointUtcMin = mid(i)) }
+        val jit = listOf(1410.0, 1430.0, 10.0, 30.0, 1420.0, 20.0, 0.0)
+        val pj: List<Pair<String, (Int) -> Double?>> = listOf(
+            "home" to { i -> jit[i % 7] },
+            "east" to { i -> if (i >= 29) 1080.0 else jit[i % 7] },
+            "west2" to { i -> if (i == 28) 240.0 else if (i == 29) null else jit[i % 7] },
+            "edge179" to { i -> if (i >= 28) 179.0 else 0.0 },
+            "edge180" to { i -> if (i >= 28) 180.0 else 0.0 },
+            "thin" to { i -> if (i < 21) null else if (i >= 28) 600.0 else 180.0 },
+            "seven" to { i -> if (i < 20) null else if (i >= 28) 600.0 else 180.0 },
+            "rotating" to { i -> if (i >= 28) 600.0 else ((i % 4) * 360).toDouble() },
+            "spread" to { i -> if (i >= 28) 900.0 else ((i % 3) * 200).toDouble() },
+        )
+        for ((label, f) in pj) {
+            val b = IllnessInputs.build(withMid(a, f))
+            out.add("PJ|$label|${b.travelPhaseJump}|${IllnessInputs.context(emptyList(), b).travelPhaseJump}")
+        }
+        val mids = IllnessInputs.sleepMidpoints(listOf(
+            IllnessInputs.SleepBlock("2026-01-02", 1_767_312_000L, 1_767_340_800L),
+            IllnessInputs.SleepBlock("2026-01-02", 1_767_358_800L, 1_767_362_400L),
+            IllnessInputs.SleepBlock("2026-01-02", 1_767_300_000L, 1_767_328_800L),
+            IllnessInputs.SleepBlock("2026-01-03", 1_767_391_200L, 1_767_391_200L),
+            IllnessInputs.SleepBlock("2026-01-04", 1_767_481_200L, 1_767_510_001L),
+            IllnessInputs.SleepBlock("1969-12-31", -7_200L, -3_599L),
+        ))
+        out.add("SM|" + mids.keys.sorted().joinToString(";") { "$it=${mids.getValue(it)}" })
         return out
     }
 

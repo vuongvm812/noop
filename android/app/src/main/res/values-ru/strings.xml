@@ -2854,4 +2854,8 @@
     <string name="workout_watch_reference_intensity_minutes">Минуты интенсивности</string>
     <string name="workout_watch_reference_intensity_split">%1$d умеренных · %2$d интенсивных</string>
     <string name="workout_watch_reference_explanation">Значения, рассчитанные вашими часами для этой тренировки. Training Effect принимает значения от 0 до 5, тренировочная нагрузка основана на EPOC, а интенсивная минута засчитывается в минуты интенсивности вдвойне. NOOP показывает их для справки и не использует в Effort или Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">r Пирсона</string>
+    <string name="l10n_compare_screen_spearman_rho">ρ Спирмена</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Метод корреляции</string>
 </resources>

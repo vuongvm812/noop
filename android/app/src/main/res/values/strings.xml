@@ -2988,4 +2988,8 @@
     <string name="workout_watch_reference_intensity_minutes">Intensity Minutes</string>
     <string name="workout_watch_reference_intensity_split">%1$d moderate · %2$d vigorous</string>
     <string name="workout_watch_reference_explanation">Figures your watch computed for this session. Training Effect runs from 0 to 5, training load is based on EPOC, and a vigorous minute counts twice toward intensity minutes. NOOP shows them for reference and does not use them in Effort or Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">Pearson r</string>
+    <string name="l10n_compare_screen_spearman_rho">Spearman ρ</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Correlation method</string>
 </resources>

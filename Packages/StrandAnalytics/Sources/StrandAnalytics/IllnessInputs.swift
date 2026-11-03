@@ -21,6 +21,11 @@ import Foundation
 //                      baseline and the recent mean, folded with the matching config
 //                      (`Baselines.metricCfg["skin_temp"]` or `VitalBands.skinTempDeviationCfg`).
 //
+//   • travel / body-clock jump: a recent night's sleep midpoint ≥ `phaseJumpMinutes` (3 h) from the
+//                      baseline's circular-mean midpoint, both on the UTC clock. Sleep follows the local clock,
+//                      so a time-zone crossing or a shift-pattern change moves the UTC midpoint the moment it
+//                      happens; an irregular baseline (low concentration) is never a reference.
+//
 // Journal confounders are matched on the catalog's canonical question keys (normalised the way the
 // catalog normalises them), never on substrings — "pill", "still" and "chill" are not "ill", and
 // "drink water" is not alcohol.
@@ -33,6 +38,12 @@ public enum IllnessInputs {
     public static let baselineNights: Int = 28
     /// A day's strain at/above this many personal spreads over its baseline counts as a hard workout.
     public static let hardWorkoutZ: Double = 2.0
+    /// A recent sleep midpoint this far (minutes, circular) from the baseline's counts as a body-clock jump.
+    public static let phaseJumpMinutes: Double = 180
+    /// Baseline nights with a sleep midpoint needed before the jump test has a reference.
+    public static let phaseBaselineMinNights: Int = 7
+    /// Mean resultant length below which the baseline's sleep timing is too irregular to be a reference.
+    public static let phaseBaselineMinConcentration: Double = 0.5
 
     // MARK: - Inputs
 
@@ -44,11 +55,23 @@ public enum IllnessInputs {
         public let respiration: Double?
         public let skinTemp: Double?
         public let strain: Double?
+        /// The main sleep block's midpoint, in minutes into the UTC day [0, 1440) (`sleepMidpoints`).
+        public let sleepMidpointUtcMin: Double?
         public init(day: String, restingHR: Double? = nil, hrv: Double? = nil,
-                    respiration: Double? = nil, skinTemp: Double? = nil, strain: Double? = nil) {
+                    respiration: Double? = nil, skinTemp: Double? = nil, strain: Double? = nil,
+                    sleepMidpointUtcMin: Double? = nil) {
             self.day = day; self.restingHR = restingHR; self.hrv = hrv
             self.respiration = respiration; self.skinTemp = skinTemp; self.strain = strain
+            self.sleepMidpointUtcMin = sleepMidpointUtcMin
         }
+    }
+
+    /// One sleep block keyed by its local wake day, bounds in unix seconds.
+    public struct SleepBlock: Equatable, Sendable {
+        public let day: String
+        public let start: Int
+        public let end: Int
+        public init(day: String, start: Int, end: Int) { self.day = day; self.start = start; self.end = end }
     }
 
     /// One signal's reading plus whether its baseline is trusted.
@@ -67,6 +90,8 @@ public enum IllnessInputs {
         public let baselineTrusted: Bool
         /// The strain day before a recent night sits ≥ `hardWorkoutZ` over its personal baseline.
         public let hardWorkout: Bool
+        /// A recent night's sleep timing jumped ≥ `phaseJumpMinutes` from the personal baseline.
+        public let travelPhaseJump: Bool
 
         public var inputs: IllnessSignalEngine.Inputs {
             IllnessSignalEngine.Inputs(restingHR: restingHR?.reading, skinTemp: skinTemp?.reading,
@@ -90,7 +115,7 @@ public enum IllnessInputs {
     public static func build(_ nights: [Night]) -> Built {
         guard let latest = nights.last else {
             return Built(restingHR: nil, hrv: nil, respiration: nil, skinTemp: nil,
-                         baselineTrusted: false, hardWorkout: false)
+                         baselineTrusted: false, hardWorkout: false, travelPhaseJump: false)
         }
         let recent = Array(nights.suffix(recentNights))
         let base = baseline(nights)
@@ -114,7 +139,8 @@ public enum IllnessInputs {
 
         return Built(restingHR: rhr, hrv: hrv, respiration: resp, skinTemp: skin,
                      baselineTrusted: (rhr?.trusted ?? false) || (hrv?.trusted ?? false),
-                     hardWorkout: hardWorkout(nights, base: base))
+                     hardWorkout: hardWorkout(nights, base: base),
+                     travelPhaseJump: phaseJump(nights, base: base))
     }
 
     /// The baseline nights: up to `baselineNights` ending `recentNights + gapNights` before the newest.
@@ -162,6 +188,49 @@ public enum IllnessInputs {
         return false
     }
 
+    /// A body-clock jump on either recent night: its sleep midpoint against the baseline's circular-mean
+    /// midpoint (UTC clock). False without `phaseBaselineMinNights` baseline midpoints or when the baseline
+    /// timing is too irregular to be a reference (rotating shifts), so it never suppresses on thin data.
+    /// Kotlin twin: `IllnessInputs.phaseJump`.
+    static func phaseJump(_ nights: [Night], base: [Night]) -> Bool {
+        let ref = base.compactMap(\.sleepMidpointUtcMin)
+        guard ref.count >= phaseBaselineMinNights else { return false }
+        var s = 0.0
+        var c = 0.0
+        for m in ref {
+            let a = m * 2.0 * Double.pi / 1440.0
+            s += sin(a)
+            c += cos(a)
+        }
+        guard (s * s + c * c).squareRoot() / Double(ref.count) >= phaseBaselineMinConcentration else { return false }
+        var mean = atan2(s, c) * 1440.0 / (2.0 * Double.pi)
+        if mean < 0 { mean += 1440.0 }
+        for night in nights.suffix(recentNights) {
+            guard let m = night.sleepMidpointUtcMin else { continue }
+            var d = abs(m - mean).truncatingRemainder(dividingBy: 1440.0)
+            if d > 720.0 { d = 1440.0 - d }
+            if d >= phaseJumpMinutes { return true }
+        }
+        return false
+    }
+
+    /// The main sleep block's midpoint per wake day, in minutes into the UTC day [0, 1440). The longest
+    /// block wins its day (a nap never moves the clock); an equal-length block keeps the first seen.
+    /// Kotlin twin: `IllnessInputs.sleepMidpoints`.
+    public static func sleepMidpoints(_ blocks: [SleepBlock]) -> [String: Double] {
+        var best: [String: SleepBlock] = [:]
+        for b in blocks where b.end > b.start {
+            if let cur = best[b.day], cur.end - cur.start >= b.end - b.start { continue }
+            best[b.day] = b
+        }
+        var out: [String: Double] = [:]
+        for (day, b) in best {
+            let mid = b.start + (b.end - b.start) / 2
+            out[day] = Double(((mid % 86_400) + 86_400) % 86_400) / 60.0
+        }
+        return out
+    }
+
     // MARK: - Journal context
 
     /// Canonical journal questions (normalised) that name each confounder. These are the catalog's
@@ -172,18 +241,17 @@ public enum IllnessInputs {
     public static var saunaQuestions: Set<String> { ["did you use a sauna?"] }
     public static var unwellQuestions: Set<String> { ["did you feel sick or ill?"] }
 
-    /// The engine context from the canonical questions answered YES on the recent nights' days, the
-    /// built signals (for trust + the strain-based hard workout) and a detected body-clock jump.
+    /// The engine context from the canonical questions answered YES on the recent nights' days and the
+    /// built signals (trust, the strain-based hard workout, the sleep-timing body-clock jump).
     /// Kotlin twin: `IllnessInputs.context`.
-    public static func context(yesQuestions: [String], built: Built,
-                               travelPhaseJump: Bool = false) -> IllnessSignalEngine.Context {
+    public static func context(yesQuestions: [String], built: Built) -> IllnessSignalEngine.Context {
         let keys = Set(yesQuestions.map(normalizeQuestion))
         return IllnessSignalEngine.Context(
             alcohol: !keys.isDisjoint(with: alcoholQuestions),
             stress: !keys.isDisjoint(with: stressQuestions),
             sauna: !keys.isDisjoint(with: saunaQuestions),
             hardOrLateWorkout: built.hardWorkout,
-            travelPhaseJump: travelPhaseJump,
+            travelPhaseJump: built.travelPhaseJump,
             alreadyUnwell: !keys.isDisjoint(with: unwellQuestions),
             baselineTrusted: built.baselineTrusted)
     }

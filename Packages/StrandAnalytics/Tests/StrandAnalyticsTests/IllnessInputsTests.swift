@@ -99,6 +99,47 @@ final class IllnessInputsTests: XCTestCase {
         XCTAssertTrue(IllnessInputs.context(yesQuestions: ["Have any alcoholic drinks?"], built: b).alcohol)
     }
 
+    private func withMidpoints(_ n: [IllnessInputs.Night], _ mid: (Int) -> Double?) -> [IllnessInputs.Night] {
+        n.enumerated().map { i, x in
+            IllnessInputs.Night(day: x.day, restingHR: x.restingHR, hrv: x.hrv, respiration: x.respiration,
+                                skinTemp: x.skinTemp, strain: x.strain, sleepMidpointUtcMin: mid(i))
+        }
+    }
+
+    // A 6 h time-zone crossing moves the UTC sleep midpoint at once; jitter within an hour does not.
+    // The baseline straddles UTC midnight to exercise the circular mean.
+    func testSleepTimingJumpIsTravel() {
+        let jitter: [Double] = [1410, 1430, 10, 30, 1420, 20, 0]
+        let home = withMidpoints(stableHistory()) { jitter[$0 % 7] }
+        XCTAssertFalse(IllnessInputs.build(home).travelPhaseJump)
+        let east = withMidpoints(stableHistory()) { $0 >= 29 ? 1080 : jitter[$0 % 7] }
+        let b = IllnessInputs.build(east)
+        XCTAssertTrue(b.travelPhaseJump)
+        XCTAssertTrue(IllnessInputs.context(yesQuestions: [], built: b).travelPhaseJump)
+        let nearly = withMidpoints(stableHistory()) { $0 >= 28 ? 170 : jitter[$0 % 7] }
+        XCTAssertFalse(IllnessInputs.build(nearly).travelPhaseJump)
+    }
+
+    // No reference without enough baseline midpoints, or with an irregular (rotating-shift) baseline.
+    func testIrregularOrThinSleepTimingIsNoReference() {
+        let thin = withMidpoints(stableHistory()) { $0 < 21 ? nil : ($0 >= 28 ? 600 : 180) }
+        XCTAssertFalse(IllnessInputs.build(thin).travelPhaseJump)
+        let rotating = withMidpoints(stableHistory()) { $0 >= 28 ? 600 : Double(($0 % 4) * 360) }
+        XCTAssertFalse(IllnessInputs.build(rotating).travelPhaseJump)
+    }
+
+    func testSleepMidpointsKeepTheMainBlock() {
+        let m = IllnessInputs.sleepMidpoints([
+            .init(day: "2026-01-02", start: 1_767_312_000, end: 1_767_340_800),   // 00:00–08:00 UTC
+            .init(day: "2026-01-02", start: 1_767_358_800, end: 1_767_362_400),   // a nap
+            .init(day: "2026-01-03", start: 1_767_391_200, end: 1_767_391_200),   // empty block
+            .init(day: "2026-01-04", start: 1_767_481_200, end: 1_767_510_000),   // 23:00–07:00 UTC
+        ])
+        XCTAssertEqual(m["2026-01-02"], 240)
+        XCTAssertNil(m["2026-01-03"])
+        XCTAssertEqual(m["2026-01-04"], 180)
+    }
+
     func testShortHistoryIsNotPresent() {
         let b = IllnessInputs.build(Array(stableHistory().prefix(5)))
         XCTAssertEqual(b.restingHR?.reading.present, false)

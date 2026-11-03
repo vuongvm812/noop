@@ -52,6 +52,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -263,6 +265,18 @@ internal fun parseCompareSelection(raw: String?, minSelection: Int, maxSelection
 private object ComparePrefs {
     private const val KEY_RANGE = "compare.range"
     private const val KEY_SELECTED = "compare.selectedMetrics"
+    private const val KEY_METHOD = "compare.correlationMethod"
+
+    /** Pearson (linear) or Spearman (ranks: robust to an outlier night or an imported step change). */
+    fun readMethod(context: Context): CorrelationEngine.Method {
+        val raw = NoopPrefs.of(context).getString(KEY_METHOD, null) ?: return CorrelationEngine.Method.PEARSON
+        return CorrelationEngine.Method.entries.firstOrNull { it.name.lowercase() == raw }
+            ?: CorrelationEngine.Method.PEARSON
+    }
+
+    fun writeMethod(context: Context, method: CorrelationEngine.Method) {
+        NoopPrefs.of(context).edit().putString(KEY_METHOD, method.name.lowercase()).apply()
+    }
 
     fun readRange(context: Context): CompareRange {
         val raw = NoopPrefs.of(context).getString(KEY_RANGE, null) ?: return CompareRange.Year
@@ -1183,8 +1197,8 @@ private data class PairResult(
     val id: String get() = "${a.id}~${b.id}"
 }
 
-/** The pairwise Pearson scan over the non-empty series — strongest relationships first. */
-private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
+/** The pairwise scan ([method]) over the non-empty series — strongest relationships first. */
+private fun computePairResults(series: List<CompareSeries>, method: CorrelationEngine.Method): List<PairResult> {
     val s = series.filter { it.rows.isNotEmpty() }
     if (s.size < 2) return emptyList()
     val out = ArrayList<PairResult>()
@@ -1192,7 +1206,7 @@ private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
         for (j in i + 1 until s.size) {
             val pairs = CorrelationEngine.alignByDay(s[i].rows, s[j].rows)
             if (pairs.size < CorrelationEngine.minPairs) continue
-            val c = CorrelationEngine.pearson(pairs) ?: continue
+            val c = CorrelationEngine.correlate(pairs, method) ?: continue
             out.add(PairResult(a = s[i], b = s[j], r = c.r, n = c.n))
         }
     }
@@ -1202,18 +1216,35 @@ private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
 
 @Composable
 private fun CorrelationSection(series: List<CompareSeries>, range: CompareRange) {
+    val context = LocalContext.current
+    var method by remember { mutableStateOf(ComparePrefs.readMethod(context)) }
     // A stable fingerprint of the windowed series content; the scan recomputes only when
     // that content changes (selection / range / data updates), never on unrelated recompose.
     val key = series.joinToString("|") { s ->
         "${s.id}:${s.rows.size}:${s.rows.firstOrNull()?.first ?: ""}>${s.rows.lastOrNull()?.first ?: ""}"
     }
-    val pairs = remember(key) { computePairResults(series) }
+    val pairs = remember(key, method) { computePairResults(series, method) }
+    fun methodLabel(m: CorrelationEngine.Method): String = uiString(
+        if (m == CorrelationEngine.Method.PEARSON) R.string.l10n_compare_screen_pearson_r
+        else R.string.l10n_compare_screen_spearman_rho,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader(
             "How They Move Together",
-            overline = "Pearson r · ${range.phrase}",
+            overline = uiString(R.string.l10n_compare_screen_method_overline, methodLabel(method), range.phrase),
             trailing = if (pairs.isEmpty()) null else "${pairs.size} pairs",
+        )
+        val methodDescription = uiString(R.string.l10n_compare_screen_correlation_method)
+        SegmentedPillControl(
+            items = listOf(CorrelationEngine.Method.PEARSON, CorrelationEngine.Method.SPEARMAN),
+            selection = method,
+            label = { methodLabel(it) },
+            onSelect = {
+                method = it
+                ComparePrefs.writeMethod(context, it)
+            },
+            modifier = Modifier.semantics { contentDescription = methodDescription },
         )
 
         if (pairs.isEmpty()) {

@@ -1173,7 +1173,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         days = days,
                         cycleOptedIn = _cycleTrackingEnabled.value,
                         loggedPeriodStarts = loggedPeriodStarts,
-                        journalYesQuestions = illnessJournalYes(days),
+                        confounders = V5HealthSignals.IllnessConfounders(
+                            illnessJournalYes(days), illnessSleepMidpoints(),
+                        ),
                         activityBins = lastCircadianBins.first,
                         daysObserved = lastCircadianBins.second,
                     )
@@ -3040,7 +3042,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     days = days,
                     cycleOptedIn = enabled,
                     loggedPeriodStarts = _periodStarts.value,
-                    journalYesQuestions = illnessJournalYes(days),
+                    confounders = V5HealthSignals.IllnessConfounders(
+                        illnessJournalYes(days), illnessSleepMidpoints(),
+                    ),
                     activityBins = bins.first,
                     daysObserved = bins.second,
                 )
@@ -3107,7 +3111,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             days = days,
             cycleOptedIn = _cycleTrackingEnabled.value,
             loggedPeriodStarts = starts,
-            journalYesQuestions = illnessJournalYes(days),
+            confounders = V5HealthSignals.IllnessConfounders(
+                illnessJournalYes(days), illnessSleepMidpoints(),
+            ),
             activityBins = bins.first,
             daysObserved = bins.second,
         )
@@ -3120,7 +3126,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * workout comes from the strain baseline inside [IllnessInputs], not from a session count.
      */
     private suspend fun illnessJournalYes(days: List<DailyMetric>): List<String> {
-        val recent = IllnessInputs.recentDays(days.map { V5HealthSignals.illnessNight(it) })
+        val recent = IllnessInputs.recentDays(days.map { V5HealthSignals.illnessNight(it, emptyMap()) })
         if (recent.isEmpty()) return emptyList()
         val from = recent.min()
         val to = recent.max()
@@ -3131,6 +3137,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             ).filter { it.answeredYes && it.day in recent }.map { it.question }
         }.getOrDefault(emptyList())
     }
+
+    /**
+     * The main sleep block's UTC midpoint per wake day over the illness builder's window, keyed the way
+     * the daily rows are (local end day), for the body-clock jump confounder. Twin of the Swift read in
+     * `AppModel.evaluateIllness`.
+     */
+    private suspend fun illnessSleepMidpoints(): Map<String, Double> = runCatching {
+        IllnessInputs.sleepMidpoints(
+            repository.allSleepSessionsUnion(deviceId, days = 40).map {
+                IllnessInputs.SleepBlock(WhoopRepository.localEndDay(it), it.effectiveStartTs, it.endTs)
+            },
+        )
+    }.getOrDefault(emptyMap())
 
     /** Build today's fused multi-device record for [FusedRecordScreen] (v5 Local Multi-Device Fusion).
      *  Reads each source's banked row for the logical day and runs the pure FusionResolver per metric;

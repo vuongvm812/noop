@@ -143,6 +143,14 @@ struct CompareView: View {
     // default-then-restore flash.
     @AppStorage("compare.rangeRaw") private var savedRangeRaw = CompareRange.year.rawValue
     @AppStorage("compare.selectedIds") private var savedSelectedIds = ""
+    /// Pearson (linear) or Spearman (ranks: robust to an outlier night or an imported step change) for
+    /// the pairwise card. Persisted like the range; Android keeps the same key.
+    @AppStorage("compare.correlationMethod") private var savedMethodRaw = CorrelationEngine.Method.pearson.rawValue
+    private var method: CorrelationEngine.Method { CorrelationEngine.Method(rawValue: savedMethodRaw) ?? .pearson }
+    private var methodBinding: Binding<CorrelationEngine.Method> {
+        Binding(get: { CorrelationEngine.Method(rawValue: savedMethodRaw) ?? .pearson },
+                set: { savedMethodRaw = $0.rawValue })
+    }
 
     /// The active window, backed directly by @AppStorage so it is the persisted value from the first
     /// frame. Read-only; writes go through `rangeBinding`.
@@ -515,7 +523,7 @@ struct CompareView: View {
     /// changes when `selected`, `range`, or fetched `fullSeries` change, so this
     /// covers every case that alters the scan result. Used to invalidate `pairCache`.
     private func correlationKey(_ series: [CompareSeries]) -> String {
-        series
+        savedMethodRaw + "#" + series
             .filter { !$0.rows.isEmpty }
             .map { s in "\(s.id):\(s.rows.count):\(s.rows.first?.day ?? "")>\(s.rows.last?.day ?? "")" }
             .joined(separator: "|")
@@ -538,7 +546,7 @@ struct CompareView: View {
         for i in 0..<(s.count - 1) {
             for j in (i + 1)..<s.count {
                 let pairs = CorrelationEngine.alignByDay(s[i].rows, s[j].rows)
-                guard pairs.count >= CorrelationEngine.minPairs, let c = CorrelationEngine.pearson(pairs) else { continue }
+                guard pairs.count >= CorrelationEngine.minPairs, let c = CorrelationEngine.correlate(pairs, method: method) else { continue }
                 out.append(PairResult(
                     id: "\(s[i].id)~\(s[j].id)",
                     a: s[i], b: s[j], r: c.r, n: c.n
@@ -563,10 +571,15 @@ struct CompareView: View {
         let pairs = pairResults(series)
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("How They Move Together",
-                          overline: "Pearson r · \(range.phrase)",
+                          overline: method == .pearson
+                              ? "Pearson r · \(range.phrase)" : "Spearman ρ · \(range.phrase)",
                           trailing: pairs.isEmpty ? nil
                                     : (pairs.count == 1 ? String(localized: "1 pair")
                                                         : String(localized: "\(pairs.count) pairs")))
+            SegmentedPillControl([CorrelationEngine.Method.pearson, .spearman], selection: methodBinding) {
+                $0 == .pearson ? String(localized: "Pearson r") : String(localized: "Spearman ρ")
+            }
+            .accessibilityLabel("Correlation method")
 
             if pairs.isEmpty {
                 NoopCard {

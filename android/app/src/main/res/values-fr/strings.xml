@@ -2958,4 +2958,8 @@
     <string name="workout_watch_reference_intensity_minutes">Minutes d\'intensité</string>
     <string name="workout_watch_reference_intensity_split">%1$d modérées · %2$d intenses</string>
     <string name="workout_watch_reference_explanation">Valeurs calculées par votre montre pour cette séance. Le Training Effect va de 0 à 5, la charge d\'entraînement repose sur l\'EPOC et une minute intense compte double dans les minutes d\'intensité. NOOP les affiche à titre de référence et ne les utilise ni dans Effort ni dans Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">Pearson r</string>
+    <string name="l10n_compare_screen_spearman_rho">Spearman ρ</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Méthode de corrélation</string>
 </resources>

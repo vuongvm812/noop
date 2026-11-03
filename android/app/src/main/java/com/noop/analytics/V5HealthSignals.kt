@@ -27,6 +27,16 @@ object V5HealthSignals {
     /** Minimum trailing nights before a z-score is trusted (mirrors Baselines.minNightsTrust intent). */
     private const val MIN_BASELINE_NIGHTS = 14
 
+    /**
+     * What the illness heads-up reads beyond the nightly vitals: [journalYesQuestions] answered YES on the
+     * recent nights' days (matched on canonical catalog keys by [IllnessInputs.context]) and
+     * [sleepMidpoints] by wake day ([IllnessInputs.sleepMidpoints]), the body-clock jump's input.
+     */
+    data class IllnessConfounders(
+        val journalYesQuestions: List<String> = emptyList(),
+        val sleepMidpoints: Map<String, Double> = emptyMap(),
+    )
+
     /** The published engine results for the Health hub's skin-temp suite, all already decided. */
     data class Snapshot(
         val cycle: CyclePhaseEngine.Result,
@@ -47,14 +57,13 @@ object V5HealthSignals {
      * Run the three engines over [days] (oldest→newest). [cycleOptedIn] gates whether the cycle classifier
      * is run at all (it returns a cheap LEARNING result when off, so the caller can publish unconditionally
      * and the UI's opt-in card still shows). [loggedPeriodStarts] are optional "yyyy-MM-dd" period-start
-     * days. [journalYesQuestions] are the questions answered YES on the recent nights' days, matched on
-     * canonical catalog keys by [IllnessInputs.context].
+     * days. [confounders] carries the illness heads-up's journal answers and sleep timing.
      */
     fun evaluate(
         days: List<DailyMetric>,
         cycleOptedIn: Boolean,
         loggedPeriodStarts: List<String> = emptyList(),
-        journalYesQuestions: List<String> = emptyList(),
+        confounders: IllnessConfounders = IllnessConfounders(),
         habitualWakeHour: Double = 7.0,
         activityBins: List<CircadianEngine.ActivityBin> = emptyList(),
         daysObserved: Int = 0,
@@ -102,7 +111,7 @@ object V5HealthSignals {
         // a gap, two-night persistence, and a skin-temp baseline of the newest night's kind. The
         // journal context's confounder flags are kept; trust and the hard-workout flag come from the
         // builder so both platforms gate on the same baseline.
-        val built = IllnessInputs.build(days.map { illnessNight(it) })
+        val built = IllnessInputs.build(days.map { illnessNight(it, confounders.sleepMidpoints) })
         val baselineTrusted = built.baselineTrusted
         val firedLabels = HashMap<String, String>()
         built.restingHR?.reading?.let { if (it.present && it.zIllnessward >= IllnessSignalEngine.signalZThreshold) firedLabels["restingHR"] = "RHR up" }
@@ -112,7 +121,7 @@ object V5HealthSignals {
 
         val illness = IllnessSignalEngine.evaluate(
             inputs = built.inputs,
-            context = IllnessInputs.context(journalYesQuestions, built),
+            context = IllnessInputs.context(confounders.journalYesQuestions, built),
             firedLabels = firedLabels,
         )
 
@@ -144,9 +153,10 @@ object V5HealthSignals {
     internal const val MIN_CIRCADIAN_BINS = 6
 
     /** The illness builder's view of one cached day (twin of Swift `AppModel.illnessNight`). */
-    fun illnessNight(d: DailyMetric): IllnessInputs.Night = IllnessInputs.Night(
+    fun illnessNight(d: DailyMetric, midpoints: Map<String, Double>): IllnessInputs.Night = IllnessInputs.Night(
         day = d.day, restingHR = d.restingHr?.toDouble(), hrv = d.avgHrv,
         respiration = d.respRateBpm, skinTemp = d.skinTempDevC, strain = d.strain,
+        sleepMidpointUtcMin = midpoints[d.day],
     )
 
     /** Whether a row can contribute to the cycle classifier's availability gate. */
