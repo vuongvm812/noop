@@ -77,11 +77,4 @@ final class ReadinessEngineTests: XCTestCase {
         // The legacy no-`today` path is unchanged — still falls back to the most recent row.
         XCTAssertNotEqual(ReadinessEngine.evaluate(days: days).level, .insufficient)
     }
-
-    func testStatsHelpers() {
-        XCTAssertEqual(ReadinessEngine.mean([2, 4, 6]), 4)
-        XCTAssertEqual(ReadinessEngine.sampleSD([2, 4, 6])!, 2.0, accuracy: 0.0001)
-        XCTAssertNil(ReadinessEngine.sampleSD([5]))
-        XCTAssertNil(ReadinessEngine.mean([]))
-    }
 }

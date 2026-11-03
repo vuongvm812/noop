@@ -350,17 +350,4 @@ public enum ReadinessEngine {
         return (.balanced, "Balanced",
                 "Nothing's flagging. Train to feel - your body's holding steady.")
     }
-
-    // MARK: Stats helpers
-
-    static func mean(_ xs: [Double]) -> Double? {
-        xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count)
-    }
-
-    /// Sample standard deviation (n-1). nil for fewer than 2 points.
-    static func sampleSD(_ xs: [Double]) -> Double? {
-        guard xs.count >= 2, let m = mean(xs) else { return nil }
-        let ss = xs.reduce(0) { $0 + ($1 - m) * ($1 - m) }
-        return (ss / Double(xs.count - 1)).squareRoot()
-    }
 }

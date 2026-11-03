@@ -122,12 +122,4 @@ class ReadinessEngineTest {
         // The legacy no-`today` path is unchanged — still falls back to the most recent row.
         assertTrue(ReadinessEngine.evaluate(days).level != ReadinessEngine.Level.INSUFFICIENT)
     }
-
-    @Test
-    fun statsHelpers() {
-        assertEquals(4.0, ReadinessEngine.mean(listOf(2.0, 4.0, 6.0))!!, 1e-12)
-        assertEquals(2.0, ReadinessEngine.sampleSD(listOf(2.0, 4.0, 6.0))!!, 0.0001)
-        assertNull(ReadinessEngine.sampleSD(listOf(5.0)))
-        assertNull(ReadinessEngine.mean(emptyList()))
-    }
 }
