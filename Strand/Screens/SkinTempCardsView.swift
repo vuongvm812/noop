@@ -55,6 +55,17 @@ private struct PrivacyNote: View {
 
 // MARK: - 1. Cycle awareness card (OPT-IN)
 
+/// The cycle sparkline's scrub value (#58): the nightly fused index, a signed z-score with no unit.
+func cycleIndexText(_ v: Double) -> String {
+    String(format: "%+.1f", locale: AppLanguage.activeLocale, v)
+}
+
+/// The cycle sparkline's scrub date line (#58), or nil when the night list is out of step with the curve.
+func cycleNightLabel(_ days: [String], count: Int) -> ((Int) -> String)? {
+    guard days.count == count else { return nil }
+    return { SleepModel.shortDayLabel(days[$0]) }
+}
+
 /// Cycle phase awareness from the nightly skin-temperature shift, corroborated by the luteal
 /// RHR rise + HRV drop. OPT-IN by design — the host shows this only after the user enables
 /// cycle awareness (default OFF). Awareness only; never contraception/fertility/diagnosis.
@@ -64,6 +75,8 @@ struct CycleAwarenessCard: View {
     /// The nightly fused-index (or temp-deviation) series, oldest→newest, for the sparkline.
     /// Optional — the card is honest with or without a curve.
     var curve: [Double] = []
+    /// The night (yyyy-MM-dd) of each `curve` value, for the scrub readout (#58).
+    var curveDays: [String] = []
     /// Called when the user taps "Log period start" (opt-in logged-period mode). nil hides it.
     var onLogPeriod: (() -> Void)? = nil
     /// Called when the user opens the cycle detail screen. nil makes the card non-navigating.
@@ -88,7 +101,8 @@ struct CycleAwarenessCard: View {
                 if !curve.isEmpty, curve.count > 1 {
                     Sparkline(values: curve,
                               gradient: Gradient(colors: [hue.opacity(0.4), StrandPalette.restBright]),
-                              showsHover: false)
+                              valueFormat: cycleIndexText,
+                              indexLabel: cycleNightLabel(curveDays, count: curve.count))
                         .frame(height: 30)
                         .accessibilityHidden(true)
                 }
@@ -382,7 +396,7 @@ struct MenstrualCycleHomeCard: View {
         .sheet(isPresented: $showingTracker) {
             Group {
                 if let result = model.cyclePhase {
-                    CycleTrackerView(result: result, curve: model.cycleCurve)
+                    CycleTrackerView(result: result, curve: model.cycleCurve, curveDays: model.cycleCurveDays)
                 } else {
                     ProgressView("Preparing cycle tracker…")
                         .task { await model.refreshV5Signals() }
@@ -442,6 +456,8 @@ struct CycleTrackerView: View {
 
     let result: CyclePhaseEngine.Result
     var curve: [Double] = []
+    /// The night (yyyy-MM-dd) of each `curve` value, for the scrub readout (#58).
+    var curveDays: [String] = []
 
     @State private var selectedDate = Date()
     @State private var starts: [String] = []
@@ -520,7 +536,8 @@ struct CycleTrackerView: View {
                     Sparkline(values: curve,
                               gradient: Gradient(colors: [StrandPalette.restColor.opacity(0.4),
                                                           StrandPalette.restBright]),
-                              showsHover: false)
+                              valueFormat: cycleIndexText,
+                              indexLabel: cycleNightLabel(curveDays, count: curve.count))
                         .frame(height: NoopMetrics.space10)
                         .accessibilityHidden(true)
                 }

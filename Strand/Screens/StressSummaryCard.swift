@@ -28,15 +28,12 @@ struct StressSummaryCard: View {
                 } else if let reading {
                     figures(reading)
                     if reading.points.count >= 2 {
-                        // The scrub cursor (#58) is live only on the Stress screen. With the chevron the
-                        // card is a link to that screen, and a scrub would compete with the press that
-                        // opens it.
+                        // The scrub (#58) names each point's level and time.
                         let points = reading.points
                         Sparkline(values: points.map(\.level),
                                   gradient: Gradient(colors: [StrandPalette.stressColor.opacity(0.5),
                                                               StrandPalette.stressColor]),
                                   range: 0...reading.scaleMax,
-                                  showsHover: !showsChevron,
                                   valueFormat: { Self.format($0, source: reading.source) },
                                   indexLabel: { Self.timeLabel(points[$0].ts) })
                             .frame(height: 36)
@@ -127,7 +124,8 @@ struct StressSummaryCard: View {
         "/" + String(Int(scaleMax))
     }
 
-    private static func timeLabel(_ ts: Int) -> String {
+    /// Also the Key Metrics Stress tile's scrub readout time (#58).
+    static func timeLabel(_ ts: Int) -> String {
         Date(timeIntervalSince1970: TimeInterval(ts)).formatted(date: .omitted, time: .shortened)
     }
 }

@@ -371,17 +371,17 @@ public struct Hypnogram: View {
 
     /// What a scrub cursor resolved to: the interval under it (or nearest), whether the instant is
     /// covered by no interval at all, and the instant itself in seconds from the night's start.
-    struct ScrubHit: Equatable {
-        var index: Int
-        var inGap: Bool
-        var time: TimeInterval
+    public struct ScrubHit: Equatable, Sendable {
+        public var index: Int
+        public var inGap: Bool
+        public var time: TimeInterval
     }
 
     /// Resolve an instant `t` (seconds from the night's start) against ascending `intervals`. An interval
     /// containing `t` wins; otherwise the nearest by centre time. The instant is a gap only when it sits
     /// more than one 30 s epoch from every interval, so the sub-epoch seams between stage runs still read
     /// as the neighbouring stage. Pure, so the tests pin it without a render.
-    static func scrubHit(at t: TimeInterval, in intervals: [SleepInterval]) -> ScrubHit? {
+    public static func scrubHit(at t: TimeInterval, in intervals: [SleepInterval]) -> ScrubHit? {
         guard !intervals.isEmpty else { return nil }
         for (i, iv) in intervals.enumerated() where t >= iv.start && t <= iv.end {
             return ScrubHit(index: i, inGap: false, time: t)

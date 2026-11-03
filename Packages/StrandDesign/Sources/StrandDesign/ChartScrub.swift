@@ -103,14 +103,26 @@ public extension View {
     /// Drive a chart's scrub cursor from the pointer and from touch.
     ///
     /// `x` is the cursor's x in this view's local space, nil when no cursor is shown. The caller resolves it
-    /// to a reading and draws the rule and callout; this only owns the input. Pass `enabled: false` for a
-    /// chart that must stay inert (for example a card that is itself a navigation link).
+    /// to a reading and draws the rule and callout; this only owns the input. Pass `enabled: false` while
+    /// the chart has nothing to read (for example a hidden or empty series).
     ///
     /// - macOS: hover moves the cursor; a click-drag moves it too and keeps it while the button is held.
     /// - iOS: touch and hold (0.25 s, within 8 pt) shows the cursor, dragging moves it, lifting clears it. A swipe that
     ///   moves before the hold completes is left to the enclosing scroll view.
-    func chartScrub(_ x: Binding<CGFloat?>, enabled: Bool = true) -> some View {
-        modifier(ChartScrubModifier(x: x, enabled: enabled))
+    ///
+    /// `tapThrough: true` is for a chart inside a tappable parent (a navigation link or a button): macOS reads by
+    /// hover only, so a click still reaches the parent, and on iOS a plain tap fails the hold and reaches it too.
+    func chartScrub(_ x: Binding<CGFloat?>, enabled: Bool = true, tapThrough: Bool = false) -> some View {
+        modifier(ChartScrubModifier(
+            location: Binding(get: { x.wrappedValue.map { CGPoint(x: $0, y: 0) } },
+                              set: { x.wrappedValue = $0?.x }),
+            enabled: enabled, tapThrough: tapThrough))
+    }
+
+    /// `chartScrub` for a two-dimensional chart (a scatter or a grid): the same gestures, reporting the
+    /// cursor's full location so the caller can snap to the nearest point in both axes.
+    func chartScrub(location: Binding<CGPoint?>, enabled: Bool = true, tapThrough: Bool = false) -> some View {
+        modifier(ChartScrubModifier(location: location, enabled: enabled, tapThrough: tapThrough))
     }
 
     /// A light selection tick each time the scrub cursor snaps to a different reading. `key` is whatever
@@ -122,15 +134,16 @@ public extension View {
 }
 
 private struct ChartScrubModifier: ViewModifier {
-    @Binding var x: CGFloat?
+    @Binding var location: CGPoint?
     var enabled: Bool
+    var tapThrough: Bool
 
     /// Every cursor write is non-animating. Entering or leaving a chart inside an animated context makes
     /// Swift Charts replay the line's draw-on animation, flickering the curve (#104).
-    private func set(_ value: CGFloat?) {
+    private func set(_ value: CGPoint?) {
         var tx = Transaction()
         tx.disablesAnimations = true
-        withTransaction(tx) { x = value }
+        withTransaction(tx) { location = value }
     }
 
     func body(content: Content) -> some View {
@@ -139,24 +152,28 @@ private struct ChartScrubModifier: ViewModifier {
             .onContinuousHover(coordinateSpace: .local) { phase in
                 guard enabled else { return }
                 switch phase {
-                case .active(let location): set(location.x)
+                case .active(let point): set(point)
                 case .ended: set(nil)
                 }
             }
-            .gesture(touchGesture, including: enabled ? .all : .none)
+            .gesture(touchGesture, including: gestureMask)
     }
 
     #if os(macOS)
+    private var gestureMask: GestureMask { enabled && !tapThrough ? .all : .none }
+
     private var touchGesture: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onChanged { set($0.location.x) }
+            .onChanged { set($0.location) }
     }
     #else
+    private var gestureMask: GestureMask { enabled ? .all : .none }
+
     private var touchGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
             .onChanged { value in
-                if case .second(true, let drag?) = value { set(drag.location.x) }
+                if case .second(true, let drag?) = value { set(drag.location) }
             }
             .onEnded { _ in set(nil) }
     }

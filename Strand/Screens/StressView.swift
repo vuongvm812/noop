@@ -543,7 +543,9 @@ struct StressView: View {
                 caption: String(localized: "of 3 · \(model.band.title)"),
                 accent: StressRamp.color(model.score),
                 sparkline: model.sparkValues.count > 1 ? model.sparkValues : nil,
-                sparkColor: StressRamp.color(model.score)
+                sparkColor: StressRamp.color(model.score),
+                sparkFormat: { StressTrace.formatLevel($0) },
+                sparkLabels: model.sparkDays
             )
             // Resting HR — an INCREASE is the stressful direction.
             markerTile(
@@ -848,6 +850,8 @@ struct StressModel {
 
     /// Last up-to-14 trend values, for the hero tile sparkline.
     var sparkValues: [Double] { Array(fullTrend.suffix(14)).map(\.value) }
+    /// The day of each `sparkValues` entry, for the tile's scrub readout (#58).
+    var sparkDays: [String] { fullTrend.suffix(14).map { TrendChart.defaultDateString($0.date) } }
 
     private static let dayParser: DateFormatter = {
         let f = DateFormatter()
@@ -1034,9 +1038,9 @@ enum StressMath {
 
 struct DaytimeLoadLine: View {
     let hours: [DaytimeStress.HourPoint]
-    /// Whether the scrub cursor is live (#58). Off where the line sits inside a navigation link (the
-    /// Today-hosted mirror), where a press has to open the Stress tab rather than start a scrub.
-    var interactive: Bool = true
+    /// Set where the line sits inside a navigation link (the Today-hosted mirror): the scrub then reads by
+    /// hover or touch-and-hold only, so a click or a plain tap still opens the Stress tab (#58).
+    var tapThrough: Bool = false
 
     private let chartHeight: CGFloat = 78
 
@@ -1107,7 +1111,7 @@ struct DaytimeLoadLine: View {
                 scrubLayer(width: w, height: h)
             }
             .frame(width: w, height: h)
-            .chartScrub($scrubX, enabled: interactive)
+            .chartScrub($scrubX, tapThrough: tapThrough)
             .chartScrubHaptic(scrubX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: hours.count, width: w) })
         }
         .frame(height: chartHeight)

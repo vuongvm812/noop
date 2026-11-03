@@ -1556,6 +1556,8 @@ struct MetricDetailView: View {
     private func statRow(effectiveRange: ExploreRange,
                          windowed: [(day: String, value: Double)]) -> some View {
         let windowValues = windowed.map(\.value)
+        // The scrub readout's date per point (#58), in the same form as the "Latest" caption.
+        let sparkLabels = windowed.map { pt in parseDay(pt.day).map(longDate) ?? pt.day }
         let latestPoint = latest(in: windowed)
         let s = ComparisonEngine.stat(windowValues)
         let cmp = ComparisonEngine.compare(current: windowValues,
@@ -1584,7 +1586,9 @@ struct MetricDetailView: View {
                      caption: statisticCountCaption(count: s.n, effectiveRange: effectiveRange),
                      accent: accent,
                      sparkline: windowValues.count > 1 ? windowValues : nil,
-                     sparkColor: accent)
+                     sparkColor: accent,
+                     sparkFormat: fmt,
+                     sparkLabels: sparkLabels)
                 .frame(maxWidth: .infinity)
 
             LazyVGrid(
@@ -1617,7 +1621,9 @@ struct MetricDetailView: View {
                      caption: statisticCountCaption(count: s.n, effectiveRange: effectiveRange),
                      accent: accent,
                      sparkline: windowValues.count > 1 ? windowValues : nil,
-                     sparkColor: accent)
+                     sparkColor: accent,
+                     sparkFormat: fmt,
+                     sparkLabels: sparkLabels)
             StatTile(label: "Min", value: fmt(s.min),
                      accent: StrandPalette.textPrimary)
             StatTile(label: "Max", value: fmt(s.max),

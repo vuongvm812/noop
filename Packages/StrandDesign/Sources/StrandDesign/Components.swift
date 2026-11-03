@@ -201,6 +201,10 @@ public struct StatTile<Accessory: View>: View {
     var deltaColor: Color = StrandPalette.textTertiary
     var sparkline: [Double]? = nil
     var sparkColor: Color = StrandPalette.accent
+    /// The scrub readout for a sparkline sample (#58): its value with the unit, and its date (one label per
+    /// `sparkline` value, oldest first). A label array of the wrong length is ignored rather than misread.
+    var sparkFormat: (Double) -> String = StatTile.defaultSparkValue
+    var sparkLabels: [String]? = nil
     /// An optional trailing accessory laid out INLINE in the header row beside the label (e.g. a small
     /// ⓘ that opens a scoring guide). Inline placement — not a corner overlay — so it can never sit on
     /// top of the value, sparkline or trend chip on a narrow tile (#495). Defaults to nothing.
@@ -210,9 +214,12 @@ public struct StatTile<Accessory: View>: View {
                 accent: Color = StrandPalette.textPrimary, delta: String? = nil,
                 deltaColor: Color = StrandPalette.textTertiary,
                 sparkline: [Double]? = nil, sparkColor: Color = StrandPalette.accent,
+                sparkFormat: @escaping (Double) -> String = StatTile.defaultSparkValue,
+                sparkLabels: [String]? = nil,
                 @ViewBuilder accessory: @escaping () -> Accessory) {
         self.label = label; self.value = value; self.caption = caption; self.accent = accent
         self.delta = delta; self.deltaColor = deltaColor; self.sparkline = sparkline; self.sparkColor = sparkColor
+        self.sparkFormat = sparkFormat; self.sparkLabels = sparkLabels
         self.accessory = accessory
     }
 
@@ -239,7 +246,12 @@ public struct StatTile<Accessory: View>: View {
                 // doesn't use StatTile, but guard the reference so the file still compiles there.
                 #if !os(watchOS)
                 if let sparkline, sparkline.count > 1 {
-                    Sparkline(values: sparkline, gradient: Gradient(colors: [sparkColor.opacity(0.5), sparkColor]))
+                    let labels = sparkLabels?.count == sparkline.count ? sparkLabels : nil
+                    // Tap-through: a tile is often a link, so the scrub reads by hover or touch-and-hold.
+                    Sparkline(values: sparkline, gradient: Gradient(colors: [sparkColor.opacity(0.5), sparkColor]),
+                              scrubTapThrough: true,
+                              valueFormat: sparkFormat,
+                              indexLabel: labels.map { l in { l[$0] } })
                         .frame(height: 22).padding(.top, 4)
                         .accessibilityHidden(true)
                 }
@@ -263,15 +275,26 @@ public struct StatTile<Accessory: View>: View {
     }
 }
 
+extension StatTile {
+    /// The sparkline readout's default value text: integer when whole, else one decimal. Kept here rather
+    /// than borrowed from `Sparkline`, which is not compiled for watchOS while this file is.
+    public static func defaultSparkValue(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
+    }
+}
+
 // Backward-compatible convenience: a StatTile with NO accessory (the common case) — every existing
 // call site keeps working unchanged, and the type defaults `Accessory` to `EmptyView`.
 public extension StatTile where Accessory == EmptyView {
     init(label: LocalizedStringKey, value: String, caption: String? = nil,
          accent: Color = StrandPalette.textPrimary, delta: String? = nil,
          deltaColor: Color = StrandPalette.textTertiary,
-         sparkline: [Double]? = nil, sparkColor: Color = StrandPalette.accent) {
+         sparkline: [Double]? = nil, sparkColor: Color = StrandPalette.accent,
+         sparkFormat: @escaping (Double) -> String = StatTile.defaultSparkValue,
+         sparkLabels: [String]? = nil) {
         self.init(label: label, value: value, caption: caption, accent: accent, delta: delta,
                   deltaColor: deltaColor, sparkline: sparkline, sparkColor: sparkColor,
+                  sparkFormat: sparkFormat, sparkLabels: sparkLabels,
                   accessory: { EmptyView() })
     }
 }

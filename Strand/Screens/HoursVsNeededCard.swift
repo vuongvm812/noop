@@ -34,7 +34,9 @@ struct HoursVsNeededCard: View {
                                      typical: need.typical, suffix: "%"),
                 accent: need.latest.map { StrandPalette.recoveryColor(min(100, $0)) } ?? StrandPalette.textPrimary,
                 sparkline: spark(need.series),
-                sparkColor: StrandPalette.restColor)
+                sparkColor: StrandPalette.restColor,
+                sparkFormat: { pctValue($0) },
+                sparkLabels: sparkDays(need))
                 .frame(maxWidth: .infinity)
         }
     }
@@ -68,5 +70,10 @@ struct HoursVsNeededCard: View {
     private func spark(_ series: [Double]) -> [Double]? {
         let tail = Array(series.suffix(30))
         return tail.count > 1 ? tail : nil
+    }
+
+    /// The day of each `spark` value, for the scrub readout (#58): the same trailing 30.
+    private func sparkDays(_ metric: SleepModel.Metric) -> [String] {
+        metric.seriesDays.suffix(30).map(SleepModel.shortDayLabel)
     }
 }

@@ -35,7 +35,9 @@ struct ConsistencyCard: View {
                                      typical: cons.typical, suffix: "%"),
                 accent: cons.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
                 sparkline: spark(cons.series),
-                sparkColor: StrandPalette.metricCyan)
+                sparkColor: StrandPalette.metricCyan,
+                sparkFormat: { pctValue($0) },
+                sparkLabels: sparkDays(cons))
                 .frame(maxWidth: .infinity)
         }
     }
@@ -69,5 +71,10 @@ struct ConsistencyCard: View {
     private func spark(_ series: [Double]) -> [Double]? {
         let tail = Array(series.suffix(30))
         return tail.count > 1 ? tail : nil
+    }
+
+    /// The day of each `spark` value, for the scrub readout (#58): the same trailing 30.
+    private func sparkDays(_ metric: SleepModel.Metric) -> [String] {
+        metric.seriesDays.suffix(30).map(SleepModel.shortDayLabel)
     }
 }

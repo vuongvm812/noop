@@ -852,14 +852,13 @@ struct LiquidTodayView: View {
             // the stress curve there is no read behind these and nothing to gate.
             HostedTrendCard(card: card, days: repo.days, effortScale: effortScale)
         case .stressToday:
-            // READ-ONLY, like `stages`: the Stress tab keeps the interactive timeline and this mirrors
-            // only the display. `DaytimeLoadLine` is the tab's OWN line, so the host cannot drift into
-            // a second drawing of the same day.
+            // `DaytimeLoadLine` is the Stress tab's OWN line, so the host cannot drift into a second
+            // drawing of the same day. It reads by hover or touch-and-hold, so a tap still opens the tab.
             NoopCard(tint: StressRamp.calm) {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stress through the day").strandOverline()
                     if hostedStressHours.contains(where: { $0.level != nil }) {
-                        DaytimeLoadLine(hours: hostedStressHours, interactive: false)
+                        DaytimeLoadLine(hours: hostedStressHours, tapThrough: true)
                     } else {
                         // The honest blank: only waking hours score and an hour needs enough heart
                         // rate, so early morning is empty by construction rather than by failure.
@@ -1344,9 +1343,21 @@ struct LiquidTodayView: View {
     }
 
     /// A metric's spark values inside the chosen window, oldest → newest.
-    private func windowedSpark(_ key: String) -> [Double] {
+    private func windowedSpark(_ key: String) -> [(day: String, value: Double)] {
         let cutoff = sparkWindowCutoffKey
-        return (kSparks[key] ?? []).filter { $0.0 >= cutoff }.map { $0.1 }
+        return (kSparks[key] ?? []).filter { $0.0 >= cutoff }.map { (day: $0.0, value: $0.1) }
+    }
+
+    /// A detailed tile's sparkline sample as the scrub readout's value line (#58), in the same form as the
+    /// tile's own number for that metric.
+    private func sparkValueText(_ key: String, _ v: Double, unit: String) -> String {
+        switch key {
+        case HeroRingMetric.effort: return effortText(v)
+        case "resp_rate": return Self.tileDisplayValue(String(format: "%.1f", locale: AppLanguage.activeLocale, v), unit: unit)
+        case "weight": return UnitFormatter.massFromKilograms(v, system: unitSystem)
+        case "skin_temp": return TodayView.skinTempCardValue(v, fahrenheit: temperatureUnit == .fahrenheit)
+        default: return Self.tileDisplayValue(intText(v), unit: unit)
+        }
     }
 
     /// The Key-Metrics header's trailing label for the chosen detailed-graph window (Android twin).
@@ -1456,7 +1467,8 @@ struct LiquidTodayView: View {
             let cutoff = sparkWindowCutoffKey
             ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap,
                   spark: WeightLog.dailySeries(logged: weightLog, health: weightHealth)
-                    .filter { $0.day >= cutoff && $0.day <= selectedDayKey }.map(\.kg),
+                    .filter { $0.day >= cutoff && $0.day <= selectedDayKey }
+                    .map { (value: $0.kg, label: SleepModel.shortDayLabel($0.day)) },
                   action: { showWeightLog = true })
         case .stress:
             // #57: the latest level from `StressTodayLoader` → `StressToday.resolve`, the reading the Stress
@@ -1469,7 +1481,8 @@ struct LiquidTodayView: View {
                   StrandPalette.stressColor,
                   level.flatMap { lv in reading.map { lv / $0.scaleMax } },
                   caption: reading.map { StressSummaryCard.sourceLabel($0.source) },
-                  spark: reading.map { $0.points.map(\.level) } ?? [],
+                  spark: reading.map { $0.points.map { (value: $0.level, label: StressSummaryCard.timeLabel($0.ts)) } } ?? [],
+                  sparkFormat: reading.map { r in { StressSummaryCard.format($0, source: r.source) } },
                   route: .stress)
         case .vo2max:
             // #57: the same latest VO₂max the "Your Cards" VO₂max card shows, opening the same detail.
@@ -1517,7 +1530,8 @@ struct LiquidTodayView: View {
 
     private func ktile(_ label: String, icon: String, _ value: String, _ unit: String, _ tint: Color, _ frac: Double?,
                        key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil,
-                       spark sparkOverride: [Double]? = nil, action: (() -> Void)? = nil,
+                       spark sparkOverride: [(value: Double, label: String)]? = nil,
+                       sparkFormat: ((Double) -> String)? = nil, action: (() -> Void)? = nil,
                        route: TabRoute? = nil) -> some View {
         let displayValue = Self.tileDisplayValue(value, unit: unit)
         let tile = VStack(alignment: .leading, spacing: 10) {
@@ -1556,11 +1570,21 @@ struct LiquidTodayView: View {
             // stays equal-height with its bars aligned.
             if keyMetricsDetailed {
                 // #57: a tile whose trend is not a `kSparks` series (the weight diary, today's stress) passes
-                // its own values.
-                let spark = sparkOverride ?? key.map { windowedSpark($0) } ?? []
+                // its own points, each with the date or time its scrub readout names (#58).
+                let sparkPoints = sparkOverride ?? key.map { k in
+                    windowedSpark(k).map { (value: $0.value, label: SleepModel.shortDayLabel($0.day)) }
+                } ?? []
+                let spark = sparkPoints.map(\.value)
+                let format: (Double) -> String = sparkFormat
+                    ?? key.map { k in { sparkValueText(k, $0, unit: unit) } }
+                    ?? { Self.tileDisplayValue(intText($0), unit: unit) }
                 if spark.count >= 2 {
+                    // The tile is a navigation link: the scrub reads by hover or touch-and-hold (#58).
                     Sparkline(values: spark,
-                              gradient: Gradient(colors: [tint.opacity(0.5), tint]))
+                              gradient: Gradient(colors: [tint.opacity(0.5), tint]),
+                              scrubTapThrough: true,
+                              valueFormat: format,
+                              indexLabel: { sparkPoints[$0].label })
                         .frame(height: 22)
                         .padding(.top, 6)
                         .accessibilityHidden(true)
@@ -2642,21 +2666,9 @@ private struct LiquidLiveHR: View {
                 }
                 .frame(height: 92)
                 .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.space2, style: .continuous))
-                .contentShape(Rectangle())
                 .overlay { scrubReadout }
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        switch phase {
-                        case .active(let location): scrubX = location.x
-                        case .ended: scrubX = nil
-                        }
-                    }
-                }
-                #if os(iOS)
-                .gesture(touchScrubGesture)
-                #endif
+                // The card is a navigation link: hover or touch-and-hold reads, a tap still opens (#58).
+                .chartScrub($scrubX, tapThrough: true)
                 HStack {
                     stat(String(localized: "Min"), series.min())
                     Spacer()
@@ -2737,27 +2749,6 @@ private struct LiquidLiveHR: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
-
-    #if os(iOS)
-    private var touchScrubGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-            .onChanged { value in
-                // The engage tick comes from the readout's per-snap haptic as the first sample lands.
-                guard case .second(true, let drag) = value else { return }
-                if let drag {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { scrubX = drag.location.x }
-                }
-            }
-            .onEnded { _ in
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { scrubX = nil }
-            }
-    }
-    #endif
 }
 
 /// Static technical grid behind the live trace. Canvas draws only when layout/style changes, so the

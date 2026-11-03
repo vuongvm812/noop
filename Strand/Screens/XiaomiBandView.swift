@@ -387,7 +387,11 @@ struct XiaomiBandView: View {
             label: label, value: value, caption: caption,
             accent: values.isEmpty ? StrandPalette.textTertiary : accent,
             sparkline: values.count > 1 ? sparkValues(values) : nil,
-            sparkColor: accent)
+            sparkColor: accent,
+            sparkFormat: { unit.isEmpty ? fmt($0) : "\(fmt($0)) \(unit)" },
+            sparkLabels: rows.suffix(40).map { row in
+                date(row.day).map { Self.asOfFormatter.string(from: $0) } ?? row.day
+            })
     }
 
     // MARK: - Chart card

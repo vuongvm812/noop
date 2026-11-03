@@ -185,7 +185,8 @@ struct RhythmConsentGate: View {
 /// A steady rhythm draws a tight elongated comet along the diagonal; a more variable one
 /// draws a rounder, more diffuse cloud. Purely descriptive — drawn in the calm Rest blue
 /// world (never red). The identity diagonal is shown for reference. Decorative for
-/// accessibility (the numbers + label carry the meaning).
+/// accessibility (the numbers + label carry the meaning). Hover, or touch-and-hold then drag,
+/// snaps a cursor to the nearest pair and reads both intervals in ms (#58).
 private struct PoincarePlot: View {
     let points: [RhythmScreener.PoincarePoint]
     /// The world colour the cloud + axes are drawn in (Rest blue — calm, never alarm).
@@ -194,42 +195,77 @@ private struct PoincarePlot: View {
 
     /// Fixed physiological plot bounds (ms) so the same rhythm always reads at the same
     /// scale night-to-night — 300…1500 ms covers ~40…200 bpm, the readable resting band.
-    private let lo: Double = 300
-    private let hi: Double = 1500
+    private static let lo: Double = 300
+    private static let hi: Double = 1500
+    private static let inset: CGFloat = 8
+
+    @State private var scrub: CGPoint? = nil
+
+    /// A pair's position in a square plot of side `s`. Canvas y grows downward, so the next interval is
+    /// inverted to sit higher when longer.
+    static func position(_ p: RhythmScreener.PoincarePoint, side s: CGFloat) -> CGPoint {
+        func map(_ v: Double) -> CGFloat {
+            let clamped = Swift.min(Swift.max(v, lo), hi)
+            return inset + CGFloat((clamped - lo) / (hi - lo)) * (s - inset * 2)
+        }
+        return CGPoint(x: map(p.x), y: s - map(p.y))
+    }
+
+    /// Index of the pair drawn nearest `location`, in both axes. Nil for an empty cloud.
+    static func nearestIndex(to location: CGPoint, in points: [RhythmScreener.PoincarePoint],
+                             side: CGFloat) -> Int? {
+        var best: Int?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for (i, p) in points.enumerated() {
+            let q = position(p, side: side)
+            let d = (q.x - location.x) * (q.x - location.x) + (q.y - location.y) * (q.y - location.y)
+            if d < bestDistance { bestDistance = d; best = i }
+        }
+        return best
+    }
 
     var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
-            Canvas { ctx, size in
-                let s = min(size.width, size.height)
-                let inset: CGFloat = 8
-                let plot = s - inset * 2
+            let hit = scrub.flatMap { Self.nearestIndex(to: $0, in: points, side: side) }
+            ZStack {
+                Canvas { ctx, size in
+                    let s = min(size.width, size.height)
 
-                func map(_ v: Double) -> CGFloat {
-                    let clamped = Swift.min(Swift.max(v, lo), hi)
-                    let frac = (clamped - lo) / (hi - lo)
-                    return inset + CGFloat(frac) * plot
+                    // Identity diagonal (NN[i] == NN[i+1]) — the line a perfectly metronomic
+                    // beat would sit on. Faint hairline, for reference only.
+                    var diag = Path()
+                    diag.move(to: CGPoint(x: Self.inset, y: s - Self.inset))
+                    diag.addLine(to: CGPoint(x: s - Self.inset, y: Self.inset))
+                    ctx.stroke(diag, with: .color(StrandPalette.hairlineStrong), lineWidth: 1)
+
+                    // The point cloud. Dots are small + semi-transparent so density reads as a
+                    // cloud; the bright world colour keeps it legible on the deep canvas.
+                    let r: CGFloat = 1.6
+                    for p in points {
+                        let c = Self.position(p, side: s)
+                        let rect = CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
+                        ctx.fill(Path(ellipseIn: rect), with: .color(brightTint.opacity(0.55)))
+                    }
                 }
-
-                // Identity diagonal (NN[i] == NN[i+1]) — the line a perfectly metronomic
-                // beat would sit on. Faint hairline, for reference only.
-                var diag = Path()
-                diag.move(to: CGPoint(x: inset, y: s - inset))
-                diag.addLine(to: CGPoint(x: s - inset, y: inset))
-                ctx.stroke(diag, with: .color(StrandPalette.hairlineStrong), lineWidth: 1)
-
-                // The point cloud. Dots are small + semi-transparent so density reads as a
-                // cloud; the bright world colour keeps it legible on the deep canvas.
-                let r: CGFloat = 1.6
-                for p in points {
-                    let x = map(p.x)
-                    // Canvas y grows downward; invert so higher NN[i+1] sits higher.
-                    let y = s - map(p.y)
-                    let rect = CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
-                    ctx.fill(Path(ellipseIn: rect), with: .color(brightTint.opacity(0.55)))
+                if let hit {
+                    let p = points[hit]
+                    let c = Self.position(p, side: side)
+                    HighlightDot(color: brightTint, diameter: 7)
+                        .position(c)
+                    PositionedTooltip(
+                        anchor: c,
+                        container: CGSize(width: side, height: side),
+                        tooltip: ChartTooltip(
+                            value: "\(Int(p.x.rounded())) ms → \(Int(p.y.rounded())) ms",
+                            accent: brightTint
+                        )
+                    )
                 }
             }
             .frame(width: side, height: side)
+            .chartScrub(location: $scrub, enabled: !points.isEmpty)
+            .chartScrubHaptic(hit)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(height: NoopMetrics.chartHeight)

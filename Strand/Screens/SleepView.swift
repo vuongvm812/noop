@@ -1490,10 +1490,10 @@ struct SleepView: View {
                 .frame(height: 124)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 2)
-            stageTimelineRow(.awake, minutes: s.awake, percent: stageSharePercent(.awake, s), intervals: smoothed, origin: origin, span: span)
-            stageTimelineRow(.rem,   minutes: s.rem,   percent: stageSharePercent(.rem, s), intervals: smoothed, origin: origin, span: span)
-            stageTimelineRow(.light, minutes: s.light, percent: stageSharePercent(.light, s), intervals: smoothed, origin: origin, span: span)
-            stageTimelineRow(.deep,  minutes: s.deep,  percent: stageSharePercent(.deep, s), intervals: smoothed, origin: origin, span: span)
+            stageTimelineRow(.awake, minutes: s.awake, percent: stageSharePercent(.awake, s), intervals: smoothed, origin: origin, span: span, onset: night.onsetDate)
+            stageTimelineRow(.rem,   minutes: s.rem,   percent: stageSharePercent(.rem, s), intervals: smoothed, origin: origin, span: span, onset: night.onsetDate)
+            stageTimelineRow(.light, minutes: s.light, percent: stageSharePercent(.light, s), intervals: smoothed, origin: origin, span: span, onset: night.onsetDate)
+            stageTimelineRow(.deep,  minutes: s.deep,  percent: stageSharePercent(.deep, s), intervals: smoothed, origin: origin, span: span, onset: night.onsetDate)
             // onset · midpoint · wake clock labels, aligned with the rows' inner strips.
             HStack {
                 Text(Self.stageAxisFormatter.string(from: night.onsetDate))
@@ -1638,7 +1638,8 @@ struct SleepView: View {
     /// the selected row keeps its colour + gains a border while every other row's segments grey out.
     @ViewBuilder
     private func stageTimelineRow(_ stage: SleepStage, minutes: Double, percent: Int,
-                                  intervals: [SleepInterval], origin: TimeInterval, span: TimeInterval) -> some View {
+                                  intervals: [SleepInterval], origin: TimeInterval, span: TimeInterval,
+                                  onset: Date) -> some View {
         let color = StrandPalette.sleepStageColor(stage)
         let isSelected = selectedStage == stage
         let dimmed = selectedStage != nil && !isSelected
@@ -1656,21 +1657,8 @@ struct SleepView: View {
                     .font(StrandFont.captionNumber)
                     .foregroundStyle(StrandPalette.textPrimary)
             }
-            GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    StageHatchedTrack()
-                    ForEach(intervals.filter { $0.stage == stage }) { iv in
-                        let x0 = CGFloat((iv.start - origin) / span) * geo.size.width
-                        let w = max(2, CGFloat((iv.end - iv.start) / span) * geo.size.width)
-                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                            .fill(dimmed ? StrandPalette.textTertiary.opacity(0.55) : color)
-                            .frame(width: w, height: geo.size.height)
-                            .offset(x: x0)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
-            .frame(height: 20)
+            StageLaneTrack(stage: stage, intervals: intervals.filter { $0.stage == stage }, origin: origin,
+                           span: span, onset: onset, dimmed: dimmed)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
@@ -1690,28 +1678,6 @@ struct SleepView: View {
         .accessibilityLabel("\(stage.label): \(durationText(minutes)), \(percent) percent of the night")
         .accessibilityHint("Highlights this stage on the sleep chart")
         .accessibilityAddTraits(.isButton)
-    }
-
-    /// WHOOP's diagonal-hatched timeline track: subtle 45° stripes over a dark inset well — reads
-    /// as "the whole night" behind the solid stage segments, and makes gaps (other stages) obvious
-    /// without drawing anything for them.
-    private struct StageHatchedTrack: View {
-        var body: some View {
-            ZStack {
-                Rectangle().fill(StrandPalette.surfaceInset.opacity(0.9))
-                Canvas { context, size in
-                    var path = Path()
-                    let step: CGFloat = 5
-                    var x: CGFloat = -size.height
-                    while x < size.width {
-                        path.move(to: CGPoint(x: x, y: size.height))
-                        path.addLine(to: CGPoint(x: x + size.height, y: 0))
-                        x += step
-                    }
-                    context.stroke(path, with: .color(StrandPalette.textTertiary.opacity(0.16)), lineWidth: 1)
-                }
-            }
-        }
     }
 
     // MARK: - 2. Metric grid (UNIFORM fixed-height StatTiles, each with sparkline)

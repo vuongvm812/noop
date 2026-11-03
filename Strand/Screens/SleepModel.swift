@@ -152,7 +152,10 @@ struct SleepModel {
     /// `latestDay` is the yyyy-MM-dd the `latest` value was carried from (nil when there is no latest
     /// value, or when the latest value IS today's). #1946: a carried prior-day value is stamped with its
     /// day so it is not passed off as tonight's read.
-    typealias Metric = (latest: Double?, latestDay: String?, typical: Double?, series: [Double])
+    /// `seriesDays` is the yyyy-MM-dd day of each `series` value (same length and order), so a tile's
+    /// sparkline scrub can name the night it is on (#58).
+    typealias Metric = (latest: Double?, latestDay: String?, typical: Double?, series: [Double],
+                        seriesDays: [String])
 
     /// #1946: the caption for a metric tile whose `latest` value was carried from a prior day.
     /// Returns nil when the value is NOT carried (today's own, or no value) so the caller falls through
@@ -412,7 +415,7 @@ extension SleepModel {
         // no carried value, or when the carried value IS today's own (no stamp needed for today's read).
         let todayKey = BodyVitalSigns.logicalDayKey(now)
         let latestDay = (fresh != nil && fresh!.day != todayKey) ? fresh!.day : nil
-        return (fresh?.value, latestDay, mean(series), series)
+        return (fresh?.value, latestDay, mean(series), series, points.map(\.day))
     }
 
     /// Sleep performance %: the ONE Rest resolver (`Repository.restScore`): the imported WHOOP figure,
@@ -481,12 +484,13 @@ extension SleepModel {
         }
         let importedDebt = computedSleep.compactMapValues(\.debtMin)
             .merging(importedSleep.compactMapValues(\.debtMin)) { _, imported in imported }
-        let series = SleepDebt.debtSeries(
+        let rows = SleepDebt.debtSeries(
             series: credited,
             needHours: need / 60.0,
             importedDebtMin: importedDebt
-        ).map(\.value)
-        return (series.last, nil, mean(series), series)
+        )
+        let series = rows.map(\.value)
+        return (series.last, nil, mean(series), series, rows.map(\.day))
     }
 
     // MARK: Trend points

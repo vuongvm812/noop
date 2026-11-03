@@ -298,9 +298,10 @@ struct TrendsReportPage: View {
                     trendChip(stat)
                 }
 
-                // Sparkline over the window (decorative; the numbers below are the read).
+                // Sparkline over the window (decorative; the numbers below are the read). No scrub: this
+                // page is rendered into a printed PDF, and the on-screen copy is a scaled picture of it.
                 if spark.count >= 2 {
-                    Sparkline(values: spark, gradient: metric.sparkGradient)
+                    Sparkline(values: spark, gradient: metric.sparkGradient, showsHover: false)
                         .frame(height: 34)
                         .accessibilityHidden(true)
                 } else {

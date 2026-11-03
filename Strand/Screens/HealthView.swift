@@ -1439,7 +1439,10 @@ private struct LiquidVitalTile: View {
                 }
                 #if !os(watchOS)
                 if let sparkline = reading.sparkline, sparkline.count > 1 {
-                    Sparkline(values: sparkline, gradient: Gradient(colors: [reading.metricColor.opacity(0.5), reading.metricColor]))
+                    let days = reading.sparkDays?.count == sparkline.count ? reading.sparkDays : nil
+                    Sparkline(values: sparkline, gradient: Gradient(colors: [reading.metricColor.opacity(0.5), reading.metricColor]),
+                              valueFormat: { "\(reading.format($0)) \(reading.unit)" },
+                              indexLabel: days.map { d in { BodyVitalReading.dayLabel(d[$0]) } })
                         .frame(height: 22).padding(.top, 6)
                         .accessibilityHidden(true)
                 }
@@ -1519,7 +1522,7 @@ private struct SkinTempSection: View {
             // previously enabled it later switches to male, we still honour the existing awareness card
             // rather than silently hiding their data; only the OPT-IN invitation is gated.
             if cycleEnabled, let cycle = model.cyclePhase {
-                CycleAwarenessCard(result: cycle, curve: model.cycleCurve,
+                CycleAwarenessCard(result: cycle, curve: model.cycleCurve, curveDays: model.cycleCurveDays,
                                    onLogPeriod: {
                                        Task {
                                            await repo.logPeriodStart(day: Repository.localDayKey(Date()))
@@ -1554,7 +1557,7 @@ private struct SkinTempSection: View {
         }
         .sheet(isPresented: $cycleTrackerPresented) {
             if let cycle = model.cyclePhase {
-                CycleTrackerView(result: cycle, curve: model.cycleCurve)
+                CycleTrackerView(result: cycle, curve: model.cycleCurve, curveDays: model.cycleCurveDays)
                     .environmentObject(repo)
                     .environmentObject(model)
             }

@@ -366,7 +366,8 @@ struct LabBookView: View {
     /// One marker as a tappable card: name, latest reading + unit, a tiny sparkline, last-taken date.
     private func markerRow(_ key: String) -> some View {
         let series = readings(for: key)
-        let numeric = series.compactMap { $0.value }
+        let numericRows = series.filter { $0.value != nil }
+        let numeric = numericRows.compactMap { $0.value }
         let latest = series.last
         return Button {
             detailKey = key
@@ -384,8 +385,12 @@ struct LabBookView: View {
                     }
                     Spacer(minLength: 8)
                     if numeric.count > 1 {
+                        // Inside the row's Button: the scrub reads by hover or touch-and-hold, so a tap
+                        // still opens the marker (#58).
                         Sparkline(values: numeric, gradient: Gradient(colors: [StrandPalette.metricCyan.opacity(0.5), StrandPalette.metricCyan]),
-                                  showsHover: false)
+                                  scrubTapThrough: true,
+                                  valueFormat: { "\(LabBookFormat.value($0, key: key)) \(numericRows.last?.unit ?? "")" },
+                                  indexLabel: { LabBookFormat.dayFromKey(numericRows[$0].day) })
                             .frame(width: 64, height: 28)
                             .accessibilityHidden(true)
                     }
@@ -655,11 +660,13 @@ private struct MarkerDetailView: View {
             SectionHeader("Trend", overline: "your readings over time")
             NoopCard(tint: StrandPalette.metricCyan) {
                 VStack(alignment: .leading, spacing: 10) {
-                    let nums = numericReadings.compactMap { $0.value }
+                    let rows = numericReadings
+                    let nums = rows.compactMap { $0.value }
                     if nums.count > 1 {
                         Sparkline(values: nums,
                                   gradient: Gradient(colors: [StrandPalette.metricCyan.opacity(0.5), StrandPalette.metricCyan]),
-                                  valueFormat: { "\(LabBookFormat.value($0, key: markerKey)) \(unit)" })
+                                  valueFormat: { "\(LabBookFormat.value($0, key: markerKey)) \(unit)" },
+                                  indexLabel: { LabBookFormat.dayFromKey(rows[$0].day) })
                             .frame(height: 64)
                     }
                     Text(trendSentence)

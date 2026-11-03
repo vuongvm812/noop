@@ -77,6 +77,9 @@ public final class LiveState: ObservableObject {
     /// separate short history to render an actually-moving R-R strip / rolling RMSSD. Appended (never
     /// replaced) by `setRRIntervals(_:)`; emptied by `clearBiometrics()`.
     @Published public private(set) var rrRecent: [Int] = []
+    /// When each `rrRecent` interval arrived, same length and order, so the Live console's R-R strip can
+    /// name a sample's time when scrubbed (#58). The intervals of one packet share its arrival time.
+    @Published public private(set) var rrRecentTimes: [Date] = []
     /// The WHOOP strap's last reported charge. NOT the active device's.
     ///
     /// Two properties make this dangerous to read on its own, and both are deliberate. It is the
@@ -702,14 +705,18 @@ public final class LiveState: ObservableObject {
     /// intervals onto the bounded `rrRecent` rolling buffer so the Live console can show a moving
     /// strip. Non-positive sentinels (a strap "no interval this beat" placeholder) are dropped from the
     /// rolling buffer. `recentLimit` caps the buffer; the oldest intervals fall off first.
-    public func setRRIntervals(_ intervals: [Int], recentLimit: Int = 60) {
+    public func setRRIntervals(_ intervals: [Int], recentLimit: Int = 60, now: Date = Date()) {
         rr = intervals
         rrSeq += 1
         let valid = intervals.filter { $0 > 0 }
         guard !valid.isEmpty else { return }
         rrRecent.append(contentsOf: valid)
+        rrRecentTimes.append(contentsOf: Array(repeating: now, count: valid.count))
         if rrRecent.count > recentLimit {
             rrRecent.removeFirst(rrRecent.count - recentLimit)
+        }
+        if rrRecentTimes.count > recentLimit {
+            rrRecentTimes.removeFirst(rrRecentTimes.count - recentLimit)
         }
     }
 
@@ -767,6 +774,7 @@ public final class LiveState: ObservableObject {
         heartRate = nil
         rr.removeAll()
         rrRecent.removeAll()
+        rrRecentTimes.removeAll()
         clearBatterySamples()   // a stale runtime estimate must not outlive the link either (#713)
         recentHrSamples.removeAll()       // Sleep readout buffers must not outlive the link (Group E)
         recentGravitySamples.removeAll()

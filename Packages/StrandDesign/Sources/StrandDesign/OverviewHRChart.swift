@@ -61,11 +61,9 @@ public struct OverviewHRChart: View {
     /// empty space); when nil, the axis is derived from the data extent.
     public var xRange: ClosedRange<Date>?
     public var height: CGFloat
+    /// Whether the crosshair readout is live: pointer hover, and on iPhone touch-and-hold then drag
+    /// (#979 spin-off, on every chart since #58).
     public var showsHover: Bool
-    /// iPhone touch scrub (#979 spin-off): when true, touch-and-hold pins the hover crosshair under the
-    /// finger and dragging scrubs it — driving the SAME readout layer the Mac pointer hover uses. On by
-    /// default so every chart can be read by touch (#58); a caller that must stay inert passes false.
-    public var touchScrub: Bool
     public var valueFormat: (Double) -> String
     public var dateFormat: (Date) -> String
 
@@ -97,7 +95,6 @@ public struct OverviewHRChart: View {
         xRange: ClosedRange<Date>? = nil,
         height: CGFloat = 220,
         showsHover: Bool = true,
-        touchScrub: Bool = true,
         workoutTint: Color = StrandPalette.strain033,
         zoomDomain: Binding<ClosedRange<Date>?> = .constant(nil),
         zoomBounds: ClosedRange<Date>? = nil,
@@ -115,7 +112,6 @@ public struct OverviewHRChart: View {
         self.xRange = xRange
         self.height = height
         self.showsHover = showsHover
-        self.touchScrub = touchScrub
         self.workoutTint = workoutTint
         self._zoomDomain = zoomDomain
         self.zoomBounds = zoomBounds
@@ -504,9 +500,9 @@ public struct OverviewHRChart: View {
                 // scrubbing, then dragging moves the crosshair; lift clears it. Gating behind the hold is
                 // what keeps zoom/pan untouched: an immediate drag exceeds the hold's max distance and
                 // still pans (ZoomPanModifier), pinch still zooms, double-tap still resets. `.subviews`
-                // masks the gesture entirely on the call sites that opt out.
+                // masks the gesture when the readout is off.
                 // Kept instead of `.chartScrub`: same gesture, but it also feeds `scrubEngaged` to the pan (#1342).
-                .gesture(touchScrubGesture, including: (touchScrub && showsHover) ? .all : .subviews)
+                .gesture(touchScrubGesture, including: showsHover ? .all : .subviews)
                 #endif
                 .chartScrubHaptic(target.map { $0.gap ?? $0.point.date })
             }

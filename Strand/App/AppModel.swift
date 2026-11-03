@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
     @Published var cyclePhase: CyclePhaseEngine.Result?
     /// The nightly fused-index curve (oldest→newest) feeding the cycle card's sparkline.
     @Published var cycleCurve: [Double] = []
+    /// The night (yyyy-MM-dd) of each `cycleCurve` value, for the sparkline's scrub readout (#58).
+    @Published var cycleCurveDays: [String] = []
     /// Body-clock phase estimate (circadian). nil until a usable activity profile exists.
     @Published var circadianPhase: CircadianEngine.PhaseEstimate?
 
@@ -2266,7 +2268,7 @@ final class AppModel: ObservableObject {
     /// night is z-scored against the personal baseline, then `CyclePhaseEngine.classify` reads the run.
     /// Gated behind the opt-in flag; clears the published result the moment it's turned off.
     private func computeCyclePhase() async {
-        guard cycleAwarenessEnabled else { cyclePhase = nil; cycleCurve = []; return }
+        guard cycleAwarenessEnabled else { cyclePhase = nil; cycleCurve = []; cycleCurveDays = []; return }
         let days = repo.days
         guard let tempCfg = Baselines.metricCfg["skin_temp"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
@@ -2282,12 +2284,16 @@ final class AppModel: ObservableObject {
 
         var nights: [CyclePhaseEngine.Night] = []
         var curve: [Double] = []
+        var curveDays: [String] = []
         for d in sorted {
             let tempZ = d.skinTempDevC.map { skinState.usable ? Baselines.deviation($0, state: skinState).z : $0 / 0.3 }
             let rhrZ = (rhrState.usable ? d.restingHr.map { Baselines.deviation(Double($0), state: rhrState).z } : nil)
             let hrvZ = (hrvState.usable ? d.avgHrv.map { Baselines.deviation($0, state: hrvState).z } : nil)
             nights.append(CyclePhaseEngine.Night(day: d.day, tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ))
-            if let fused = CyclePhaseEngine.fusedIndex(tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ) { curve.append(fused) }
+            if let fused = CyclePhaseEngine.fusedIndex(tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ) {
+                curve.append(fused)
+                curveDays.append(d.day)
+            }
         }
         // Optional user-entered cycle-day-1 anchors live under the isolated `noop-cycle` source.
         // The pure engine cross-validates them against the temperature shift rather than trusting a
@@ -2297,6 +2303,7 @@ final class AppModel: ObservableObject {
                                                baselineUsable: skinState.usable,
                                                loggedPeriodStarts: loggedPeriodStarts)
         cycleCurve = curve
+        cycleCurveDays = curveDays
     }
 
     /// Body-clock phase estimate. Builds a coarse per-hour activity profile from the last ~14 days of

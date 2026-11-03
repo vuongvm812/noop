@@ -106,22 +106,6 @@ private struct WorkoutTimeAxisModifier: ViewModifier {
     }
 }
 
-/// Find a reading in the date-sorted, full-resolution series retained by both chart initializers.
-/// Binary search avoids scanning every reading on each drag or hover event. Drawing may omit points,
-/// but selection must still return the original reading; an equal-distance tie chooses the earlier one.
-func nearestTrendPoint(to date: Date, in points: [TrendPoint]) -> TrendPoint? {
-    guard !points.isEmpty else { return nil }
-    var lower = 0, upper = points.count
-    while lower < upper {
-        let middle = (lower + upper) / 2
-        if points[middle].date < date { lower = middle + 1 } else { upper = middle }
-    }
-    if lower == 0 { return points[0] }
-    if lower == points.count { return points[lower - 1] }
-    let before = points[lower - 1], after = points[lower]
-    return date.timeIntervalSince(before.date) <= after.date.timeIntervalSince(date) ? before : after
-}
-
 public struct TrendChart: View {
 
     public var points: [TrendPoint]
@@ -150,6 +134,9 @@ public struct TrendChart: View {
     public var height: CGFloat
     /// Whether hovering reveals a crosshair + tooltip for the nearest point.
     public var showsHover: Bool
+    /// Set when the chart sits inside a navigation link or button: the scrub then reads by hover or
+    /// touch-and-hold only, so a click or plain tap still reaches the parent (#58).
+    public var scrubTapThrough: Bool
     /// Formats a point's value for the tooltip's bold line (default: rounded int).
     public var valueFormat: (Double) -> String
     /// Formats a point's date for the tooltip's secondary line.
@@ -186,6 +173,7 @@ public struct TrendChart: View {
         baselineValue: Double? = nil,
         height: CGFloat = 220,
         showsHover: Bool = true,
+        scrubTapThrough: Bool = false,
         valueFormat: @escaping (Double) -> String = { String(Int($0.rounded())) },
         dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) },
         accessibilityLabel: String? = nil,
@@ -205,6 +193,7 @@ public struct TrendChart: View {
         self.baselineValue = baselineValue
         self.height = height
         self.showsHover = showsHover
+        self.scrubTapThrough = scrubTapThrough
         self.valueFormat = valueFormat
         self.dateFormat = dateFormat
         self.accessibilityLabel = accessibilityLabel
@@ -520,7 +509,7 @@ public struct TrendChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .chartScrub($hoverX, enabled: showsHover)
+                .chartScrub($hoverX, enabled: showsHover, tapThrough: scrubTapThrough)
                 .chartScrubHaptic(target.map { $0.gap ?? $0.point.date })
                 .onChangeCompat(of: target.map { $0.gap ?? $0.point.date }) { _ in
                     // Bars dim every other bar while the cursor is on one, and the large read-out keeps

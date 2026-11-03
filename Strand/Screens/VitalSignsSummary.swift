@@ -23,6 +23,9 @@ struct BodyVitalReading: Identifiable {
     /// the resolved value, banding and source are unchanged — this is just the trend for the trail.
     /// Defaulted so existing call sites (previews/tests) keep compiling unchanged.
     var sparkline: [Double]? = nil
+    /// The day key (`yyyy-MM-dd`) of each `sparkline` value, so the scrub readout names the night it is
+    /// on (#58). Same length and order as `sparkline`.
+    var sparkDays: [String]? = nil
     /// #1118: an "unverified" caveat appended to the caption when the resolved value is present but the
     /// strap's own capture is known-unreliable for it (e.g. a WHOOP 4.0 R-R over-count contaminating HRV).
     /// nil = no caveat. Defaulted so existing call sites keep compiling unchanged.
@@ -239,6 +242,9 @@ enum BodyVitalSigns {
         func trail(_ pts: [VitalPoint], window: Int = 14) -> [Double] {
             pts.suffix(window).map(\.value)
         }
+        func trailDays(_ pts: [VitalPoint], window: Int = 14) -> [String] {
+            pts.suffix(window).map(\.day)
+        }
 
         // Skin temp is bimodal: CSV imports store ABSOLUTE °C, the on-device pipeline a ±°C DEVIATION —
         // partition the history to the displayed value's kind and pick the matching config + population
@@ -316,7 +322,8 @@ enum BodyVitalSigns {
                 day: respRow?.day,
                 source: respRow?.source,
                 missingCaption: String(localized: "No respiratory-rate value"),
-                sparkline: trail(respPoints)
+                sparkline: trail(respPoints),
+                sparkDays: trailDays(respPoints)
             ),
             BodyVitalReading(
                 key: "spo2",
@@ -354,7 +361,8 @@ enum BodyVitalSigns {
                        : (spo2rawRow != nil
                           ? String(localized: "Raw counts only — needs an import")
                           : String(localized: "No SpO₂ import or Health value"))),
-                sparkline: spo2IsCandidate ? trail(spo2CandidatePoints) : trail(spo2Points)
+                sparkline: spo2IsCandidate ? trail(spo2CandidatePoints) : trail(spo2Points),
+                sparkDays: spo2IsCandidate ? trailDays(spo2CandidatePoints) : trailDays(spo2Points)
             ),
             BodyVitalReading(
                 key: "spo2raw",
@@ -376,7 +384,8 @@ enum BodyVitalSigns {
                 day: spo2rawRow?.day,
                 source: spo2rawRow?.source,
                 missingCaption: String(localized: "No raw SpO₂ decode for the night"),
-                sparkline: trail(spo2rawPoints)
+                sparkline: trail(spo2rawPoints),
+                sparkDays: trailDays(spo2rawPoints)
             ),
             BodyVitalReading(
                 key: "rhr",
@@ -394,7 +403,8 @@ enum BodyVitalSigns {
                 day: rhrRow?.day,
                 source: rhrRow?.source,
                 missingCaption: String(localized: "No resting HR value"),
-                sparkline: trail(rhrPoints)
+                sparkline: trail(rhrPoints),
+                sparkDays: trailDays(rhrPoints)
             ),
             BodyVitalReading(
                 key: "hrv",
@@ -413,6 +423,7 @@ enum BodyVitalSigns {
                 source: hrvRow?.source,
                 missingCaption: hrvMissingCaption,   // #2335
                 sparkline: trail(hrvPoints),
+                sparkDays: trailDays(hrvPoints),
                 caveat: hrvCaveat   // #1118
             ),
             BodyVitalReading(
@@ -431,6 +442,7 @@ enum BodyVitalSigns {
                 // Keep the trail on the displayed value's kind — absolute °C and ±deviation must not
                 // mix on one sparkline (matches the banding partition above).
                 sparkline: trail(skinSeries.filter { VitalBands.isAbsoluteSkinTemp($0.value) == skinIsAbsolute }),
+                sparkDays: trailDays(skinSeries.filter { VitalBands.isAbsoluteSkinTemp($0.value) == skinIsAbsolute }),
                 // #1636: the deviation this absolute was derived from, shown beneath it. Only when the
                 // headline IS the absolute — on a deviation-led tile it would just repeat the value.
                 secondary: skinSecondary
