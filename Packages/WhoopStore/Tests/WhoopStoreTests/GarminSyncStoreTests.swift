@@ -38,7 +38,7 @@ final class GarminSyncStoreTests: XCTestCase {
         ingest.deviceMetric = [DeviceMetricSample(ts: dayStart + 60, kind: .stress, value: 20, source: "fit227"),
                                DeviceMetricSample(ts: dayStart + 60, kind: .bodyBattery, value: 80, source: "fit227")]
         ingest.days = [day(steps: 1_000, rhr: 59)]
-        ingest.sleeps = [CachedSleepSession(startTs: dayStart - 20_000, endTs: dayStart + 5_000, efficiency: 91,
+        ingest.sleeps = [CachedSleepSession(startTs: dayStart - 20_000, endTs: dayStart + 5_000, efficiency: 0.91,
                                             restingHr: nil, avgHrv: nil, stagesJSON: "[]")]
         let first = try await store.ingestGarminFile(ingest, deviceId: id, ingestedAt: 1)
         XCTAssertEqual(first.hr, 2)
@@ -112,7 +112,7 @@ final class GarminSyncStoreTests: XCTestCase {
     func testSleepSessionMergeKeepsAUserEdit() async throws {
         let store = try await WhoopStore.inMemory()
         var a = GarminFileIngest(file: file(1))
-        a.sleeps = [CachedSleepSession(startTs: dayStart, endTs: dayStart + 20_000, efficiency: 90, restingHr: nil,
+        a.sleeps = [CachedSleepSession(startTs: dayStart, endTs: dayStart + 20_000, efficiency: 0.9, restingHr: nil,
                                        avgHrv: nil, stagesJSON: "[{\"start\":1,\"end\":2,\"stage\":\"deep\"}]")]
         _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
         _ = try await store.applySleepEdit(deviceId: id, detectedStartTs: dayStart, newStartTs: dayStart, newEndTs: dayStart + 25_000)
@@ -122,7 +122,7 @@ final class GarminSyncStoreTests: XCTestCase {
         _ = try await store.ingestGarminFile(b, deviceId: id, ingestedAt: 1)
         let night = try await store.sleepSessions(deviceId: id, from: dayStart - 1, to: dayStart + 1, limit: 4).first
         XCTAssertEqual(night?.endTs, dayStart + 25_000, "the user's correction wins")
-        XCTAssertEqual(night?.efficiency, 90, "a missing value keeps the stored one")
+        XCTAssertEqual(night?.efficiency, 0.9, "a missing value keeps the stored one")
         XCTAssertEqual(night?.avgHrv, 40)
         XCTAssertEqual(night?.stagesJSON, "[{\"start\":1,\"end\":2,\"stage\":\"deep\"}]")
     }
@@ -165,6 +165,66 @@ final class GarminSyncStoreTests: XCTestCase {
         _ = try await store.ingestGarminFile(b, deviceId: id, ingestedAt: 1)
         let count = try await count(store, "sleepSession")
         XCTAssertEqual(count, 2)
+    }
+
+    private func sleepDay(_ total: Double, deep: Double, efficiency: Double) -> GarminDayRollup {
+        var d = day(sleep: total)
+        d.deepMin = deep; d.lightMin = total - deep; d.remMin = 0; d.awakeMin = 10; d.efficiency = efficiency
+        return d
+    }
+
+    /// #49: the day's sleep figures are its main night's. A nap file synced after the night file leaves
+    /// them alone; the same night again (a re-fold) replaces them, so a corrected column lands.
+    func testALaterNapFileKeepsTheNightsDayTotals() async throws {
+        let store = try await WhoopStore.inMemory()
+        var night = GarminFileIngest(file: file(1))
+        night.days = [sleepDay(420, deep: 90, efficiency: 0.95)]
+        var nap = GarminFileIngest(file: file(2))
+        nap.days = [sleepDay(40, deep: 0, efficiency: 0.8)]
+        _ = try await store.ingestGarminFile(night, deviceId: id, ingestedAt: 1)
+        _ = try await store.ingestGarminFile(nap, deviceId: id, ingestedAt: 2)
+        var m = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        XCTAssertEqual(m?.totalSleepMin, 420)
+        XCTAssertEqual(m?.deepMin, 90)
+        XCTAssertEqual(m?.efficiency, 0.95)
+        let total = try await series(store, "sleep_total_min")
+        let awake = try await series(store, "sleep_awake_min")
+        XCTAssertEqual(total, 420)
+        XCTAssertEqual(awake, 10)
+
+        var refold = GarminFileIngest(file: file(3))
+        refold.days = [sleepDay(420, deep: 90, efficiency: 0.951)]
+        _ = try await store.ingestGarminFile(refold, deviceId: id, ingestedAt: 3)
+        m = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        XCTAssertEqual(m?.efficiency, 0.951, "the same night again replaces the day's figures")
+    }
+
+    /// #49: an older fold stored efficiency as a percent. The repair divides this watch's values above 1
+    /// by 100, leaves fractions and other devices alone, and a second run changes nothing.
+    func testRepairRescalesPercentEfficienciesOnce() async throws {
+        let store = try await WhoopStore.inMemory()
+        var old = GarminFileIngest(file: file(1))
+        old.days = [sleepDay(420, deep: 90, efficiency: 93.3)]
+        old.sleeps = [CachedSleepSession(startTs: dayStart - 30_000, endTs: dayStart, efficiency: 93.3,
+                                         restingHr: nil, avgHrv: nil, stagesJSON: nil),
+                      CachedSleepSession(startTs: dayStart + 40_000, endTs: dayStart + 42_000, efficiency: 0.8,
+                                         restingHr: nil, avgHrv: nil, stagesJSON: nil)]
+        _ = try await store.ingestGarminFile(old, deviceId: id, ingestedAt: 1)
+        var other = GarminFileIngest(file: file(1))
+        other.sleeps = [CachedSleepSession(startTs: dayStart - 30_000, endTs: dayStart, efficiency: 88,
+                                           restingHr: nil, avgHrv: nil, stagesJSON: nil)]
+        _ = try await store.ingestGarminFile(other, deviceId: "garmin-other", ingestedAt: 1)
+
+        let changed = try await store.repairGarminEfficiencyUnits(deviceId: id)
+        XCTAssertEqual(changed, 2)
+        let again = try await store.repairGarminEfficiencyUnits(deviceId: id)
+        XCTAssertEqual(again, 0)
+        let nights = try await store.sleepSessions(deviceId: id, from: dayStart - 40_000, to: dayStart + 50_000, limit: 4)
+        XCTAssertEqual(nights.map { $0.efficiency! }.sorted().map { ($0 * 1000).rounded() / 1000 }, [0.8, 0.933])
+        let m = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        XCTAssertEqual(m?.efficiency ?? 0, 0.933, accuracy: 1e-12)
+        let untouched = try await store.sleepSessions(deviceId: "garmin-other", from: dayStart - 40_000, to: dayStart, limit: 4)
+        XCTAssertEqual(untouched.first?.efficiency, 88)
     }
 
     func testForgettingAFileTypeLeavesTheOthers() async throws {

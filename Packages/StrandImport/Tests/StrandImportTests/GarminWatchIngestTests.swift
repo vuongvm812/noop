@@ -21,7 +21,7 @@ final class GarminWatchIngestTests: XCTestCase {
             out.append("day \(d.day) \(d.dayStartTs)..\(d.dayEndTs) steps=\(num(d.steps)) dist=\(num(d.distanceM)) "
                        + "act=\(num(d.activeKcal)) tot=\(num(d.totalKcal)) rhr=\(num(d.restingHr)) hrv=\(num(d.avgHrvMs)) "
                        + "sleep=\(num(d.totalSleepMin)) deep=\(num(d.deepMin)) light=\(num(d.lightMin)) rem=\(num(d.remMin)) "
-                       + "awake=\(num(d.awakeMin)) eff=\(num(d.efficiencyPct)) score=\(num(d.sleepScore))")
+                       + "awake=\(num(d.awakeMin)) eff=\(num(d.efficiency)) score=\(num(d.sleepScore))")
         }
         for s in b.sleeps {
             out.append("sleep \(s.startTs)-\(s.endTs) eff=\(num(s.efficiency)) hrv=\(num(s.avgHrv)) stages=\(s.stagesJSON ?? "-")")
@@ -46,7 +46,7 @@ final class GarminWatchIngestTests: XCTestCase {
         }
         out.append("== efficiency")
         for (asleep, awake) in [(Int64(0), Int64(0)), (3_600, 0), (25_200, 1_800), (1, 2)] {
-            out.append("\(asleep)/\(awake) \(num(GarminWatchIngest.efficiencyPct(asleep: asleep, awake: awake)))")
+            out.append("\(asleep)/\(awake) \(num(GarminWatchIngest.efficiency(asleep: asleep, awake: awake)))")
         }
         return out.joined(separator: "\n")
     }
@@ -98,6 +98,84 @@ final class GarminWatchIngestTests: XCTestCase {
         XCTAssertEqual(batch.days.first?.awakeMin, 23)
     }
 
+    /// #49: efficiency is the 0-1 fraction every other source stores, not a percent.
+    func testEfficiencyIsAFraction() throws {
+        let row = GarminSyncedFileRow(fileIndex: 1, dataType: 255, subType: 49, fileNumber: 1, ts: 0, size: 0)
+        let batch = GarminWatchIngest.fold(GarminWellnessParser.parse(data: WellnessFixtures.sleepWindow()), file: row,
+                                           fallbackUtcOffsetS: 25_200)
+        let stored = try XCTUnwrap(batch.sleeps.first?.efficiency)
+        XCTAssertEqual(stored, 0.953)
+        XCTAssertEqual(batch.days.first?.efficiency, 0.953)
+        XCTAssertLessThanOrEqual(stored, 1)
+    }
+
+    /// #49: a nap ending on the same day as the night is stored as its own session, but the day's sleep
+    /// figures stay the night's (the nap is the later session and used to overwrite them).
+    func testANapDoesNotReplaceTheNightsDayTotals() throws {
+        let row = GarminSyncedFileRow(fileIndex: 1, dataType: 255, subType: 49, fileNumber: 1, ts: 0, size: 0)
+        let batch = GarminWatchIngest.fold(GarminWellnessParser.parse(data: WellnessFixtures.sleepNap()), file: row,
+                                           fallbackUtcOffsetS: 3_600)
+        XCTAssertEqual(batch.sleeps.count, 2)
+        let nights = batch.days.filter { $0.totalSleepMin != nil }
+        XCTAssertEqual(nights.count, 1)
+        let d = try XCTUnwrap(nights.first)
+        XCTAssertEqual(d.totalSleepMin, 390)
+        XCTAssertEqual(d.deepMin, 60)
+        XCTAssertEqual(d.remMin, 120)
+        XCTAssertEqual(d.awakeMin, 30)
+        XCTAssertEqual(d.efficiency, 0.929)
+    }
+
+    /// #49: unmeasurable (level 0) time is in neither the stages nor the efficiency, and it leaves a hole
+    /// in the stored timeline, so the shared coverage gate (`HypnogramCoverage`, which raises the Sleep
+    /// tab's "Partly recorded" caption and keeps Rest off SOLID) sees the night as partly recorded.
+    func testUnmeasurableTimeReadsAsAPartlyRecordedNight() throws {
+        let row = GarminSyncedFileRow(fileIndex: 1, dataType: 255, subType: 49, fileNumber: 1, ts: 0, size: 0)
+        let batch = GarminWatchIngest.fold(GarminWellnessParser.parse(data: WellnessFixtures.sleepNap()), file: row,
+                                           fallbackUtcOffsetS: 3_600)
+        let night = try XCTUnwrap(batch.sleeps.first)
+        let coverage = try XCTUnwrap(HypnogramCoverage.groupFraction([night]))
+        XCTAssertEqual(coverage, 25_200.0 / 27_000.0, accuracy: 1e-12)
+        XCTAssertTrue(HypnogramCoverage.isHoledGroup([night]))
+        let full = try XCTUnwrap(GarminWatchIngest.fold(GarminWellnessParser.parse(data: WellnessFixtures.sleepWindow()),
+                                                        file: row, fallbackUtcOffsetS: 0).sleeps.first)
+        XCTAssertFalse(HypnogramCoverage.isHoledGroup([full]), "a fully measured night is not flagged")
+    }
+
+    /// #49 verification item: the fold against Garmin's own per-night totals. `sleepData` below has the
+    /// shape of a Garmin Connect GDPR export entry (`*_sleepData.json`; synthetic numbers, no real
+    /// export is committed) for the `sleepWindow` night, and goes through the export importer. The fold's
+    /// rule, each SLEEP_LEVEL row closes the span before it, must give the same stage seconds and window.
+    /// The opposite rule (each row opens its level until the next row) is computed alongside and must NOT
+    /// match, so the test tells the two apart when real totals are pasted in.
+    func testTheFoldMatchesGarminsExportTotals() throws {
+        let fitStart = WellnessFixtures.t + GarminWellnessParser.fitEpochOffset
+        let sleepData = """
+            [{"calendarDate":"2024-11-09","sleepStartTimestampGMT":\(fitStart * 1000),
+              "sleepEndTimestampGMT":\((fitStart + 29_623) * 1000),"deepSleepSeconds":6420,
+              "lightSleepSeconds":15900,"remSleepSeconds":5923,"awakeSleepSeconds":1380,"unmeasurableSeconds":0}]
+            """
+        let export = try XCTUnwrap(GarminExportParser.parse(["x_sleepData.json": Data(sleepData.utf8)]).sleeps.first)
+        let samples = GarminWellnessParser.parse(data: WellnessFixtures.sleepWindow())
+        let night = try XCTUnwrap(samples.sleepSessions.first)
+        XCTAssertEqual(Int64(export.start.timeIntervalSince1970), night.start)
+        XCTAssertEqual(Int64(export.end.timeIntervalSince1970), night.end)
+        XCTAssertEqual(export.deepMin, Double(night.deepS) / 60)
+        XCTAssertEqual(export.lightMin, Double(night.lightS) / 60)
+        XCTAssertEqual(export.remMin, Double(night.remS) / 60)
+        XCTAssertEqual(export.awakeMin, Double(night.awakeS) / 60)
+        XCTAssertEqual(night.unmeasurableS, 0)
+
+        // Opposite rule: a row's level runs from its own time to the next row (the last to the stop).
+        var opens = [Int64](repeating: 0, count: 5)
+        let rows = samples.sleepLevels
+        for (i, r) in rows.enumerated() {
+            let next = i + 1 < rows.count ? rows[i + 1].ts : night.end
+            opens[r.value] += next - r.ts
+        }
+        XCTAssertNotEqual(Double(opens[3]) / 60, export.deepMin)
+    }
+
     func testCandidateMessagesAreNotMapped() {
         let row = GarminSyncedFileRow(fileIndex: 1, dataType: 128, subType: 73, fileNumber: 1, ts: 0, size: 0)
         let batch = GarminWatchIngest.fold(GarminWellnessParser.parse(data: WellnessFixtures.candidates()), file: row,
@@ -142,24 +220,29 @@ final class GarminWatchIngestTests: XCTestCase {
         == sleep
         file idx=6 dt=128 st=32 num=105 ts=1100000005 size=1005
         metric 1731107296 sleep_score 82.0000 fit346
-        day 2024-11-09 1731088800..1731175200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=28.0000 deep=10.0000 light=8.0000 rem=10.0000 awake=10.0000 eff=73.7000 score=82
-        sleep 1731087416-1731089696 eff=73.7000 hrv=- stages=[{"start":1731087416,"end":1731087896,"stage":"light"},{"start":1731087896,"end":1731088496,"stage":"deep"},{"start":1731088496,"end":1731089096,"stage":"rem"},{"start":1731089096,"end":1731089696,"stage":"wake"}]
+        day 2024-11-09 1731088800..1731175200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=28.0000 deep=10.0000 light=8.0000 rem=10.0000 awake=10.0000 eff=0.7370 score=82
+        sleep 1731087416-1731089696 eff=0.7370 hrv=- stages=[{"start":1731087416,"end":1731087896,"stage":"light"},{"start":1731087896,"end":1731088496,"stage":"deep"},{"start":1731088496,"end":1731089096,"stage":"rem"},{"start":1731089096,"end":1731089696,"stage":"wake"}]
         == sleepWindow
         file idx=7 dt=128 st=32 num=106 ts=1100000006 size=1006
-        day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=bits:407d6b7777777777 deep=107.0000 light=265.0000 rem=bits:4058adddddddddde awake=23.0000 eff=95.3000 score=-
-        sleep 1731087296-1731116919 eff=95.3000 hrv=- stages=[{"start":1731087296,"end":1731088316,"stage":"light"},{"start":1731088316,"end":1731090776,"stage":"deep"},{"start":1731090776,"end":1731090836,"stage":"wake"},{"start":1731090836,"end":1731093296,"stage":"light"},{"start":1731093296,"end":1731097256,"stage":"deep"},{"start":1731097256,"end":1731097736,"stage":"light"},{"start":1731097736,"end":1731098636,"stage":"rem"},{"start":1731098636,"end":1731106916,"stage":"light"},{"start":1731106916,"end":1731106976,"stage":"wake"},{"start":1731106976,"end":1731108056,"stage":"light"},{"start":1731108056,"end":1731109316,"stage":"wake"},{"start":1731109316,"end":1731110816,"stage":"light"},{"start":1731110816,"end":1731112376,"stage":"rem"},{"start":1731112376,"end":1731113456,"stage":"light"},{"start":1731113456,"end":1731116919,"stage":"rem"}]
-        == respiration
+        day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=bits:407d6b7777777777 deep=107.0000 light=265.0000 rem=bits:4058adddddddddde awake=23.0000 eff=0.9530 score=-
+        sleep 1731087296-1731116919 eff=0.9530 hrv=- stages=[{"start":1731087296,"end":1731088316,"stage":"light"},{"start":1731088316,"end":1731090776,"stage":"deep"},{"start":1731090776,"end":1731090836,"stage":"wake"},{"start":1731090836,"end":1731093296,"stage":"light"},{"start":1731093296,"end":1731097256,"stage":"deep"},{"start":1731097256,"end":1731097736,"stage":"light"},{"start":1731097736,"end":1731098636,"stage":"rem"},{"start":1731098636,"end":1731106916,"stage":"light"},{"start":1731106916,"end":1731106976,"stage":"wake"},{"start":1731106976,"end":1731108056,"stage":"light"},{"start":1731108056,"end":1731109316,"stage":"wake"},{"start":1731109316,"end":1731110816,"stage":"light"},{"start":1731110816,"end":1731112376,"stage":"rem"},{"start":1731112376,"end":1731113456,"stage":"light"},{"start":1731113456,"end":1731116919,"stage":"rem"}]
+        == sleepNap
         file idx=8 dt=128 st=32 num=107 ts=1100000007 size=1007
+        day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=390.0000 deep=60.0000 light=210.0000 rem=120.0000 awake=30.0000 eff=0.9290 score=-
+        sleep 1731087296-1731114296 eff=0.9290 hrv=- stages=[{"start":1731087296,"end":1731089096,"stage":"light"},{"start":1731089096,"end":1731092696,"stage":"deep"},{"start":1731094496,"end":1731101696,"stage":"rem"},{"start":1731101696,"end":1731103496,"stage":"wake"},{"start":1731103496,"end":1731114296,"stage":"light"}]
+        sleep 1731137296-1731139696 eff=0.5000 hrv=- stages=[{"start":1731137296,"end":1731138496,"stage":"light"},{"start":1731138496,"end":1731139696,"stage":"wake"}]
+        == respiration
+        file idx=9 dt=128 st=32 num=108 ts=1100000008 size=1008
         metric 1731087296 respiration_bpm 14.5000 fit297
         day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
         == hrv
-        file idx=9 dt=128 st=32 num=108 ts=1100000008 size=1008
+        file idx=10 dt=128 st=32 num=109 ts=1100000009 size=1009
         metric 1731087596 hrv_ms 39.0625 fit371
         day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=37.5000 sleep=- deep=- light=- rem=- awake=- eff=- score=-
         == candidates
-        file idx=10 dt=128 st=32 num=109 ts=1100000009 size=1009
-        == framing
         file idx=11 dt=128 st=32 num=110 ts=1100000010 size=1010
+        == framing
+        file idx=12 dt=128 st=32 num=111 ts=1100000011 size=1011
         metric 1731087296 hrv_ms 40.0000 fit371
         metric 1731087296 respiration_bpm 15.0000 fit297
         metric 1731087306 respiration_bpm 15.2500 fit297
@@ -173,8 +256,8 @@ final class GarminWatchIngestTests: XCTestCase {
         bad@0 0
         == efficiency
         0/0 -
-        3600/0 100.0000
-        25200/1800 93.3000
-        1/2 33.3000
+        3600/0 1.0000
+        25200/1800 0.9330
+        1/2 0.3330
         """
 }

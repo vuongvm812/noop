@@ -17,6 +17,9 @@ import WhoopProtocol
 //   - cumulative counters (steps, distance, calories) keep the larger of the stored and the new value:
 //     a later file carries the day's running total, and an older re-sync can never lower it;
 //   - every other column keeps its stored value when the file has none (COALESCE);
+//   - the day's sleep figures are its MAIN night's: a file's night replaces them only when it has at least
+//     as much time asleep as the stored one, so a nap file synced after the night file cannot overwrite
+//     the overnight totals (#49);
 //   - a night REPLACES any other stored night of the watch it overlaps (unless the user edited that one),
 //     so one Garmin night stays one session when a later fold places it differently (#47: an older fold
 //     split a night at long single-stage stretches and started it at its first stage change).
@@ -62,7 +65,8 @@ public struct GarminDayRollup: Equatable, Sendable {
     public var lightMin: Double?
     public var remMin: Double?
     public var awakeMin: Double?
-    public var efficiencyPct: Double?
+    /// Asleep / (asleep + awake) as a 0-1 fraction, the unit of `dailyMetric.efficiency` (#49).
+    public var efficiency: Double?
     public var sleepScore: Int?
 
     public init(day: String, dayStartTs: Int, dayEndTs: Int) {
@@ -202,6 +206,23 @@ extension WhoopStore {
         }
     }
 
+    /// Divide by 100 every efficiency of this device stored above 1, the percent an older fold wrote
+    /// (#49). Runs once per watch (`GarminHistoryIngest.refetchSleepFilesOnce`); a fraction is never
+    /// above 1, so a second run changes nothing. Returns the rows changed. Kotlin twin:
+    /// `GarminSyncStore.repairEfficiencyUnits`.
+    @discardableResult
+    public func repairGarminEfficiencyUnits(deviceId: String) async throws -> Int {
+        try syncWrite { db in
+            try db.execute(sql: "UPDATE sleepSession SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1",
+                           arguments: [deviceId])
+            var changed = db.changesCount
+            try db.execute(sql: "UPDATE dailyMetric SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1",
+                           arguments: [deviceId])
+            changed += db.changesCount
+            return changed
+        }
+    }
+
     /// Kotlin twin: `GarminSyncStore.insertLedgerRow`.
     private static func insertLedgerRow(_ db: Database, _ f: GarminSyncedFileRow, deviceId: String, ingestedAt: Int) throws {
         try db.execute(sql: """
@@ -213,8 +234,18 @@ extension WhoopStore {
 
     /// Merge one day: the dailyMetric row, then the metricSeries points, with the sample aggregates
     /// re-derived from every stored sample of the day. Kotlin twin: `GarminSyncStore.mergeDay`.
-    private static func mergeGarminDay(_ db: Database, _ d: GarminDayRollup, deviceId: String,
+    private static func mergeGarminDay(_ db: Database, _ rollup: GarminDayRollup, deviceId: String,
                                        counts: inout GarminIngestCounts) throws {
+        var d = rollup
+        // The day keeps its main night: a shorter night from another file (a nap) leaves the stored
+        // sleep figures alone. An equal one replaces them, so re-ingesting a night is idempotent and a
+        // re-fold of the same night can correct its other columns.
+        if let incoming = d.totalSleepMin,
+           let stored = try Double.fetchOne(db, sql: "SELECT totalSleepMin FROM dailyMetric WHERE deviceId = ? AND day = ?",
+                                            arguments: [deviceId, d.day]),
+           stored > incoming {
+            d.totalSleepMin = nil; d.deepMin = nil; d.lightMin = nil; d.remMin = nil; d.awakeMin = nil; d.efficiency = nil
+        }
         // Kotlin twin: `GarminSyncStore.aggregate`.
         func aggregate(_ kind: DeviceMetricKind, _ fn: String) throws -> Double? {
             try Double.fetchOne(db, sql: """
@@ -248,7 +279,7 @@ extension WhoopStore {
                 activeKcalEst = CASE WHEN excluded.activeKcalEst IS NULL THEN dailyMetric.activeKcalEst
                                      WHEN dailyMetric.activeKcalEst IS NULL THEN excluded.activeKcalEst
                                      ELSE MAX(excluded.activeKcalEst, dailyMetric.activeKcalEst) END
-            """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiencyPct, d.deepMin, d.remMin, d.lightMin,
+            """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin, d.remMin, d.lightMin,
                              d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.activeKcal])
         counts.days += db.changesCount
 

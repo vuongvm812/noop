@@ -106,30 +106,51 @@ public enum GarminWatchIngest {
         }
 
         // Nights. A night belongs to the day it ends on (the wake day), as every NOOP sleep reader keys it.
+        // Every night is stored as a session; the day's sleep totals come from its MAIN night only, the one
+        // with the most time asleep (the earlier one on a tie), so a nap or a fallback fragment ending the
+        // same day never replaces the overnight figures (#49). The store applies the same rule across files.
+        var mainNight: [String: GarminWellnessSamples.SleepSession] = [:]
         for night in s.sleepSessions where night.end > night.start {
             let asleep = night.lightS + night.deepS + night.remS
             guard asleep > 0 else { continue }
             let key = dayOf(night.end)
+            let bestAsleep = mainNight[key].map { $0.lightS + $0.deepS + $0.remS } ?? 0
+            if asleep > bestAsleep { mainNight[key] = night }
+            out.sleeps.append(CachedSleepSession(
+                startTs: Int(night.start), endTs: Int(night.end),
+                efficiency: efficiency(asleep: asleep, awake: night.awakeS),
+                restingHr: nil, avgHrv: day(key).avgHrvMs,
+                stagesJSON: stagesJSON(s.sleepLevels, from: night.start, to: night.end)))
+        }
+        for (key, night) in mainNight {
+            let asleep = night.lightS + night.deepS + night.remS
             var d = day(key)
             d.totalSleepMin = Double(asleep) / 60
             d.deepMin = Double(night.deepS) / 60
             d.lightMin = Double(night.lightS) / 60
             d.remMin = Double(night.remS) / 60
             d.awakeMin = Double(night.awakeS) / 60
-            let efficiency = efficiencyPct(asleep: asleep, awake: night.awakeS)
-            d.efficiencyPct = efficiency
+            d.efficiency = efficiency(asleep: asleep, awake: night.awakeS)
             days[key] = d
-            out.sleeps.append(CachedSleepSession(
-                startTs: Int(night.start), endTs: Int(night.end), efficiency: efficiency,
-                restingHr: nil, avgHrv: d.avgHrvMs,
-                stagesJSON: stagesJSON(s.sleepLevels, from: night.start, to: night.end)))
         }
         out.days = days.keys.sorted().map { days[$0]! }
         return out
     }
 
-    /// Asleep share of the time in bed (asleep + awake), percent rounded to one decimal.
-    /// Kotlin twin: `GarminWatchIngest.efficiencyPct`.
+    /// Asleep share of the time in bed (asleep + awake) as a 0-1 FRACTION, the unit every other writer of
+    /// `sleepSession.efficiency` / `dailyMetric.efficiency` uses (WHOOP import, Oura, on-device staging).
+    /// Unmeasurable time (level 0) is in neither term. Storing the percent read as 100% efficient
+    /// everywhere the value is clamped to [0, 1] (#49). Kotlin twin: `GarminWatchIngest.efficiency`.
+    /// Rounded to three decimals from the same permille as `efficiencyPct`, not divided from it, so the
+    /// stored double is the shortest one (0.333, not 0.33299999999999996).
+    static func efficiency(asleep: Int64, awake: Int64) -> Double? {
+        let inBed = asleep + awake
+        guard inBed > 0 else { return nil }
+        return (Double(asleep) * 1000 / Double(inBed)).rounded() / 1000
+    }
+
+    /// Asleep share of the time in bed (asleep + awake), percent rounded to one decimal, the unit the
+    /// watch shows. Not a stored unit: storage goes through `efficiency`. Kotlin twin: `GarminWatchIngest.efficiencyPct`.
     static func efficiencyPct(asleep: Int64, awake: Int64) -> Double? {
         let inBed = asleep + awake
         guard inBed > 0 else { return nil }

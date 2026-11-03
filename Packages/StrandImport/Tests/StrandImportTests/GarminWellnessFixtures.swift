@@ -209,6 +209,28 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// #49: a night and a later nap ending on the same local day, each in its own sleep window. The night
+    /// holds a 30 minute unmeasurable span (level 0), so its timeline covers 93% of its window; the nap is
+    /// the later session, which is what used to overwrite the night's day totals.
+    static func sleepNap() -> Data {
+        var f = WellnessFit()
+        f.def(0, 21, [(253, 4, u32), (0, 1, en), (1, 1, en)])
+        f.def(1, 275, [(253, 4, u32), (0, 1, en)])
+        f.data(0); f.u32(t); f.u8(74); f.u8(0)
+        f.data(1); f.u32(t + 1800); f.u8(2)
+        f.data(1); f.u32(t + 5400); f.u8(3)
+        f.data(1); f.u32(t + 7200); f.u8(0)
+        f.data(1); f.u32(t + 14400); f.u8(4)
+        f.data(1); f.u32(t + 16200); f.u8(1)
+        f.data(1); f.u32(t + 27000); f.u8(2)
+        f.data(0); f.u32(t + 27000); f.u8(74); f.u8(1)
+        f.data(0); f.u32(t + 50000); f.u8(74); f.u8(0)
+        f.data(1); f.u32(t + 51200); f.u8(2)
+        f.data(1); f.u32(t + 52400); f.u8(1)
+        f.data(0); f.u32(t + 52400); f.u8(74); f.u8(1)
+        return f.finish()
+    }
+
     static func respiration() -> Data {
         var f = WellnessFit()
         f.def(0, 297, [(253, 4, u32), (0, 2, s16)])
@@ -262,7 +284,7 @@ enum WellnessFixtures {
 
     static let all: [(String, () -> Data)] = [
         ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
-        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("respiration", respiration), ("hrv", hrv),
+        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("hrv", hrv),
         ("candidates", candidates), ("framing", framing),
     ]
 

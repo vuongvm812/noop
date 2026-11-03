@@ -30,17 +30,22 @@ object GarminHistoryIngest {
         }.toSet()
 
     /**
-     * Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
-     * their nights over the watch's own sleep window (#47). Files older than the sync lookback are not
-     * listed again, so their nights keep the old fold. Swift twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+     * Once per watch, repair the nights an older fold stored: forget the stored SLEEP files so the next
+     * sync re-folds them over the watch's own sleep window (#47) and rewrites the recent day rollups from
+     * their main night (#49), and divide by 100 every stored efficiency above 1, the percent the older
+     * fold wrote (#49; this part also reaches nights older than the sync lookback). Nothing on the watch
+     * changes. Key version 2, so a watch repaired for #47 alone runs it once more.
+     * Swift twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
      */
     suspend fun refetchSleepFilesOnce(store: GarminSyncStore, deviceId: String, prefs: SharedPreferences, log: (String) -> Unit) {
-        val key = "noop.garmin.sleepRefold.v1.$deviceId"
+        val key = "noop.garmin.sleepRefold.v2.$deviceId"
         if (prefs.getBoolean(key, false)) return
         try {
+            val rescaled = store.repairEfficiencyUnits(deviceId)
             val forgotten = store.forgetFiles(deviceId, 255, GarminFitFileType.SLEEP.raw)
             prefs.edit().putBoolean(key, true).apply()
-            log("Garmin: re-folding stored nights; $forgotten sleep files will download again")
+            log("Garmin: re-folding stored nights; $forgotten sleep files will download again, " +
+                "$rescaled efficiency values rescaled from percent")
         } catch (e: Exception) {
             log("Garmin: re-fold of stored nights postponed: ${e.javaClass.simpleName}: ${e.message}")
         }

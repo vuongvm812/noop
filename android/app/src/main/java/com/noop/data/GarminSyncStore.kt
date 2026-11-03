@@ -43,7 +43,8 @@ data class GarminDayRollup(
     val lightMin: Double? = null,
     val remMin: Double? = null,
     val awakeMin: Double? = null,
-    val efficiencyPct: Double? = null,
+    /** Asleep / (asleep + awake) as a 0-1 fraction, the unit of `dailyMetric.efficiency` (#49). */
+    val efficiency: Double? = null,
     val sleepScore: Int? = null,
 )
 
@@ -147,6 +148,16 @@ class GarminSyncStore(private val db: WhoopDatabase) {
         exec("DELETE FROM garminSyncedFile WHERE deviceId = ? AND dataType = ? AND subType = ?", deviceId, dataType, subType)
     }
 
+    /**
+     * Divide by 100 every efficiency of this device stored above 1, the percent an older fold wrote (#49).
+     * Runs once per watch ([GarminHistoryIngest.refetchSleepFilesOnce]); idempotent. Returns the rows
+     * changed. Swift twin: `WhoopStore.repairGarminEfficiencyUnits`.
+     */
+    suspend fun repairEfficiencyUnits(deviceId: String): Int = db.withTransaction {
+        exec("UPDATE sleepSession SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1", deviceId) +
+            exec("UPDATE dailyMetric SET efficiency = efficiency / 100.0 WHERE deviceId = ? AND efficiency > 1", deviceId)
+    }
+
     /** Swift twin: `WhoopStore.insertLedgerRow`. */
     private fun insertLedgerRow(f: GarminSyncedFileRow, deviceId: String, ingestedAt: Long) {
         exec(
@@ -157,7 +168,16 @@ class GarminSyncStore(private val db: WhoopDatabase) {
     }
 
     /** Swift twin: `WhoopStore.mergeGarminDay`. */
-    private fun mergeDay(d: GarminDayRollup, deviceId: String, counts: GarminIngestCounts) {
+    private fun mergeDay(rollup: GarminDayRollup, deviceId: String, counts: GarminIngestCounts) {
+        // The day keeps its main night: a shorter night from another file (a nap) leaves the stored sleep
+        // figures alone; an equal one replaces them, so a re-ingest is idempotent (#49).
+        val incoming = rollup.totalSleepMin
+        val stored = if (incoming == null) null else sql.query(
+            "SELECT totalSleepMin FROM dailyMetric WHERE deviceId = ? AND day = ?", arrayOf<Any?>(deviceId, rollup.day),
+        ).use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getDouble(0) else null }
+        val d = if (incoming != null && stored != null && stored > incoming) {
+            rollup.copy(totalSleepMin = null, deepMin = null, lightMin = null, remMin = null, awakeMin = null, efficiency = null)
+        } else rollup
         // Swift twin: `WhoopStore.aggregate`.
         fun aggregate(kind: DeviceMetricKind, fn: String): Double? =
             sql.query(
@@ -188,7 +208,7 @@ class GarminSyncStore(private val db: WhoopDatabase) {
                 "activeKcalEst = CASE WHEN excluded.activeKcalEst IS NULL THEN dailyMetric.activeKcalEst " +
                 "WHEN dailyMetric.activeKcalEst IS NULL THEN excluded.activeKcalEst " +
                 "ELSE MAX(excluded.activeKcalEst, dailyMetric.activeKcalEst) END",
-            deviceId, d.day, d.totalSleepMin, d.efficiencyPct, d.deepMin, d.remMin, d.lightMin,
+            deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin, d.remMin, d.lightMin,
             d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.activeKcal,
         )
 

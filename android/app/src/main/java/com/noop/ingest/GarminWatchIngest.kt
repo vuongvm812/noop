@@ -89,26 +89,48 @@ object GarminWatchIngest {
             val key = dayOf(m.ts); days[key] = day(key)
         }
 
+        // Every night is a session; the day's sleep totals come from its MAIN night only, the one with the
+        // most time asleep (the earlier one on a tie), so a nap ending the same day never replaces the
+        // overnight figures (#49). Swift twin: the same loop in `GarminWatchIngest.fold`.
         val sleeps = ArrayList<GarminSleepRow>()
+        val mainNight = HashMap<String, GarminWellnessSamples.SleepSession>()
         for (night in s.sleepSessions) {
             if (night.end <= night.start) continue
             val asleep = night.lightS + night.deepS + night.remS
             if (asleep <= 0) continue
             val key = dayOf(night.end)
-            val efficiency = efficiencyPct(asleep, night.awakeS)
-            val d = day(key).copy(
-                totalSleepMin = asleep / 60.0, deepMin = night.deepS / 60.0, lightMin = night.lightS / 60.0,
-                remMin = night.remS / 60.0, awakeMin = night.awakeS / 60.0, efficiencyPct = efficiency,
-            )
-            days[key] = d
-            sleeps.add(GarminSleepRow(night.start, night.end, efficiency, null, d.avgHrvMs,
+            val bestAsleep = mainNight[key]?.let { it.lightS + it.deepS + it.remS } ?: 0L
+            if (asleep > bestAsleep) mainNight[key] = night
+            sleeps.add(GarminSleepRow(night.start, night.end, efficiency(asleep, night.awakeS), null, day(key).avgHrvMs,
                 stagesJSON(s.sleepLevels, night.start, night.end)))
+        }
+        for ((key, night) in mainNight) {
+            val asleep = night.lightS + night.deepS + night.remS
+            days[key] = day(key).copy(
+                totalSleepMin = asleep / 60.0, deepMin = night.deepS / 60.0, lightMin = night.lightS / 60.0,
+                remMin = night.remS / 60.0, awakeMin = night.awakeS / 60.0, efficiency = efficiency(asleep, night.awakeS),
+            )
         }
         return GarminFileIngest(file = file, hr = hr, deviceMetric = deviceMetric,
             days = days.keys.sorted().map { days.getValue(it) }, sleeps = sleeps)
     }
 
-    /** Asleep share of the time in bed, percent rounded to one decimal. Swift twin: `GarminWatchIngest.efficiencyPct`. */
+    /**
+     * Asleep share of the time in bed as a 0-1 FRACTION, the unit every other writer of
+     * `sleepSession.efficiency` / `dailyMetric.efficiency` uses (#49). Unmeasurable time is in neither
+     * term. Rounded to three decimals from the same permille as [efficiencyPct], not divided from it, so
+     * the stored double is the shortest one. Swift twin: `GarminWatchIngest.efficiency`.
+     */
+    fun efficiency(asleep: Long, awake: Long): Double? {
+        val inBed = asleep + awake
+        if (inBed <= 0) return null
+        return Math.round(asleep.toDouble() * 1000 / inBed.toDouble()).toDouble() / 1000
+    }
+
+    /**
+     * Asleep share of the time in bed, percent rounded to one decimal, the unit the watch shows. Not a
+     * stored unit: storage goes through [efficiency]. Swift twin: `GarminWatchIngest.efficiencyPct`.
+     */
     fun efficiencyPct(asleep: Long, awake: Long): Double? {
         val inBed = asleep + awake
         if (inBed <= 0) return null

@@ -26,20 +26,27 @@ enum GarminHistoryIngest {
         })
     }
 
-    /// Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
-    /// their nights over the watch's own sleep window (#47). The fold before that split a night at every
-    /// single-stage stretch over an hour and started it at the first stage change; the store replaces
-    /// the overlapping split rows when the re-fold lands. Files older than the sync lookback are not
-    /// listed again, so their nights keep the old fold. Kotlin twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+    /// Once per watch, repair the nights an older fold stored. Two faults are corrected:
+    ///  - #47: a night split at every single-stage stretch over an hour and started at its first stage
+    ///    change. The stored SLEEP files are forgotten, so the next sync downloads them again and re-folds
+    ///    them over the watch's own sleep window; the store replaces the overlapping split rows.
+    ///  - #49: efficiency stored as a percent (93.3) where every reader expects a fraction (0.933), and a
+    ///    nap's totals written over the night's in the day rollup. Every stored efficiency of this watch
+    ///    above 1 is divided by 100, which also covers nights older than the sync lookback; the re-fold
+    ///    above rewrites the recent day rollups from their main night.
+    /// Nothing on the watch changes. Version 2 of the key, so a watch repaired for #47 alone runs it once
+    /// more. Kotlin twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
     static func refetchSleepFilesOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
                                       log: (String) -> Void) async {
-        let key = "noop.garmin.sleepRefold.v1.\(deviceId)"
+        let key = "noop.garmin.sleepRefold.v2.\(deviceId)"
         guard !defaults.bool(forKey: key) else { return }
         do {
+            let rescaled = try await store.repairGarminEfficiencyUnits(deviceId: deviceId)
             let forgotten = try await store.forgetGarminSyncedFiles(deviceId: deviceId, dataType: 255,
                                                                     subType: Int(GarminFitFileType.sleep.rawValue))
             defaults.set(true, forKey: key)
-            log("Garmin: re-folding stored nights; \(forgotten) sleep files will download again")
+            log("Garmin: re-folding stored nights; \(forgotten) sleep files will download again, "
+                + "\(rescaled) efficiency values rescaled from percent")
         } catch {
             log("Garmin: re-fold of stored nights postponed: \(error.localizedDescription)")
         }

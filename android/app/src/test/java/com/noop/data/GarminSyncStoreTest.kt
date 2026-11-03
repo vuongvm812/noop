@@ -58,7 +58,7 @@ class GarminSyncStoreTest {
             deviceMetric = listOf(DeviceMetricRow(dayStart + 60, DeviceMetricKind.STRESS, 20.0, "fit227"),
                 DeviceMetricRow(dayStart + 60, DeviceMetricKind.BODY_BATTERY, 80.0, "fit227")),
             days = listOf(day(steps = 1_000, rhr = 59)),
-            sleeps = listOf(GarminSleepRow(dayStart - 20_000, dayStart + 5_000, 91.0, null, null, "[]")),
+            sleeps = listOf(GarminSleepRow(dayStart - 20_000, dayStart + 5_000, 0.91, null, null, "[]")),
         )
         val first = store.ingest(ingest, id, 1)
         assertEquals(2, first.hr)
@@ -140,5 +140,45 @@ class GarminSyncStoreTest {
         store.record(file(7), id, 1)
         store.record(file(7), id, 2)
         assertEquals(listOf(file(7)), store.syncedFiles(id))
+    }
+
+    private fun dailyDouble(column: String, device: String = id): Double? =
+        db.openHelper.readableDatabase.query("SELECT $column FROM dailyMetric WHERE deviceId = ? AND day = '2026-11-01'", arrayOf<Any?>(device))
+            .use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getDouble(0) else null }
+
+    private fun sleepDay(total: Double, deep: Double, efficiency: Double) =
+        day(sleep = total).copy(deepMin = deep, lightMin = total - deep, remMin = 0.0, awakeMin = 10.0, efficiency = efficiency)
+
+    /** #49: a nap file synced after the night file keeps the night's day totals. Swift twin: `testALaterNapFileKeepsTheNightsDayTotals`. */
+    @Test
+    fun aLaterNapFileKeepsTheNightsDayTotals() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), days = listOf(sleepDay(420.0, 90.0, 0.95))), id, 1)
+        store.ingest(GarminFileIngest(file(2), days = listOf(sleepDay(40.0, 0.0, 0.8))), id, 2)
+        assertEquals(420.0, dailyDouble("totalSleepMin")!!, 0.0)
+        assertEquals(90.0, dailyDouble("deepMin")!!, 0.0)
+        assertEquals(0.95, dailyDouble("efficiency")!!, 0.0)
+        assertEquals(420.0, series("sleep_total_min")!!, 0.0)
+        assertEquals(10.0, series("sleep_awake_min")!!, 0.0)
+        store.ingest(GarminFileIngest(file(3), days = listOf(sleepDay(420.0, 90.0, 0.951))), id, 3)
+        assertEquals("the same night again replaces the day's figures", 0.951, dailyDouble("efficiency")!!, 0.0)
+    }
+
+    /** #49: the repair rescales only this watch's percent efficiencies, once. Swift twin: `testRepairRescalesPercentEfficienciesOnce`. */
+    @Test
+    fun repairRescalesPercentEfficienciesOnce() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), days = listOf(sleepDay(420.0, 90.0, 93.3)), sleeps = listOf(
+            GarminSleepRow(dayStart - 30_000, dayStart, 93.3, null, null, null),
+            GarminSleepRow(dayStart + 40_000, dayStart + 42_000, 0.8, null, null, null),
+        )), id, 1)
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(GarminSleepRow(dayStart - 30_000, dayStart, 88.0, null, null, null))),
+            "garmin-other", 1)
+        assertEquals(2, store.repairEfficiencyUnits(id))
+        assertEquals(0, store.repairEfficiencyUnits(id))
+        fun efficiencies(device: String) = db.openHelper.readableDatabase.query(
+            "SELECT efficiency FROM sleepSession WHERE deviceId = ? ORDER BY efficiency", arrayOf<Any?>(device),
+        ).use { c -> buildList { while (c.moveToNext()) add(Math.round(c.getDouble(0) * 1000) / 1000.0) } }
+        assertEquals(listOf(0.8, 0.933), efficiencies(id))
+        assertEquals(0.933, dailyDouble("efficiency")!!, 1e-12)
+        assertEquals(listOf(88.0), efficiencies("garmin-other"))
     }
 }
