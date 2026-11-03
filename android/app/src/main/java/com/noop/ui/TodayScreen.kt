@@ -5530,7 +5530,16 @@ private fun RecoveryDriversSection(
     val readDay = carriedDay ?: displayDay
     // #53: the baselines THIS day was scored against (window ending the day before, its own era).
     val resolved = remember(chargeBaselines, readDay) { readDay?.let { chargeBaselines?.resolve(it.day) } }
-    val drivers = remember(resolved, readDay) { recoveryChargeDrivers(resolved, readDay) }
+    // #55: the Rest NOOP's recovery was scored against for that day (persisted with the night's sleep
+    // context), so the Sleep driver row explains the headline's own input. null until it loads → the
+    // cold-start composite, the same fallback the engine uses for an unscored night.
+    val app = LocalContext.current.applicationContext as com.noop.NoopApplication
+    val scoredRest by androidx.compose.runtime.produceState<Double?>(null, readDay) {
+        value = readDay?.let { d ->
+            runCatching { app.repository.restScoreFor(app.activeDeviceId, d, importedFirst = false) }.getOrNull()
+        }
+    }
+    val drivers = remember(resolved, readDay, scoredRest) { recoveryChargeDrivers(resolved, readDay, scoredRest) }
     if (drivers.isEmpty()) return
 
     val tier = remember(resolved, readDay) { chargeConfidenceTier(resolved, readDay) }

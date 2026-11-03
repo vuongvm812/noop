@@ -1885,7 +1885,9 @@ struct LiquidTodayView: View {
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,
                 habitualMidsleepSec: hostedHabitual,
-                motionByStart: hostedMotion))
+                motionByStart: hostedMotion,
+                computedSleep: repo.computedSleep,
+                age: profile.age > 0 ? profile.age : nil))
         } else {
             hostedSleepModel = nil
         }

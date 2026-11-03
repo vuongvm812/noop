@@ -131,8 +131,11 @@ fun CoupledScreen(
         suspend fun load(key: String) = runCatching {
             vm.repo.metricSeries("my-whoop", key, "0000-00-00", "9999-99-99")
         }.getOrDefault(emptyList()).associate { it.day to it.value }
-        importedPerf = load("sleep_performance")
-        importedNeed = load("sleep_need_min")
+        // #55: the engine's persisted figures fill every day the export does not carry, so the coupled
+        // read states the same Rest / need as the Sleep tab.
+        val computed = loadComputedSleepSeries(vm.repo, vm.activeStrapId)
+        importedPerf = computed.performance + load("sleep_performance")
+        importedNeed = computed.needMin + load("sleep_need_min")
     }
 
     // The day the coupled read describes: today's resolved row, else the carried last-scored prior day, so a
@@ -174,8 +177,8 @@ fun CoupledScreen(
     // formatter, so the number matches every other Effort read-out's conversion factor.
     val dayStrain21 = todayRow?.strain?.let { UnitFormatter.effortValue(it, EffortScale.WHOOP) }
 
-    // Sleep performance %: the imported figure when the export carried one, else the resolved Rest composite
-    // (RestScorer.restFromDaily), the SAME single source of truth the Today Rest score + Sleep graph read.
+    // Sleep performance %: the imported figure when the export carried one, else the engine's persisted Rest
+    // (#55), else the cold-start composite for an unscored night — the Sleep tab's resolution.
     val sleepPerformance = todayRow?.let { d ->
         importedPerf[d.day] ?: RestScorer.restFromDaily(d)
     }
@@ -240,7 +243,7 @@ fun CoupledScreen(
         SleepCard(
             sleepPerformance = sleepPerformance,
             asleepMin = todayRow?.totalSleepMin,
-            needMin = sleepNeedForDay(todayRow, days, importedNeed),
+            needMin = sleepNeedForDay(todayRow, importedNeed),
             bedWakeSpan = bedWakeSpan(sleeps, habitualMidsleepSec, ClockPrefs.uses24Hour(LocalContext.current)),
             onOpenSleep = onOpenSleep,
         )
@@ -661,14 +664,12 @@ internal fun strainBandWord(fraction: Double): String = when {
 }
 
 /**
- * The night's need (minutes): the imported per-day figure when the export carried one, else the shared
- * >= 7.5h personal-mean floor (matches SleepScreen needMin / SleepView.sleepNeedMin).
+ * The night's need (minutes): the imported per-day figure, else the engine's persisted need for that night
+ * (both folded into [needByDay]), else the cold-start default — the Sleep tab's "hours vs needed" rule (#55).
  */
-private fun sleepNeedForDay(day: DailyMetric?, days: List<DailyMetric>, importedNeed: Map<String, Double>): Double {
-    day?.day?.let { key -> importedNeed[key]?.takeIf { it > 0 }?.let { return it } }
-    val banked = days.mapNotNull { it.totalSleepMin }.filter { it > 0 }
-    val mean = if (banked.isEmpty()) null else banked.sum() / banked.size
-    return maxOf(450.0, mean ?: 450.0) // 450 min = 7.5h
+private fun sleepNeedForDay(day: DailyMetric?, needByDay: Map<String, Double>): Double {
+    day?.day?.let { key -> needByDay[key]?.takeIf { it > 0 }?.let { return it } }
+    return RestScorer.defaultSleepNeedHours * 60.0
 }
 
 /**

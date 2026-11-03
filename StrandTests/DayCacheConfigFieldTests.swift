@@ -36,14 +36,14 @@ final class DayCacheConfigFieldTests: XCTestCase {
             "sex"
         )
         XCTAssertEqual(
-            IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[13] = "moved" }),
+            IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[11] = "moved" }),
             "dayCycleMode"
         )
     }
 
     /// Several at once happens on a settings change that touches more than one knob.
     func testSeveralMoversAreAllNamed() {
-        let after = fullSig { $0[0] = "a"; $0[12] = "b" }
+        let after = fullSig { $0[0] = "a"; $0[10] = "b" }
         XCTAssertEqual(IntelligenceEngine.changedConfigField(previous: fullSig(), current: after),
                        "age+effortMethod")
     }
@@ -72,7 +72,7 @@ final class DayCacheConfigFieldTests: XCTestCase {
     func testTheFieldListMatchesTheKotlinTwin() {
         XCTAssertEqual(IntelligenceEngine.dayCacheConfigFields, [
             "age", "sex", "stepTicksPerStep", "maxHROverride",
-            "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
+            "tzOffset", "habitualMidsleep",
             "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
             "effortMethod", "dayCycleMode", "hrmaxEvidence",
         ])

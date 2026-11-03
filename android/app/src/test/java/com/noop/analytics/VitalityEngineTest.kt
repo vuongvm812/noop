@@ -12,7 +12,7 @@ class VitalityEngineTest {
     @Test fun averageReadsAtTheirAge() {
         val r = VitalityEngine.compute(VitalityEngine.Inputs(
             chronoAge = 40.0, restingHR = 65.0, vo2max = 45.0, expectedVO2max = 45.0,
-            sleepHours = 7.5, sleepConsistency = 0.75, rmssd = 45.0, rmssdNorm = 45.0, steps = 7000.0))!!
+            sleepHours = 7.5, sleepConsistency = 0.80, rmssd = 45.0, rmssdNorm = 45.0, steps = 7000.0))!!
         assertEquals(40.0, r.bodyAge, 0.01)
         assertEquals(50.0, r.vitality, 0.01)
         assertEquals(0.0, r.deltaYears, 0.01)
@@ -22,7 +22,7 @@ class VitalityEngineTest {
     @Test fun healthyIsYounger() {
         val r = VitalityEngine.compute(VitalityEngine.Inputs(
             chronoAge = 40.0, restingHR = 52.0, vo2max = 55.5, expectedVO2max = 45.0,
-            sleepHours = 7.5, sleepConsistency = 0.9, rmssd = 54.0, rmssdNorm = 45.0, steps = 11000.0))!!
+            sleepHours = 7.5, sleepConsistency = 0.95, rmssd = 54.0, rmssdNorm = 45.0, steps = 11000.0))!!
         assertEquals(32.42, r.bodyAge, 0.1)
         assertEquals(68.95, r.vitality, 0.2)
         assertTrue(r.deltaYears > 0)
@@ -31,7 +31,7 @@ class VitalityEngineTest {
     @Test fun unhealthyIsOlder() {
         val r = VitalityEngine.compute(VitalityEngine.Inputs(
             chronoAge = 40.0, restingHR = 80.0, vo2max = 34.5, expectedVO2max = 45.0,
-            sleepHours = 5.5, sleepConsistency = 0.5, rmssd = 31.5, rmssdNorm = 45.0, steps = 3000.0))!!
+            sleepHours = 5.5, sleepConsistency = 0.55, rmssd = 31.5, rmssdNorm = 45.0, steps = 3000.0))!!
         assertEquals(49.71, r.bodyAge, 0.1)
         assertEquals(25.73, r.vitality, 0.2)
         assertTrue(r.deltaYears < 0)
@@ -41,7 +41,7 @@ class VitalityEngineTest {
         assertNull(VitalityEngine.compute(VitalityEngine.Inputs(
             chronoAge = 40.0, restingHR = 65.0, sleepHours = 7.5)))
         assertNotNull(VitalityEngine.compute(VitalityEngine.Inputs(
-            chronoAge = 40.0, restingHR = 65.0, sleepHours = 7.5, sleepConsistency = 0.75)))
+            chronoAge = 40.0, restingHR = 65.0, sleepHours = 7.5, sleepConsistency = 0.80)))
     }
 
     @Test fun clamps() {
@@ -63,12 +63,6 @@ class VitalityEngineTest {
         assertEquals(33.0, VitalityEngine.rmssdNorm(40.0), 0.01)
         assertEquals(31.0, VitalityEngine.rmssdNorm(45.0), 0.01)
         assertEquals(20.0, VitalityEngine.rmssdNorm(90.0), 0.01)
-    }
-
-    @Test fun sleepConsistencyTest() {
-        assertEquals(1.0, VitalityEngine.sleepConsistency(listOf(7.0, 7.0, 7.0, 7.0))!!, 1e-9)
-        assertEquals(0.857, VitalityEngine.sleepConsistency(listOf(6.0, 8.0, 6.0, 8.0))!!, 0.005)
-        assertNull(VitalityEngine.sleepConsistency(listOf(7.0, 7.0)))
     }
 
     @Test fun contributionSigns() {

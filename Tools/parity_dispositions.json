@@ -1005,6 +1005,155 @@
       "identity_sha256": "3c23b11461d968bab207cf2777b59fead6ebf267577ffa36bec866c6ea99b65f",
       "platform": "swift",
       "rationale": "Its Kotlin twin is the companion-object `val WorkoutWatchReference.kinds`; the ledger inventories only Kotlin `const val`, which cannot hold a list. Both lists are pinned to the same wire values by WorkoutWatchReferenceTests and WorkoutWatchReferenceTest."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::addRestRows/3#1",
+      "identity_sha256": "1c079594e457cab0d7aba9f56cb4c16cdbeb56c63257f24edce7f1cf13be0bce",
+      "platform": "kotlin",
+      "rationale": "The Swift engine appends the Rest point and the sleep context points inline in its pass-2 loop; this Kotlin helper exists to keep analyzeRecentOnCpu under its JaCoCo bytecode budget.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::buildSleepContexts/14#1",
+      "identity_sha256": "e75888bc0a2c591396a84327b455e9beb35123a5d31ef9c1449c21c9c08a0ecf",
+      "platform": "kotlin",
+      "rationale": "Role twin of Swift IntelligenceEngine.sleepScoringContexts in the excluded app layer: gathers trailing nights and regularity windows and calls the shared SleepScoring.contexts.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::figureRows/2#1",
+      "identity_sha256": "7123302fbf506737ba4323bb88401b1871e2eea05bd41c86d79cfbd773019f22",
+      "platform": "kotlin",
+      "rationale": "Kotlin convenience on the sleep-scoring run that looks up a night context; Swift calls sleepContextPoints with the context directly in the excluded app layer.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::persistFitnessVitalityAndSteps/16#1",
+      "identity_sha256": "df6e97e0fb9caaf7c15b177af22172a27e9120fd6cf217366462fc0e6232407f",
+      "platform": "kotlin",
+      "rationale": "Kotlin extraction of the fitness, Vitality and steps persistence that Swift runs inline in the excluded app-layer engine; gains the Sleep Regularity Index input for #55.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::prepareSleepScoring/15#1",
+      "identity_sha256": "9ba4bf1915ef96ed4c4817450ec77dc42b5bc0c3481d948d68d76b7bdd385063",
+      "platform": "kotlin",
+      "rationale": "Kotlin pass-2 preparation (edited dailies plus sleep contexts) that Swift computes inline as preparedDailies and restContexts in the excluded app-layer engine.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::recomputeRecovery/3#1",
+      "identity_sha256": "f88c6456abd8ee5750ab139006ffcea2b573ac0313635d3116843821fc0b91fe",
+      "platform": "kotlin",
+      "rationale": "Role twin of the Swift recomputeRecovery in the excluded app layer; its arity changed because it now takes the per-night Rest context (#55).",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::recomputeRecoveryDaily/4#1",
+      "identity_sha256": "138f0269510357f5c06009fcfb108c430f0bb2ca04d92713c2b1468dbb97c238",
+      "platform": "kotlin",
+      "rationale": "Role twin of the Swift recomputeRecoveryDaily in the excluded app layer; its arity changed because it now takes the per-night Rest context (#55).",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::recoveryTraceLines/3#1",
+      "identity_sha256": "a745d06b6114d693419f1cd50d999330c106cb466bdb69cb2b759d512d03bb95",
+      "platform": "kotlin",
+      "rationale": "Role twin of the Swift recoveryTraceLines in the excluded app layer; its arity changed because it now takes the per-night Rest context (#55).",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::restContext/1#1",
+      "identity_sha256": "8e3b2b429f87ae8bfc8f38402f525f84fb2f5b96f194a6b1d3a2af6a073382bc",
+      "platform": "kotlin",
+      "rationale": "Kotlin lookup of a night Rest context with the cold-start fallback; Swift does the same dictionary lookup inline in the excluded app-layer engine.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::sleepFigureRows/4#1",
+      "identity_sha256": "4c9e0d9757cf0c25d3c942475d3badc6e7aee24d52a6ec5844970a44911387bc",
+      "platform": "kotlin",
+      "rationale": "Role twin of Swift IntelligenceEngine.sleepContextPoints in the excluded app layer: same keys and rounding for sleep_consistency, sleep_need_min and sleep_debt_min.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::sleepHistorySessions/8#1",
+      "identity_sha256": "b1dc18fc68acb20c058d51be18c91c23a531807dcd2949d324b64b7cf6018976",
+      "platform": "kotlin",
+      "rationale": "Kotlin loader of stored sleep sessions for the regularity windows; Swift reads the same store inline inside sleepScoringContexts in the excluded app layer.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::vitalityRegularity/1#1",
+      "identity_sha256": "a32891369b94621d7712a5f178ed36e27587e84936678bc283a7f3d89fd3bb44",
+      "platform": "kotlin",
+      "rationale": "Kotlin helper returning the newest scored day regularity rounded as persisted; Swift computes the same value inline for VitalityEngine.Inputs in the excluded app layer.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::restScoreFor/3#1",
+      "identity_sha256": "9801db79c9665256d4699d109930853d15787e6ee198003af63cd31ea6bfb774",
+      "platform": "kotlin",
+      "rationale": "Role twin of Swift Repository.restScore in the excluded app layer: the one Rest resolver, imported then computed then the cold-start composite.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/AnalyticsEngine.kt::swiftRounded/1#1",
+      "identity_sha256": "c0cd3ec4e3e8c18eafb2a7b28b1631db30fd0e47319f25380c5c52cc5d51fee5",
+      "platform": "kotlin",
+      "rationale": "Kotlin has no Swift-style half-away-from-zero Double rounding; this reproduces Swift rounded() so the Rest composite stays byte-identical."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/AnalyticsEngine.kt::clamp01/1#2",
+      "identity_sha256": "0ee11342ff0295307d92234bbcd499b2447ba9a78f8bf66f9ce6bba3f62d27fe",
+      "platform": "kotlin",
+      "rationale": "Local clamp helper inside the Kotlin Rest composite; Swift clamps with max/min inline, so there is no declaration to pair."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/AnalyticsEngine.swift::coldStart",
+      "identity_sha256": "9a1ef3136ef8a9a611b0343acdc6f7e3219fb2c1195ef673c1f51c3f971a02c1",
+      "platform": "swift",
+      "rationale": "Swift static Context.coldStart; the Kotlin twin is a companion-object val on RestScorer.Context, which the ledger does not inventory as a constant."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/AnalyticsEngine.kt::rest/7#1",
+      "identity_sha256": "10c4c40e421b70e12783c9f3509ad41db2f5dccf8309e63afd966ef63e50ad9c",
+      "platform": "kotlin",
+      "rationale": "Kotlin convenience wrapper that forms restorative seconds (deep + REM) and calls RestScorer.composite; Swift callers do that sum inline before calling Rest.composite, so there is no Swift declaration to pair."
     }
   ]
 }

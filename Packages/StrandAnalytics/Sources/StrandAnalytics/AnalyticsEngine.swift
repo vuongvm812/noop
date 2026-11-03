@@ -669,7 +669,8 @@ public enum AnalyticsEngine {
             restorativeSeconds: deepS + remS,
             needHours: sleepNeedHours,
             consistency: sleepConsistency,
-            deepSeconds: deepS)
+            deepSeconds: deepS,
+            age: profile.age > 0 ? Int(profile.age) : nil)
         // #345: gravity-sparse computed ONCE — reused by the sleep-motion trace below AND the Rest
         // confidence guard, so the two can never diverge and isGravitySparse runs only once per day.
         let gravitySparse = SleepStager.isGravitySparse(gravity, hr: hr)
@@ -683,6 +684,7 @@ public enum AnalyticsEngine {
                     tstSeconds: tstS, inBedSeconds: inBedS, efficiency: efficiency,
                     restorativeSeconds: deepS + remS, needHours: sleepNeedHours,
                     consistency: sleepConsistency, deepSeconds: deepS,
+                    age: profile.age > 0 ? Int(profile.age) : nil,
                     groupFragments: mainGroup.count, groupInBedSeconds: inBedS))
             }
             // #319: the motion-coverage + staging context behind the Rest number, so a high score on a poor
@@ -1149,32 +1151,35 @@ public enum AnalyticsEngine {
 
     // MARK: - Rest composite (Charge/Effort/Rest)
 
-    /// The 0–100 Rest score. Composite of four published-sleep-quality components:
-    ///   - duration vs personal need (0.50): hours asleep ÷ need, clamped to 1.0.
+    /// The 0–100 Rest score. Composite of four sleep-quality components:
+    ///   - duration vs need (0.50): hours asleep ÷ the night's need, clamped to 1.0. The need comes from
+    ///     the `SleepScoring` funnel: trailing base need + strain adjustment + carried debt (#55).
     ///   - efficiency (0.20): asleep / in-bed, already in [0,1].
-    ///   - restorative share (0.20): (deep + REM) ÷ asleep, clamped to a 0.50 target
-    ///     (≈50% deep+REM is "full marks"; healthy adults sit ~40–50%).
-    ///   - consistency (0.10): sleep/wake regularity in [0,1]; a single day carries no
-    ///     regularity signal, so the caller supplies it from history — nil → neutral 0.5.
+    ///   - restorative share (0.15): (deep + REM) ÷ asleep against an age target (0.40 adults, 0.45 under
+    ///     18; Ohayon et al. 2004 put adult N3 near 15–20% falling with age and REM near 20–25%). Weighted
+    ///     below efficiency because wearable staging agrees with PSG only moderately (κ ≈ 0.4–0.6,
+    ///     Chinoy et al. 2021).
+    ///   - consistency (0.15): the Sleep Regularity Index ÷ 100 from `SleepRegularity` (trailing 28
+    ///     nights); nil → neutral 0.5.
     /// All sub-scores clamp to [0,1]; the weighted sum scales to [0,100]. Kept
     /// dependency-free + constant-explicit so the Kotlin mirror is byte-identical.
     ///
     /// DEEP-sleep honesty (Reddit HRV/sleep report): pooling deep+REM let a night with normal REM
-    /// but almost no DEEP still earn near-full restorative credit (so Rest read 95+ with little deep).
-    /// When the caller supplies the DEEP split (`deepSeconds`), the restorative sub-score is scaled by
-    /// a gentle deep-adequacy factor: full credit once deep ≥ `deepShareTarget` (~13% of asleep is the
-    /// healthy floor), ramping to `deepFloorFactor` (0.5 — never zeroed) as deep → 0. So a near-zero-deep
-    /// night loses up to half the 0.20 restorative term (~10 pts) — honest, not tanking, no fabricated
-    /// stages. Deep unknown (`deepSeconds == nil`, e.g. an imported night with only a pooled total) →
-    /// factor 1.0, identical to the prior pooled behaviour.
+    /// but almost no DEEP still earn near-full restorative credit. When the deep split is known, the
+    /// restorative sub-score is scaled by a deep-adequacy factor: full credit once deep ≥ the age's deep
+    /// target (0.13, or 0.10 from 60), ramping to `deepFloorFactor` (0.5, never zeroed) as deep → 0. Deep
+    /// unknown (`deepSeconds == nil`, e.g. an imported night with only a pooled total) → factor 1.0.
     public enum Rest {
-        /// Default personal sleep need (hours) before the caller refines it.
+        /// Cold-start nightly sleep need (hours) before any history exists.
         public static let defaultNeedHours: Double = 8.0
-        /// "Full marks" restorative (deep+REM) share of asleep time.
-        public static let restorativeTarget: Double = 0.50
-        /// Deep-sleep share of asleep time that earns FULL restorative credit (~13% is the healthy
-        /// floor for adults; below it the restorative term is scaled down toward `deepFloorFactor`).
+        /// Adult "full marks" restorative (deep+REM) share of asleep time.
+        public static let restorativeTarget: Double = 0.40
+        /// Under-18 restorative target (more N3 in adolescence).
+        public static let restorativeTargetYouth: Double = 0.45
+        /// Deep share of asleep time that earns full restorative credit (adults under 60).
         public static let deepShareTarget: Double = 0.13
+        /// Deep-share target from age 60 (N3 falls with age; Ohayon et al. 2004).
+        public static let deepShareTargetOlder: Double = 0.10
         /// The most the restorative term is scaled down by when deep is ~absent — half, never zero,
         /// so a low-deep night reads honestly without the whole night tanking.
         public static let deepFloorFactor: Double = 0.5
@@ -1183,36 +1188,57 @@ public enum AnalyticsEngine {
 
         public static let wDuration: Double = 0.50
         public static let wEfficiency: Double = 0.20
-        public static let wRestorative: Double = 0.20
-        public static let wConsistency: Double = 0.10
+        public static let wRestorative: Double = 0.15
+        public static let wConsistency: Double = 0.15
 
         /// Minimum trailing nights before a personal sleep-need estimate is trusted; below this the
-        /// population default is used (cold-start honesty — never learn a need from a few nights).
+        /// cold-start default is used (never learn a need from a few nights).
         public static let minNeedNights: Int = 7
-        /// Hard cap on personalized need (h): beyond typical adult need even for genuine long sleepers.
+        /// Hard cap on personalized base need (h): beyond typical adult need even for long sleepers.
         public static let maxNeedHours: Double = 9.5
 
-        /// Population TARGET nightly sleep need (hours) for an age (NSF/AASM recommended-range
-        /// midpoint). Used as a FLOOR: the personal estimate can only adjust it UP for genuine long
-        /// sleepers, NEVER below the population target — so a chronic under-sleeper's need can't drift
-        /// toward their own deficit (which would falsely erase their sleep debt and read a short night
-        /// as "Strong"). Deliberately the target, not the minimum: flooring at the low end of the
-        /// range would understate a sleep-deprived (vs genuinely short-sleeping) user's deficit.
+        /// The per-night inputs a Rest score is computed against. Built by `SleepScoring.contexts` from
+        /// history before the scored day; `coldStart` when no history is available.
+        public struct Context: Equatable, Sendable {
+            public let needHours: Double
+            public let consistency: Double?
+            public let age: Int?
+            public init(needHours: Double, consistency: Double?, age: Int?) {
+                self.needHours = needHours; self.consistency = consistency; self.age = age
+            }
+            public static let coldStart = Context(needHours: defaultNeedHours, consistency: nil, age: nil)
+        }
+
+        /// Restorative target for an age (nil/unknown → adult).
+        /// Kotlin twin: `RestScorer.restorativeTarget`.
+        public static func restorativeTarget(age: Int?) -> Double {
+            if let age, age > 0, age < 18 { return restorativeTargetYouth }
+            return restorativeTarget
+        }
+
+        /// Deep-share target for an age (nil/unknown → under-60 adult).
+        /// Kotlin twin: `RestScorer.deepShareTarget`.
+        public static func deepShareTarget(age: Int?) -> Double {
+            if let age, age >= 60 { return deepShareTargetOlder }
+            return deepShareTarget
+        }
+
+        /// Minimum recommended nightly sleep (hours) for an age, used as the FLOOR of the personal base
+        /// need: AASM/SRS adult consensus ≥ 7 h (Watson et al. 2015); AASM paediatric consensus 8 h for
+        /// 13–18 and 9 h for 6–12 (Paruthi et al. 2016). The personal estimate only adjusts UP from it.
         public static func populationNeedFloorHours(age: Int?) -> Double {
-            guard let age, age > 0 else { return 8.0 }   // unknown → adult target
+            guard let age, age > 0 else { return 7.0 }   // unknown → adult minimum
             switch age {
-            case ..<18: return 9.0     // children/teens need more (NSF 8–12; target ~9)
-            default: return 8.0        // adults (18–64) & older (65+): NSF 7–9, target ~8 (the app default)
+            case ..<13: return 9.0
+            case ..<18: return 8.0
+            default: return 7.0
             }
         }
 
-        /// Personalized nightly sleep need (hours), population-ANCHORED and age-floored (T1). The
-        /// personal component is the user's UPPER-QUARTILE nightly duration over the trailing window —
-        /// what they sleep on their less-restricted nights, NOT their average (which a chronic deficit
-        /// drags down) — floored at the age-appropriate population TARGET and capped at `maxNeedHours`.
-        /// So it only ever ADJUSTS UP for genuine long sleepers, never below the target. Fewer
-        /// than `minNeedNights` scorable nights → the population default (cold-start). Zero/negative
-        /// entries (no-data days) are dropped and do not count toward the minimum.
+        /// Personal base sleep need (hours): the UPPER-QUARTILE of the trailing nightly durations (what
+        /// the user sleeps on less-restricted nights, not the average a chronic deficit drags down),
+        /// floored at the age minimum and capped at `maxNeedHours`. Fewer than `minNeedNights` usable
+        /// nights → the cold-start default (never below the floor). Non-positive entries are dropped.
         public static func personalizedNeedHours(nightlyHours: [Double], age: Int?) -> Double {
             let floor = populationNeedFloorHours(age: age)
             let xs = nightlyHours.filter { $0 > 0 }.sorted()
@@ -1227,29 +1253,31 @@ public enum AnalyticsEngine {
         }
 
         /// Build the composite. `tstSeconds` = total sleep time, `restorativeSeconds` = deep+REM
-        /// seconds, `deepSeconds` = deep-stage seconds (nil → no deep-adequacy adjustment, pooled
-        /// behaviour). Returns a value in [0,100].
+        /// seconds, `deepSeconds` = deep-stage seconds (nil → no deep-adequacy adjustment).
+        /// Returns a value in [0,100], rounded to 2 dp.
+        /// Kotlin twin: `RestScorer.composite`.
         public static func composite(tstSeconds: Double,
                                      inBedSeconds: Double,
                                      efficiency: Double,
                                      restorativeSeconds: Double,
                                      needHours: Double,
                                      consistency: Double?,
-                                     deepSeconds: Double? = nil) -> Double {
+                                     deepSeconds: Double? = nil,
+                                     age: Int? = nil) -> Double {
             func clamp01(_ x: Double) -> Double { max(0.0, min(1.0, x)) }
+            let restorTarget = restorativeTarget(age: age)
+            let deepTarget = deepShareTarget(age: age)
 
             let needSeconds = max(needHours, 0.1) * 3600.0
             let durationScore = clamp01(tstSeconds / needSeconds)
             let efficiencyScore = clamp01(efficiency)
-            // Deep-adequacy factor in [deepFloorFactor, 1]: 1.0 once deep ≥ target share, ramping
-            // down to the floor as deep → 0. nil deep (unknown split) ⇒ 1.0 (no adjustment).
             let deepFactor: Double = {
-                guard let deep = deepSeconds, tstSeconds > 0, deepShareTarget > 0 else { return 1.0 }
-                let adequacy = clamp01((deep / tstSeconds) / deepShareTarget)
+                guard let deep = deepSeconds, tstSeconds > 0 else { return 1.0 }
+                let adequacy = clamp01((deep / tstSeconds) / deepTarget)
                 return deepFloorFactor + (1.0 - deepFloorFactor) * adequacy
             }()
             let restorativeScore = tstSeconds > 0
-                ? clamp01((restorativeSeconds / tstSeconds) / restorativeTarget) * deepFactor
+                ? clamp01((restorativeSeconds / tstSeconds) / restorTarget) * deepFactor
                 : 0.0
             let consistencyScore = clamp01(consistency ?? neutralConsistency)
 
@@ -1261,20 +1289,17 @@ public enum AnalyticsEngine {
             return (weighted * 10000.0).rounded() / 100.0
         }
 
-        /// Rest composite [0,100] derived from a persisted `DailyMetric` (the pass-2 / display path —
-        /// the raw streams are gone, but the night's totals remain). nil when there's no sleep.
-        /// Single source of truth so the persisted `sleep_performance` series and the Charge
-        /// "Rest quality" term agree. `consistency` is the caller's regularity signal (nil → neutral).
-        public static func composite(daily d: DailyMetric, needHours: Double = defaultNeedHours,
-                                     consistency: Double? = nil) -> Double? {
+        /// Rest composite [0,100] from a persisted `DailyMetric` and the night's context. nil when
+        /// there's no sleep. A nil `deepMin` is UNKNOWN (factor 1.0), not zero deep.
+        /// Kotlin twin: `RestScorer.restFromDaily`.
+        public static func composite(daily d: DailyMetric, context: Context = .coldStart) -> Double? {
             guard let tstMin = d.totalSleepMin, tstMin > 0, let eff = d.efficiency else { return nil }
             let tstSec = tstMin * 60.0
-            let deepSec = (d.deepMin ?? 0) * 60.0
             let restorativeSec = (d.deepMin ?? 0) * 60.0 + (d.remMin ?? 0) * 60.0
             return composite(tstSeconds: tstSec, inBedSeconds: tstSec / max(eff, 0.01),
                              efficiency: eff, restorativeSeconds: restorativeSec,
-                             needHours: needHours, consistency: consistency,
-                             deepSeconds: deepSec)
+                             needHours: context.needHours, consistency: context.consistency,
+                             deepSeconds: d.deepMin.map { $0 * 60.0 }, age: context.age)
         }
     }
 

@@ -1220,7 +1220,10 @@ private struct VitalitySection: View {
             chronoAge: Double(profile.age),
             restingHR: rhrs.isEmpty ? nil : IntelligenceEngine.medianOf(rhrs),
             sleepHours: mean(nights),
-            sleepConsistency: VitalityEngine.sleepConsistency(nightlyHours: nights),
+            // #55: the Sleep Regularity Index the engine persisted for its newest scored day (÷100), the
+            // same value the stored headline used.
+            sleepConsistency: repo.computedSleep.filter { $0.value.consistencyPct != nil }.max { $0.key < $1.key }?
+                .value.consistencyPct.map { $0 / 100.0 },
             rmssd: hrvs.isEmpty ? nil : IntelligenceEngine.medianOf(hrvs),
             rmssdNorm: VitalityEngine.rmssdNorm(forAge: Double(profile.age)),
             steps: mean(steps)))

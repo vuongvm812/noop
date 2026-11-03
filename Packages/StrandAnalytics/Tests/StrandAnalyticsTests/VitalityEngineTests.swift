@@ -3,11 +3,12 @@ import XCTest
 
 final class VitalityEngineTests: XCTestCase {
 
+    /// Regularity inputs sit relative to `regularityRef` (0.80, the SRI cohort median, #55).
     /// An average-for-their-age person nets ~0 hazard → Body Age == chronological age, Vitality 50.
     func testAveragePersonReadsAtTheirAge() {
         let r = VitalityEngine.compute(.init(
             chronoAge: 40, restingHR: 65, vo2max: 45, expectedVO2max: 45,
-            sleepHours: 7.5, sleepConsistency: 0.75, rmssd: 45, rmssdNorm: 45, steps: 7000))!
+            sleepHours: 7.5, sleepConsistency: 0.80, rmssd: 45, rmssdNorm: 45, steps: 7000))!
         XCTAssertEqual(r.bodyAge, 40, accuracy: 0.01)
         XCTAssertEqual(r.vitality, 50, accuracy: 0.01)
         XCTAssertEqual(r.deltaYears, 0, accuracy: 0.01)
@@ -18,7 +19,7 @@ final class VitalityEngineTests: XCTestCase {
     func testHealthyPersonIsYounger() {
         let r = VitalityEngine.compute(.init(
             chronoAge: 40, restingHR: 52, vo2max: 55.5, expectedVO2max: 45,
-            sleepHours: 7.5, sleepConsistency: 0.9, rmssd: 54, rmssdNorm: 45, steps: 11000))!
+            sleepHours: 7.5, sleepConsistency: 0.95, rmssd: 54, rmssdNorm: 45, steps: 11000))!
         XCTAssertEqual(r.bodyAge, 32.42, accuracy: 0.1)
         XCTAssertEqual(r.vitality, 68.95, accuracy: 0.2)
         XCTAssertGreaterThan(r.deltaYears, 0)   // younger than chrono age
@@ -28,7 +29,7 @@ final class VitalityEngineTests: XCTestCase {
     func testUnhealthyPersonIsOlder() {
         let r = VitalityEngine.compute(.init(
             chronoAge: 40, restingHR: 80, vo2max: 34.5, expectedVO2max: 45,
-            sleepHours: 5.5, sleepConsistency: 0.5, rmssd: 31.5, rmssdNorm: 45, steps: 3000))!
+            sleepHours: 5.5, sleepConsistency: 0.55, rmssd: 31.5, rmssdNorm: 45, steps: 3000))!
         XCTAssertEqual(r.bodyAge, 49.71, accuracy: 0.1)
         XCTAssertEqual(r.vitality, 25.73, accuracy: 0.2)
         XCTAssertLessThan(r.deltaYears, 0)      // older than chrono age
@@ -62,12 +63,6 @@ final class VitalityEngineTests: XCTestCase {
         XCTAssertEqual(VitalityEngine.rmssdNorm(forAge: 40), 33, accuracy: 0.01)
         XCTAssertEqual(VitalityEngine.rmssdNorm(forAge: 45), 31, accuracy: 0.01)   // halfway 33→29
         XCTAssertEqual(VitalityEngine.rmssdNorm(forAge: 90), 20, accuracy: 0.01)   // clamps to last anchor
-    }
-
-    func testSleepConsistency() {
-        XCTAssertEqual(VitalityEngine.sleepConsistency(nightlyHours: [7, 7, 7, 7])!, 1.0, accuracy: 1e-9)
-        XCTAssertEqual(VitalityEngine.sleepConsistency(nightlyHours: [6, 8, 6, 8])!, 0.857, accuracy: 0.005)
-        XCTAssertNil(VitalityEngine.sleepConsistency(nightlyHours: [7, 7]))   // < 3 nights
     }
 
     /// Contributions carry the right sign: a low resting HR is protective (negative), a high one ages you.

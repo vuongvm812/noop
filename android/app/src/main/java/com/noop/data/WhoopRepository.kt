@@ -1952,6 +1952,21 @@ class WhoopRepository(
         dao.metricSeries(deviceId, key, from, to)
 
     /**
+     * #55: the Rest score a day was scored with, resolved ONE way for every surface: the imported WHOOP
+     * `sleep_performance` for that day, else the engine's persisted computed value (scored against the
+     * night's trailing need / regularity / debt context), else — for a night the engine has not scored
+     * yet — the cold-start composite from the row's totals. [importedFirst] = false skips the import for a
+     * reader explaining NOOP's own recovery (the Charge drivers), which scored against the computed value.
+     */
+    suspend fun restScoreFor(activeStrapId: String, d: DailyMetric, importedFirst: Boolean = true): Double? {
+        if (importedFirst) {
+            metricSeries(WHOOP_SOURCE, "sleep_performance", d.day, d.day).firstOrNull()?.let { return it.value }
+        }
+        metricSeriesComputedUnion(activeStrapId, "sleep_performance", d.day, d.day).lastOrNull()?.let { return it.value }
+        return com.noop.analytics.RestScorer.restFromDaily(d)
+    }
+
+    /**
      * Computed ("-noop") [key] series across the active-strap UNION (the active strap's own computed
      * sibling + the canonical "my-whoop-noop"), deduped per day with the active strap winning. This is
      * how the weekly computed scores (fitness_age / vo2max_est / vitality / body_age) MUST be read:
@@ -3011,8 +3026,8 @@ class WhoopRepository(
          * Without this case the resolver returned no Rest for that day and Today borrowed the latest
          * historical value (#614). Derive it on the fly from the same banked totals via the single
          * source of truth [com.noop.analytics.RestScorer.restFromDaily] (the SAME composite the series
-         * carries), so the day resolves to its own Rest. Consistency is left to the scorer's neutral
-         * default here (the daily row carries no regularity term).
+         * carries), so the day resolves to its own Rest. The row carries no need / regularity context, so
+         * this is the cold-start composite; once the engine pass persists the point, the series wins (#55).
          */
         internal fun dailyColumn(key: String, d: DailyMetric): Double? = when (key) {
             "recovery" -> d.recovery

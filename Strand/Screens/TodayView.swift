@@ -4659,7 +4659,9 @@ struct TodayView: View {
             allSessions: hostedSessions,
             importedSleep: repo.importedSleep,
             habitualMidsleepSec: hostedHabitual,
-            motionByStart: hostedMotion))
+            motionByStart: hostedMotion,
+            computedSleep: repo.computedSleep,
+            age: profile.age > 0 ? profile.age : nil))
     }
 
     /// True while the strap is mid history-offload, the SAME signal the "Syncing strap history…" note

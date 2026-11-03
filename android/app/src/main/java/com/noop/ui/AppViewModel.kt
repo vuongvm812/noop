@@ -1143,7 +1143,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             // otherwise the midnight rollover re-fires last night's recap for late-nighters (#567).
                             reportDay = todayRow.day,
                             chargePct = todayRow.recovery.scorePctOrNull(),
-                            restPct = RestScorer.restFromDaily(todayRow).scorePctOrNull(),
+                            // #55: the Rest the night was scored with (one resolver for every surface).
+                            restPct = repo.restScoreFor(activeStrapId, todayRow).scorePctOrNull(),
                         )
                     }
                     // #593: once-a-day optimal-strain-reached nudge. Convert the stored 0-100 Effort to the
@@ -1206,7 +1207,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             recoveryPct = anchorRow?.recovery?.roundToInt(),
                             // Rest = the sleep_performance composite from THIS row's banked stage figures
                             // (pure, honest-null until last night is scored); Effort = the 0–100 strain. (#516)
-                            restPct = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
+                            // #55: resolved via the shared restScoreFor, as every other Rest surface.
+                            restPct = anchorRow?.let { repo.restScoreFor(activeStrapId, it)?.roundToInt() },
                             effortPct = anchorRow?.strain?.roundToInt(),
                             heartRate = live.heartRate,
                             // The ACTIVE device's charge (#2075): a ring reports its own and does not

@@ -325,6 +325,11 @@ fun SleepScreen(
     // headline tiles prefer them over the on-device approximations. Keyed on `days` so a
     // fresh import (which always rewrites dailyMetric too) reloads; metricSeries has no Flow.
     var imported by remember { mutableStateOf(ImportedSleepSeries()) }
+    // #55: the engine's own per-night figures (computed ids) — the context each night was scored against.
+    var computedFigures by remember { mutableStateOf(ImportedSleepSeries()) }
+    LaunchedEffect(days, vm.activeStrapId) {
+        computedFigures = loadComputedSleepSeries(vm.repo, vm.activeStrapId)
+    }
     LaunchedEffect(days) {
         suspend fun load(key: String) = runCatching {
             vm.repo.metricSeries("my-whoop", key, "0000-00-00", "9999-99-99")
@@ -491,6 +496,7 @@ fun SleepScreen(
                 key = currentDetailKey,
                 imported = imported,
                 napSleepMinByDay = napSleepMinByDay,
+                computed = computedFigures,
             )
         }
     }
@@ -528,10 +534,10 @@ fun SleepScreen(
     // at-a-glance TILES, the debt ledger, the personal need and the trend stay full-history /
     // latest-anchored, matching iOS SleepView. `selectedDay` re-points only the hero. Model is null
     // when the selected day has no stage minutes. (#5)
-    val model = remember(days, night, imported, napSleepMinByDay, sleeps, is24h) {
+    val model = remember(days, night, imported, computedFigures, napSleepMinByDay, is24h) {
         buildSleepModel(days, night?.session, imported, selectedDay = night?.dayKey,
             heroStages = night?.groupStages, heroSegments = night?.groupSegments,
-            napSleepMinByDay = napSleepMinByDay, sessions = sleeps, is24h = is24h)
+            napSleepMinByDay = napSleepMinByDay, computed = computedFigures, is24h = is24h)
     }
     val display = remember(model, night) { heroDisplay(model, night) }
 
@@ -583,8 +589,8 @@ fun SleepScreen(
     // newest stage-bearing day instead of vanishing. The HERO stays on `model`/`display` (an
     // honest no-stage-data fallback for the bad day, edit pencil reachable). Null only when NO day
     // has stage data: the true first-run empty state.
-    val tilesModel = remember(model, days, imported, napSleepMinByDay, sleeps) {
-        model ?: fallbackSleepModel(days, imported, napSleepMinByDay, sessions = sleeps)
+    val tilesModel = remember(model, days, imported, napSleepMinByDay, computedFigures) {
+        model ?: fallbackSleepModel(days, imported, napSleepMinByDay, computed = computedFigures)
     }
 
     // Jump straight to a night by its (local) wake-day — the center date block opens a picker.
@@ -708,7 +714,7 @@ fun SleepScreen(
                     // ◀/▶-navigated night instead of freezing on the full-history latest. When no night
                     // resolves but history exists (#940), keep the old "real data over a zeroed gauge"
                     // fallback to the latest score.
-                    score = if (night != null) heroPerformanceScore(night, days, imported)
+                    score = if (night != null) heroPerformanceScore(night, days, imported, computedFigures)
                             else tilesModel?.performance?.latest,
                     asleepMin = model?.stages?.asleep,
                     source = restHeroSource(imported, night?.dayKey ?: days.lastOrNull()?.day, activeIsOura, activeIsGarmin),

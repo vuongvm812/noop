@@ -107,9 +107,11 @@ internal fun calendarNightsAgo(
  */
 internal fun heroPerformanceScore(
     night: HeroNight?, days: List<DailyMetric>, imported: ImportedSleepSeries,
+    computed: ImportedSleepSeries = ImportedSleepSeries(),
 ): Double? {
     val wakeDay = night?.dayKey ?: return null
     imported.performance[wakeDay]?.let { return it }
+    computed.performance[wakeDay]?.let { return it }   // #55: the engine's persisted Rest for that night
     val daily = days.lastOrNull { it.day == wakeDay } ?: return null
     return RestScorer.restFromDaily(daily)
 }

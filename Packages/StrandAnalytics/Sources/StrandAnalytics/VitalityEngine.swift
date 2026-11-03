@@ -34,7 +34,7 @@ public enum VitalityEngine {
         public var vo2max: Double?             // ml/kg/min (e.g. from FitnessAgeEngine)
         public var expectedVO2max: Double?     // age/sex-expected ml/kg/min (the reference for vo2max)
         public var sleepHours: Double?         // mean nightly sleep
-        public var sleepConsistency: Double?   // 0–1 regularity (1 = perfectly regular)
+        public var sleepConsistency: Double?   // 0–1 regularity: Sleep Regularity Index ÷ 100 (SleepRegularity)
         public var rmssd: Double?              // ms, nocturnal HRV
         public var rmssdNorm: Double?          // age/sex-normative RMSSD (the reference)
         public var steps: Double?              // mean daily steps
@@ -79,6 +79,8 @@ public enum VitalityEngine {
     /// Minimum distinct factors before we'll show a number (honesty gate).
     public static let minFactors = 3
     public static let bandYears = 5.0
+    /// Reference regularity (SRI ÷ 100) that contributes 0: about the UK Biobank median SRI.
+    public static let regularityRef = 0.80
 
     private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(hi, max(lo, v)) }
 
@@ -96,25 +98,13 @@ public enum VitalityEngine {
         return anchors[anchors.count - 1].1
     }
 
-    /// Sleep regularity (0–1) from a window of nightly sleep durations (hours): 1 − coefficient of
-    /// variation, clamped. A rough but honest on-device proxy for the Sleep Regularity Index when we only
-    /// have durations, not full timing. Fewer than 3 nights → nil (not enough to judge).
-    public static func sleepConsistency(nightlyHours: [Double]) -> Double? {
-        let xs = nightlyHours.filter { $0 > 0 }
-        guard xs.count >= 3 else { return nil }
-        let mean = xs.reduce(0, +) / Double(xs.count)
-        guard mean > 0 else { return nil }
-        let variance = xs.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(xs.count)
-        let cv = variance.squareRoot() / mean
-        return clamp(1 - cv, 0, 1)
-    }
-
     /// Compute the per-factor log-hazard contributions present in `inputs`. Each references a population
     /// value, so an average person nets ~0. Published per-unit hazard ratios (conservative, clamped):
     ///   • Resting HR: +~10.5% all-cause mortality per +10 bpm (UK Biobank / meta-analyses). ref 65.
     ///   • VO₂max: ~14% per MET (3.5 ml/kg/min) vs the age/sex-expected value (FRIEND). fitter = protective.
     ///   • Sleep duration: U-shaped, optimum ~7.5 h; only deviation beyond ±0.5 h adds hazard (~12%/h).
-    ///   • Sleep regularity: most-regular vs least ≈ HR 0.70 (UK Biobank SRI). ref 0.75 of the 0–1 range.
+    ///   • Sleep regularity: most-regular vs least ≈ HR 0.70 (UK Biobank SRI, Windred et al. 2024). The
+    ///     input is the Sleep Regularity Index ÷ 100 from `SleepRegularity`; ref 0.80 ≈ the cohort median.
     ///   • HRV (RMSSD): ~16% per relative SD below the age norm (lower HRV = higher hazard).
     ///   • Steps: ~12% per 1,000 steps/day up to ~7k, diminishing to ~11k (pooled step-mortality meta).
     public static func contributions(_ inputs: Inputs) -> [Contribution] {
@@ -135,7 +125,7 @@ public enum VitalityEngine {
         }
         if let c = inputs.sleepConsistency {
             out.append(Contribution(key: "consistency", label: "Sleep regularity",
-                                    lnHazard: (0.75 - clamp(c, 0, 1)) * 0.450))
+                                    lnHazard: (regularityRef - clamp(c, 0, 1)) * 0.450))
         }
         if let h = inputs.rmssd, let norm = inputs.rmssdNorm, norm > 0 {
             out.append(Contribution(key: "hrv", label: "Heart-rate variability",

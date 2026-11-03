@@ -37,8 +37,9 @@ internal fun buildSleepMetricPoints(
     key: String,
     imported: ImportedSleepSeries = ImportedSleepSeries(),
     napSleepMinByDay: Map<String, Double> = emptyMap(),
+    // #55: the engine's persisted per-night figures; resolved exactly as the Sleep tab tiles do.
+    computed: ImportedSleepSeries = ImportedSleepSeries(),
 ): List<Pair<String, Double>> {
-    val needMin = max(450.0, days.mapNotNull { it.totalSleepMin?.takeIf { m -> m > 0.0 } }.average().let { if (it.isNaN()) 480.0 else it })
     if (key == "sleep_debt") {
         val debtNeedMin = RestScorer.personalizedNeedHours(
             days.mapNotNull { it.totalSleepMin?.let { minutes -> minutes / 60.0 } }, null,
@@ -51,28 +52,23 @@ internal fun buildSleepMetricPoints(
                 )
             },
             needHours = debtNeedMin / 60.0,
-            importedDebtMin = imported.debtMin,
+            importedDebtMin = imported.debtMin + computed.debtMin.filterKeys { it !in imported.debtMin },
         )
     }
     return days.mapNotNull { d ->
         val v: Double? = when (key) {
-            // The Rest detail graph reads the REAL resolved Rest composite per day — the same single
-            // source of truth the Today Rest score uses (RestScorer.restFromDaily, the composite the
-            // sleep_performance series carries) — not a local hours-vs-need approximation. Keeps the
-            // graph and the score in agreement. (#614 follow-up)
-            "performance" -> RestScorer.restFromDaily(d)?.takeIf { it in 0.0..100.0 }
+            // #55: every series resolves per day exactly as its Sleep tab tile does — the imported WHOOP
+            // figure, else the engine's persisted value (scored against the night's sleep context), else
+            // (an unscored night) the cold-start Rest / default need. Consistency is the Sleep Regularity
+            // Index; there is no local re-derivation of it any more.
+            "performance" -> (imported.performance[d.day] ?: computed.performance[d.day]
+                ?: RestScorer.restFromDaily(d))?.takeIf { it in 0.0..100.0 }
             "efficiency"  -> d.efficiency?.let { if (it <= 1.0) it * 100.0 else it }
-            "consistency" -> {
-                val idx = days.indexOf(d)
-                val lo = max(0, idx - 13)
-                val window = days.subList(lo, idx + 1).mapNotNull { it.totalSleepMin?.takeIf { m -> m > 0.0 } }
-                if (window.size < 3) null else {
-                    val m = window.average()
-                    val sd = kotlin.math.sqrt(window.sumOf { (it - m) * (it - m) } / window.size)
-                    (100.0 * (1.0 - sd / 90.0)).coerceIn(0.0, 100.0)
-                }
+            "consistency" -> imported.consistency[d.day] ?: computed.consistency[d.day]
+            "hours_vs_needed" -> {
+                val need = imported.needMin[d.day] ?: computed.needMin[d.day] ?: RestScorer.defaultSleepNeedHours * 60.0
+                d.totalSleepMin?.takeIf { it > 0.0 && need > 0.0 }?.let { it / need * 100.0 }
             }
-            "hours_vs_needed" -> d.totalSleepMin?.takeIf { it > 0.0 }?.let { minOf(100.0, it / needMin * 100.0) }
             "restorative" -> {
                 val dp = d.deepMin ?: return@mapNotNull null
                 val rm = d.remMin ?: return@mapNotNull null

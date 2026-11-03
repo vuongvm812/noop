@@ -779,7 +779,12 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
 private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: ProfileStore) {
     var vitality by remember { mutableStateOf<Double?>(null) }
     var bodyAge by remember { mutableStateOf<Double?>(null) }
+    // #55: the latest persisted Sleep Regularity Index (0–100), the value the stored Vitality used.
+    var regularity by remember { mutableStateOf<Double?>(null) }
     LaunchedEffect(days) {
+        regularity = runCatching {
+            vm.repo.latestMetricComputedUnion(vm.activeStrapId, "sleep_consistency")?.value
+        }.getOrNull()
         // Latest-value reads (LIMIT-1 per source) — the full-series `.lastOrNull()` scan is gone (perf).
         vitality = runCatching {
             vm.repo.latestMetricComputedUnion(vm.activeStrapId, "vitality")?.value
@@ -788,7 +793,7 @@ private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: 
             vm.repo.latestMetricComputedUnion(vm.activeStrapId, "body_age")?.value
         }.getOrNull()
     }
-    val contributions = remember(days, profile.age) {
+    val contributions = remember(days, profile.age, regularity) {
         val last7 = days.takeLast(7)
         val nights = last7.mapNotNull { it.totalSleepMin }.map { it / 60.0 }.filter { it > 0 }
         val hrvs = last7.mapNotNull { it.avgHrv }
@@ -805,7 +810,7 @@ private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: 
         }
         VitalityEngine.contributions(VitalityEngine.Inputs(
             chronoAge = profile.age.toDouble(), restingHR = median(rhrs), sleepHours = mean(nights),
-            sleepConsistency = VitalityEngine.sleepConsistency(nights),
+            sleepConsistency = regularity?.let { it / 100.0 },
             rmssd = median(hrvs), rmssdNorm = VitalityEngine.rmssdNorm(profile.age.toDouble()), steps = mean(steps)))
     }
     val v = vitality; val ba = bodyAge

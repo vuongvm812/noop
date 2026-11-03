@@ -894,25 +894,14 @@ object IntelligenceEngine {
         // null under HABITUAL_MIN_DAYS of history → cold-start: every analyzeDay/sleepEditedDaily call
         // below stays on the overnight-band bonus. The same value threads into both seams so analytics and
         // the Sleep tab resolve to the identical block. Mirrors Swift. (#547)
-        val (habitualMidsleepSec, nightlyHours) = computeHabitualSleep(
+        val habitualMidsleepSec = computeHabitualSleep(
             repo, importedDeviceId, computedId, ownerSource,
             nowLocalMidnight - maxDays * SECONDS_PER_DAY - StreamReadCap.LOOKBACK_SECONDS, nowSeconds,
             finishedBefore = nowLocalMidnight, offsetSec = tzOffsetSeconds,
         )
-        // Wave 0 (SL1/T1): personal sleep REGULARITY + population-anchored NEED, computed ONCE from the
-        // trailing per-night durations and threaded to every analyzeDay below (mirrors the midsleep
-        // learner just above — one personal trait per run, applied to the whole re-scored history so
-        // Rest stops running on a flat neutral-0.5 consistency and a fixed 8 h need). Recent 28-night
-        // window for regularity (a recent-behaviour signal); full history for the need's upper-quartile
-        // "unrestricted nights" estimate. Both degrade honestly on thin history (consistency → null →
-        // neutral term; need → population default), so cold-start is unchanged. Mirrors Swift.
-        val sleepConsistency = VitalityEngine.sleepConsistency(nightlyHours.takeLast(28))
-        // Two spelling differences from Swift, neither of which changes a number: Swift's
-        // `AnalyticsEngine.Rest` is Kotlin's top-level `RestScorer` object, and Kotlin's
-        // `UserProfile.age` is a Double where Swift's `ProfileStore.age` is already floored whole
-        // years — `toInt()` truncates to the same integer, and the need floor only branches on
-        // `<= 0` / `< 18`, so the two platforms land on the identical floor.
-        val sleepNeedHours = RestScorer.personalizedNeedHours(nightlyHours, profile.age.toInt())
+        // #55: sleep need and regularity are NOT computed here any more. Pass 1 scores Rest on the cold-start
+        // context; pass 2 builds one trailing context per day (SleepScoring.contexts) from the prepared
+        // dailies and sessions, and that is what Rest, recovery and the persisted figures use.
 
         // #970 read efficiency, skin-temp leg: [RegistryDayOwnerSource.skinTempFamily] resolves the family
         // via registry.all() — a Room query — and the loop below wants it once per DAY, so a 21-day scan
@@ -950,12 +939,12 @@ object IntelligenceEngine {
         // baselines (#53), so no baseline is part of it.
         //
         // These are NOT all "stable across an offload storm", as this comment claimed until #1538 went
-        // looking. #1402 had to fix the pass-1 baselines (since removed) for exactly that wrong assumption, and three more
-        // fields have the same shape: sleepNeedHours, sleepConsistency and habitualMidsleepSec all come out
-        // of computeHabitualSleep(windowEnd = now), which reads the computed "-noop" sleep sessions THE
-        // PREVIOUS PASS BANKED — a feedback loop from this pass's own output. Any night whose banked session
-        // moves changes them: sleepConsistency is 1−CV over 28 nights and habitualMidsleepSec a circular
-        // mean, so both shift with ANY night, while sleepNeedHours is a 75th percentile and usually does not.
+        // looking. #1402 had to fix the pass-1 baselines (since removed) for exactly that wrong assumption,
+        // and one more field has the same shape: habitualMidsleepSec comes out of
+        // computeHabitualSleep(windowEnd = now), which reads the computed "-noop" sleep sessions THE PREVIOUS
+        // PASS BANKED — a feedback loop from this pass's own output. Any night whose banked session moves
+        // changes it (a circular mean). Sleep need and regularity used to sit here too; since #55 they are
+        // pass-2 inputs, not analyzeDay's.
         //
         // But that is CORRECT invalidation, not churn to be quantized away — a night going from half-loaded
         // to complete really does change what every day should be scored against, and the swings are large
@@ -972,8 +961,7 @@ object IntelligenceEngine {
         val dayCacheConfigSig = listOf(
             profile.age.toString(), profile.sex.toString(), profile.stepTicksPerStep.toString(),
             maxHROverride?.toString() ?: "nil",
-            tzOffsetSeconds.toString(), sleepNeedHours.toString(),
-            sleepConsistency?.toString() ?: "nil", habitualMidsleepSec?.toString() ?: "nil",
+            tzOffsetSeconds.toString(), habitualMidsleepSec?.toString() ?: "nil",
             useExperimentalSleepV2.toString(), useMotionAwareWake.toString(),
             deepHrvWindow.toString(), spo2CandidateDisplay.toString(),
             // #1545: MUST be here. The Effort recipe changes every day's strain, so a cached scan
@@ -1319,8 +1307,6 @@ object IntelligenceEngine {
                 hrmaxEvidence = hrmaxEvidence,
                 tzOffsetSeconds = tzOffsetSeconds,
                 wristOff = wristOff,
-                sleepNeedHours = sleepNeedHours,
-                sleepConsistency = sleepConsistency,
                 habitualMidsleepSec = habitualMidsleepSec,
                 bandSleepState = bandSleepState,
                 // 7.0.0: thread the V2 toggle into the NORMAL staging path so it affects detected nights,
@@ -1742,7 +1728,16 @@ object IntelligenceEngine {
             profile, passResolvedMaxHr, effortMethod,
         )
 
-        for (res in scoredNights) {
+        // ── #55: prepare every scored night's daily FIRST (edits folded, day-cycle steps applied), then build
+        // ONE trailing sleep-scoring context per day from them (see [prepareSleepScoring]).
+        val (prepared, sleepScoring) = prepareSleepScoring(
+            repo, importedDeviceId, ownerSource, hist, scoredNights, editedRows, physiologicalSteps,
+            habitualMidsleepSec, restRows, oldestDay, newestDay, nowLocalMidnight, nowSeconds,
+            tzOffsetSeconds, profile,
+        )
+
+        for (night in prepared) {
+            val res = night.result
             // #299: scope the edits to THIS day before folding. A userEdited row / hand-logged nap belongs
             // to exactly ONE day — the day its night ENDS on, matching the daily's end-day bucket
             // (AnalyticsEngine's `matched` filters sleep sessions by end-day). endTs is stable under a
@@ -1750,16 +1745,14 @@ object IntelligenceEngine {
             // here keeps a single-night edit overriding only its OWN night instead of every night. The
             // #547 effective-onset detail is preserved: editOnsetByStart still carries the user-CORRECTED
             // bedtime (startTsAdjusted ?: startTs) for this day's edited/manual blocks.
-            val dayEditedRows = editedRowsForDay(editedRows, res.daily.day, tzOffsetSeconds)
             // Substitute an edited block's (reshaped) stages for its detected twin before the daily
             // sleep aggregate feeds Rest + recovery. No edit touching this night → `daily` is unchanged.
-            val editedDaily = editedCycleDaily(
-                res, dayEditedRows, tzOffsetSeconds, habitualMidsleepSec,
-                physiologicalSteps, computedId, restRows,
-            )
+            // Prepared above (#55) so the sleep-scoring contexts read the same edited dailies.
+            val dayEditedRows = night.editedRows
             // #53: this day's own baselines (window ending the day before).
-            val baselines2 = chargeDays.forDay(res.daily.day)
-            val daily = recomputeRecoveryDaily(editedDaily, res.nightlySkinTempC, baselines2)
+            val baselines2 = chargeDays.forDay(night.daily.day)
+            val restCtx = sleepScoring.restContext(night.daily.day)
+            val daily = recomputeRecoveryDaily(night.daily, res.nightlySkinTempC, baselines2, restCtx)
             val recovery = daily.recovery
             val skinTempDevC = daily.skinTempDevC
             // Charge term-breakdown trace (Test Centre Group G): only when the Recovery test mode is on
@@ -1768,11 +1761,11 @@ object IntelligenceEngine {
             // `recovery` written above is unchanged. Zero cost when off (the sink stays null, this branch
             // is skipped, recoveryTraceLines is never built). Mirrors the Swift recoveryTraceActive wiring.
             if (recoveryTraceSink != null) {
-                for (line in recoveryTraceLines(daily, baselines2)) recoveryTraceSink(line)
+                for (line in recoveryTraceLines(daily, baselines2, restCtx)) recoveryTraceSink(line)
             }
-            RestScorer.restFromDaily(daily)?.let { rest ->
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_performance", value = rest))
-            }
+            // #55: Rest scored against the night's context, plus that context (need / regularity / debt)
+            // persisted beside it so every surface reads the SAME figures instead of re-deriving its own.
+            sleepScoring.addRestRows(restRows, computedId, daily)
             addNightlyShadowRows(
                 restRows, computedId, daily.day, spo2CandidateByDay, hrvOverCountByDay,
                 primarySessionRHRByDay, primarySessionRHRCoverageByDay,
@@ -1979,9 +1972,8 @@ object IntelligenceEngine {
                     } else {
                         source
                     }
-                RestScorer.restFromDaily(scored)?.let { rest ->
-                    restRows.add(MetricSeriesRow(deviceId = computedId, day = w.day, key = "sleep_performance", value = rest))
-                }
+                // #55: Rest against the day's sleep context, with that context persisted beside it.
+                sleepScoring.addRestRows(restRows, computedId, scored)
                 out.add(
                     Computed(
                         day = w.day,
@@ -2031,6 +2023,9 @@ object IntelligenceEngine {
             manualStepCoefficient = manualStepCoefficient,
             persistStepsCalibration = persistStepsCalibration,
             stepsTraceSink = stepsTraceSink,
+            // #55: the newest scored day's Sleep Regularity Index, rounded exactly as it is persisted
+            // (sleep_consistency ÷ 100), so the Health breakdown reading that series explains this value.
+            vitalityRegularity = sleepScoring.vitalityRegularity(dailies),
         )
         // DURABILITY GUARD (iOS PR #395 cachedSleepKept): drop any freshly-detected session that
         // time-overlaps a night the user has already hand-corrected. A detected onset can drift
@@ -2165,6 +2160,7 @@ object IntelligenceEngine {
         manualStepCoefficient: Double?,
         persistStepsCalibration: (StepsEstimateEngine.Calibration) -> Unit,
         stepsTraceSink: ((String) -> Unit)?,
+        vitalityRegularity: Double?,
     ) {
         // #1538: the pass after the day loop was never measured — the cost line brackets the day loop and is
         // emitted the moment it returns, so the steps calibration re-folding sixty days of gravity every pass
@@ -2208,7 +2204,7 @@ object IntelligenceEngine {
             chronoAge = profile.age,
             restingHR = if (faRHRs.isEmpty()) null else medianOfDoubles(faRHRs),
             sleepHours = if (vNights.isEmpty()) null else vNights.average(),
-            sleepConsistency = VitalityEngine.sleepConsistency(vNights),
+            sleepConsistency = vitalityRegularity,   // #55: Sleep Regularity Index ÷ 100 (see the caller)
             rmssd = if (vHRVs.isEmpty()) null else medianOfDoubles(vHRVs),
             rmssdNorm = VitalityEngine.rmssdNorm(profile.age),
             steps = if (vSteps.isEmpty()) null else vSteps.average())
@@ -2494,14 +2490,17 @@ object IntelligenceEngine {
      * sleep / strain / workout / RSA pipeline. null on missing HRV/RHR or an unusable HRV baseline; pass 1
      * ([AnalyticsEngine.analyzeDay]) never scores Charge (#53), so this is the only place it is scored.
      */
-    private fun recomputeRecovery(daily: DailyMetric, baselines: ProfileBaselines): Double? {
+    private fun recomputeRecovery(
+        daily: DailyMetric, baselines: ProfileBaselines, restContext: RestScorer.Context,
+    ): Double? {
         val hrvVal = daily.avgHrv ?: return null
         val rhrVal = daily.restingHr ?: return null
         val hrvBase = baselines.hrv ?: return null
         // Charge enrichment: feed the Rest COMPOSITE (÷100) as the sleep-quality term instead of raw
         // efficiency, and fold in the night's skin-temp deviation (both from persisted daily fields).
-        // Mirrors the Swift recomputeRecovery. (Charge/Effort/Rest scoring redesign.)
-        val restQuality = RestScorer.restFromDaily(daily)?.let { it / 100.0 } ?: daily.efficiency
+        // Mirrors the Swift recomputeRecovery. (Charge/Effort/Rest scoring redesign.) The Rest context is
+        // the night's #55 sleep-scoring context, the same one the persisted Rest uses.
+        val restQuality = RestScorer.restFromDaily(daily, restContext)?.let { it / 100.0 } ?: daily.efficiency
         return RecoveryScorer.recovery(
             hrv = hrvVal,
             rhr = rhrVal.toDouble(),
@@ -2521,12 +2520,13 @@ object IntelligenceEngine {
      */
     internal fun recomputeRecoveryDaily(
         daily: DailyMetric, nightlySkinTempC: Double?, baselines: ProfileBaselines,
+        restContext: RestScorer.Context = RestScorer.Context.coldStart,
     ): DailyMetric {
         val input = daily.copy(
             skinTempDevC = recomputeSkinTempDev(nightlySkinTempC, baselines.skinTemp),
             skinTempC = nightlySkinTempC,
         )
-        return input.copy(recovery = recomputeRecovery(input, baselines))
+        return input.copy(recovery = recomputeRecovery(input, baselines, restContext))
     }
 
     /** One day's source-only (daily-aggregate) recovery output, keyed by day. Mirrors Swift WatchScoredDay. */
@@ -2792,7 +2792,9 @@ object IntelligenceEngine {
      * when the Recovery test mode is on, so it costs nothing when the mode is off. Mirrors the Swift
      * recoveryTraceLines.
      */
-    private fun recoveryTraceLines(daily: DailyMetric, baselines: ProfileBaselines): List<String> {
+    private fun recoveryTraceLines(
+        daily: DailyMetric, baselines: ProfileBaselines, restContext: RestScorer.Context,
+    ): List<String> {
         val hrvVal = daily.avgHrv
         val rhrVal = daily.restingHr
         val hrvBase = baselines.hrv
@@ -2801,7 +2803,7 @@ object IntelligenceEngine {
                 "charge day=${daily.day} nilScore reason=missingInput (hrv/rhr/hrvBaseline required)",
             )
         }
-        val restQuality = RestScorer.restFromDaily(daily)?.let { it / 100.0 } ?: daily.efficiency
+        val restQuality = RestScorer.restFromDaily(daily, restContext)?.let { it / 100.0 } ?: daily.efficiency
         val (_, trace) = RecoveryScorerTrace.recoveryTrace(
             hrv = hrvVal,
             rhr = rhrVal.toDouble(),
@@ -2864,17 +2866,170 @@ object IntelligenceEngine {
     internal fun finishedSessions(sessions: List<SleepSession>, before: Long): List<SleepSession> =
         sessions.filter { it.endTs < before }
 
+    /** #55: the trailing per-day sleep-scoring contexts plus the nap credit they were built with. */
+    internal data class SleepScoringRun(
+        val contexts: Map<String, SleepScoring.DayContext>,
+        val napMinByDay: Map<String, Double>,
+    ) {
+        /** The Rest context for [day], or the cold-start context when the day has none. */
+        fun restContext(day: String): RestScorer.Context = contexts[day]?.rest ?: RestScorer.Context.coldStart
+
+        /** Append [daily]'s `sleep_performance` (scored against its context) and the figures persisted
+         *  beside it to [rows]. */
+        fun addRestRows(rows: MutableList<MetricSeriesRow>, computedId: String, daily: DailyMetric) {
+            RestScorer.restFromDaily(daily, restContext(daily.day))?.let { rest ->
+                rows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_performance", value = rest))
+            }
+            rows.addAll(figureRows(computedId, daily))
+        }
+
+        /** The figures persisted beside Rest for [daily]'s night; empty when it has no context. */
+        fun figureRows(computedId: String, daily: DailyMetric): List<MetricSeriesRow> =
+            contexts[daily.day]?.let { sleepFigureRows(computedId, daily, it, napMinByDay[daily.day] ?: 0.0) }
+                ?: emptyList()
+
+        /** The newest scored day's Sleep Regularity Index ÷ 100, rounded exactly as `sleep_consistency`
+         *  persists it, so the Health breakdown reading that series explains the stored Vitality. */
+        fun vitalityRegularity(dailies: List<DailyMetric>): Double? =
+            dailies.maxOfOrNull { it.day }?.let { contexts[it] }?.regularity?.let { RestScorer.swiftRounded(it.score * 100.0 * 100.0) / 100.0 / 100.0 }
+    }
+
+    /** One scored night prepared for pass 2: its detected result, the edits scoped to its day, and the
+     *  daily with those edits and the day-cycle steps applied (#299, #55). */
+    internal data class PreparedNight(
+        val result: DayResult,
+        val editedRows: List<SleepSession>,
+        val daily: DailyMetric,
+    )
+
     /**
-     * Habitual midsleep (local seconds) AND the trailing per-night sleep DURATIONS (hours,
-     * chronological) from the stored sessions over the window — the longest block per LOCAL day, so
-     * naps drop out. One read serves both the main-night midsleep learner (#547) and the personal
-     * sleep-need + regularity that thread into `analyzeDay` (Wave 0 · SL1/T1). The midsleep result is
-     * byte-identical to before; the nightly-hours output is the extension. Mirrors Swift
-     * `IntelligenceEngine.computeHabitualSleep`.
+     * #55: fold each scored night's edits + day-cycle steps into its daily FIRST, then build the trailing
+     * sleep-scoring contexts from those prepared dailies, so Rest, recovery and the persisted need /
+     * regularity / debt all read one context built from the same nights. Kept out of
+     * `analyzeRecentOnCpu` for its JaCoCo bytecode budget.
+     */
+    private suspend fun prepareSleepScoring(
+        repo: WhoopRepository,
+        importedDeviceId: String,
+        ownerSource: DayOwnerSource?,
+        imported: List<DailyMetric>,
+        scoredNights: List<DayResult>,
+        editedRows: List<SleepSession>,
+        cycle: PhysiologicalStepCycleEngine.Result,
+        habitualMidsleepSec: Long?,
+        metricRows: MutableList<MetricSeriesRow>,
+        oldestDay: String,
+        newestDay: String,
+        nowLocalMidnight: Long,
+        nowSeconds: Long,
+        tzOffsetSeconds: Long,
+        profile: UserProfile,
+    ): Pair<List<PreparedNight>, SleepScoringRun> {
+        val computedId = "$importedDeviceId-noop"   // the computed sibling, as analyzeRecentOnCpu derives it
+        val prepared = scoredNights.map { res ->
+            val rows = editedRowsForDay(editedRows, res.daily.day, tzOffsetSeconds)
+            PreparedNight(
+                res, rows,
+                editedCycleDaily(res, rows, tzOffsetSeconds, habitualMidsleepSec, cycle, computedId, metricRows),
+            )
+        }
+        val run = buildSleepContexts(
+            repo, importedDeviceId, computedId, ownerSource, imported, prepared.map { it.daily },
+            scoredNights, editedRows, oldestDay, newestDay, nowLocalMidnight, nowSeconds,
+            tzOffsetSeconds, profile,
+        )
+        return prepared to run
+    }
+
+    /**
+     * #55: build ONE trailing [SleepScoring.DayContext] per day of the run window. Nights come from the prepared
+     * (edited) dailies of this run, else the stored computed rows, else the imported rows; nap credit and
+     * regularity windows from the stored sleep history unioned with this run's sessions. Each window keeps
+     * the UTC offset the device's time zone had at that night's onset. Mirrors Swift.
+     */
+    private suspend fun buildSleepContexts(
+        repo: WhoopRepository,
+        importedDeviceId: String,
+        computedId: String,
+        ownerSource: DayOwnerSource?,
+        imported: List<DailyMetric>,
+        preparedDailies: List<DailyMetric>,
+        scoredNights: List<DayResult>,
+        editedRows: List<SleepSession>,
+        oldestDay: String,
+        newestDay: String,
+        nowLocalMidnight: Long,
+        nowSeconds: Long,
+        tzOffsetSeconds: Long,
+        profile: UserProfile,
+    ): SleepScoringRun {
+        // History reaches back the base-need and regularity windows (plus margin) before the oldest scored day.
+        val spanDays = (DayOrdinal.ordinal(newestDay) ?: 0) - (DayOrdinal.ordinal(oldestDay) ?: 0)
+        val historyFrom = nowLocalMidnight -
+            (spanDays + SleepNeed.baseWindowDays + SleepRegularity.windowNights + 3).toLong() * SECONDS_PER_DAY
+        val stored = sleepHistorySessions(
+            repo, importedDeviceId, computedId, ownerSource, historyFrom, nowSeconds,
+            finishedBefore = nowLocalMidnight, offsetSec = tzOffsetSeconds,
+        )
+        val runSessions = scoredNights.flatMap { res ->
+            res.sleepSessions.map { s ->
+                SleepSession(deviceId = computedId, startTs = s.start, endTs = s.end, efficiency = s.efficiency)
+            }
+        }
+        val sessions = SleepSessionDedup.dedupe(stored + runSessions + editedRows).kept
+        val napMinByDay = sessions.groupBy { AnalyticsEngine.dayString(it.endTs, tzOffsetSeconds) }
+            .mapValues { (_, blocks) ->
+                SleepScoring.napMinutes(blocks.map { SleepScoring.Block(it.effectiveStartTs, it.endTs, it.efficiency) })
+            }
+        val tz = java.util.TimeZone.getDefault()
+        val windows = sessions.map {
+            SleepRegularity.Window(it.effectiveStartTs, it.endTs, (tz.getOffset(it.effectiveStartTs * 1000L) / 1000).toLong())
+        }
+        val fromDay = AnalyticsEngine.dayString(historyFrom, tzOffsetSeconds)
+        val byDay = LinkedHashMap<String, DailyMetric>()
+        for (d in imported) if (d.day >= fromDay) byDay[d.day] = d
+        for (d in repo.dailyMetrics(computedId, fromDay, newestDay)) byDay[d.day] = d
+        for (d in preparedDailies) byDay[d.day] = d
+        val nights = byDay.values.map { d ->
+            SleepNeed.Night(day = d.day, mainMin = d.totalSleepMin, napMin = napMinByDay[d.day] ?: 0.0, strain = d.strain)
+        }
+        val lo = DayOrdinal.ordinal(oldestDay)
+        val hi = DayOrdinal.ordinal(newestDay)
+        val days = if (lo == null || hi == null) emptyList() else (lo..hi).map { DayOrdinal.key(it) }
+        val age = if (profile.age > 0) profile.age.toInt() else null
+        return SleepScoringRun(SleepScoring.contexts(nights, windows, days, age), napMinByDay)
+    }
+
+    /**
+     * #55: the per-night sleep figures persisted beside Rest under the computed id: regularity (0–100, only
+     * when known), the need the night was scored against (min), and the debt after the night (min). Same
+     * keys and rounding as Swift `IntelligenceEngine.sleepContextPoints`.
+     */
+    internal fun sleepFigureRows(
+        computedId: String, daily: DailyMetric, ctx: SleepScoring.DayContext, napMin: Double,
+    ): List<MetricSeriesRow> {
+        val rows = ArrayList<MetricSeriesRow>(3)
+        ctx.regularity?.let {
+            rows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_consistency",
+                value = RestScorer.swiftRounded(it.score * 100.0 * 100.0) / 100.0))
+        }
+        rows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_need_min",
+            value = SleepDebt.round1(ctx.need.totalHours * 60.0)))
+        val main = daily.totalSleepMin
+        if (main != null && main > 0) {
+            rows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_debt_min",
+                value = SleepDebt.round1(SleepNeed.debtAfter(ctx.need, main, napMin))))
+        }
+        return rows
+    }
+
+    /**
+     * Habitual midsleep (local seconds) from the stored sessions over the window — the longest block per
+     * LOCAL day, so naps drop out (#547). Mirrors Swift `IntelligenceEngine.computeHabitualSleep`.
      *
      * Only sessions that ended before [finishedBefore] (the pass's local midnight) are learned from. Tonight's
      * session is re-banked by every sync while it is still growing, and each time it moved the learned
-     * consistency and midsleep, so the day-cache signature changed and every pass re-scored the whole window.
+     * midsleep, so the day-cache signature changed and every pass re-scored the whole window.
      * A night still being slept joins the history the day after (`computeHabitualSleep(finishedBefore:)`).
      */
     private suspend fun computeHabitualSleep(
@@ -2886,12 +3041,39 @@ object IntelligenceEngine {
         windowEnd: Long,
         finishedBefore: Long,
         offsetSec: Long,
-    ): Pair<Long?, List<Double>> {
+    ): Long? {
+        val merged = sleepHistorySessions(
+            repo, importedId, computedId, ownerSource, windowStart, windowEnd, finishedBefore, offsetSec,
+        )
+        // One HistoryBlock per session keyed by the LOCAL day of its midpoint; the learner keeps the
+        // longest block per day, so naps drop out. Mirrors Swift.
+        val blocks = merged.mapNotNull { s ->
+            val start = s.effectiveStartTs
+            val end = s.endTs
+            if (end <= start) null
+            else SleepStageTotals.HistoryBlock(start, end, AnalyticsEngine.dayString(start + (end - start) / 2, offsetSec))
+        }
+        return SleepStageTotals.habitualMidsleepSec(blocks, offsetSec)
+    }
+
+    /**
+     * The stored sleep history the learners read: imported + computed sessions, gap-filled from wearable
+     * exports (#31), with overlapping timebase-shifted duplicates collapsed (#899), keeping only sessions
+     * that ended before [finishedBefore]. Shared by the midsleep learner and the #55 sleep-scoring funnel so
+     * both read the same nights. Mirrors Swift.
+     */
+    private suspend fun sleepHistorySessions(
+        repo: WhoopRepository,
+        importedId: String,
+        computedId: String,
+        ownerSource: DayOwnerSource?,
+        windowStart: Long,
+        windowEnd: Long,
+        finishedBefore: Long,
+        offsetSec: Long,
+    ): List<SleepSession> {
         val imported = repo.sleepSessionsForDevice(importedId, windowStart, windowEnd, 4000)
         val ownComputed = repo.sleepSessionsForDevice(computedId, windowStart, windowEnd, 4000)
-        // #31: wearable-export nights are history for the midsleep learner, sleep need and regularity, on
-        // the end-days the import and NOOP's own detection leave empty (`WhoopRepository.habitualMidsleepSec`
-        // applies the same fill). Mirrors Swift.
         val historyIds = WearableHistory.readOrder(historyActiveId(ownerSource, importedId))
         val history = WhoopRepository.dedupSleepBlocks(
             historyIds.flatMap { repo.sleepSessionsForDevice(it, windowStart, windowEnd, 4000) },
@@ -2899,41 +3081,7 @@ object IntelligenceEngine {
         val all = WhoopRepository.fillSleepGaps(imported + ownComputed, history) {
             AnalyticsEngine.dayString(it.endTs, offsetSec)
         }
-        // #899: collapse overlapping timebase-shifted duplicates BEFORE the learner sees the history.
-        // A stale re-banked copy of a night lands on a DIFFERENT day key, so the per-day longest-block
-        // de-dup below never caught it and the learned midsleep drifted toward the stale timing, which
-        // then steered the main-night pick (day assignment) to the stale block. The same collapse also
-        // covers an imported night and its computed twin (the longest capture wins, exactly what the
-        // per-day length rule chose anyway). Mirrors Swift.
-        val merged = finishedSessions(SleepSessionDedup.dedupe(all).kept, finishedBefore)
-        // Longest block per LOCAL day (naps drop out), chosen by in-bed SPAN — reused for BOTH the
-        // midsleep learner and the per-night durations (Wave 0 · SL1/T1), so the two can never read a
-        // different history. For the DURATIONS we keep TST (span × efficiency), NOT the in-bed span:
-        // the need/regularity estimate must be in the same asleep-time units as the `tstSeconds` Rest
-        // scores against, or need reads systematically high (an in-bed span over-counts ~0.85 h vs
-        // TST). Efficiency is 0..1 (post the v26 unit-heal); a rare null main night falls back to a
-        // typical 0.9. Byte-identical to the Swift twin, same operation order.
-        val longestByDay = HashMap<String, Pair<Long, Double>>()   // dayKey -> (span, tstHours)
-        val blocks = merged.mapNotNull { s ->
-            val start = s.effectiveStartTs
-            val end = s.endTs
-            if (end <= start) {
-                null
-            } else {
-                val mid = start + (end - start) / 2
-                val dayKey = AnalyticsEngine.dayString(mid, offsetSec)
-                val span = end - start
-                if (span > (longestByDay[dayKey]?.first ?: 0L)) {
-                    val eff = s.efficiency?.takeIf { it > 0.0 && it <= 1.0 } ?: 0.9
-                    longestByDay[dayKey] = span to (span.toDouble() / 3600.0 * eff)
-                }
-                SleepStageTotals.HistoryBlock(start, end, dayKey)
-            }
-        }
-        val midsleep = SleepStageTotals.habitualMidsleepSec(blocks, offsetSec)
-        // Chronological (day-key string sort == date order) so a recent-window suffix is well-defined.
-        val nightlyHours = longestByDay.keys.sorted().mapNotNull { longestByDay[it]?.second }
-        return midsleep to nightlyHours
+        return finishedSessions(SleepSessionDedup.dedupe(all).kept, finishedBefore)
     }
 
     /**
@@ -3267,7 +3415,7 @@ object IntelligenceEngine {
      *  which [changedConfigField] refuses to guess about when they are not. */
     internal val DAY_CACHE_CONFIG_FIELDS: List<String> = listOf(
         "age", "sex", "stepTicksPerStep", "maxHROverride",
-        "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
+        "tzOffset", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
         "effortMethod", "dayCycleMode", "hrmaxEvidence",
     )

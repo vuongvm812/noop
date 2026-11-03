@@ -38,6 +38,7 @@ struct SleepView: View {
     // their OWN `@EnvironmentObject var live`/`appModel` in a small leaf below (mirrors the Today
     // leaf-scoping pattern and HealthView.swift:17-22), so a tick refreshes only that leaf.
     @EnvironmentObject var intelligence: IntelligenceEngine
+    @EnvironmentObject var profile: ProfileStore
 
     /// Memoized snapshot of every expensive derivation (latest Night with its intervals
     /// resolved once, the seven metric series, the trend points, the typical means). Rebuilt
@@ -466,9 +467,10 @@ struct SleepView: View {
     /// a navigated past night reads ITS OWN score, never last night's. nil when that day has no score.
     private func performanceScore(for night: Night) -> Double? {
         let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
-        if let p = repo.importedSleep[wakeDay]?.performancePct { return p }
-        guard let daily = repo.days.last(where: { $0.day == wakeDay }) else { return nil }
-        return AnalyticsEngine.Rest.composite(daily: daily)
+        guard let daily = repo.days.last(where: { $0.day == wakeDay }) else {
+            return repo.importedSleep[wakeDay]?.performancePct
+        }
+        return repo.restScore(daily)
     }
 
     /// Dispatch a reorderable Sleep section to its card. Naps rides with `.stages` (drawn inside the stages
@@ -1796,7 +1798,9 @@ struct SleepView: View {
             allSessions: allSessions,
             importedSleep: repo.importedSleep,
             habitualMidsleepSec: habitualMidsleepSec,
-            motionByStart: motionByStart))
+            motionByStart: motionByStart,
+            computedSleep: repo.computedSleep,
+            age: profile.age > 0 ? profile.age : nil))
     }
 
     // MARK: - Derived model
@@ -2929,6 +2933,7 @@ private struct SleepTimeEditor: View {
         .environmentObject(LiveState())
         .environmentObject(AppModel())
         .environmentObject(IntelligenceEngine(repo: repo, profile: ProfileStore(), deviceId: "preview"))
+        .environmentObject(ProfileStore())
         .frame(width: 980, height: 1180)
         .preferredColorScheme(.dark)
 }
