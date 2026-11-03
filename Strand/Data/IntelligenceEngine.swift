@@ -3063,7 +3063,11 @@ final class IntelligenceEngine: ObservableObject {
         // today and the tail is the oldest day in the window. Taking the last match would have scored
         // today's workout against a resting HR up to `maxDays` old.
         let measuredResting = out.first(where: { $0.rhr != nil })?.rhr.map(Double.init)
-        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id), maxHROverride: maxHR,
+        // #54: the pass's resolved HRmax (override, else observed evidence, else Tanaka), the same yardstick
+        // every day this pass scored used. Twin of Kotlin's `passResolvedMaxHr`.
+        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id),
+                              maxHROverride: StrainScorer.resolveHRmax(override: maxHR, age: up.age,
+                                                                       observedEvidence: hrmaxEvidence).value,
                               restingHR: measuredResting, effortMethod: effortMethodGlobal)
 
         results = out
@@ -3241,6 +3245,7 @@ final class IntelligenceEngine: ObservableObject {
     /// (negligible calories), and only when the recompute is a genuine improvement , so a well-scored
     /// 4.0 workout is never touched and a still-sparse window is a no-op.
     private func rescoreManualWorkouts(store: WhoopStore, profile up: UserProfile,
+                                       maxHROverride: Double?,
                                        restingHR: Double? = nil,
                                        // #1545: the recipe THIS PASS scored its days with, threaded in
                                        // rather than re-read. Re-reading would let a toggle flipped
@@ -3254,8 +3259,7 @@ final class IntelligenceEngine: ObservableObject {
         else { return }
         // #50: the unrounded resolver Kotlin uses. `profile.hrMax` rounds Tanaka to an Int, which scored
         // the same workout to a different Effort on each platform.
-        let hrMax = ManualWorkoutRescore.hrMax(
-            override: profile.hrMaxOverride > 0 ? Double(profile.hrMaxOverride) : nil, age: up.age)
+        let hrMax = ManualWorkoutRescore.hrMax(override: maxHROverride, age: up.age)
         var updated: [WorkoutRow] = []
         // A manual row is eligible when it looks under-scored (negligible kcal, #137) OR it's missing
         // strain (the merged-workout case, where kcal is the SUM of inputs so it never looks under-scored
@@ -3289,7 +3293,8 @@ final class IntelligenceEngine: ObservableObject {
     private func rescoreWorkouts(store: WhoopStore, profile up: UserProfile, deviceIds: [String],
                                  maxHROverride: Double?, restingHR: Double?,
                                  effortMethod: StrainScorer.Method) async {
-        await rescoreManualWorkouts(store: store, profile: up, restingHR: restingHR, effortMethod: effortMethod)
+        await rescoreManualWorkouts(store: store, profile: up, maxHROverride: maxHROverride,
+                                    restingHR: restingHR, effortMethod: effortMethod)
         await scoreGarminWorkouts(store: store, deviceIds: deviceIds, profile: up,
                                   hrMax: ManualWorkoutRescore.hrMax(override: maxHROverride, age: up.age),
                                   restingHR: restingHR, effortMethod: effortMethod)
