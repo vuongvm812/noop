@@ -2933,4 +2933,17 @@
     <string name="l10n_compare_screen_spearman_rho">斯皮尔曼 ρ</string>
     <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
     <string name="l10n_compare_screen_correlation_method">相关方法</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">个人资料中的体重会跟随你最近记录的体重。</string>
+    <string name="weight_log_chart_empty">至少记录两天的体重即可查看趋势。</string>
+    <string name="weight_log_field_kg">体重（kg）</string>
+    <string name="weight_log_field_lb">体重（lb）</string>
+    <string name="weight_log_invalid">请输入 %1$s 到 %2$s 之间的体重。</string>
+    <string name="weight_log_history">已记录的体重</string>
+    <string name="weight_log_empty">尚未记录体重。</string>
+    <string name="weight_log_save">保存</string>
+    <string name="weight_log_delete">删除</string>
+    <string name="weight_log_done">完成</string>
+    <string name="weight_log_previous_day">前一天</string>
+    <string name="weight_log_next_day">后一天</string>
 </resources>

@@ -30,11 +30,6 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
     WORKOUTS("workouts", R.string.today_section_workouts),
     HEART_RATE("heartRate", R.string.today_section_heart_rate),
 
-    /** Today's stress (#42): the latest level, today's average and an intraday sparkline, from Garmin's
-     *  own stress or NOOP's proxy. Tapping it opens the Stress screen. Placed after Heart Rate;
-     *  [decodeOrder] inserts it there for saved orders. */
-    STRESS("stress", R.string.today_section_stress),
-
     RECOVERY_VITALS("recoveryVitals", R.string.today_section_recovery_vitals),
     YOUR_CARDS("yourCards", R.string.today_section_your_cards),
     MENSTRUAL_CYCLE("menstrualCycle", R.string.today_section_menstrual_cycle),
@@ -56,9 +51,15 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
         /** The original, hard-coded section order — the default when the layout isn't customised. The
          *  journal widget (#656) is last by default, where it was first added, above the data-sources card. */
         val defaultOrder: List<TodaySection> = listOf(
-            HERO, LIVE_SESSION, SYNTHESIS, KEY_METRICS, WORKOUTS, HEART_RATE, STRESS, RECOVERY_VITALS,
+            HERO, LIVE_SESSION, SYNTHESIS, KEY_METRICS, WORKOUTS, HEART_RATE, RECOVERY_VITALS,
             YOUR_CARDS, MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
         )
+
+        /** Section keys an earlier version stored and this one no longer has. `stress` was the #42 Today
+         *  card, replaced by the Key Metrics Stress tile (#57). [TodayLayoutPrefs.decodeOrder] already
+         *  ignores an unknown token; [KeyMetricPrefs.runMigrations] also strips these from the saved
+         *  strings once. Swift twin: `TodaySection.retiredRaws`. */
+        val RETIRED_RAWS: Set<String> = setOf("stress")
     }
 }
 
@@ -69,8 +70,8 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
  * Mirrors the Apple-platform TodayLayoutPrefs.
  */
 object TodayLayoutPrefs {
-    private const val KEY_ORDER = "today.sectionOrder"
-    private const val KEY_HIDDEN = "today.hiddenSections"
+    internal const val KEY_ORDER = "today.sectionOrder"
+    internal const val KEY_HIDDEN = "today.hiddenSections"
 
     /** Every known section in display order (saved order first, then any newly-added section appended). */
     fun order(context: Context): List<TodaySection> =
@@ -133,6 +134,11 @@ object TodayLayoutPrefs {
         raw?.split(",")?.forEach { token -> TodaySection.fromRaw(token.trim())?.let(hidden::add) }
         return hidden.toList()
     }
+
+    /** [raw] with every retired section token removed (#57), tokens otherwise kept verbatim and in order.
+     *  Twin of the Swift `TodayLayoutPrefs.stripRetired`. */
+    fun stripRetired(raw: String): String =
+        raw.split(",").filterNot { it.trim() in TodaySection.RETIRED_RAWS }.joinToString(",")
 
     /** The full saved order filtered by the explicit hidden set. */
     fun visibleOrder(orderRaw: String?, hiddenRaw: String?): List<TodaySection> {

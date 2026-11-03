@@ -251,6 +251,11 @@ final class Repository: ObservableObject {
     @Published private(set) var hydrationSeq = 0
     func noteHydrationChanged() { hydrationSeq += 1 }
 
+    /// #57: bumped by every weight-diary write (log / edit / delete), so the Today Weight tile re-reads at
+    /// once rather than on the next `refreshSeq`, which a diary write never causes. Same idea as `hydrationSeq`.
+    @Published private(set) var weightLogSeq = 0
+    func noteWeightLogChanged() { weightLogSeq += 1 }
+
     /// Bumped whenever a period-start row is logged or removed. Cycle surfaces use this lightweight
     /// signal to reload their sensitive local history without forcing a full strap-data refresh.
     @Published private(set) var cycleTrackingSeq = 0

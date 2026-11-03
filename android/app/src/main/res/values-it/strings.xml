@@ -2931,4 +2931,17 @@
     <string name="l10n_compare_screen_spearman_rho">ρ di Spearman</string>
     <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
     <string name="l10n_compare_screen_correlation_method">Metodo di correlazione</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">Il peso del profilo segue l’ultimo peso registrato.</string>
+    <string name="weight_log_chart_empty">Registra il peso in almeno due giorni per vedere l’andamento.</string>
+    <string name="weight_log_field_kg">Peso (kg)</string>
+    <string name="weight_log_field_lb">Peso (lb)</string>
+    <string name="weight_log_invalid">Inserisci un peso tra %1$s e %2$s.</string>
+    <string name="weight_log_history">Pesi registrati</string>
+    <string name="weight_log_empty">Nessun peso registrato finora.</string>
+    <string name="weight_log_save">Salva</string>
+    <string name="weight_log_delete">Elimina</string>
+    <string name="weight_log_done">Fine</string>
+    <string name="weight_log_previous_day">Giorno precedente</string>
+    <string name="weight_log_next_day">Giorno successivo</string>
 </resources>

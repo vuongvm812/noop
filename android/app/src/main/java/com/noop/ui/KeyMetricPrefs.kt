@@ -36,15 +36,25 @@ enum class KeyMetric(val raw: String, @StringRes val titleRes: Int) {
     // DashboardCard.SKIN_TEMP's own title resource rather than adding a new one. New case, NOT added
     // to defaultOrder below, so an existing user's saved layout (and a fresh install's default) is
     // byte-identical to before; only opts in via the layout editor.
-    SKIN_TEMP("skinTemp", R.string.today_card_skin_temp);
+    SKIN_TEMP("skinTemp", R.string.today_card_skin_temp),
+
+    /** Today's stress (#57): the latest level from the one [com.noop.analytics.StressToday] resolver,
+     *  Garmin's own 0-100 or NOOP's 0-3. Replaced the #42 Stress card under Heart Rate; tapping it opens
+     *  the Stress screen. Reuses the old section's title resource. */
+    STRESS("stress", R.string.today_section_stress),
+
+    /** The latest VO₂max (#57), the same value the "Your Cards" VO₂max card shows. Taps through to its
+     *  trend detail. Reuses that card's title resource. */
+    VO2MAX("vo2max", R.string.today_card_vo2max);
 
     companion object {
         fun fromRaw(raw: String?): KeyMetric? = entries.firstOrNull { it.raw == raw }
 
-        /** The original, hard-coded grid order — the default when the layout isn't customised. */
+        /** The default grid order when the layout isn't customised. Stress and VO₂max (#57) close it; a
+         *  customised layout gains them once through [KeyMetricPrefs.runMigrations]. */
         val defaultOrder: List<KeyMetric> = listOf(
             CHARGE, EFFORT, REST, HRV, RESTING_HR,
-            BLOOD_OXYGEN, RESPIRATORY, STEPS, WEIGHT, CALORIES,
+            BLOOD_OXYGEN, RESPIRATORY, STEPS, WEIGHT, CALORIES, STRESS, VO2MAX,
         )
     }
 }
@@ -106,5 +116,51 @@ object KeyMetricPrefs {
             KeyMetric.fromRaw(token.trim())?.let { seen.add(it) }
         }
         return if (seen.isEmpty()) KeyMetric.defaultOrder else seen.toList()
+    }
+
+    // MARK: - #57 migration: the Stress card becomes a tile, VO₂max joins
+
+    /** Set once the #57 migration has run, so a tile the user later removes is not put back. */
+    private const val KEY_MIGRATED_STRESS_VO2 = "today.keyMetrics.migratedStressVo2"
+
+    /**
+     * The Key Metrics string a CUSTOMISED layout should hold after #57, or null when nothing changes.
+     *
+     * An empty string is the default layout, which already lists both tiles. A customised one gains the
+     * Stress tile unless the user had hidden the old Stress card (they chose not to see stress on Today, so
+     * that choice carries over), and gains VO₂max. Twin of the Swift `KeyMetricPrefs.migratedForStressVo2`.
+     */
+    fun migratedForStressVo2(keyMetricsRaw: String?, hiddenSectionsRaw: String?): String? {
+        val trimmed = keyMetricsRaw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        // Not decodeEnabled: that falls back to the default order for an all-unknown string, which would
+        // turn a garbled saved value into a rewrite. Only known tokens count here, like the Swift decoder.
+        val enabled = LinkedHashSet<KeyMetric>()
+        trimmed.split(",").forEach { token -> KeyMetric.fromRaw(token.trim())?.let { enabled.add(it) } }
+        if (enabled.isEmpty()) return null
+        val stressCardHidden = hiddenSectionsRaw.orEmpty().split(",").any { it.trim() == "stress" }
+        if (!stressCardHidden) enabled.add(KeyMetric.STRESS)
+        enabled.add(KeyMetric.VO2MAX)
+        val next = encode(enabled.toList())
+        return if (next == trimmed) null else next
+    }
+
+    /**
+     * Run the one-time #57 layout migration: extend a customised Key Metrics layout, then strip the
+     * retired `stress` section from the saved Today order and hidden set. Idempotent; Today calls it
+     * before reading the layout. Twin of the Swift `KeyMetricPrefs.runMigrations`.
+     */
+    fun runMigrations(context: Context) {
+        val prefs = NoopPrefs.of(context)
+        if (prefs.getBoolean(KEY_MIGRATED_STRESS_VO2, false)) return
+        val edit = prefs.edit()
+        val hidden = prefs.getString(TodayLayoutPrefs.KEY_HIDDEN, null)
+        migratedForStressVo2(prefs.getString(KEY_LAYOUT, null), hidden)?.let { edit.putString(KEY_LAYOUT, it) }
+        for (key in listOf(TodayLayoutPrefs.KEY_ORDER, TodayLayoutPrefs.KEY_HIDDEN)) {
+            val raw = prefs.getString(key, null) ?: continue
+            val clean = TodayLayoutPrefs.stripRetired(raw)
+            if (clean != raw) edit.putString(key, clean)
+        }
+        edit.putBoolean(KEY_MIGRATED_STRESS_VO2, true).apply()
     }
 }

@@ -34,6 +34,7 @@ ANDROID_HOME_FILES = {
     "android/app/src/main/java/com/noop/ui/JournalReminder.kt",
     "android/app/src/main/java/com/noop/ui/SupplementsToday.kt",
     "android/app/src/main/java/com/noop/ui/StressSummaryCard.kt",
+    "android/app/src/main/java/com/noop/ui/WeightLogSheet.kt",
     "android/app/src/main/java/com/noop/ui/CycleTrackerDialog.kt",
     "android/app/src/main/java/com/noop/ui/KeyMetricPrefs.kt",
     "android/app/src/main/java/com/noop/ui/DashboardCards.kt",
@@ -56,6 +57,7 @@ APPLE_HOME_FILES = {
     "Strand/Screens/JournalReminderCard.swift",
     "Strand/Screens/SupplementsTodayCard.swift",
     "Strand/Screens/StressSummaryCard.swift",
+    "Strand/Screens/WeightLogSheet.swift",
     "Strand/Screens/SkinTempCardsView.swift",
     "Strand/Screens/HealthAlertBanner.swift",
 }
@@ -97,6 +99,8 @@ ANDROID_INDIRECT_NON_UI_LITERALS = {
     # Stable KeyMetric raw values + preferences.
     "charge", "effort", "rest", "restingHr", "bloodOxygen", "respiratory", "steps",
     "weight", "calories", "today.keyMetrics", "today.keyMetricsDetailed",
+    # #57: the Stress / VO₂max tile keys and the one-time layout migration flag.
+    "vo2max", "today.keyMetrics.migratedStressVo2",
     "today.keyMetricsWindowDays", ",",
     # Stable DashboardCard raw values + preference; units remain measurement metadata.
     "stress", "fitnessAge", "vo2max", "vitality", "skinTemp", "sleep", "hydration", "coupled",

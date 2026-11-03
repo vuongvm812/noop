@@ -68,7 +68,14 @@ struct LiquidTodayView: View {
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
     @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
     @State private var importedKcalDay: [DayCalories.ImportedDay] = []  // #51: the day's Apple Health energy rows
-    @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
+    /// #57: the hand-logged weight diary and the Apple Health weigh-ins the Weight tile resolves between
+    /// through `WeightLog.resolve` (profile weight is the renderer's fallback, #204).
+    @State private var weightLog: [WeightLog.Entry] = []
+    @State private var weightHealth: [WeightLog.Entry] = []
+    @State private var showWeightLog = false
+    /// #57: today's stress for the Key Metrics Stress tile, from the same `StressTodayLoader` the Stress
+    /// screen's summary card reads.
+    @State private var stressReading: StressToday.Reading?
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
     ///
@@ -374,13 +381,6 @@ struct LiquidTodayView: View {
                         case .keyMetrics: keyMetricsSection
                         case .workouts: lastWorkoutsSection
                         case .heartRate: heartRateSection
-                        // #42: today's stress, tapping through to the Stress screen. Today only, since the
-                        // card reads today's samples. Twin of Android TodayScreen's STRESS arm.
-                        case .stress:
-                            if selectedDayOffset == 0 {
-                                NavigationLink(value: TabRoute.stress) { StressSummaryCard(showsChevron: true) }
-                                    .buttonStyle(LiquidPressStyle())
-                            }
                         case .recoveryVitals: recoveryVitalsSection
                         case .yourCards: yourCardsSection
                         case .menstrualCycle:
@@ -476,7 +476,15 @@ struct LiquidTodayView: View {
         // classic TodayView's reloadHydration() uses.
         .task(id: "\(repo.refreshSeq)-\(selectedDayOffset)-\(repo.hydrationSeq)-\(hydrationEnabled)-\(dayCycleModeRaw)") {
             DashboardCardPrefs.migrateLegacyStepsAverage()
+            KeyMetricPrefs.runMigrations()   // #57: Stress card → tile, VO₂max joins
             await load()
+        }
+        // #57: the Weight tile re-reads on a diary write (weightLogSeq), the Stress tile on a refresh.
+        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)") {
+            await reloadKeyMetricExtras()
+        }
+        .sheet(isPresented: $showWeightLog) {
+            WeightLogSheet(unitSystem: unitSystem, onClose: { showWeightLog = false })
         }
         .sheet(item: $guideSection) { section in
             NavigationStack { ScoringGuideView(initialSection: section, onClose: { guideSection = nil }) }
@@ -1439,8 +1447,32 @@ struct LiquidTodayView: View {
             ktile(String(localized: "Steps"), icon: keyMetricIcon(metric), stepsText, "", StrandPalette.chargeColor,
                   fracOver(stepCount, 10000), key: stepsDetailKey, detailMetric: stepsDetailMetric)
         case .weight:
-            let (val, cap) = weightTile(weightKg)
-            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap)
+            // #57: the newest of the hand-logged diary and Apple Health on or before the selected day, through
+            // the one `WeightLog.resolve` (the classic TodayView reads the same). Tapping opens the diary sheet.
+            let resolved = WeightLog.resolve(logged: weightLog, health: weightHealth, onOrBefore: selectedDayKey)
+            let (val, cap) = weightTile(resolved?.entry.kg)
+            let cutoff = sparkWindowCutoffKey
+            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap,
+                  spark: WeightLog.dailySeries(logged: weightLog, health: weightHealth)
+                    .filter { $0.day >= cutoff && $0.day <= selectedDayKey }.map(\.kg),
+                  action: { showWeightLog = true })
+        case .stress:
+            // #57: the latest level from `StressTodayLoader` → `StressToday.resolve`, the reading the Stress
+            // screen's summary card prints, on that reading's own scale. Today only: the loader reads today.
+            let reading = selectedDayOffset == 0 ? stressReading : nil
+            let level = StressToday.tileLevel(reading)
+            ktile(String(localized: "Stress"), icon: keyMetricIcon(metric),
+                  level.flatMap { lv in reading.map { StressSummaryCard.format(lv, source: $0.source) } } ?? "—",
+                  reading.map { StressSummaryCard.scaleSuffix($0.scaleMax) } ?? "",
+                  StrandPalette.stressColor,
+                  level.flatMap { lv in reading.map { lv / $0.scaleMax } },
+                  caption: reading.map { StressSummaryCard.sourceLabel($0.source) },
+                  spark: reading.map { $0.points.map(\.level) } ?? [],
+                  route: .stress)
+        case .vo2max:
+            // #57: the same latest VO₂max the "Your Cards" VO₂max card shows, opening the same detail.
+            ktile(String(localized: "VO₂ Max"), icon: keyMetricIcon(metric), intText(vo2max), "", StrandPalette.chargeColor, nil,
+                  route: .metric("vo2max_est"))
         case .calories:
             // #51: the day's TOTAL energy (`DayCalories`), the same figure its sparkline and the
             // Calories detail it opens chart.
@@ -1476,11 +1508,15 @@ struct LiquidTodayView: View {
         case .weight: return "scalemass.fill"
         case .calories: return "flame.fill"
         case .skinTemp: return "thermometer.medium"
+        case .stress: return "gauge.with.dots.needle.50percent"
+        case .vo2max: return "lungs.fill"
         }
     }
 
     private func ktile(_ label: String, icon: String, _ value: String, _ unit: String, _ tint: Color, _ frac: Double?,
-                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil) -> some View {
+                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil,
+                       spark sparkOverride: [Double]? = nil, action: (() -> Void)? = nil,
+                       route: TabRoute? = nil) -> some View {
         let displayValue = Self.tileDisplayValue(value, unit: unit)
         let tile = VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -1517,7 +1553,9 @@ struct LiquidTodayView: View {
             // windowed series keeps a clear placeholder of the same height so every tile in a detailed row
             // stays equal-height with its bars aligned.
             if keyMetricsDetailed {
-                let spark = key.map { windowedSpark($0) } ?? []
+                // #57: a tile whose trend is not a `kSparks` series (the weight diary, today's stress) passes
+                // its own values.
+                let spark = sparkOverride ?? key.map { windowedSpark($0) } ?? []
                 if spark.count >= 2 {
                     Sparkline(values: spark,
                               gradient: Gradient(colors: [tint.opacity(0.5), tint]))
@@ -1537,7 +1575,15 @@ struct LiquidTodayView: View {
         // #430 parity: tap -> the metric's trend detail (the same Explore dossier its MetricRow pushes,
         // closure-based NavigationLink per #38). A metric with no catalog entry stays inert.
         return Group {
-            if let metric = detailMetric ?? key.flatMap({ key in
+            // #57: a tile with an action (Weight → diary sheet) or a route (Stress, VO₂max) goes there
+            // instead of the catalog detail.
+            if let action {
+                Button(action: action) { tile.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+            } else if let route {
+                NavigationLink(value: route) { tile }
+                    .buttonStyle(.plain)
+            } else if let metric = detailMetric ?? key.flatMap({ key in
                 MetricCatalog.all.first(where: { $0.key == key })
             }) {
                 NavigationLink { MetricDetailView(metric: metric) } label: { tile }
@@ -1831,13 +1877,8 @@ struct LiquidTodayView: View {
         importedKcalDay = (await appleA).filter { $0.day == selectedDayKey }
             .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
 
-        // Weight for the SELECTED day: prefers a real Apple-Health reading (today's daily, else the
-        // "weight" series' newest point so a sparse-but-recent value still renders). Falls back to the
-        // user's profile weight in the renderer (weightTile).
-        let appleRows = await appleA
-        let weightSeries = await weightA
-        weightKg = appleRows.filter { $0.day == selectedDayKey }.compactMap { $0.weightKg }.max()
-            ?? weightSeries.last(where: { $0.day <= selectedDayKey })?.value
+        // Weight for the selected day is resolved in the renderer from the diary + Apple Health (#57,
+        // `reloadKeyMetricExtras`), so it no longer reads the selected day's Apple row here.
 
         // Awaited ONCE: the timestamps and the means have to come from the same read, or the segments
         // would describe a different series than the one drawn.
@@ -2120,11 +2161,27 @@ struct LiquidTodayView: View {
         return UnitFormatter.effortDisplay(s, scale: effortScale)
     }
 
+    /// #57: load the Stress tile's reading (today only, and only when the tile is shown) and the weight
+    /// diary plus Apple Health weigh-ins the Weight tile resolves between. Twin of the classic TodayView's.
+    private func reloadKeyMetricExtras() async {
+        let enabled = Set(enabledKeyMetrics)
+        if enabled.contains(.stress), selectedDayOffset == 0 {
+            stressReading = await StressTodayLoader.load(repo: repo)
+        } else {
+            stressReading = nil
+        }
+        if enabled.contains(.weight) {
+            weightLog = await repo.weightLogEntries()
+            weightHealth = await repo.series(key: "weight", source: "apple-health", fullHistory: true)
+                .map { WeightLog.Entry(day: $0.day, kg: $0.value) }
+        }
+    }
+
     /// The Weight tile's display string + an honest caption ("from profile" only on the fallback).
     /// Always formatted through the shared `UnitFormatter` so the Imperial/Metric toggle reaches this
     /// tile. Mirrors the classic TodayView's `weightTile`.
-    private func weightTile(_ appleWeightKg: Double?) -> (value: String, caption: String) {
-        if let kg = appleWeightKg {
+    private func weightTile(_ resolvedKg: Double?) -> (value: String, caption: String) {
+        if let kg = resolvedKg {
             return (UnitFormatter.massFromKilograms(kg, system: unitSystem), String(localized: "latest"))
         }
         return (UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), String(localized: "from profile"))

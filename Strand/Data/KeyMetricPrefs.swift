@@ -31,6 +31,12 @@ enum KeyMetric: String, CaseIterable, Identifiable {
     /// added to `defaultOrder` below, so an existing user's saved layout (and a fresh install's default)
     /// is byte-identical to before; only opts in via the layout editor.
     case skinTemp
+    /// Today's stress (#57): the latest level from the one `StressToday` resolver, Garmin's own 0-100 or
+    /// NOOP's 0-3. Replaced the #42 Stress card under Heart Rate; tapping it opens the Stress screen.
+    case stress
+    /// The latest VO₂max (#57), the same value the "Your Cards" VO₂max card shows. Taps through to its
+    /// trend detail.
+    case vo2max
 
     var id: String { rawValue }
 
@@ -50,13 +56,17 @@ enum KeyMetric: String, CaseIterable, Identifiable {
         // Same short label the sibling "Your Cards" tile (`DashboardCard.skinTemp`) already uses —
         // reuses its translation key rather than adding a new "Skin Temperature" one for this tile.
         case .skinTemp:    return String(localized: "Skin Temp")
+        case .stress:      return String(localized: "Stress")
+        // Same label (and translation key) as the "Your Cards" VO₂max card.
+        case .vo2max:      return String(localized: "VO₂ Max")
         }
     }
 
-    /// The original, hard-coded grid order — the default when the user hasn't customised the layout.
+    /// The default grid order when the user hasn't customised the layout. Stress and VO₂max (#57) close
+    /// it; a customised layout gains them once through `KeyMetricPrefs.runMigrations`.
     static let defaultOrder: [KeyMetric] = [
         .charge, .effort, .rest, .hrv, .restingHr,
-        .bloodOxygen, .respiratory, .steps, .weight, .calories,
+        .bloodOxygen, .respiratory, .steps, .weight, .calories, .stress, .vo2max,
     ]
 }
 
@@ -95,5 +105,47 @@ enum KeyMetricPrefs {
             }
         }
         return result
+    }
+
+    // MARK: - #57 migration: the Stress card becomes a tile, VO₂max joins
+
+    /// Set once the #57 migration has run, so a tile the user later removes is not put back.
+    static let stressVo2MigrationKey = "today.keyMetrics.migratedStressVo2"
+
+    /// The Key Metrics string a CUSTOMISED layout should hold after #57, or nil when nothing changes.
+    ///
+    /// An empty string is the default layout, which already lists both tiles. A customised one gains the
+    /// Stress tile unless the user had hidden the old Stress card (they chose not to see stress on Today,
+    /// so that choice carries over), and gains VO₂max. Twin of the Kotlin `KeyMetricPrefs.migratedForStressVo2`.
+    static func migratedForStressVo2(keyMetricsRaw: String, hiddenSectionsRaw: String) -> String? {
+        let trimmed = keyMetricsRaw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        var enabled = decodeEnabled(trimmed)
+        guard !enabled.isEmpty else { return nil }
+        let stressCardHidden = hiddenSectionsRaw.split(separator: ",")
+            .contains { $0.trimmingCharacters(in: .whitespaces) == "stress" }
+        if !stressCardHidden, !enabled.contains(.stress) { enabled.append(.stress) }
+        if !enabled.contains(.vo2max) { enabled.append(.vo2max) }
+        let next = encode(enabled)
+        return next == trimmed ? nil : next
+    }
+
+    /// Run the one-time #57 layout migration against `defaults`: extend a customised Key Metrics layout,
+    /// then strip the retired `stress` section from the saved Today order and hidden set. Idempotent;
+    /// Today calls it on appear, before reading the layout.
+    static func runMigrations(_ defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: stressVo2MigrationKey) else { return }
+        let hidden = defaults.string(forKey: TodayLayoutPrefs.hiddenKey) ?? ""
+        if let next = migratedForStressVo2(keyMetricsRaw: defaults.string(forKey: layoutKey) ?? "",
+                                           hiddenSectionsRaw: hidden) {
+            defaults.set(next, forKey: layoutKey)
+        }
+        for key in [TodayLayoutPrefs.orderKey, TodayLayoutPrefs.hiddenKey] {
+            if let raw = defaults.string(forKey: key) {
+                let clean = TodayLayoutPrefs.stripRetired(raw)
+                if clean != raw { defaults.set(clean, forKey: key) }
+            }
+        }
+        defaults.set(true, forKey: stressVo2MigrationKey)
     }
 }

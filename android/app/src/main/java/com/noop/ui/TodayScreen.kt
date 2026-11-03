@@ -195,6 +195,9 @@ import java.util.Calendar
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import com.noop.analytics.StressToday
+import com.noop.analytics.WeightLog
+import androidx.compose.material.icons.filled.Speed
 
 @Composable
 private fun DisplayText.localized(): String = when (this) {
@@ -510,6 +513,8 @@ fun TodayScreen(
     // Editable Key-Metrics layout (#251), an ordered list of the enabled tiles, persisted display-only.
     // SharedPreferences isn't reactive, so it's mirrored into local state and re-read when the editor saves.
     var showMetricsEditor by remember { mutableStateOf(false) }
+    // #57: the one-time Stress card → tile / VO₂max migration, BEFORE the layouts below are read.
+    remember { KeyMetricPrefs.runMigrations(context) }
     var enabledKeyMetrics by remember { mutableStateOf(KeyMetricPrefs.enabled(context)) }
     // Detailed Key-Metrics tiles (squarer + trend graph), set from the same editor, plus the chosen
     // trend window (1 week / 2 weeks / 1 month) the detailed graphs cover.
@@ -860,14 +865,38 @@ fun TodayScreen(
     // The newest Apple Health / Health Connect body weight, loaded off the main thread. Null until the
     // load runs or when neither source carries a weight, the Weight tile then falls back to the profile.
     // With "Use weight from Health Connect" ON it reads Health Connect only, the source the profile holds.
-    var weightKg by remember { mutableStateOf<Double?>(null) }
+    //
+    // #57: the hand-logged weight diary joins them. The tile shows `WeightLog.resolve`'s pick, the newest
+    // of the diary and the health store on or before the selected day, and re-reads on a diary write.
+    var weightHealth by remember { mutableStateOf<List<WeightLog.Entry>>(emptyList()) }
+    var weightLog by remember { mutableStateOf<List<WeightLog.Entry>>(emptyList()) }
+    var showWeightLog by remember { mutableStateOf(false) }
+    val weightLogSeq by WeightLogStore.mutationSeq.collectAsStateWithLifecycle()
     val weightFromHealthConnect = ProfileStore.from(context).useHealthConnectWeight
     LaunchedEffect(days, weightFromHealthConnect) {
-        weightKg = latestWeightKg(
+        weightHealth = healthWeightEntries(
             viewModel.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31"),
             viewModel.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31"),
             healthConnectOnly = weightFromHealthConnect,
         )
+    }
+    LaunchedEffect(weightLogSeq) {
+        weightLog = runCatching { WeightLogStore.entries(viewModel.repo) }.getOrDefault(emptyList())
+    }
+    // #57: today's stress for the Key Metrics Stress tile, through the same StressTodayLoader the Stress
+    // screen's summary card reads, so the tile and the card print one reading. Today only.
+    var stressReading by remember { mutableStateOf<StressToday.Reading?>(null) }
+    val stressTileShown = KeyMetric.STRESS in enabledKeyMetrics
+    LaunchedEffect(days, viewModel.activeStrapId, selectedDayOffset, stressTileShown) {
+        stressReading = if (selectedDayOffset == 0 && stressTileShown) {
+            runCatching {
+                StressTodayLoader.load(
+                    viewModel.repo,
+                    viewModel.activeStrapId,
+                    personalBaseline = NoopPrefs.stressPersonalBaseline(context),
+                )
+            }.getOrNull()
+        } else null
     }
 
     // Steps for the selected day from imported Apple Health / Health Connect data, the Today Steps
@@ -1670,8 +1699,6 @@ fun TodayScreen(
                 TodaySection.JOURNAL ->
                     selectedDayOffset == 0 && journalReminderOn
                 TodaySection.SUPPLEMENTS -> selectedDayOffset == 0
-                // #42: the stress card reads today's samples, so it is a Today-only section.
-                TodaySection.STRESS -> selectedDayOffset == 0
                 TodaySection.ADDED_CARDS ->
                     selectedDayOffset == 0 && enabledHostedCards.isNotEmpty()
                 else -> true
@@ -1821,7 +1848,15 @@ fun TodayScreen(
                                     unitSystem = unitSystem,
                                     effortScale = effortScale,
                                     effortForDay = effortForDay,   // #1001: same figure as the hero ring
-                                    latestWeightKg = weightKg,
+                                    latestWeightKg = WeightLog.resolve(weightLog, weightHealth, selectedDayKey)?.entry?.kg,
+                                    weightSpark = remember(weightLog, weightHealth, selectedDayKey) {
+                                        WeightLog.dailySeries(weightLog, weightHealth)
+                                            .filter { it.day <= selectedDayKey }.takeLast(90).map { it.kg }
+                                    },
+                                    stressReading = if (selectedDayOffset == 0) stressReading else null,
+                                    vo2max = vo2maxToday,
+                                    onOpenStress = onOpenStress,
+                                    onOpenWeight = { showWeightLog = true },
                                     profileWeightKg = profileWeightKg,
                                     importedStepsForDay = importedStepsForDay,
                                     estimatedStepsForDay = stepsEstForDay,
@@ -1869,13 +1904,6 @@ fun TodayScreen(
                             HeartRateTrendCard(viewModel, days, selectedDay, todayDate, displayMetric,
                                 effortScale, effortForDay, dayCycleMode)
                         }
-                        // #42: today's stress (latest, average, sparkline, source), tapping through to the
-                        // Stress screen. Twin of iOS LiquidTodayView's `.stress` arm.
-                        TodaySection.STRESS -> StressSummaryCard(
-                            viewModel = viewModel,
-                            refreshKey = days,
-                            onOpen = onOpenStress,
-                        )
                         // The three hero vitals, HRV / Resting HR / Respiratory. Carried day (#543).
                         TodaySection.RECOVERY_VITALS -> Box(modifier = Modifier.fillMaxWidth().staggeredAppear(stagger)) {
                             HeroMetricRows(day = displayMetric, carriedDay = lastScoredRecoveryDay,
@@ -2073,6 +2101,11 @@ fun TodayScreen(
         ) {
             LiveSessionScreen(vm = viewModel, onClose = { showLiveSession = false })
         }
+    }
+
+    // #57: the weight diary sheet, opened from the Weight tile.
+    if (showWeightLog) {
+        WeightLogSheet(viewModel = viewModel, unitSystem = unitSystem, onDismiss = { showWeightLog = false })
     }
 
     // Key-Metrics layout editor (#251), a Today-local dialog (no new nav destination). Saves the layout
@@ -5979,6 +6012,13 @@ private fun MetricGrid(
     effortForDay: Double? = null,
     latestWeightKg: Double? = null,
     profileWeightKg: Double = 75.0,
+    // #57: the Weight tile's trend (the diary merged with the health store, `WeightLog.dailySeries`), the
+    // Stress tile's reading (today only, null otherwise), the VO₂max tile's value, and the two new taps.
+    weightSpark: List<Double> = emptyList(),
+    stressReading: StressToday.Reading? = null,
+    vo2max: Double? = null,
+    onOpenStress: () -> Unit = {},
+    onOpenWeight: () -> Unit = {},
     importedStepsForDay: Int? = null,
     estimatedStepsForDay: Int? = null,
     // #616 / #51: the selected day's TOTAL energy ([com.noop.analytics.DayCalories]), so the Calories tile
@@ -6167,8 +6207,32 @@ private fun MetricGrid(
                 unit = "",
                 tint = Palette.accent,
                 frac = null,
+                spark = weightSpark,
             )
         },
+        // #57: the latest level from StressTodayLoader → StressToday.resolve, the reading the Stress screen's
+        // summary card prints, on that reading's own scale ("/100" Garmin, "/3" NOOP).
+        KeyMetric.STRESS to run {
+            val level = StressToday.tileLevel(stressReading)
+            val r = stressReading
+            KeyTileData(
+                label = uiString(R.string.today_section_stress),
+                value = if (level != null && r != null) formatStressSummaryValue(level, r.source) else NO_DATA,
+                unit = if (level != null && r != null) stressScaleSuffix(r.scaleMax) else "",
+                tint = Palette.stressColor,
+                frac = if (level != null && r != null) (level / r.scaleMax).coerceIn(0.0, 1.0) else null,
+                caption = r?.let { uiString(sourceLabelRes(it.source)) },
+                spark = r?.points?.map { it.level }.orEmpty(),
+            )
+        },
+        // #57: the same latest VO₂max the "Your Cards" VO₂max card shows.
+        KeyMetric.VO2MAX to KeyTileData(
+            label = uiString(R.string.today_card_vo2max),
+            value = vo2max?.roundToInt()?.toString() ?: NO_DATA,
+            unit = "",
+            tint = Palette.chargeColor,
+            frac = null,
+        ),
         KeyMetric.CALORIES to run {
             // #616 / #51: the day's resolved TOTAL energy (caloriesForDay, [com.noop.analytics.DayCalories]),
             // one number across tile, card and detail.
@@ -6224,11 +6288,14 @@ private fun MetricGrid(
         KeyMetric.RESPIRATORY -> ({ onOpenMetric("resp") })
         KeyMetric.STEPS -> if (stepsOpenCalibration) onOpenStepsCalibration else ({ onOpenMetric("steps_est") })
         KeyMetric.CALORIES -> ({ onOpenMetric("energy_kcal") })
-        KeyMetric.WEIGHT -> null
+        KeyMetric.WEIGHT -> onOpenWeight   // #57: the weight diary sheet
         // Same "skin" vital_detail key `dashboardCardMetricKey(DashboardCard.SKIN_TEMP)` already routes
         // to — confirmed a working destination there, so this tile opens the SAME screen "Your Cards"
         // already does, not a new/unverified route.
         KeyMetric.SKIN_TEMP -> ({ onOpenMetric("skin") })
+        KeyMetric.STRESS -> onOpenStress
+        // Same vital_detail key the "Your Cards" VO₂max card opens (dashboardCardMetricKey).
+        KeyMetric.VO2MAX -> ({ onOpenMetric("vo2max_est") })
     }
     // S5: slice from the FRONT of the saved order so a pinned/selected tile is never dropped or reordered
     // (#251); only the tail folds behind the expander. Mirrors the iOS visibleKeyMetrics prefix(cap).
@@ -6326,6 +6393,9 @@ private fun keyMetricIcon(metric: KeyMetric): ImageVector = when (metric) {
     KeyMetric.CALORIES -> Icons.Filled.LocalFireDepartment
     // Same glyph the sibling "Your Cards" tile (DashboardCard.SKIN_TEMP) already uses.
     KeyMetric.SKIN_TEMP -> Icons.Filled.Thermostat
+    // Same glyphs as the Stress summary card and the "Your Cards" VO₂max card.
+    KeyMetric.STRESS -> Icons.Filled.Speed
+    KeyMetric.VO2MAX -> Icons.Filled.Air
 }
 
 /**

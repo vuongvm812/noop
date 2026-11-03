@@ -57,4 +57,17 @@ final class StressTodayTests: XCTestCase {
         XCTAssertNil(r?.latest)
         XCTAssertTrue(r?.points.isEmpty ?? false)
     }
+
+    /// #57: the Key Metrics tile prints the latest level, else today's average. Kotlin twin:
+    /// `StressTodayTest.tileLevelMatchesTheSwiftOracle`.
+    func testTileLevelPrefersLatestThenAverage() {
+        let withLatest = StressToday.resolve(activeDeviceId: "my-whoop", garminSamples: [], garminWatchDay: nil,
+                                             garminImportDay: nil, noopTimeline: [P(ts: 5, level: 2.5)],
+                                             noopDayMean: 1.1)
+        let averageOnly = StressToday.resolve(activeDeviceId: "garmin-ab12", garminSamples: [], garminWatchDay: 31,
+                                              garminImportDay: nil, noopTimeline: [], noopDayMean: nil)
+        XCTAssertEqual(StressToday.tileLevel(withLatest), 2.5)
+        XCTAssertEqual(StressToday.tileLevel(averageOnly), 31)
+        XCTAssertNil(StressToday.tileLevel(nil))
+    }
 }

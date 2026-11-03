@@ -2858,4 +2858,17 @@
     <string name="l10n_compare_screen_spearman_rho">ρ Спирмена</string>
     <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
     <string name="l10n_compare_screen_correlation_method">Метод корреляции</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">Вес в профиле следует за последним записанным весом.</string>
+    <string name="weight_log_chart_empty">Запишите вес хотя бы за два дня, чтобы увидеть динамику.</string>
+    <string name="weight_log_field_kg">Вес (кг)</string>
+    <string name="weight_log_field_lb">Вес (фунты)</string>
+    <string name="weight_log_invalid">Введите вес от %1$s до %2$s.</string>
+    <string name="weight_log_history">Записанный вес</string>
+    <string name="weight_log_empty">Вес ещё не записан.</string>
+    <string name="weight_log_save">Сохранить</string>
+    <string name="weight_log_delete">Удалить</string>
+    <string name="weight_log_done">Готово</string>
+    <string name="weight_log_previous_day">Предыдущий день</string>
+    <string name="weight_log_next_day">Следующий день</string>
 </resources>
