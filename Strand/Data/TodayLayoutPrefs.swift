@@ -29,6 +29,10 @@ enum TodaySection: String, CaseIterable, Identifiable {
     case keyMetrics
     case workouts
     case heartRate
+    /// Today's stress (#42): the latest level, today's average and an intraday sparkline, from Garmin's
+    /// own stress or NOOP's proxy. Tapping it opens the Stress screen. Placed after Heart Rate;
+    /// `decodeOrder` inserts it there for saved orders.
+    case stress
     case recoveryVitals
     case yourCards
     case menstrualCycle
@@ -53,6 +57,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
         case .keyMetrics:     return String(localized: "Key Metrics")
         case .workouts:       return String(localized: "Workouts")
         case .heartRate:      return String(localized: "Heart Rate")
+        case .stress:         return String(localized: "Stress")
         case .recoveryVitals: return String(localized: "Recovery Vitals")
         case .yourCards:      return String(localized: "Your Cards")
         case .menstrualCycle: return String(localized: "Menstrual Cycle")
@@ -65,8 +70,8 @@ enum TodaySection: String, CaseIterable, Identifiable {
     /// The original, hard-coded section order — the default when the layout isn't customised. The journal
     /// widget (#656) is last by default, where it was first added, above the data-sources card.
     static let defaultOrder: [TodaySection] = [
-        .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .recoveryVitals, .yourCards,
-        .menstrualCycle, .journal, .supplements, .addedCards,
+        .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .stress, .recoveryVitals,
+        .yourCards, .menstrualCycle, .journal, .supplements, .addedCards,
     ]
 }
 

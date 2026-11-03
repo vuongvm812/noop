@@ -374,6 +374,13 @@ struct LiquidTodayView: View {
                         case .keyMetrics: keyMetricsSection
                         case .workouts: lastWorkoutsSection
                         case .heartRate: heartRateSection
+                        // #42: today's stress, tapping through to the Stress screen. Today only, since the
+                        // card reads today's samples. Twin of Android TodayScreen's STRESS arm.
+                        case .stress:
+                            if selectedDayOffset == 0 {
+                                NavigationLink(value: TabRoute.stress) { StressSummaryCard(showsChevron: true) }
+                                    .buttonStyle(LiquidPressStyle())
+                            }
                         case .recoveryVitals: recoveryVitalsSection
                         case .yourCards: yourCardsSection
                         case .menstrualCycle:

@@ -2198,6 +2198,12 @@
     <string name="today_section_menstrual_cycle">Cycle menstruel</string>
     <string name="today_section_journal">Journal de bord</string>
     <string name="today_section_supplements">Suppléments</string>
+    <string name="today_section_stress">Stress</string>
+    <string name="stress_summary_source_garmin">Stress Garmin</string>
+    <string name="stress_summary_source_noop">Stress NOOP</string>
+    <string name="stress_summary_latest">Dernier</string>
+    <string name="stress_summary_average">Moyenne du jour</string>
+    <string name="stress_summary_empty">Aucune mesure de stress aujourd’hui pour l’instant.</string>
     <string name="supplements_today_empty">Aucune question sur les suppléments pour l’instant.</string>
     <string name="supplements_today_add_link">En ajouter une dans le journal</string>
     <string name="journal_supplements_on_today_hint">Les suppléments se notent sur la carte Aujourd’hui. Touchez Modifier pour les gérer.</string>

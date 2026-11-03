@@ -1683,6 +1683,8 @@ fun TodayScreen(
                 TodaySection.JOURNAL ->
                     selectedDayOffset == 0 && journalReminderOn
                 TodaySection.SUPPLEMENTS -> selectedDayOffset == 0
+                // #42: the stress card reads today's samples, so it is a Today-only section.
+                TodaySection.STRESS -> selectedDayOffset == 0
                 TodaySection.ADDED_CARDS ->
                     selectedDayOffset == 0 && enabledHostedCards.isNotEmpty()
                 else -> true
@@ -1879,6 +1881,13 @@ fun TodayScreen(
                             HeartRateTrendCard(viewModel, days, selectedDay, todayDate, displayMetric,
                                 effortScale, effortForDay, dayCycleMode)
                         }
+                        // #42: today's stress (latest, average, sparkline, source), tapping through to the
+                        // Stress screen. Twin of iOS LiquidTodayView's `.stress` arm.
+                        TodaySection.STRESS -> StressSummaryCard(
+                            viewModel = viewModel,
+                            refreshKey = days,
+                            onOpen = onOpenStress,
+                        )
                         // The three hero vitals, HRV / Resting HR / Respiratory. Carried day (#543).
                         TodaySection.RECOVERY_VITALS -> Box(modifier = Modifier.fillMaxWidth().staggeredAppear(stagger)) {
                             HeroMetricRows(day = displayMetric, carriedDay = lastScoredRecoveryDay,

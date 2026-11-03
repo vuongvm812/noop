@@ -2212,6 +2212,12 @@
     <string name="today_section_menstrual_cycle">Menstruationszyklus</string>
     <string name="today_section_journal">Tagebuch</string>
     <string name="today_section_supplements">Nahrungsergänzung</string>
+    <string name="today_section_stress">Stress</string>
+    <string name="stress_summary_source_garmin">Garmin-Stress</string>
+    <string name="stress_summary_source_noop">NOOP-Stress</string>
+    <string name="stress_summary_latest">Aktuellste</string>
+    <string name="stress_summary_average">Heutiger Durchschnitt</string>
+    <string name="stress_summary_empty">Heute noch kein Stresswert.</string>
     <string name="supplements_today_empty">Noch keine Fragen zu Nahrungsergänzung.</string>
     <string name="supplements_today_add_link">Im Journal hinzufügen</string>
     <string name="journal_supplements_on_today_hint">Nahrungsergänzungen werden auf der Heute-Karte erfasst. Tippe auf „Bearbeiten“, um sie zu verwalten.</string>
