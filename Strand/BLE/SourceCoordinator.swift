@@ -358,8 +358,9 @@ final class SourceCoordinator: ObservableObject {
             nameMatches: { ExperimentalBrand.recognise(name: $0) == .garmin },
             // History sync: the local ledger says what is already stored; each downloaded file is decoded
             // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
-            loadSynced: { [storeHandle] in
+            loadSynced: { [storeHandle, straplog] in
                 guard let store = await storeHandle() else { return [] }
+                await GarminHistoryIngest.refetchSleepFilesOnce(store: store, deviceId: id, log: straplog)
                 return await GarminHistoryIngest.syncedKeys(store: store, deviceId: id)
             },
             ingest: { [storeHandle, straplog] file in

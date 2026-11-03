@@ -26,6 +26,25 @@ enum GarminHistoryIngest {
         })
     }
 
+    /// Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
+    /// their nights over the watch's own sleep window (#47). The fold before that split a night at every
+    /// single-stage stretch over an hour and started it at the first stage change; the store replaces
+    /// the overlapping split rows when the re-fold lands. Files older than the sync lookback are not
+    /// listed again, so their nights keep the old fold. Kotlin twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+    static func refetchSleepFilesOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
+                                      log: (String) -> Void) async {
+        let key = "noop.garmin.sleepRefold.v1.\(deviceId)"
+        guard !defaults.bool(forKey: key) else { return }
+        do {
+            let forgotten = try await store.forgetGarminSyncedFiles(deviceId: deviceId, dataType: 255,
+                                                                    subType: Int(GarminFitFileType.sleep.rawValue))
+            defaults.set(true, forKey: key)
+            log("Garmin: re-folding stored nights; \(forgotten) sleep files will download again")
+        } catch {
+            log("Garmin: re-fold of stored nights postponed: \(error.localizedDescription)")
+        }
+    }
+
     static func ledgerRow(_ key: GarminSyncFileKey) -> GarminSyncedFileRow {
         GarminSyncedFileRow(fileIndex: Int(key.fileIndex), dataType: Int(key.dataType), subType: Int(key.subType),
                             fileNumber: Int(key.fileNumber), ts: Int(key.garminTimestamp), size: Int(key.size))

@@ -332,7 +332,7 @@ class GarminWellnessParserTest {
             f.data(2); f.u32(T + 1800); f.u8(4)
             f.data(2); f.u32(T + 2400); f.u8(1)
             f.data(2); f.u32(T + 2400); f.u8(9)          // not a sleep level: dropped
-            f.data(2); f.u32(T + 9000); f.u8(2)          // more than an hour later: a new night
+            f.data(2); f.u32(T + 20_000); f.u8(2)        // over four hours later, no sleep window: a new night
             f.def(
                 3, 346,
                 listOf(
@@ -341,6 +341,34 @@ class GarminWellnessParserTest {
                 ),
             )
             f.data(3); f.raw(82, 70, 71, 72, 73, 74, 75, 77, 78, 79, 80, 3, 0xFF); f.u16(2250)
+            return f.finish()
+        }
+
+        /** Shaped like a real Forerunner 165 night (#47; relative times only). Swift twin: `WellnessFixtures.sleepWindow`. */
+        fun sleepWindow(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 21, listOf(Triple(253, 4, U32), Triple(0, 1, EN), Triple(1, 1, EN)))
+            f.data(0); f.u32(T - 600); f.u8(74); f.u8(1)    // a stop with no start: ignored
+            f.data(0); f.u32(T); f.u8(0); f.u8(0)           // timer event: not sleep
+            f.data(0); f.u32(T); f.u8(74); f.u8(0)          // sleep onset
+            f.data(0); f.u32(T + 60); f.u8(74); f.u8(4)     // unknown event type: dropped
+            f.def(1, 275, listOf(Triple(253, 4, U32), Triple(0, 1, EN)))
+            f.data(1); f.u32(T + 1020); f.u8(2)
+            f.data(1); f.u32(T + 3480); f.u8(3)
+            f.data(1); f.u32(T + 3540); f.u8(1)
+            f.data(1); f.u32(T + 6000); f.u8(2)
+            f.data(1); f.u32(T + 9960); f.u8(3)
+            f.data(1); f.u32(T + 10440); f.u8(2)
+            f.data(1); f.u32(T + 11340); f.u8(4)
+            f.data(1); f.u32(T + 19620); f.u8(2)
+            f.data(1); f.u32(T + 19680); f.u8(1)
+            f.data(1); f.u32(T + 20760); f.u8(2)
+            f.data(1); f.u32(T + 22020); f.u8(1)
+            f.data(1); f.u32(T + 23520); f.u8(2)
+            f.data(1); f.u32(T + 25080); f.u8(4)
+            f.data(1); f.u32(T + 26160); f.u8(2)
+            f.data(1); f.u32(T + 29623); f.u8(4)
+            f.data(0); f.u32(T + 29623); f.u8(74); f.u8(1)  // wake
             return f.finish()
         }
 
@@ -396,7 +424,7 @@ class GarminWellnessParserTest {
 
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
             "monitoring" to ::monitoring, "midnight" to ::midnight, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
-            "spo2" to ::spo2, "sleep" to ::sleep, "respiration" to ::respiration, "hrv" to ::hrv,
+            "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "respiration" to ::respiration, "hrv" to ::hrv,
             "candidates" to ::candidates, "framing" to ::framing,
         )
 
@@ -440,6 +468,7 @@ class GarminWellnessParserTest {
             for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent} conf=${num(r.confidence)} mode=${num(r.mode)}")
             for (r in s.respiration) out.add("resp ${r.ts} ${num(r.value)}")
             for (r in s.sleepLevels) out.add("level ${r.ts} ${r.value}")
+            for (r in s.sleepMarks) out.add("mark ${r.ts} ${r.value}")
             for (r in s.sleepSessions) {
                 out.add("night ${r.start}-${r.end} unmeasurable=${r.unmeasurableS} awake=${r.awakeS} light=${r.lightS} deep=${r.deepS} rem=${r.remS}")
             }
@@ -532,13 +561,34 @@ class GarminWellnessParserTest {
             level 1731088496 3
             level 1731089096 4
             level 1731089696 1
-            level 1731096296 2
+            level 1731107296 2
             night 1731087416-1731089696 unmeasurable=0 awake=600 light=480 deep=600 rem=600
-            night 1731096296-1731096296 unmeasurable=0 awake=0 light=0 deep=0 rem=0
+            night 1731107296-1731107296 unmeasurable=0 awake=0 light=0 deep=0 rem=0
             raw 1731087296 hr=62.0000 move=0.5000
             raw 1731087356 hr=- move=bits:3e70000000000000
             raw 1731087476 hr=- move=-
-            assess 1731096296 overall=82 subs=70,71,72,73,74,75,77,78,79,80,- awakenings=3 stress=22.5000
+            assess 1731107296 overall=82 subs=70,71,72,73,74,75,77,78,79,80,- awakenings=3 stress=22.5000
+            == sleepWindow
+            offset - complete true other 1 dropped 1
+            level 1731088316 2
+            level 1731090776 3
+            level 1731090836 1
+            level 1731093296 2
+            level 1731097256 3
+            level 1731097736 2
+            level 1731098636 4
+            level 1731106916 2
+            level 1731106976 1
+            level 1731108056 2
+            level 1731109316 1
+            level 1731110816 2
+            level 1731112376 4
+            level 1731113456 2
+            level 1731116919 4
+            mark 1731086696 1
+            mark 1731087296 0
+            mark 1731116919 1
+            night 1731087296-1731116919 unmeasurable=0 awake=1380 light=15900 deep=6420 rem=5923
             == respiration
             offset - complete true other 0 dropped 2
             resp 1731087296 14.5000

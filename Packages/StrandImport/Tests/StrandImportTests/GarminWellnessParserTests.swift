@@ -50,13 +50,34 @@ final class GarminWellnessParserTests: XCTestCase {
         level 1731088496 3
         level 1731089096 4
         level 1731089696 1
-        level 1731096296 2
+        level 1731107296 2
         night 1731087416-1731089696 unmeasurable=0 awake=600 light=480 deep=600 rem=600
-        night 1731096296-1731096296 unmeasurable=0 awake=0 light=0 deep=0 rem=0
+        night 1731107296-1731107296 unmeasurable=0 awake=0 light=0 deep=0 rem=0
         raw 1731087296 hr=62.0000 move=0.5000
         raw 1731087356 hr=- move=bits:3e70000000000000
         raw 1731087476 hr=- move=-
-        assess 1731096296 overall=82 subs=70,71,72,73,74,75,77,78,79,80,- awakenings=3 stress=22.5000
+        assess 1731107296 overall=82 subs=70,71,72,73,74,75,77,78,79,80,- awakenings=3 stress=22.5000
+        == sleepWindow
+        offset - complete true other 1 dropped 1
+        level 1731088316 2
+        level 1731090776 3
+        level 1731090836 1
+        level 1731093296 2
+        level 1731097256 3
+        level 1731097736 2
+        level 1731098636 4
+        level 1731106916 2
+        level 1731106976 1
+        level 1731108056 2
+        level 1731109316 1
+        level 1731110816 2
+        level 1731112376 4
+        level 1731113456 2
+        level 1731116919 4
+        mark 1731086696 1
+        mark 1731087296 0
+        mark 1731116919 1
+        night 1731087296-1731116919 unmeasurable=0 awake=1380 light=15900 deep=6420 rem=5923
         == respiration
         offset - complete true other 0 dropped 2
         resp 1731087296 14.5000

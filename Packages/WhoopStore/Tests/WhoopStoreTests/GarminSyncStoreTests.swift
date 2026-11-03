@@ -127,6 +127,57 @@ final class GarminSyncStoreTests: XCTestCase {
         XCTAssertEqual(night?.stagesJSON, "[{\"start\":1,\"end\":2,\"stage\":\"deep\"}]")
     }
 
+    /// #47: one Garmin night stays one session. A night REPLACES the stored nights of the watch it overlaps
+    /// (an older fold's split rows, or a partial night from a mid-night sync), keeps the other nights, and
+    /// re-ingesting it changes nothing.
+    func testANightReplacesTheStoredNightsItOverlaps() async throws {
+        let store = try await WhoopStore.inMemory()
+        let s = dayStart + 3_600
+        func night(_ start: Int, _ end: Int) -> CachedSleepSession {
+            CachedSleepSession(startTs: start, endTs: end, efficiency: nil, restingHr: nil, avgHrv: nil, stagesJSON: nil)
+        }
+        var old = GarminFileIngest(file: file(1))
+        old.sleeps = [night(s - 80_000, s - 60_000), night(s + 1_020, s + 6_000), night(s + 9_960, s + 11_340),
+                      night(s + 19_620, s + 29_623)]
+        _ = try await store.ingestGarminFile(old, deviceId: id, ingestedAt: 1)
+        var partial = GarminFileIngest(file: file(2))
+        partial.sleeps = [night(s, s + 11_340)]
+        _ = try await store.ingestGarminFile(partial, deviceId: id, ingestedAt: 1)
+        var full = GarminFileIngest(file: file(3))
+        full.sleeps = [night(s, s + 29_623)]
+        for _ in 0..<2 { _ = try await store.ingestGarminFile(full, deviceId: id, ingestedAt: 1) }
+        let nights = try await store.sleepSessions(deviceId: id, from: s - 90_000, to: s + 90_000, limit: 10)
+        XCTAssertEqual(nights.map { [$0.startTs, $0.endTs] }.sorted { $0[0] < $1[0] },
+                       [[s - 80_000, s - 60_000], [s, s + 29_623]])
+    }
+
+    func testAnOverlappingNightTheUserEditedIsKept() async throws {
+        let store = try await WhoopStore.inMemory()
+        var a = GarminFileIngest(file: file(1))
+        a.sleeps = [CachedSleepSession(startTs: dayStart + 1_000, endTs: dayStart + 5_000, efficiency: nil, restingHr: nil,
+                                       avgHrv: nil, stagesJSON: nil)]
+        _ = try await store.ingestGarminFile(a, deviceId: id, ingestedAt: 1)
+        _ = try await store.applySleepEdit(deviceId: id, detectedStartTs: dayStart + 1_000, newStartTs: dayStart + 1_000,
+                                           newEndTs: dayStart + 6_000)
+        var b = GarminFileIngest(file: file(2))
+        b.sleeps = [CachedSleepSession(startTs: dayStart, endTs: dayStart + 9_000, efficiency: nil, restingHr: nil,
+                                       avgHrv: nil, stagesJSON: nil)]
+        _ = try await store.ingestGarminFile(b, deviceId: id, ingestedAt: 1)
+        let count = try await count(store, "sleepSession")
+        XCTAssertEqual(count, 2)
+    }
+
+    func testForgettingAFileTypeLeavesTheOthers() async throws {
+        let store = try await WhoopStore.inMemory()
+        let sleep = GarminSyncedFileRow(fileIndex: 9, dataType: 255, subType: 49, fileNumber: 9, ts: 1_162_000_009, size: 900)
+        try await store.recordGarminSyncedFile(sleep, deviceId: id, ingestedAt: 1)
+        try await store.recordGarminSyncedFile(file(1), deviceId: id, ingestedAt: 1)
+        let forgotten = try await store.forgetGarminSyncedFiles(deviceId: id, dataType: 255, subType: 49)
+        XCTAssertEqual(forgotten, 1)
+        let left = try await store.garminSyncedFiles(deviceId: id)
+        XCTAssertEqual(left, [file(1)])
+    }
+
     func testRecordWithoutDataAndDeleteAllClearsTheLedger() async throws {
         let store = try await WhoopStore.inMemory()
         try await store.recordGarminSyncedFile(file(7), deviceId: id, ingestedAt: 1)

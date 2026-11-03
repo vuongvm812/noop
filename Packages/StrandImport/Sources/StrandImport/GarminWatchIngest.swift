@@ -137,19 +137,21 @@ public enum GarminWatchIngest {
     }
 
     /// The night's stage timeline in the `sleepSession.stagesJSON` vocabulary, written by hand with a
-    /// fixed key order so both platforms store the same text. Each SLEEP_LEVEL row closes the span since
-    /// the previous row; unmeasurable spans (level 0) are left out, consecutive equal stages are joined.
-    /// Kotlin twin: `GarminWatchIngest.stagesJSON`.
+    /// fixed key order so both platforms store the same text. Each SLEEP_LEVEL row after `start` closes the
+    /// span since the previous boundary, the first one the span from `start` (the watch's sleep onset, the
+    /// same rule as `GarminWellnessParser.sleepSessions`); unmeasurable spans (level 0) are left out,
+    /// consecutive equal stages are joined. Kotlin twin: `GarminWatchIngest.stagesJSON`.
     static func stagesJSON(_ levels: [GarminWellnessSamples.TimedInt], from start: Int64, to end: Int64) -> String? {
         let names = [1: "wake", 2: "light", 3: "deep", 4: "rem"]
         var segments: [(Int64, Int64, String)] = []
-        let rows = levels.filter { $0.ts >= start && $0.ts <= end }
-        for i in rows.indices.dropFirst() {
-            guard let name = names[rows[i].value], rows[i].ts > rows[i - 1].ts else { continue }
-            if let last = segments.last, last.2 == name, last.1 == rows[i - 1].ts {
-                segments[segments.count - 1].1 = rows[i].ts
+        var prev = start
+        for row in levels where row.ts > prev && row.ts <= end {
+            defer { prev = row.ts }
+            guard let name = names[row.value] else { continue }
+            if let last = segments.last, last.2 == name, last.1 == prev {
+                segments[segments.count - 1].1 = row.ts
             } else {
-                segments.append((rows[i - 1].ts, rows[i].ts, name))
+                segments.append((prev, row.ts, name))
             }
         }
         guard !segments.isEmpty else { return nil }

@@ -1,5 +1,7 @@
 package com.noop.ui
 
+import androidx.compose.ui.graphics.Color
+import com.noop.analytics.FusionSource
 import com.noop.analytics.RestScorer
 import com.noop.data.DailyMetric
 import com.noop.data.SleepSession
@@ -121,8 +123,38 @@ internal fun heroPerformanceScore(
  */
 internal fun restHeroSource(
     imported: ImportedSleepSeries, wakeDay: String?, activeIsOura: Boolean = false,
+    activeIsGarmin: Boolean = false,
 ): String = when {
     wakeDay != null && imported.performance[wakeDay] != null -> "Whoop"
     activeIsOura -> "Oura"
+    // A paired Garmin watch provides its own staged night (#47). Mirrors macOS SleepView.deviceSourceKey.
+    activeIsGarmin -> "Garmin"
     else -> "On-device"
+}
+
+/**
+ * The stage-card subtitle's provenance suffix for a real (≥2-segment) hypnogram. An Oura night is the ring's
+ * RAW on-device SleepNet split and a Garmin night is the watch's own staging (#47), so each gets its own
+ * caption instead of the "approx. stages (on-device)" one that describes NOOP's sparse-motion staging.
+ * Mirrors the macOS SleepView / StagesCard `stageCaption`.
+ */
+internal fun stageProvenanceCaption(activeIsOura: Boolean, activeIsGarmin: Boolean): String = when {
+    activeIsOura -> " · raw on-device stages"
+    activeIsGarmin -> " · Garmin watch stages"
+    else -> " · approx. stages (on-device)"
+}
+
+/**
+ * The main-sleep footer's provenance badge (C4), starting from [base] = `daySourceBadge(deviceId)`. A night
+ * banked under a paired Garmin watch's own id reads "Garmin" (not the "Whoop" the badge's else-branch would
+ * give it), and a night that merely COMPUTED under a live Oura ring / Garmin watch reads that brand instead
+ * of "On-device", matching iOS SleepView.nightSource. WHOOP / Apple imports keep their own badge (#47).
+ */
+internal fun mainSleepSourceBadge(
+    base: Pair<String, Color>, deviceId: String, activeIsOura: Boolean, activeIsGarmin: Boolean,
+): Pair<String, Color> = when {
+    FusionSource.isGarminWatchId(deviceId) -> "Garmin" to Palette.restColor
+    base.first == "On-device" && activeIsOura -> "Oura" to Palette.restColor
+    base.first == "On-device" && activeIsGarmin -> "Garmin" to Palette.restColor
+    else -> base
 }

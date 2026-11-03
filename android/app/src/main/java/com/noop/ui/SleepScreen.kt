@@ -199,6 +199,10 @@ fun SleepScreen(
     // the sleep surfaces name a ring-PROVIDED night's provenance "Oura" and flag its split as the ring's
     // RAW on-device stages. Read/UI only, no stored value. Mirrors macOS Repository.activeDeviceIsOura.
     val activeIsOura = com.noop.data.DeviceBrandCatalog.isOura(vm.activeStrapId)
+    // Whether the ACTIVE device is a paired Garmin watch (#47): its night's stages are the watch's own, so
+    // the provenance reads "Garmin" and the split is captioned "Garmin watch stages". Mirrors macOS
+    // Repository.activeDeviceIsGarmin, off the same canonical FusionSource.isGarminWatchId check.
+    val activeIsGarmin = com.noop.analytics.FusionSource.isGarminWatchId(vm.activeStrapId)
     // #1680: the body-clock phase behind the 24 h dial section. Same snapshot the Health screen reads for
     // BodyClockCard, so the two surfaces cannot disagree about the estimate.
     val v5Signals by vm.v5Signals.collectAsStateWithLifecycle()
@@ -707,7 +711,7 @@ fun SleepScreen(
                     score = if (night != null) heroPerformanceScore(night, days, imported)
                             else tilesModel?.performance?.latest,
                     asleepMin = model?.stages?.asleep,
-                    source = restHeroSource(imported, night?.dayKey ?: days.lastOrNull()?.day, activeIsOura),
+                    source = restHeroSource(imported, night?.dayKey ?: days.lastOrNull()?.day, activeIsOura, activeIsGarmin),
                     overline = nightLabel,
                 )
             }
@@ -784,6 +788,7 @@ fun SleepScreen(
                     Hero(
                 display = display,
                 activeIsOura = activeIsOura,
+                activeIsGarmin = activeIsGarmin,
                 nightHr = nightHr,
                 // #2199: never the SleepModel's label here — that model resolves to the NEWEST night, not
                 // the browsed one. See navHeaderClockLabel, where the rule and its tests live.
@@ -1315,6 +1320,9 @@ private fun Hero(
     // Whether the active strap is an Oura ring — names an Oura night's provenance and captions its split as
     // the ring's RAW on-device stages. Read/UI only. Mirrors macOS Repository.activeDeviceIsOura.
     activeIsOura: Boolean = false,
+    // Whether the active device is a paired Garmin watch — captions its split as the watch's own stages
+    // (#47). Read/UI only. Mirrors macOS Repository.activeDeviceIsGarmin.
+    activeIsGarmin: Boolean = false,
     clock: String?,
     nightOffset: Int,
     lastIndex: Int,
@@ -1392,7 +1400,8 @@ private fun Hero(
             // An Oura night's stages are the ring's RAW on-device SleepNet classification (decoded off the
             // 0x49 phase stream), NOT a NOOP approximation — so it gets its own honest caption instead of the
             // "approx. stages (on-device)" one that describes NOOP's own sparse-motion staging.
-            val stageCaption = if (activeIsOura) " · raw on-device stages" else " · approx. stages (on-device)"
+            // A Garmin night's stages are the watch's own classification (#47), so it is captioned likewise.
+            val stageCaption = stageProvenanceCaption(activeIsOura, activeIsGarmin)
             val subtitle = "${durationText(inBedMin)} in bed · ${display.efficiencyText} efficiency" +
                 (if (display.realSegments != null) stageCaption else "")
             // iOS #988 port: true per-epoch segments (≥ 2 — a single run has no transitions to lay
@@ -1567,6 +1576,7 @@ private fun Hero(
                 onDeleteNap = onDeleteSession,
                 habitualMidsleepSec = habitualMidsleepSec,
                 activeIsOura = activeIsOura,
+                activeIsGarmin = activeIsGarmin,
             )
         }
     }
@@ -1595,6 +1605,8 @@ private fun NapsCard(
     habitualMidsleepSec: Long? = null,
     // Active strap is an Oura ring → a computed night's provenance reads "Oura" not "On-device" (C4).
     activeIsOura: Boolean = false,
+    // Active device is a paired Garmin watch → the night's provenance reads "Garmin" (#47).
+    activeIsGarmin: Boolean = false,
 ) {
     val napMin = naps.sumOf { (it.endTs - it.effectiveStartTs) / 60.0 }
     NoopCard(padding = Metrics.space14, tint = Palette.restColor) {
@@ -1627,7 +1639,7 @@ private fun NapsCard(
             // per-day merge winner; the info affordance reveals the foundation reason for the pick. Mirrors
             // iOS SleepView.mainSleepFooter. (spec 2026-06-20 C1/C4)
             Box(Modifier.fillMaxWidth().height(Metrics.divider).background(Palette.hairline))
-            MainSleepFooter(main = main, naps = naps, habitualMidsleepSec = habitualMidsleepSec, activeIsOura = activeIsOura)
+            MainSleepFooter(main = main, naps = naps, habitualMidsleepSec = habitualMidsleepSec, activeIsOura = activeIsOura, activeIsGarmin = activeIsGarmin)
         }
     }
 }
@@ -1841,6 +1853,7 @@ private fun MainSleepFooter(
     naps: List<SleepSession>,
     habitualMidsleepSec: Long?,
     activeIsOura: Boolean = false,
+    activeIsGarmin: Boolean = false,
 ) {
     val reason = mainSleepReasonText(listOf(main) + naps, habitualMidsleepSec)
     // C4 — the real merge winner, the SAME wording the By-Day badge uses ("Oura" / "On-device" / "Whoop" /
@@ -1848,8 +1861,7 @@ private fun MainSleepFooter(
     // (→ "Oura" from daySourceBadge); a night that merely COMPUTED under a live Oura strap reads "On-device"
     // there, so flip it to "Oura" too, matching iOS SleepView.nightSource (WHOOP/Apple imports still win).
     val base = daySourceBadge(main.deviceId)
-    val (sourceText, sourceTint) =
-        if (base.first == "On-device" && activeIsOura) "Oura" to Palette.restColor else base
+    val (sourceText, sourceTint) = mainSleepSourceBadge(base, main.deviceId, activeIsOura, activeIsGarmin)
     var showWhy by remember(main.startTs) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.space10)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

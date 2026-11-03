@@ -171,10 +171,41 @@ enum WellnessFixtures {
         f.data(2); f.u32(t + 1800); f.u8(4)
         f.data(2); f.u32(t + 2400); f.u8(1)
         f.data(2); f.u32(t + 2400); f.u8(9)          // not a sleep level: dropped
-        f.data(2); f.u32(t + 9000); f.u8(2)          // more than an hour later: a new night
+        f.data(2); f.u32(t + 20_000); f.u8(2)        // over four hours later, no sleep window: a new night
         f.def(3, 346, [(6, 1, u8), (0, 1, u8), (1, 1, u8), (2, 1, u8), (3, 1, u8), (4, 1, u8), (5, 1, u8),
                        (7, 1, u8), (8, 1, u8), (9, 1, u8), (10, 1, u8), (11, 1, u8), (14, 1, u8), (15, 2, u16)])
         f.data(3); f.raw([82, 70, 71, 72, 73, 74, 75, 77, 78, 79, 80, 3, 0xFF]); f.u16(2250)
+        return f.finish()
+    }
+
+    /// Shaped like a real Forerunner 165 night (#47; relative times only): the watch's sleep window from
+    /// EVENT 74, rows only at stage changes (66 and 138 minute single-stage stretches), the first row 17
+    /// minutes after onset, the last row at the stop. Plus a stray stop before the start, a non-sleep
+    /// event and an unknown event type.
+    static func sleepWindow() -> Data {
+        var f = WellnessFit()
+        f.def(0, 21, [(253, 4, u32), (0, 1, en), (1, 1, en)])
+        f.data(0); f.u32(t - 600); f.u8(74); f.u8(1)    // a stop with no start: ignored
+        f.data(0); f.u32(t); f.u8(0); f.u8(0)           // timer event: not sleep
+        f.data(0); f.u32(t); f.u8(74); f.u8(0)          // sleep onset
+        f.data(0); f.u32(t + 60); f.u8(74); f.u8(4)     // unknown event type: dropped
+        f.def(1, 275, [(253, 4, u32), (0, 1, en)])
+        f.data(1); f.u32(t + 1020); f.u8(2)
+        f.data(1); f.u32(t + 3480); f.u8(3)
+        f.data(1); f.u32(t + 3540); f.u8(1)
+        f.data(1); f.u32(t + 6000); f.u8(2)
+        f.data(1); f.u32(t + 9960); f.u8(3)
+        f.data(1); f.u32(t + 10440); f.u8(2)
+        f.data(1); f.u32(t + 11340); f.u8(4)
+        f.data(1); f.u32(t + 19620); f.u8(2)
+        f.data(1); f.u32(t + 19680); f.u8(1)
+        f.data(1); f.u32(t + 20760); f.u8(2)
+        f.data(1); f.u32(t + 22020); f.u8(1)
+        f.data(1); f.u32(t + 23520); f.u8(2)
+        f.data(1); f.u32(t + 25080); f.u8(4)
+        f.data(1); f.u32(t + 26160); f.u8(2)
+        f.data(1); f.u32(t + 29623); f.u8(4)
+        f.data(0); f.u32(t + 29623); f.u8(74); f.u8(1)  // wake
         return f.finish()
     }
 
@@ -231,7 +262,7 @@ enum WellnessFixtures {
 
     static let all: [(String, () -> Data)] = [
         ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
-        ("spo2", spo2), ("sleep", sleep), ("respiration", respiration), ("hrv", hrv),
+        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("respiration", respiration), ("hrv", hrv),
         ("candidates", candidates), ("framing", framing),
     ]
 
@@ -270,6 +301,7 @@ enum WellnessFixtures {
         for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent) conf=\(num(r.confidence)) mode=\(num(r.mode))") }
         for r in s.respiration { out.append("resp \(r.ts) \(num(r.value))") }
         for r in s.sleepLevels { out.append("level \(r.ts) \(r.value)") }
+        for r in s.sleepMarks { out.append("mark \(r.ts) \(r.value)") }
         for r in s.sleepSessions {
             out.append("night \(r.start)-\(r.end) unmeasurable=\(r.unmeasurableS) awake=\(r.awakeS) light=\(r.lightS) deep=\(r.deepS) rem=\(r.remS)")
         }

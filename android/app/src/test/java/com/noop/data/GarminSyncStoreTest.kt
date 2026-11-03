@@ -104,6 +104,37 @@ class GarminSyncStoreTest {
         assertEquals(3, store.syncedFiles(id).size)
     }
 
+    /** #47: one Garmin night stays one session. Swift twin: `testANightReplacesTheStoredNightsItOverlaps`. */
+    @Test
+    fun aNightReplacesTheStoredNightsItOverlaps() = runBlocking {
+        val s = dayStart + 3_600
+        fun night(start: Long, end: Long) = GarminSleepRow(start, end, null, null, null, null)
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(night(s - 80_000, s - 60_000), night(s + 1_020, s + 6_000),
+            night(s + 9_960, s + 11_340), night(s + 19_620, s + 29_623))), id, 1)
+        store.ingest(GarminFileIngest(file(2), sleeps = listOf(night(s, s + 11_340))), id, 1)
+        repeat(2) { store.ingest(GarminFileIngest(file(3), sleeps = listOf(night(s, s + 29_623))), id, 1) }
+        val nights = db.openHelper.readableDatabase.query(
+            "SELECT startTs, endTs FROM sleepSession WHERE deviceId = ? ORDER BY startTs", arrayOf<Any?>(id),
+        ).use { c -> buildList { while (c.moveToNext()) add(listOf(c.getLong(0), c.getLong(1))) } }
+        assertEquals(listOf(listOf(s - 80_000, s - 60_000), listOf(s, s + 29_623)), nights)
+    }
+
+    @Test
+    fun anOverlappingNightTheUserEditedIsKept() = runBlocking {
+        store.ingest(GarminFileIngest(file(1), sleeps = listOf(GarminSleepRow(dayStart + 1_000, dayStart + 5_000, null, null, null, null))), id, 1)
+        db.openHelper.writableDatabase.execSQL("UPDATE sleepSession SET userEdited = 1 WHERE deviceId = ?", arrayOf<Any?>(id))
+        store.ingest(GarminFileIngest(file(2), sleeps = listOf(GarminSleepRow(dayStart, dayStart + 9_000, null, null, null, null))), id, 1)
+        assertEquals(2, count("sleepSession"))
+    }
+
+    @Test
+    fun forgettingAFileTypeLeavesTheOthers() = runBlocking {
+        store.record(GarminSyncedFileRow(9, 255, 49, 9, 1_162_000_009L, 900), id, 1)
+        store.record(file(1), id, 1)
+        assertEquals(1, store.forgetFiles(id, 255, 49))
+        assertEquals(listOf(file(1)), store.syncedFiles(id))
+    }
+
     @Test
     fun recordWithoutDataIsIdempotent() = runBlocking {
         store.record(file(7), id, 1)

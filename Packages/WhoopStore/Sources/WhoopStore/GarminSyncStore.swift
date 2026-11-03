@@ -16,7 +16,10 @@ import WhoopProtocol
 //     stored samples of that local day after the insert, so they cover every file seen, not just this one;
 //   - cumulative counters (steps, distance, calories) keep the larger of the stored and the new value:
 //     a later file carries the day's running total, and an older re-sync can never lower it;
-//   - every other column keeps its stored value when the file has none (COALESCE).
+//   - every other column keeps its stored value when the file has none (COALESCE);
+//   - a night REPLACES any other stored night of the watch it overlaps (unless the user edited that one),
+//     so one Garmin night stays one session when a later fold places it differently (#47: an older fold
+//     split a night at long single-stage stretches and started it at its first stage change).
 // Kotlin twin: android/app/src/main/java/com/noop/data/GarminSyncStore.kt, over the same SQL.
 
 /// One row of the `garminSyncedFile` ledger: the identity of a watch file NOOP has ingested.
@@ -165,6 +168,10 @@ extension WhoopStore {
             }
             for s in ingest.sleeps {
                 try db.execute(sql: """
+                    DELETE FROM sleepSession
+                    WHERE deviceId = ? AND startTs <> ? AND startTs < ? AND endTs > ? AND userEdited = 0
+                    """, arguments: [deviceId, s.startTs, s.endTs, s.startTs])
+                try db.execute(sql: """
                     INSERT INTO sleepSession (deviceId, startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON,
                                               userEdited, startTsAdjusted, stagingSparse)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
@@ -180,6 +187,18 @@ extension WhoopStore {
             }
             try Self.insertLedgerRow(db, ingest.file, deviceId: deviceId, ingestedAt: ingestedAt)
             return counts
+        }
+    }
+
+    /// Forget every ledger row of one FIT file type, so the next sync downloads those files again (the
+    /// watch keeps them; nothing on it changes). Returns the rows removed. Kotlin twin:
+    /// `GarminSyncStore.forgetFiles`.
+    @discardableResult
+    public func forgetGarminSyncedFiles(deviceId: String, dataType: Int, subType: Int) async throws -> Int {
+        try syncWrite { db in
+            try db.execute(sql: "DELETE FROM garminSyncedFile WHERE deviceId = ? AND dataType = ? AND subType = ?",
+                           arguments: [deviceId, dataType, subType])
+            return db.changesCount
         }
     }
 

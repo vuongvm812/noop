@@ -77,6 +77,19 @@ class GarminWatchIngestTest {
         assertTrue(candidates.hr.isEmpty() && candidates.deviceMetric.isEmpty())
     }
 
+    /** #47: a real-shaped night is ONE session over the watch's window. Swift twin: `testARealShapedNightIsOneSessionOverTheWatchWindow`. */
+    @Test
+    fun aRealShapedNightIsOneSessionOverTheWatchWindow() {
+        val row = GarminSyncedFileRow(1, 255, 49, 1, 0, 0)
+        val b = GarminWatchIngest.fold(GarminWellnessParser.parse(GarminWellnessParserTest.sleepWindow()), row, 25_200)
+        assertEquals(1, b.sleeps.size)
+        val onset = GarminWellnessParserTest.T + 631_065_600L // FIT epoch to Unix
+        assertEquals(onset, b.sleeps[0].startTs)
+        assertEquals(onset + 29_623, b.sleeps[0].endTs)
+        assertEquals(470.7, b.days.first().totalSleepMin!!, 0.1)
+        assertEquals(23.0, b.days.first().awakeMin!!, 0.0)
+    }
+
     private companion object {
         /** Swift oracle stdout, verbatim. */
         val EXPECTED = """
@@ -113,21 +126,25 @@ metric 1731087416 spo2_pct 94.0000 fit269
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
 == sleep
 file idx=6 dt=128 st=32 num=105 ts=1100000005 size=1005
-metric 1731096296 sleep_score 82.0000 fit346
+metric 1731107296 sleep_score 82.0000 fit346
 day 2024-11-09 1731088800..1731175200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=28.0000 deep=10.0000 light=8.0000 rem=10.0000 awake=10.0000 eff=73.7000 score=82
 sleep 1731087416-1731089696 eff=73.7000 hrv=- stages=[{"start":1731087416,"end":1731087896,"stage":"light"},{"start":1731087896,"end":1731088496,"stage":"deep"},{"start":1731088496,"end":1731089096,"stage":"rem"},{"start":1731089096,"end":1731089696,"stage":"wake"}]
-== respiration
+== sleepWindow
 file idx=7 dt=128 st=32 num=106 ts=1100000006 size=1006
+day 2024-11-09 1731106800..1731193200 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=bits:407d6b7777777777 deep=107.0000 light=265.0000 rem=bits:4058adddddddddde awake=23.0000 eff=95.3000 score=-
+sleep 1731087296-1731116919 eff=95.3000 hrv=- stages=[{"start":1731087296,"end":1731088316,"stage":"light"},{"start":1731088316,"end":1731090776,"stage":"deep"},{"start":1731090776,"end":1731090836,"stage":"wake"},{"start":1731090836,"end":1731093296,"stage":"light"},{"start":1731093296,"end":1731097256,"stage":"deep"},{"start":1731097256,"end":1731097736,"stage":"light"},{"start":1731097736,"end":1731098636,"stage":"rem"},{"start":1731098636,"end":1731106916,"stage":"light"},{"start":1731106916,"end":1731106976,"stage":"wake"},{"start":1731106976,"end":1731108056,"stage":"light"},{"start":1731108056,"end":1731109316,"stage":"wake"},{"start":1731109316,"end":1731110816,"stage":"light"},{"start":1731110816,"end":1731112376,"stage":"rem"},{"start":1731112376,"end":1731113456,"stage":"light"},{"start":1731113456,"end":1731116919,"stage":"rem"}]
+== respiration
+file idx=8 dt=128 st=32 num=107 ts=1100000007 size=1007
 metric 1731087296 respiration_bpm 14.5000 fit297
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
 == hrv
-file idx=8 dt=128 st=32 num=107 ts=1100000007 size=1007
+file idx=9 dt=128 st=32 num=108 ts=1100000008 size=1008
 metric 1731087596 hrv_ms 39.0625 fit371
 day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=37.5000 sleep=- deep=- light=- rem=- awake=- eff=- score=-
 == candidates
-file idx=9 dt=128 st=32 num=108 ts=1100000008 size=1008
-== framing
 file idx=10 dt=128 st=32 num=109 ts=1100000009 size=1009
+== framing
+file idx=11 dt=128 st=32 num=110 ts=1100000010 size=1010
 metric 1731087296 hrv_ms 40.0000 fit371
 metric 1731087296 respiration_bpm 15.0000 fit297
 metric 1731087306 respiration_bpm 15.2500 fit297
