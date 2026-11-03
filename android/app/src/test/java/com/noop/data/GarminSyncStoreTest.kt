@@ -57,14 +57,17 @@ class GarminSyncStoreTest {
             hr = listOf(HrRow(dayStart + 60, 61), HrRow(dayStart + 120, 64)),
             deviceMetric = listOf(DeviceMetricRow(dayStart + 60, DeviceMetricKind.STRESS, 20.0, "fit227"),
                 DeviceMetricRow(dayStart + 60, DeviceMetricKind.BODY_BATTERY, 80.0, "fit227")),
-            days = listOf(day(steps = 1_000, rhr = 59)),
+            days = listOf(day(steps = 1_000, rhr = 59).copy(
+                activityPeaks = listOf(GarminActivityPeak(6, steps = 1_000, totalKcal = 900.0)),
+            )),
             sleeps = listOf(GarminSleepRow(dayStart - 20_000, dayStart + 5_000, 0.91, null, null, "[]")),
         )
         val first = store.ingest(ingest, id, 1)
         assertEquals(2, first.hr)
         assertEquals(2, first.deviceMetric)
         assertEquals(listOf(file(1)), store.syncedFiles(id))
-        val tables = listOf("hrSample", "deviceMetricSample", "dailyMetric", "sleepSession", "metricSeries", "garminSyncedFile")
+        val tables = listOf("hrSample", "deviceMetricSample", "dailyMetric", "sleepSession", "metricSeries", "garminSyncedFile",
+            "garminActivityPeak")
         val before = tables.map(::count)
         store.ingest(ingest, id, 2)
         assertEquals("re-ingesting a file adds nothing", before, tables.map(::count))
@@ -105,6 +108,49 @@ class GarminSyncStoreTest {
     }
 
     /** #47: one Garmin night stays one session. Swift twin: `testANightReplacesTheStoredNightsItOverlaps`. */
+    private fun dailyDouble(column: String): Double? =
+        db.openHelper.readableDatabase.query("SELECT $column FROM dailyMetric WHERE deviceId = ? AND day = '2026-11-01'", arrayOf<Any?>(id))
+            .use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getDouble(0) else null }
+
+    /** `dailyMetric.activeKcalEst` is whole-day TOTAL energy on every source (#51). Swift twin: same name. */
+    @Test
+    fun caloriesColumnHoldsTheWatchTotalNotActive() = runBlocking {
+        val d = day().copy(activityPeaks = listOf(GarminActivityPeak(6, steps = 9_000, totalKcal = 2_400.0, activeKcal = 500.0)))
+        store.ingest(GarminFileIngest(file(1), days = listOf(d)), id, 1)
+        assertEquals(2_400.0, dailyDouble("activeKcalEst"))
+        assertEquals(2_400.0, series("total_kcal"))
+        assertEquals(500.0, series("energy_kcal"))
+    }
+
+    /**
+     * A later file that carries only the activity types whose counters moved must not lower the day:
+     * totals are summed over every stored type (#51). The old per-file sum merged with MAX read
+     * max(5,000 + 2,000, 6,000) = 7,000 steps; per-type peaks give 6,000 walking + 2,000 running.
+     * Swift twin: same name.
+     */
+    @Test
+    fun perActivityTypeCountersSumAcrossFiles() = runBlocking {
+        val a = day().copy(activityPeaks = listOf(
+            GarminActivityPeak(1, steps = 2_000, distanceM = 2_500.5, totalKcal = 300.0, activeKcal = 250.0),
+            GarminActivityPeak(6, steps = 5_000, distanceM = 3_000.25, totalKcal = 1_500.0, activeKcal = 200.0),
+        ))
+        val b = day().copy(activityPeaks = listOf(
+            GarminActivityPeak(6, steps = 6_000, distanceM = 3_600.125, totalKcal = 1_600.0, activeKcal = 220.0),
+            // Cycling carries no steps; its distance and energy still count.
+            GarminActivityPeak(2, distanceM = 10_000.0, totalKcal = 400.0, activeKcal = 380.0),
+        ))
+        // An OLDER re-sync of file A's walking value lowers nothing.
+        val c = day().copy(activityPeaks = listOf(GarminActivityPeak(6, steps = 4_000, totalKcal = 1_200.0, activeKcal = 150.0)))
+        for ((i, d) in listOf(a, b, c).withIndex()) store.ingest(GarminFileIngest(file(i + 1), days = listOf(d)), id, 1)
+        assertEquals(8_000, dailyInt("steps"))
+        assertEquals(2_300.0, dailyDouble("activeKcalEst"))
+        assertEquals(8_000.0, series("steps"))
+        assertEquals(2_500.5 + 3_600.125 + 10_000.0, series("distance_m"))
+        assertEquals(2_300.0, series("total_kcal"))
+        assertEquals(850.0, series("energy_kcal"))
+        assertEquals(3, count("garminActivityPeak"))
+    }
+
     @Test
     fun aNightReplacesTheStoredNightsItOverlaps() = runBlocking {
         val s = dayStart + 3_600

@@ -477,6 +477,46 @@
       "rationale": "Room Migration.migrate override of MIGRATION_42_43, the deviceMetricSample and garminSyncedFile tables (vuongvm812/noop#4). GRDB registers each migration as a closure (`v49-garmin-metric-samples`), so there is no Swift function to pair with; the two are paired by the migration identifiers pinned in schema_oracle.json and by the resulting table shapes, which both suites compare against that oracle."
     },
     {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::deleteGarminActivityPeaksFor/1#1",
+      "identity_sha256": "6d689ccf3b1327e0e735962b170d0166e37ec0c0bdc7b5e1bd0dcc816d4ae984",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method clearing one device's per-activity-type Garmin day counters (vuongvm812/noop#51). The Swift store names the table in DeviceRegistryStore.deviceScopedTables and loops over that list, so there is no Swift function to pair with; every sibling delete*For method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistryDao.kt::reKeyGarminActivityPeaks/2#1",
+      "identity_sha256": "786eab9058858937791aec70d8b7c6a654e7a5cf3e1b18d290fefe4c3d72448c",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method re-keying the per-activity-type Garmin day counters onto an adopted identity (vuongvm812/noop#51). The Swift store drives the same re-key from its own table list rather than through a DAO, so there is no Swift function to pair with; every sibling reKey* method is one-sided for the same reason."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDatabase.kt::migrate/1#42",
+      "identity_sha256": "d425fa1fa31afe6af0e50939396f252d547d73205d9cd4f67c5e9dffb4c445ef",
+      "platform": "kotlin",
+      "rationale": "Room Migration.migrate override of MIGRATION_43_44, the garminActivityPeak table and the dailyMetric.activeKcalEst total-energy repair (vuongvm812/noop#51). GRDB registers each migration as a closure (`v50-garmin-activity-peak-total-energy`), so there is no Swift function to pair with; the statements are the same text on both platforms, pinned by TotalEnergyMigrationTests and TotalEnergyMigrationTest, and the table shape by schema_oracle.json."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandImport/Sources/StrandImport/GarminWellness.swift::stepActivityTypes",
+      "identity_sha256": "e2cf33fc8b91361438a13a6690cfb3ce00383126bfbf423125ba862c215d1dd3",
+      "platform": "swift",
+      "rationale": "The FIT activity types whose MONITORING cycles counter is a step count (vuongvm812/noop#51). The Kotlin twin is GarminWellnessParser.STEP_ACTIVITY_TYPES, a Set, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. Its effect is pinned by the parser and fold oracles both platforms check (the multiSport fixture)."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/WhoopStore/Sources/WhoopStore/Database.swift::totalEnergyMigrationSQL",
+      "identity_sha256": "7f58ea72e7a9a23ac50ac295840273ba5119048618341c01b5ccae974ea928f0",
+      "platform": "swift",
+      "rationale": "The v50 migration statements (vuongvm812/noop#51). The Kotlin twin is WhoopDatabase.TOTAL_ENERGY_MIGRATION_SQL, a List, which Kotlin cannot declare const; the ledger's Kotlin rule inventories const val only, so it cannot be paired. Both suites pin the same three strings verbatim."
+    },
+    {
       "type": "out_of_scope_twin",
       "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/GarminHistoryIngest.kt::ingest/5#1",

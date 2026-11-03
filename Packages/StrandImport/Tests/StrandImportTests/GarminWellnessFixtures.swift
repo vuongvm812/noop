@@ -112,6 +112,20 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// A multi-sport day: walking, cycling and swimming counters side by side (#51). Only walking's
+    /// `cycles` are steps; cycling counts revolutions and swimming strokes in the same field. Distance
+    /// and calories still sum over every type.
+    static func multiSport() -> Data {
+        var f = WellnessFit()
+        f.def(0, 103, [(253, 4, u32), (0, 4, u32)])
+        f.data(0); f.u32(t); f.u32(t + offset)
+        f.def(1, 55, [(253, 4, u32), (5, 1, en), (3, 4, u32), (2, 4, u32), (1, 2, u16), (19, 2, u16)])
+        f.data(1); f.u32(t - 1200); f.u8(6); f.u32(2_000); f.u32(150_000); f.u16(1_500); f.u16(90)
+        f.data(1); f.u32(t - 900); f.u8(2); f.u32(900); f.u32(1_200_000); f.u16(300); f.u16(280)
+        f.data(1); f.u32(t - 600); f.u8(5); f.u32(40); f.u32(100_000); f.u16(120); f.u16(110)
+        return f.finish()
+    }
+
     static func restingHeartRate() -> Data {
         var f = WellnessFit()
         f.def(0, 211, [(253, 4, u32), (0, 1, u8), (1, 1, u8)])
@@ -309,7 +323,7 @@ enum WellnessFixtures {
     }
 
     static let all: [(String, () -> Data)] = [
-        ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
+        ("monitoring", monitoring), ("midnight", midnight), ("multiSport", multiSport), ("restingHeartRate", restingHeartRate), ("stress", stress),
         ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("hrv", hrv),
         ("candidates", candidates), ("framing", framing), ("bounds", bounds),
     ]

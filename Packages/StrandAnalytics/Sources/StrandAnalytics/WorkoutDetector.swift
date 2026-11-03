@@ -11,8 +11,8 @@ import WhoopStore
 // MOTION_THRESHOLD). Both gates must hold for a sample to count as active.
 //
 // Per detected bout: avg/peak HR, duration, Edwards zone time-%, mean %HRR,
-// strain (StrainScorer), and estimated calories (Keytel 2005 active + revised
-// Harris–Benedict BMR resting, age/sex/weight/height adjusted).
+// strain (StrainScorer), and estimated calories (Keytel 2005 active + Mifflin–St Jeor
+// BMR resting, age/sex/weight/height adjusted).
 //
 // All intensity/energy outputs are APPROXIMATE and not medical advice.
 
@@ -582,7 +582,7 @@ public enum WorkoutDetector {
 
 // MARK: - Calories (calories.py)
 
-/// HR-based calorie estimation (Keytel 2005 active + revised Harris–Benedict BMR).
+/// HR-based calorie estimation (Keytel 2005 active + Mifflin–St Jeor BMR).
 /// APPROXIMATE — not laboratory calorimetry, not medical advice.
 public enum Calories {
 
@@ -598,6 +598,9 @@ public enum Calories {
     }
 
     struct Coeffs {
+        // Mifflin–St Jeor 1990 BMR (kcal/day) = restingAlpha + restingWeight·W + restingHeight·H(m)
+        // − restingAge·A. Frankenfield et al. 2005 (J. Am. Diet. Assoc. 105(5)) found it the most
+        // accurate of the common predictive equations; it replaced revised Harris–Benedict (#51).
         let restingAlpha: Double
         let restingWeight: Double
         let restingHeight: Double  // applied to height in METRES
@@ -618,19 +621,19 @@ public enum Calories {
         let fitAlpha: Double
     }
 
-    static let male = Coeffs(restingAlpha: 88.362, restingWeight: 13.397, restingHeight: 479.9,
-                             restingAge: 5.677, workoutHR: 0.6309, workoutWeight: 0.1988,
+    static let male = Coeffs(restingAlpha: 5.0, restingWeight: 10.0, restingHeight: 625.0,
+                             restingAge: 5.0, workoutHR: 0.6309, workoutWeight: 0.1988,
                              workoutAge: 0.2017, workoutAlpha: -55.0969,
                              fitHR: 0.634, fitVO2: 0.404, fitWeight: 0.394, fitAge: 0.271,
                              fitAlpha: -95.7735)
-    static let female = Coeffs(restingAlpha: 447.593, restingWeight: 9.247, restingHeight: 309.8,
-                               restingAge: 4.33, workoutHR: 0.4472, workoutWeight: -0.1263,
+    static let female = Coeffs(restingAlpha: -161.0, restingWeight: 10.0, restingHeight: 625.0,
+                               restingAge: 5.0, workoutHR: 0.4472, workoutWeight: -0.1263,
                                workoutAge: 0.0740, workoutAlpha: -20.4022,
                                fitHR: 0.450, fitVO2: 0.380, fitWeight: 0.103, fitAge: 0.274,
                                fitAlpha: -59.3954)
     // Nonbinary = the male/female midpoint, the same convention the base workout* coeffs use.
-    static let nonbinary = Coeffs(restingAlpha: 267.9775, restingWeight: 11.322, restingHeight: 394.85,
-                                  restingAge: 5.0035, workoutHR: 0.53905, workoutWeight: 0.03625,
+    static let nonbinary = Coeffs(restingAlpha: -78.0, restingWeight: 10.0, restingHeight: 625.0,
+                                  restingAge: 5.0, workoutHR: 0.53905, workoutWeight: 0.03625,
                                   workoutAge: 0.13785, workoutAlpha: -37.74955,
                                   fitHR: 0.542, fitVO2: 0.392, fitWeight: 0.2485, fitAge: 0.2725,
                                   fitAlpha: -77.58445)
@@ -644,13 +647,15 @@ public enum Calories {
     /// Keytel is appropriate for a real detected/manual workout — but the day path raises
     /// the gate to 50% HRR so the gross rate only applies at genuine exercise-level HR.
     static let dayActiveHRRFraction = 0.50
-    /// Longest gap over which one daily HR reading may carry RESTING energy.
+    /// Longest gap over which one daily HR reading may carry energy, resting or active.
     ///
     /// Resting metabolism continues across a dropout, so a reading may carry the BMR rate into the gap
     /// — but only so far, or a disconnected evening would bank a full night of resting kcal that was
-    /// never observed. ACTIVE energy is capped separately and much tighter, at the inferred cadence
-    /// (see `estimateDayEnergy`): a gap is evidence of a missing sensor, never of exercise.
-    static let dayMaxObservedGapS: Double = 60.0
+    /// never observed. Five minutes covers a watch that records heart rate every one to two minutes
+    /// (a Garmin's all-day monitoring): at the old 60 s cap such a day banked about half its BMR (#51).
+    /// ACTIVE energy is capped tighter, at each reading's local cadence (see `estimateDayEnergy`): a
+    /// gap is evidence of a missing sensor, never of exercise.
+    static let dayMaxObservedGapS: Double = 300.0
     static let dayMaxObservedSpanS: Double = 86_400.0
     static let workoutDivisor = 251.04  // 60 s/min × 4.184 kJ/kcal
 
@@ -678,8 +683,14 @@ public enum Calories {
     // VO₂max fallback (#1391), across the StrandAnalytics module boundary. The Kotlin twin is already public.
     public static func vo2maxFor(hrmax: Double, restingHR: Double?) -> Double? {
         guard let rhr = restingHR, rhr > 0, hrmax > 0 else { return nil }
-        return 15.3 * hrmax / rhr
+        return 15.3 * hrmax / (rhr + uthAwakeRestingOffsetBpm)
     }
+
+    /// Added to the resting HR before the Uth ratio. Uth et al. measured resting HR awake and supine;
+    /// every resting HR NOOP holds is a sleep-window floor (the lowest 5-min mean of the night) or a
+    /// watch's daily minimum, which runs a few beats lower, so the raw ratio read VO2max roughly
+    /// 10-15% high (#51). An approximate correction, not a measured per-user offset.
+    public static let uthAwakeRestingOffsetBpm: Double = 5.0
 
     /// Active energy rate (kcal/s). With `vo2max` present, uses the Keytel 2005 fitness-ADJUSTED
     /// equation (personalizes beyond age/weight/sex); with nil, the base fitness-blind Keytel model,
@@ -764,11 +775,13 @@ public enum Calories {
     /// the gross rate for genuine exercise-level HR only; the bout path is UNCHANGED — Keytel
     /// is appropriate there, on a real detected/manual workout.
     ///
-    /// Cadence is inferred from the median positive timestamp gap and capped at
-    /// `dayMaxObservedGapS`. Each sample carries resting energy, and a high-HR sample carries active
-    /// energy, to the next sample for at most that cap. This can credit up to 60 s instead of the old
-    /// flat 1 s for a reading on a gappy day, but never a whole disconnect. Thus a 30 s sparse stream
-    /// and a 1 Hz stream covering the same activity produce comparable energy.
+    /// Each sample carries resting energy to the next sample for at most `dayMaxObservedGapS`. A
+    /// high-HR sample carries active energy for its LOCAL cadence: the shorter of its gaps to the
+    /// previous and next distinct timestamps, capped at the same limit (`localCadences`). A per-second
+    /// workout inside a 2-minute monitoring day therefore credits 1 s per workout reading and 120 s per
+    /// monitoring reading; the old day-wide median cadence collapsed to 1 s on such a day and gave every
+    /// monitoring reading one second (#51). A 30 s sparse stream and a 1 Hz stream covering the same
+    /// activity still produce comparable energy, and a dropout never credits more than the cap.
     ///
     /// This is an on-device estimate from heart rate alone — NOT laboratory calorimetry, NOT
     /// Apple/WHOOP cloud parity, NOT medical advice.
@@ -803,46 +816,55 @@ public enum Calories {
         // direction for a path whose history is over-counting. Sorting on ts alone left this to the
         // sort's stability, which Kotlin guarantees (TimSort) and Swift explicitly does not.
         let ordered = hrSamples.sorted { $0.ts != $1.ts ? $0.ts < $1.ts : $0.bpm > $1.bpm }
-        let positiveGaps = zip(ordered, ordered.dropFirst())
-            .map { pair in Double(pair.1.ts - pair.0.ts) }
-            .filter { $0 > 0 }
-            .sorted()
-        let nominalSampleS: Double = {
-            guard !positiveGaps.isEmpty else { return 1.0 }
-            let mid = positiveGaps.count / 2
-            let median = positiveGaps.count.isMultiple(of: 2)
-                ? (positiveGaps[mid - 1] + positiveGaps[mid]) / 2.0
-                : positiveGaps[mid]
-            return min(median, dayMaxObservedGapS)
-        }()
-        let observedSeconds = min(dayMaxObservedSpanS, positiveGaps.reduce(nominalSampleS) {
-            $0 + min($1, dayMaxObservedGapS)
-        })
-        let restingKcal = restingRate * observedSeconds
-
+        let cadence = localCadences(ordered.map(\.ts))
+        var observedSeconds = 0.0
         var activeKcal = 0.0
         for i in ordered.indices {
-            let durationS: Double
-            // Active carry is capped at the INFERRED CADENCE, not at the wider resting cap. A 30 s
-            // stream still carries its full 30 s (the cadence bug this fixes), and a 1 Hz day carries
-            // 1 s so the legacy total is reproduced exactly — but a dropout in an otherwise dense day
-            // no longer credits a full minute of exercise to the last reading before it. That was the
-            // objection the flat one-second model was written to avoid, and capping active at the
-            // cadence answers it rather than narrowing it from 150 s to 60 s.
+            // Only the LAST reading of a tied run carries the interval; the earlier ones measure a zero gap.
+            let restS: Double
+            let activeS: Double
             if i < ordered.count - 1 {
                 let gap = Double(ordered[i + 1].ts - ordered[i].ts)
-                durationS = gap > 0 ? min(gap, nominalSampleS) : 0.0
+                restS = gap > 0 ? min(gap, dayMaxObservedGapS) : 0.0
+                activeS = gap > 0 ? min(gap, cadence[i]) : 0.0
             } else {
-                durationS = nominalSampleS
+                restS = cadence[i]
+                activeS = cadence[i]
             }
+            observedSeconds += restS
             let bpm = Double(ordered[i].bpm)
             guard bpm >= activeThreshold else { continue }
             let grossRate = activeKcalPerS(coeffs, hr: bpm, hrmax: effHRmax,
                                            weightKg: weightKg, age: age, vo2max: vo2max)
-            activeKcal += max(0.0, grossRate - restingRate) * durationS
+            activeKcal += max(0.0, grossRate - restingRate) * activeS
         }
+        observedSeconds = min(dayMaxObservedSpanS, observedSeconds)
+        let restingKcal = restingRate * observedSeconds
         return DayEnergyEstimate(restingKcal: restingKcal, activeKcal: activeKcal,
                                  observedSeconds: observedSeconds)
+    }
+
+    /// Each reading's local sampling cadence (s), over timestamps sorted ascending: the shorter of the
+    /// gaps to the previous and the next DISTINCT timestamp, capped at `dayMaxObservedGapS`. Readings
+    /// sharing a second share a cadence; a stream with one distinct timestamp gets 1 s.
+    /// Kotlin twin: `Calories.localCadences`.
+    static func localCadences(_ ts: [Int]) -> [Double] {
+        var out = [Double](repeating: 1.0, count: ts.count)
+        var start = 0
+        while start < ts.count {
+            var end = start
+            while end + 1 < ts.count && ts[end + 1] == ts[start] { end += 1 }
+            var best: Double? = nil
+            if start > 0 { best = Double(ts[start] - ts[start - 1]) }
+            if end + 1 < ts.count {
+                let next = Double(ts[end + 1] - ts[start])
+                best = best.map { min($0, next) } ?? next
+            }
+            let c = best.map { min($0, dayMaxObservedGapS) } ?? 1.0
+            for i in start...end { out[i] = c }
+            start = end + 1
+        }
+        return out
     }
 
     /// Backward-compatible total-kcal facade for the stored daily metric.

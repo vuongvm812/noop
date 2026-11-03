@@ -784,7 +784,9 @@ object WearableExportImporter {
                 recovery = null,          // NEVER the brand's readiness score
                 strain = null,
                 spo2Pct = d.spo2Pct, skinTempDevC = d.skinTempDevC,
-                steps = d.steps, activeKcalEst = d.activeKcal,
+                // activeKcalEst is whole-day TOTAL energy on every source (#51); the brand's active
+                // calories stay in the energy_kcal series. Swift twin: WearableImporter.
+                steps = d.steps, activeKcalEst = d.totalKcal,
             )
         }
         if (dailyMetrics.isNotEmpty()) repo.upsertDailyMetrics(dailyMetrics)

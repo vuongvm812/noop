@@ -273,7 +273,9 @@ object XiaomiBandImporter {
                 efficiency = sleepEfficiency(d.totalSleepMin, d.awakeMin),
                 deepMin = d.deepMin, remMin = d.remMin, lightMin = d.lightMin,
                 restingHr = d.restingHr, spo2Pct = d.avgSpo2, steps = d.steps,
-                activeKcalEst = d.activeKcal,
+                // No activeKcalEst: that column is whole-day TOTAL energy (#51), and the band's
+                // `calories` is not known to include resting energy. It stays in the energy_kcal series,
+                // as on Swift (XiaomiImporter), and NOOP's computed total fills the day.
             )
         }
         if (dailyMetrics.isNotEmpty()) repo.upsertDailyMetrics(dailyMetrics)

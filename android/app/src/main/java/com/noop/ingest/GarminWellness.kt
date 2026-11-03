@@ -25,8 +25,10 @@ package com.noop.ingest
  * Timestamps: only field 253 and compressed-timestamp headers move the running timestamp. MONITORING
  * may carry `timestamp_16`, resolved forward from the previous monitoring time across a 0xFFFF
  * rollover. Cumulative MONITORING counters reset at local midnight per activity type; a day's total is
- * the sum over types of each type's largest value that day ([GarminWellnessParser.dailyTotals]); a record
- * stamped exactly at local midnight still carries the day that just ended.
+ * the sum over types of each type's largest value that day ([GarminWellnessParser.dailyTotals]), steps
+ * over the step types only ([GarminWellnessParser.STEP_ACTIVITY_TYPES]); a record stamped exactly at local
+ * midnight still carries the day that just ended. `calories` (field 1) is the day's TOTAL energy, resting
+ * metabolic rate included; `active_calories` (field 19) is the part above it.
  */
 data class GarminWellnessSamples(
     /** Local time minus UTC, in seconds, from the file's own local timestamps; null when it has none. */
@@ -77,6 +79,15 @@ data class GarminWellnessSamples(
         val vigorousMin: Int?,
     )
 
+    /** One activity type's largest cumulative MONITORING counters on one local day; type -1 = none given. */
+    data class DailyTypePeak(
+        val day: String,
+        val activityType: Int,
+        val cycles: Int?,
+        val distanceM: Double?,
+        val calories: Int?,
+        val activeCalories: Int?,
+    )
     data class DailyActivity(val day: String, val steps: Int?, val distanceM: Double?, val calories: Int?, val activeCalories: Int?)
     data class Spo2(val ts: Long, val percent: Int)
     data class SleepRaw(val ts: Long, val heartRate: Double?, val movement: Double?)
@@ -148,13 +159,23 @@ object GarminWellnessParser {
     val candidateMessages: Set<Int> get() = setOf(290, 397, 398)
 
     /**
-     * Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-     * largest value of each counter, summed over activity types. A record stamped exactly at local
-     * midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
-     * the counters reset), so it counts toward the previous day. The counters only rise within a day,
-     * so the largest value is the day's total even when records arrive out of order.
+     * FIT activity types whose MONITORING `cycles` counter is a step count: generic (0), running (1),
+     * walking (6), sedentary (8), and a record with no type (-1). Cycling (2), swimming (5) and fitness
+     * equipment (4) count revolutions, strokes or repetitions in the same field; transition (3) and the
+     * "all" summary type (254) would double-count a sport's own counter (#51).
+     * Swift twin: `GarminWellnessParser.stepActivityTypes`.
      */
-    fun dailyTotals(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyActivity> {
+    val STEP_ACTIVITY_TYPES: Set<Int> = setOf(-1, 0, 1, 6, 8)
+
+    /**
+     * Folds cumulative MONITORING counters into per-(local day, activity type) peaks: each counter's
+     * largest value. A record stamped exactly at local midnight carries the day that just ended (the
+     * watch writes its final totals at 00:00:00 before the counters reset), so it counts toward the
+     * previous day. The counters only rise within a day, so the largest value is the type's day total
+     * even when records arrive out of order. Sorted by day, then activity type.
+     * Swift twin: `GarminWellnessParser.dailyTypePeaks`.
+     */
+    fun dailyTypePeaks(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyTypePeak> {
         class Peak { var cycles: Int? = null; var distance: Double? = null; var calories: Int? = null; var active: Int? = null }
         val byDay = HashMap<String, HashMap<Int, Peak>>()
         for (r in records) {
@@ -166,13 +187,26 @@ object GarminWellnessParser {
             r.calories?.let { peak.calories = maxOf(peak.calories ?: it, it) }
             r.activeCalories?.let { peak.active = maxOf(peak.active ?: it, it) }
         }
+        return byDay.keys.sorted().flatMap { day ->
+            byDay.getValue(day).entries.sortedBy { it.key }.map { (type, p) ->
+                GarminWellnessSamples.DailyTypePeak(day, type, p.cycles, p.distance, p.calories, p.active)
+            }
+        }
+    }
+
+    /**
+     * Local-day totals: the sum over activity types of each type's peak ([dailyTypePeaks]). Steps sum
+     * only [STEP_ACTIVITY_TYPES]. Swift twin: `GarminWellnessParser.dailyTotals`.
+     */
+    fun dailyTotals(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyActivity> {
+        val byDay = dailyTypePeaks(records, utcOffsetS).groupBy { it.day }
         return byDay.keys.sorted().map { day ->
             // Sum in activity-type order so the floating-point total is platform-independent.
-            val peaks = byDay.getValue(day).entries.sortedBy { it.key }.map { it.value }
-            val steps = peaks.mapNotNull { it.cycles }
-            val distances = peaks.mapNotNull { it.distance }
+            val peaks = byDay.getValue(day)
+            val steps = peaks.filter { it.activityType in STEP_ACTIVITY_TYPES }.mapNotNull { it.cycles }
+            val distances = peaks.mapNotNull { it.distanceM }
             val calories = peaks.mapNotNull { it.calories }
-            val active = peaks.mapNotNull { it.active }
+            val active = peaks.mapNotNull { it.activeCalories }
             GarminWellnessSamples.DailyActivity(
                 day = day,
                 steps = if (steps.isEmpty()) null else steps.sum(),

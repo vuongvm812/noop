@@ -18,8 +18,11 @@ import WhoopProtocol
 //     the stored nights that end on that day (the wake day), not a midnight-to-midnight mean that mixes in
 //     daytime and exercise readings and two half-nights (#52). The same value goes to dailyMetric and
 //     metricSeries, and the scoring pass reads it back from the row, so Charge and Trends agree;
-//   - cumulative counters (steps, distance, calories) keep the larger of the stored and the new value:
-//     a later file carries the day's running total, and an older re-sync can never lower it;
+//   - cumulative counters (steps, distance, calories) are kept PER ACTIVITY TYPE in `garminActivityPeak`,
+//     each the larger of the stored and the new value, and the day's totals are summed over the stored
+//     types after the insert: a file that carries only the types that moved can no longer lower the day
+//     (#51). The day row then keeps the larger of that sum and its stored value, so an older re-sync
+//     never lowers it;
 //   - every other column keeps its stored value when the file has none (COALESCE);
 //   - the day's sleep figures are its MAIN night's: a file's night replaces them only when it has at least
 //     as much time asleep as the stored one, so a nap file synced after the night file cannot overwrite
@@ -49,6 +52,26 @@ public struct GarminSyncedFileRow: Equatable, Hashable, Sendable {
     }
 }
 
+/// One activity type's largest cumulative MONITORING counters on one local day, as one file saw them.
+/// `activityType` is the FIT activity_type, or -1 when the record carried none. `steps` is set only for
+/// the step types (`GarminWellnessParser.stepActivityTypes`): other types count strokes or revolutions.
+public struct GarminActivityPeak: Equatable, Sendable {
+    public var activityType: Int
+    public var steps: Int?
+    public var distanceM: Double?
+    public var totalKcal: Double?
+    public var activeKcal: Double?
+
+    public init(activityType: Int, steps: Int? = nil, distanceM: Double? = nil,
+                totalKcal: Double? = nil, activeKcal: Double? = nil) {
+        self.activityType = activityType
+        self.steps = steps
+        self.distanceM = distanceM
+        self.totalKcal = totalKcal
+        self.activeKcal = activeKcal
+    }
+}
+
 /// What one Garmin wellness file adds to one local day. Every field is optional: a file carries only
 /// what it recorded. `dayStartTs ..< dayEndTs` is the day's span in Unix seconds (local midnight to
 /// midnight, from the file's own UTC offset), used to re-derive the day's sample aggregates.
@@ -61,6 +84,8 @@ public struct GarminDayRollup: Equatable, Sendable {
     public var distanceM: Double?
     public var activeKcal: Double?
     public var totalKcal: Double?
+    /// The per-activity-type counters behind the four totals above, merged per type in the store.
+    public var activityPeaks: [GarminActivityPeak] = []
     // Point values: the newest file's value wins, a missing one keeps the stored value.
     public var restingHr: Int?
     public var avgHrvMs: Double?
@@ -320,6 +345,41 @@ extension WhoopStore {
         return changed
     }
 
+    /// Store this file's per-type counters (each column the larger of stored and new), then replace the
+    /// rollup's four day totals with sums over every stored type of the day, so a file that carries only
+    /// the types that moved still yields the whole day. Sums run in
+    /// activity-type order so the floating-point distance is platform-independent. A rollup without
+    /// peaks (a file with no MONITORING records) is left alone. Kotlin twin: `GarminSyncStore.mergePeaks`.
+    private static func mergeActivityPeaks(_ db: Database, _ d: inout GarminDayRollup, deviceId: String) throws {
+        guard !d.activityPeaks.isEmpty else { return }
+        for p in d.activityPeaks {
+            try db.execute(sql: """
+                INSERT INTO garminActivityPeak (deviceId, day, activityType, steps, distanceM, totalKcal, activeKcal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(deviceId, day, activityType) DO UPDATE SET
+                    steps = MAX(COALESCE(excluded.steps, garminActivityPeak.steps), COALESCE(garminActivityPeak.steps, excluded.steps)),
+                    distanceM = MAX(COALESCE(excluded.distanceM, garminActivityPeak.distanceM), COALESCE(garminActivityPeak.distanceM, excluded.distanceM)),
+                    totalKcal = MAX(COALESCE(excluded.totalKcal, garminActivityPeak.totalKcal), COALESCE(garminActivityPeak.totalKcal, excluded.totalKcal)),
+                    activeKcal = MAX(COALESCE(excluded.activeKcal, garminActivityPeak.activeKcal), COALESCE(garminActivityPeak.activeKcal, excluded.activeKcal))
+                """, arguments: [deviceId, d.day, p.activityType, p.steps, p.distanceM, p.totalKcal, p.activeKcal])
+        }
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT steps, distanceM, totalKcal, activeKcal FROM garminActivityPeak
+            WHERE deviceId = ? AND day = ? ORDER BY activityType
+            """, arguments: [deviceId, d.day])
+        var steps: Int?, distance: Double?, total: Double?, active: Double?
+        for r in rows {
+            if let v: Int = r["steps"] { steps = (steps ?? 0) + v }
+            if let v: Double = r["distanceM"] { distance = (distance ?? 0) + v }
+            if let v: Double = r["totalKcal"] { total = (total ?? 0) + v }
+            if let v: Double = r["activeKcal"] { active = (active ?? 0) + v }
+        }
+        d.steps = steps
+        d.distanceM = distance
+        d.totalKcal = total
+        d.activeKcal = active
+    }
+
     /// Kotlin twin: `GarminSyncStore.insertLedgerRow`.
     private static func insertLedgerRow(_ db: Database, _ f: GarminSyncedFileRow, deviceId: String, ingestedAt: Int) throws {
         try db.execute(sql: """
@@ -344,6 +404,7 @@ extension WhoopStore {
            stored > incoming {
             d.totalSleepMin = nil; d.deepMin = nil; d.lightMin = nil; d.remMin = nil; d.awakeMin = nil; d.efficiency = nil
         }
+        try mergeActivityPeaks(db, &d, deviceId: deviceId)
         // Kotlin twin: `GarminSyncStore.aggregate`.
         func aggregate(_ kind: DeviceMetricKind, _ fn: String) throws -> Double? {
             try Double.fetchOne(db, sql: """
@@ -378,7 +439,10 @@ extension WhoopStore {
                                      WHEN dailyMetric.activeKcalEst IS NULL THEN excluded.activeKcalEst
                                      ELSE MAX(excluded.activeKcalEst, dailyMetric.activeKcalEst) END
             """, arguments: [deviceId, d.day, d.totalSleepMin, d.efficiency, d.deepMin, d.remMin, d.lightMin,
-                             d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.activeKcal])
+                             // activeKcalEst is whole-day TOTAL energy on every source (#51): the watch's
+                             // total, resting metabolic rate included. Its active calories stay in the
+                             // energy_kcal series.
+                             d.restingHr, d.avgHrvMs, spo2, resp, d.steps, d.totalKcal])
         counts.days += db.changesCount
 
         let points: [(String, Double?)] = [

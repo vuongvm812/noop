@@ -56,7 +56,6 @@ class GarminMetricStorageMigrationTest {
     fun migration_versionPair_is42to43() {
         assertEquals(42, WhoopDatabase.MIGRATION_42_43.startVersion)
         assertEquals(43, WhoopDatabase.MIGRATION_42_43.endVersion)
-        assertEquals(43, WhoopDatabase.SCHEMA_VERSION)
     }
 
     /** The stored `kind` strings are shared with Swift: this is the list `GarminMetricStorageTests.

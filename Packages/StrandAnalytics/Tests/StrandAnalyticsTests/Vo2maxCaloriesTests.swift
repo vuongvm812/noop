@@ -10,7 +10,8 @@ import WhoopProtocol
 final class Vo2maxCaloriesTests: XCTestCase {
 
     func testVo2maxForIsUthAndNilWithoutRestingHR() {
-        XCTAssertEqual(Calories.vo2maxFor(hrmax: 190.0, restingHR: 50.0)!, 58.14, accuracy: 1e-9)
+        // 15.3 · 190 / (50 + 5): the resting HR is a sleep floor, lifted to an awake-resting value (#51).
+        XCTAssertEqual(Calories.vo2maxFor(hrmax: 190.0, restingHR: 50.0)!, 52.854545454545, accuracy: 1e-9)
         XCTAssertNil(Calories.vo2maxFor(hrmax: 190.0, restingHR: nil))
         XCTAssertNil(Calories.vo2maxFor(hrmax: 190.0, restingHR: 0.0))
         XCTAssertNil(Calories.vo2maxFor(hrmax: 0.0, restingHR: 50.0))
@@ -44,6 +45,9 @@ final class Vo2maxCaloriesTests: XCTestCase {
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 30, sex: "male")
         let hr = (0..<60).map { HRSample(ts: $0, bpm: 150) }
         let kcal = Calories.estimateBoutCalories(hr, profile: profile, hrmax: 190.0, restingHR: 50.0).0
-        XCTAssertEqual(kcal, 0.248825127469726 * 60, accuracy: 1e-9)
+        let rate = Calories.activeKcalPerS(Calories.male, hr: 150.0, hrmax: 190.0, weightKg: 80.0, age: 30.0,
+                                           vo2max: Calories.vo2maxFor(hrmax: 190.0, restingHR: 50.0))
+        XCTAssertEqual(rate, 0.240319217509705, accuracy: 1e-12)
+        XCTAssertEqual(kcal, rate * 60, accuracy: 1e-9)
     }
 }

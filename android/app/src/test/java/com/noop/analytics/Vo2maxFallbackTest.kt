@@ -11,7 +11,7 @@ import kotlin.math.abs
 /**
  * #1391: VO₂max is offered even WITHOUT a waist. `fitnessAgeRows` persists `vo2max_est` = the Nes 2011
  * waist-based estimate when a waist is set, else falls back to the Uth 2004 HR-ratio estimate
- * (15.3·HRmax/RHR, HRmax = Tanaka(age)) — so a user past the age+RHR fitness-age gate gets a VO₂max
+ * (15.3·HRmax/(RHR + 5), HRmax = Tanaka(age)) — so a user past the age+RHR fitness-age gate gets a VO₂max
  * instead of a blank. Twin of the Swift Vo2maxFallbackTests.
  */
 class Vo2maxFallbackTest {
@@ -26,8 +26,8 @@ class Vo2maxFallbackTest {
         val rows = IntelligenceEngine.fitnessAgeRows(gate(rhr = 60), profile, "my-whoop-noop", "2026-08-15")
         val vo2 = rows.firstOrNull { it.key == "vo2max_est" }
         assertNotNull("without a waist, VO₂max must still be offered via the Uth fallback", vo2)
-        // Uth: 15.3 × Tanaka(40)=180 / RHR 60 = 45.9
-        assertEquals(15.3 * StrainScorer.tanakaHRmax(40.0) / 60.0, vo2!!.value, 1e-6)
+        // Uth: 15.3 × Tanaka(40)=180 / (RHR 60 + 5) = 42.369…
+        assertEquals(15.3 * StrainScorer.tanakaHRmax(40.0) / (60.0 + Calories.uthAwakeRestingOffsetBpm), vo2!!.value, 1e-6)
     }
 
     @Test

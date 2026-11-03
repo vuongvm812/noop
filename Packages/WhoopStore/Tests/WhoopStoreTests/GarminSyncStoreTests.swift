@@ -37,7 +37,9 @@ final class GarminSyncStoreTests: XCTestCase {
         ingest.hr = [HRSample(ts: dayStart + 60, bpm: 61), HRSample(ts: dayStart + 120, bpm: 64)]
         ingest.deviceMetric = [DeviceMetricSample(ts: dayStart + 60, kind: .stress, value: 20, source: "fit227"),
                                DeviceMetricSample(ts: dayStart + 60, kind: .bodyBattery, value: 80, source: "fit227")]
-        ingest.days = [day(steps: 1_000, rhr: 59)]
+        var first0 = day(steps: 1_000, rhr: 59)
+        first0.activityPeaks = [GarminActivityPeak(activityType: 6, steps: 1_000, totalKcal: 900)]
+        ingest.days = [first0]
         ingest.sleeps = [CachedSleepSession(startTs: dayStart - 20_000, endTs: dayStart + 5_000, efficiency: 0.91,
                                             restingHr: nil, avgHrv: nil, stagesJSON: "[]")]
         let first = try await store.ingestGarminFile(ingest, deviceId: id, ingestedAt: 1)
@@ -46,7 +48,8 @@ final class GarminSyncStoreTests: XCTestCase {
         let ledger = try await store.garminSyncedFiles(deviceId: id)
         XCTAssertEqual(ledger, [file(1)])
 
-        let tables = ["hrSample", "deviceMetricSample", "dailyMetric", "sleepSession", "metricSeries", "garminSyncedFile"]
+        let tables = ["hrSample", "deviceMetricSample", "dailyMetric", "sleepSession", "metricSeries", "garminSyncedFile",
+                      "garminActivityPeak"]
         var before: [Int] = []
         for t in tables { before.append(try await count(store, t)) }
         _ = try await store.ingestGarminFile(ingest, deviceId: id, ingestedAt: 2)
@@ -107,6 +110,63 @@ final class GarminSyncStoreTests: XCTestCase {
         XCTAssertEqual(bbMax, 90)
         let ledger = try await store.garminSyncedFiles(deviceId: id)
         XCTAssertEqual(ledger.count, 3)
+    }
+
+    /// `dailyMetric.activeKcalEst` is whole-day TOTAL energy on every source (#51): a Garmin day stores
+    /// the watch's total (FIT monitoring `calories`, resting metabolic rate included), not its active
+    /// calories, which stay in the `energy_kcal` series. Kotlin twin: same test name.
+    func testCaloriesColumnHoldsTheWatchTotalNotActive() async throws {
+        let store = try await WhoopStore.inMemory()
+        var f = GarminFileIngest(file: file(1))
+        var d = day()
+        d.activityPeaks = [GarminActivityPeak(activityType: 6, steps: 9_000, totalKcal: 2_400, activeKcal: 500)]
+        f.days = [d]
+        _ = try await store.ingestGarminFile(f, deviceId: id, ingestedAt: 1)
+        let metric = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        XCTAssertEqual(metric?.activeKcalEst, 2_400)
+        let total = try await series(store, "total_kcal")
+        let active = try await series(store, "energy_kcal")
+        XCTAssertEqual(total, 2_400)
+        XCTAssertEqual(active, 500)
+    }
+
+    /// A later file that carries only the activity types whose counters moved must not lower the day:
+    /// totals are summed over every stored type (#51). The old per-file sum merged with MAX read
+    /// max(5,000 + 2,000, 6,000) = 7,000 steps; per-type peaks give 6,000 walking + 2,000 running.
+    /// Kotlin twin: same test name.
+    func testPerActivityTypeCountersSumAcrossFiles() async throws {
+        let store = try await WhoopStore.inMemory()
+        var a = GarminFileIngest(file: file(1))
+        var da = day()
+        da.activityPeaks = [GarminActivityPeak(activityType: 1, steps: 2_000, distanceM: 2_500.5, totalKcal: 300, activeKcal: 250),
+                            GarminActivityPeak(activityType: 6, steps: 5_000, distanceM: 3_000.25, totalKcal: 1_500, activeKcal: 200)]
+        a.days = [da]
+        var b = GarminFileIngest(file: file(2))
+        var db = day()
+        db.activityPeaks = [GarminActivityPeak(activityType: 6, steps: 6_000, distanceM: 3_600.125, totalKcal: 1_600, activeKcal: 220),
+                            // Cycling carries no steps; its distance and energy still count.
+                            GarminActivityPeak(activityType: 2, distanceM: 10_000, totalKcal: 400, activeKcal: 380)]
+        b.days = [db]
+        // An OLDER re-sync of file A's walking value lowers nothing.
+        var c = GarminFileIngest(file: file(3))
+        var dc = day()
+        dc.activityPeaks = [GarminActivityPeak(activityType: 6, steps: 4_000, totalKcal: 1_200, activeKcal: 150)]
+        c.days = [dc]
+        for f in [a, b, c] { _ = try await store.ingestGarminFile(f, deviceId: id, ingestedAt: 1) }
+
+        let metric = try await store.dailyMetrics(deviceId: id, from: "2026-11-01", to: "2026-11-01").first
+        XCTAssertEqual(metric?.steps, 8_000)
+        XCTAssertEqual(metric?.activeKcalEst, 2_300)
+        let steps = try await series(store, "steps")
+        let distance = try await series(store, "distance_m")
+        let total = try await series(store, "total_kcal")
+        let active = try await series(store, "energy_kcal")
+        XCTAssertEqual(steps, 8_000)
+        XCTAssertEqual(distance, 2_500.5 + 3_600.125 + 10_000)
+        XCTAssertEqual(total, 2_300)
+        XCTAssertEqual(active, 850)
+        let rows = try await count(store, "garminActivityPeak")
+        XCTAssertEqual(rows, 3)
     }
 
     func testSleepSessionMergeKeepsAUserEdit() async throws {

@@ -28,6 +28,12 @@ final class GarminWellnessParserTests: XCTestCase {
         mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
         day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
         day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
+        == multiSport
+        offset 21600 complete true other 0 dropped 0
+        mon 1731086096 type=6 int=- cyc=2000 dist=1500.0000 cal=1500 act=90 time=- hr=- mod=- vig=-
+        mon 1731086396 type=2 int=- cyc=900 dist=12000.0000 cal=300 act=280 time=- hr=- mod=- vig=-
+        mon 1731086696 type=5 int=- cyc=40 dist=1000.0000 cal=120 act=110 time=- hr=- mod=- vig=-
+        day 2024-11-08 steps=2000 dist=14500.0000 cal=1920 act=480
         == restingHeartRate
         offset - complete true other 0 dropped 1
         rhr 1731087296 52

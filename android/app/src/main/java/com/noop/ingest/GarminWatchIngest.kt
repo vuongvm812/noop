@@ -2,6 +2,7 @@ package com.noop.ingest
 
 import com.noop.data.DeviceMetricKind
 import com.noop.data.DeviceMetricRow
+import com.noop.data.GarminActivityPeak
 import com.noop.data.GarminDayRollup
 import com.noop.data.GarminFileIngest
 import com.noop.data.GarminSleepRow
@@ -72,6 +73,16 @@ object GarminWatchIngest {
             days[a.day] = day(a.day).copy(
                 steps = a.steps, distanceM = a.distanceM,
                 activeKcal = a.activeCalories?.toDouble(), totalKcal = a.calories?.toDouble(),
+            )
+        }
+        // The per-type peaks behind those totals: the store merges them per type across files.
+        for (p in GarminWellnessParser.dailyTypePeaks(s.monitoring, offset)) {
+            val d = day(p.day)
+            val steps = if (p.activityType in GarminWellnessParser.STEP_ACTIVITY_TYPES) p.cycles else null
+            days[p.day] = d.copy(
+                activityPeaks = d.activityPeaks + GarminActivityPeak(
+                    p.activityType, steps, p.distanceM, p.calories?.toDouble(), p.activeCalories?.toDouble(),
+                ),
             )
         }
         // A resting HR stamped exactly at local midnight describes the day that just ended: the new day has

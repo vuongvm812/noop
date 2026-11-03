@@ -11,7 +11,7 @@ import WhoopStore
 //   stress, Body Battery, SpO2 %, respiration rate, HRV values, the watch's sleep score, intensity
 //                     minutes                                  → deviceMetricSample (explicit units)
 //   sleep             SLEEP_LEVEL nights (275)                 → sleepSession with a stage timeline
-//   day totals        steps / distance / calories (55 counters), resting HR (211), last-night HRV
+//   day totals        steps / distance / calories (55 counters, kept per activity type), resting HR (211), last-night HRV
 //                     average (370), sleep minutes and score    → dailyMetric + metricSeries, merged
 // Not mapped, on purpose: beat intervals (290) and skin temperature (397/398) are CANDIDATE decodes whose
 // scale is unconfirmed (GarminWellness.swift); feeding them into rrInterval / skin temperature would give
@@ -85,6 +85,15 @@ public enum GarminWatchIngest {
             d.activeKcal = a.activeCalories.map(Double.init)
             d.totalKcal = a.calories.map(Double.init)
             days[a.day] = d
+        }
+        // The per-type peaks behind those totals: the store merges them per type across files.
+        for p in GarminWellnessParser.dailyTypePeaks(s.monitoring, utcOffsetS: offset) {
+            var d = day(p.day)
+            let steps = GarminWellnessParser.stepActivityTypes.contains(p.activityType) ? p.cycles : nil
+            d.activityPeaks.append(GarminActivityPeak(activityType: p.activityType, steps: steps,
+                                                      distanceM: p.distanceM, totalKcal: p.calories.map(Double.init),
+                                                      activeKcal: p.activeCalories.map(Double.init)))
+            days[p.day] = d
         }
         // A resting HR stamped exactly at local midnight describes the day that just ended: the new day has
         // no data yet to rest on. Same rule as the 00:00:00 MONITORING totals (`dailyTotals`).

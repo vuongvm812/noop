@@ -828,6 +828,24 @@ data class GarminSyncedFileEntity(
 )
 
 /**
+ * One Garmin activity type's largest cumulative MONITORING counters on one local day (v44 /
+ * MIGRATION_43_44, #51). Swift `garminActivityPeak` (WhoopStore Database.swift
+ * `v50-garmin-activity-peak-total-energy`). A watch file may carry only the types whose counters moved,
+ * so the day's totals are summed over these rows rather than taken from one file. [steps] is null for
+ * types whose counter is not steps. Field order matches the GRDB column order.
+ */
+@Entity(tableName = "garminActivityPeak", primaryKeys = ["deviceId", "day", "activityType"])
+data class GarminActivityPeakEntity(
+    val deviceId: String,
+    val day: String,
+    val activityType: Int,
+    val steps: Int?,
+    val distanceM: Double?,
+    val totalKcal: Double?,
+    val activeKcal: Double?,
+)
+
+/**
  * One Live Session (silent guardian) record (v22 / MIGRATION_15_16). Natural key (deviceId, startTs).
  * `endTs` is null while the session is still in progress. Fields are declared in the SAME order as the
  * Swift WhoopStore `liveSession` schema so the migration SQL matches Room's generated shape. Twin of the

@@ -53,6 +53,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EcgWaveformSampleEntity::class,
         DeviceMetricSampleEntity::class,
         GarminSyncedFileEntity::class,
+        GarminActivityPeakEntity::class,
         V18AuxSampleEntity::class,
         AppleStepHour::class,
         CoachMessageRow::class,
@@ -62,7 +63,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LiftSessionRow::class,
         LiftSetEntity::class,
     ],
-    version = 43,
+    version = 44,
     // #775: ON so Room's KSP processor writes the generated schema (every table's exact `CREATE TABLE`,
     // columns in declaration order with affinity/NOT NULL/default, PK and indices) as JSON. That export
     // is what lets a plain JVM test — no device, no Robolectric — read Android's REAL schema and compare
@@ -82,7 +83,7 @@ abstract class WhoopDatabase : RoomDatabase() {
         const val DB_NAME = "noop_whoop.db"
         /** Room schema version — MUST equal the `@Database(version = …)` above. Surfaced in the backup
          *  manifest (#1410) so an export states its schema. Bump both together on a migration. */
-        const val SCHEMA_VERSION = 43
+        const val SCHEMA_VERSION = 44
 
         @Volatile
         private var instance: WhoopDatabase? = null
@@ -1170,6 +1171,39 @@ abstract class WhoopDatabase : RoomDatabase() {
         }
 
         /**
+         * v43 -> v44 (#51): one quantity in `dailyMetric.activeKcalEst`, and Garmin day counters kept per
+         * activity type. Twin of the Swift WhoopStore `v50-garmin-activity-peak-total-energy` GRDB
+         * migration; the statements are the same text ([WhoopStore.totalEnergyMigrationSQL]).
+         *
+         * The column is whole-day TOTAL energy (resting + active), which is what NOOP's own estimate
+         * writes. Some imports wrote a brand's ACTIVE calories there (the Garmin watch sync, Oura, and on
+         * Android the wearable-export and Xiaomi importers), so a Garmin day charted ~500 kcal beside
+         * ~2,400 on a NOOP day. Those writers now store the total. The two UPDATEs repair stored rows from
+         * the importer's own `metricSeries` points for the same device and day: a `total_kcal` point
+         * replaces the value; failing that, a value equal to that row's `energy_kcal` point is cleared,
+         * so NOOP's computed total fills the day. Rows of any other origin carry neither point and are
+         * untouched. The CREATE TABLE is additive and matches Room's shape for [GarminActivityPeakEntity].
+         */
+        internal val TOTAL_ENERGY_MIGRATION_SQL: List<String> = listOf(
+            "CREATE TABLE IF NOT EXISTS garminActivityPeak (deviceId TEXT NOT NULL, day TEXT NOT NULL, " +
+                "activityType INTEGER NOT NULL, steps INTEGER, distanceM REAL, totalKcal REAL, activeKcal REAL, " +
+                "PRIMARY KEY(deviceId, day, activityType))",
+            "UPDATE dailyMetric SET activeKcalEst = (SELECT m.value FROM metricSeries m " +
+                "WHERE m.deviceId = dailyMetric.deviceId AND m.day = dailyMetric.day AND m.key = 'total_kcal') " +
+                "WHERE EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId " +
+                "AND m.day = dailyMetric.day AND m.key = 'total_kcal')",
+            "UPDATE dailyMetric SET activeKcalEst = NULL WHERE activeKcalEst IS NOT NULL " +
+                "AND EXISTS (SELECT 1 FROM metricSeries m WHERE m.deviceId = dailyMetric.deviceId " +
+                "AND m.day = dailyMetric.day AND m.key = 'energy_kcal' AND m.value = dailyMetric.activeKcalEst)",
+        )
+
+        internal val MIGRATION_43_44 = object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (stmt in TOTAL_ENERGY_MIGRATION_SQL) db.execSQL(stmt)
+            }
+        }
+
+        /**
          * Every migration the builder registers, as a VALUE rather than an argument list.
          *
          * It was previously spelled inline in `addMigrations(...)`, which meant nothing could check it. A
@@ -1196,7 +1230,7 @@ abstract class WhoopDatabase : RoomDatabase() {
             MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
             MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36,
             MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41,
-            MIGRATION_41_42, MIGRATION_42_43,
+            MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44,
         )
 
         private fun build(appContext: Context): WhoopDatabase =

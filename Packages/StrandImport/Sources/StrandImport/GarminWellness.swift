@@ -64,9 +64,12 @@ import Foundation
 //
 // Cumulative counters: MONITORING calories, active calories, distance and cycles are running totals
 // per activity type that reset at local midnight. A day's total is the sum, over activity types, of
-// each type's largest value that day (`dailyActivity`), never the sum of every record. A record stamped
-// exactly at local midnight belongs to the day that just ended: a Forerunner 165 writes its final
-// totals at 00:00:00 before the counters reset.
+// each type's largest value that day (`dailyActivity`), never the sum of every record. Steps sum only
+// the step types (`GarminWellnessParser.stepActivityTypes`): cycling, swimming and fitness equipment
+// count strokes or revolutions in the same field. A record stamped exactly at local midnight belongs
+// to the day that just ended: a Forerunner 165 writes its final totals at 00:00:00 before the counters
+// reset. `calories` (field 1) is the day's TOTAL energy, resting metabolic rate included;
+// `active_calories` (field 19) is the part above it.
 //
 // SECURITY: all reads go through `FitRecordStream`, which bounds-checks every access and stops at the
 // first malformed definition or truncated record. Unknown messages and developer fields are skipped.
@@ -92,6 +95,17 @@ public struct GarminWellnessSamples: Equatable, Sendable {
         public let heartRate: Int?
         public let moderateMin: Int?
         public let vigorousMin: Int?
+    }
+
+    /// One activity type's largest cumulative MONITORING counters on one local day. `activityType` is
+    /// -1 for records that carry none.
+    public struct DailyTypePeak: Equatable, Sendable {
+        public let day: String
+        public let activityType: Int
+        public let cycles: Int?
+        public let distanceM: Double?
+        public let calories: Int?
+        public let activeCalories: Int?
     }
 
     /// A local day's activity totals, folded from the cumulative MONITORING counters.
@@ -218,13 +232,20 @@ public enum GarminWellnessParser {
     /// the `*Candidate` fields.
     public static var candidateMessages: Set<Int> { [290, 397, 398] }
 
-    /// Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-    /// largest value of each counter, summed over activity types. A record stamped exactly at local
-    /// midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
-    /// the counters reset), so it counts toward the previous day. The counters only rise within a day,
-    /// so the largest value is the day's total even when records arrive out of order.
-    /// Kotlin twin: `GarminWellnessParser.dailyTotals`.
-    public static func dailyTotals(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyActivity] {
+    /// FIT activity types whose MONITORING `cycles` counter is a step count: generic (0), running (1),
+    /// walking (6), sedentary (8), and a record with no type (-1). Cycling (2), swimming (5) and fitness
+    /// equipment (4) count revolutions, strokes or repetitions in the same field; transition (3) and the
+    /// "all" summary type (254) would double-count a sport's own counter (#51).
+    /// Kotlin twin: `GarminWellnessParser.STEP_ACTIVITY_TYPES`.
+    public static let stepActivityTypes: Set<Int> = [-1, 0, 1, 6, 8]
+
+    /// Folds cumulative MONITORING counters into per-(local day, activity type) peaks: each counter's
+    /// largest value. A record stamped exactly at local midnight carries the day that just ended (the
+    /// watch writes its final totals at 00:00:00 before the counters reset), so it counts toward the
+    /// previous day. The counters only rise within a day, so the largest value is the type's day total
+    /// even when records arrive out of order. Sorted by day, then activity type.
+    /// Kotlin twin: `GarminWellnessParser.dailyTypePeaks`.
+    public static func dailyTypePeaks(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyTypePeak] {
         struct Peak { var cycles: Int?; var distance: Double?; var calories: Int?; var active: Int? }
         var byDay: [String: [Int: Peak]] = [:]
         for r in records {
@@ -239,13 +260,25 @@ public enum GarminWellnessParser {
             types[r.activityType ?? -1] = peak
             byDay[day] = types
         }
+        return byDay.keys.sorted().flatMap { day in
+            byDay[day]!.sorted { $0.key < $1.key }.map { type, p in
+                GarminWellnessSamples.DailyTypePeak(day: day, activityType: type, cycles: p.cycles,
+                                                    distanceM: p.distance, calories: p.calories, activeCalories: p.active)
+            }
+        }
+    }
+
+    /// Local-day totals: the sum over activity types of each type's peak (`dailyTypePeaks`). Steps sum
+    /// only `stepActivityTypes`. Kotlin twin: `GarminWellnessParser.dailyTotals`.
+    public static func dailyTotals(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyActivity] {
+        let byDay = Dictionary(grouping: dailyTypePeaks(records, utcOffsetS: utcOffsetS), by: \.day)
         return byDay.keys.sorted().map { day in
             // Sum in activity-type order so the floating-point total is platform-independent.
-            let peaks = byDay[day]!.sorted { $0.key < $1.key }.map(\.value)
-            let steps = peaks.compactMap(\.cycles)
-            let distances = peaks.compactMap(\.distance)
+            let peaks = byDay[day]!
+            let steps = peaks.filter { stepActivityTypes.contains($0.activityType) }.compactMap(\.cycles)
+            let distances = peaks.compactMap(\.distanceM)
             let calories = peaks.compactMap(\.calories)
-            let active = peaks.compactMap(\.active)
+            let active = peaks.compactMap(\.activeCalories)
             return GarminWellnessSamples.DailyActivity(day: day,
                                  steps: steps.isEmpty ? nil : steps.reduce(0, +),
                                  distanceM: distances.isEmpty ? nil : distances.reduce(0, +),

@@ -273,6 +273,22 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /**
+         * A multi-sport day: walking, cycling and swimming counters side by side (#51). Only walking's
+         * `cycles` are steps; cycling counts revolutions and swimming strokes in the same field. Distance
+         * and calories still sum over every type. Swift twin: `WellnessFixtures.multiSport`.
+         */
+        fun multiSport(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 103, listOf(Triple(253, 4, U32), Triple(0, 4, U32)))
+            f.data(0); f.u32(T); f.u32(T + OFFSET)
+            f.def(1, 55, listOf(Triple(253, 4, U32), Triple(5, 1, EN), Triple(3, 4, U32), Triple(2, 4, U32), Triple(1, 2, U16), Triple(19, 2, U16)))
+            f.data(1); f.u32(T - 1200); f.u8(6); f.u32(2_000); f.u32(150_000); f.u16(1_500); f.u16(90)
+            f.data(1); f.u32(T - 900); f.u8(2); f.u32(900); f.u32(1_200_000); f.u16(300); f.u16(280)
+            f.data(1); f.u32(T - 600); f.u8(5); f.u32(40); f.u32(100_000); f.u16(120); f.u16(110)
+            return f.finish()
+        }
+
         fun restingHeartRate(): ByteArray {
             val f = WellnessFit()
             f.def(0, 211, listOf(Triple(253, 4, U32), Triple(0, 1, U8), Triple(1, 1, U8)))
@@ -468,7 +484,7 @@ class GarminWellnessParserTest {
         }
 
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
-            "monitoring" to ::monitoring, "midnight" to ::midnight, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
+            "monitoring" to ::monitoring, "midnight" to ::midnight, "multiSport" to ::multiSport, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
             "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "sleepNap" to ::sleepNap, "respiration" to ::respiration, "hrv" to ::hrv,
             "candidates" to ::candidates, "framing" to ::framing, "bounds" to ::bounds,
         )
@@ -584,6 +600,12 @@ class GarminWellnessParserTest {
             mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
             day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
             day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
+            == multiSport
+            offset 21600 complete true other 0 dropped 0
+            mon 1731086096 type=6 int=- cyc=2000 dist=1500.0000 cal=1500 act=90 time=- hr=- mod=- vig=-
+            mon 1731086396 type=2 int=- cyc=900 dist=12000.0000 cal=300 act=280 time=- hr=- mod=- vig=-
+            mon 1731086696 type=5 int=- cyc=40 dist=1000.0000 cal=120 act=110 time=- hr=- mod=- vig=-
+            day 2024-11-08 steps=2000 dist=14500.0000 cal=1920 act=480
             == restingHeartRate
             offset - complete true other 0 dropped 1
             rhr 1731087296 52
