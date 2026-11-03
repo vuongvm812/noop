@@ -21,10 +21,12 @@ import kotlin.math.sqrt
  *   2. Pair behaviour day D with outcome day D+L by SHIFTING the outcome map back by L —
  *      re-key outcome[D+L] under D via shiftDay(day, -L). (Same arithmetic ActivityCostEngine
  *      uses for D+1, parameterised over the lag.)
- *   3. Compute the effect (means, delta, Cohen's d via pooled SD, Welch p via a normal-CDF
- *      tail) — the byte-identical port of Swift BehaviorInsights.effect — gated at
- *      min(nWith, nWithout) ≥ 5.
+ *   3. Compute the effect (means, delta, Cohen's d via pooled SD, Welch p via a Student-t tail
+ *      on the Welch–Satterthwaite df) — the byte-identical port of Swift BehaviorInsights.effect —
+ *      gated at min(nWith, nWithout) ≥ 5.
  *   4. Keep, per (b, o), the lag with the LARGEST |cohensD| among lags that cleared the gate.
+ *   5. Benjamini–Hochberg across the family of gated tests: behaviours × outcomes × lags in
+ *      [rankFamily] ([rank] is the single-outcome case). A row is significant only on its q-value.
  *
  * HONESTY (effect-size first): the primary signal is the effect SIZE + n + a ScoreConfidence
  * tier, never a bare "significant" stamp; the lag set is capped so the comparison count stays
@@ -59,7 +61,15 @@ data class BehaviorEffect(
     val pApprox: Double,
     /** pApprox < 0.05 AND min(nWith, nWithout) ≥ 5. */
     val significant: Boolean,
-)
+    /** Benjamini–Hochberg q-value across the family this effect was ranked in (== pApprox alone). */
+    val pAdjusted: Double = pApprox,
+) {
+    /** This effect re-judged against a family-adjusted q-value. */
+    fun adjusted(q: Double): BehaviorEffect = copy(
+        pAdjusted = q,
+        significant = q < EffectRanker.alpha && minOf(nWith, nWithout) >= EffectRanker.minGroupForSignificance,
+    )
+}
 
 /**
  * One ranked, lag-aware behaviour→outcome effect: the best lag's BehaviorEffect plus the
@@ -126,14 +136,58 @@ object EffectRanker {
         controls: Map<String, Set<String>>,
         outcomeByDay: Map<String, Double>,
         outcome: String,
-    ): List<RankedEffect> {
-        val rows = ArrayList<RankedEffect>()
-        for (name in behaviors.keys.sorted()) {
-            val days = behaviors.getValue(name)
-            val r = bestLag(days, controls[name].orEmpty(), outcomeByDay, name, outcome)
-            if (r != null) rows.add(r)
+    ): List<RankedEffect> =
+        rankFamily(behaviors, controls, mapOf(outcome to outcomeByDay))[outcome].orEmpty()
+
+    /**
+     * Rank every behaviour against EVERY outcome in [outcomes] (label → day series), with the
+     * Benjamini–Hochberg family spanning behaviours × outcomes × lags. Twin of Swift
+     * `EffectRanker.rankFamily`; every outcome key maps to its ranked rows (possibly empty).
+     */
+    fun rankFamily(
+        behaviors: Map<String, Set<String>>,
+        controls: Map<String, Set<String>>,
+        outcomes: Map<String, Map<String, Double>>,
+    ): Map<String, List<RankedEffect>> {
+        data class Candidate(val outcome: String, val behavior: String, val lag: Int, val effect: BehaviorEffect)
+        val candidates = ArrayList<Candidate>()
+        for (outcome in outcomes.keys.sorted()) {
+            val outcomeByDay = outcomes.getValue(outcome)
+            val shiftedByLag = lagSet.map { shiftedOutcome(outcomeByDay, it) }
+            for (name in behaviors.keys.sorted()) {
+                val days = behaviors.getValue(name)
+                val controlDays = controls[name].orEmpty()
+                for ((k, lag) in lagSet.withIndex()) {
+                    val e = effect(days, controlDays, shiftedByLag[k], name, outcome) ?: continue
+                    if (minOf(e.nWith, e.nWithout) < minGroupForSignificance) continue
+                    candidates.add(Candidate(outcome, name, lag, e))
+                }
+            }
         }
-        return sorted(rows)
+        val q = StatTests.benjaminiHochberg(candidates.map { it.effect.pApprox })
+
+        val best = HashMap<String, HashMap<String, Pair<Int, BehaviorEffect>>>()
+        for ((i, c) in candidates.withIndex()) {
+            val e = c.effect.adjusted(q[i])
+            val byBehavior = best.getOrPut(c.outcome) { HashMap() }
+            val cur = byBehavior[c.behavior]
+            if (cur == null) {
+                byBehavior[c.behavior] = c.lag to e
+            } else {
+                val better = abs(e.cohensD) > abs(cur.second.cohensD) ||
+                    (abs(e.cohensD) == abs(cur.second.cohensD) && c.lag < cur.first)
+                if (better) byBehavior[c.behavior] = c.lag to e
+            }
+        }
+        val out = HashMap<String, List<RankedEffect>>()
+        for (outcome in outcomes.keys) {
+            val rows = best[outcome].orEmpty().map { (name, chosen) ->
+                RankedEffect(name, outcome, chosen.first, chosen.second,
+                    confidence(minOf(chosen.second.nWith, chosen.second.nWithout)))
+            }
+            out[outcome] = sorted(rows)
+        }
+        return out
     }
 
     /**
@@ -147,6 +201,9 @@ object EffectRanker {
      * Routing it here retires that copy; the parity contract wants one implementation, not two that agree
      * on a good day.
      *
+     * Significance is judged on the Benjamini–Hochberg q-value across the behaviours that cleared the
+     * group gate (see adjustFamily below).
+     *
      * Sort mirrors Swift exactly: significant first, then larger |Cohen's d|, then behaviour name — the
      * last one so a dictionary-ordered walk still produces a stable list.
      */
@@ -157,11 +214,11 @@ object EffectRanker {
         outcome: String,
     ): List<BehaviorEffect> {
         val effects = ArrayList<BehaviorEffect>()
-        for ((name, days) in behaviors) {
-            val e = effect(days, controls[name].orEmpty(), outcomeByDay, name, outcome)
+        for (name in behaviors.keys.sorted()) {
+            val e = effect(behaviors.getValue(name), controls[name].orEmpty(), outcomeByDay, name, outcome)
             if (e != null) effects.add(e)
         }
-        return effects.sortedWith(
+        return adjustFamily(effects).sortedWith(
             compareByDescending<BehaviorEffect> { it.significant }
                 .thenByDescending { abs(it.cohensD) }
                 .thenBy { it.behavior },
@@ -175,30 +232,20 @@ object EffectRanker {
         outcomeByDay: Map<String, Double>,
         behavior: String,
         outcome: String,
-    ): RankedEffect? {
-        var bestLagValue = 0
-        var bestEffect: BehaviorEffect? = null
-        for (lag in lagSet) {
-            val shifted = shiftedOutcome(outcomeByDay, lag)
-            val e = effect(behaviorDays, controlDays, shifted, behavior, outcome) ?: continue
-            if (minOf(e.nWith, e.nWithout) < minGroupForSignificance) continue
+    ): RankedEffect? =
+        rankFamily(mapOf(behavior to behaviorDays), mapOf(behavior to controlDays),
+            mapOf(outcome to outcomeByDay))[outcome]?.firstOrNull()
 
-            val cur = bestEffect
-            if (cur == null) {
-                bestEffect = e
-                bestLagValue = lag
-            } else {
-                val better = abs(e.cohensD) > abs(cur.cohensD) ||
-                    (abs(e.cohensD) == abs(cur.cohensD) && lag < bestLagValue)
-                if (better) {
-                    bestEffect = e
-                    bestLagValue = lag
-                }
-            }
+    /** Benjamini–Hochberg across [effects] (the gated ones form the family; the rest get q = 1).
+     *  Twin of Swift `BehaviorInsights.adjustFamily`. */
+    internal fun adjustFamily(effects: List<BehaviorEffect>): List<BehaviorEffect> {
+        val gated = effects.indices.filter {
+            minOf(effects[it].nWith, effects[it].nWithout) >= minGroupForSignificance
         }
-        val chosen = bestEffect ?: return null
-        val pairs = minOf(chosen.nWith, chosen.nWithout)
-        return RankedEffect(behavior, outcome, bestLagValue, chosen, confidence(pairs))
+        val q = StatTests.benjaminiHochberg(gated.map { effects[it].pApprox })
+        val out = effects.map { it.adjusted(1.0) }.toMutableList()
+        for ((k, i) in gated.withIndex()) out[i] = effects[i].adjusted(q[k])
+        return out
     }
 
     // Lag alignment.
@@ -343,13 +390,9 @@ object EffectRanker {
         return (m1 - m2) / sp
     }
 
-    /** Two-sided Welch t-test p-value with a normal-approximation tail. */
-    internal fun welchP(m1: Double, v1: Double, n1: Int, m2: Double, v2: Double, n2: Int): Double {
-        val se2 = v1 / n1 + v2 / n2
-        if (se2 <= 0) return if (m1 == m2) 1.0 else 0.0
-        val t = (m1 - m2) / sqrt(se2)
-        return 2.0 * (1.0 - normalCDF(abs(t)))
-    }
+    /** Two-sided Welch t-test p-value (Student-t tail, Welch–Satterthwaite df). */
+    internal fun welchP(m1: Double, v1: Double, n1: Int, m2: Double, v2: Double, n2: Int): Double =
+        StatTests.welchP(m1, v1, n1, m2, v2, n2)
 
     /** Standard-normal CDF Φ(z) using the A&S 7.1.26 erf approximation. */
     internal fun normalCDF(z: Double): Double = 0.5 * (1.0 + erfApprox(z / sqrt(2.0)))

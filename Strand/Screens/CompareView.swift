@@ -538,7 +538,7 @@ struct CompareView: View {
         for i in 0..<(s.count - 1) {
             for j in (i + 1)..<s.count {
                 let pairs = CorrelationEngine.alignByDay(s[i].rows, s[j].rows)
-                guard pairs.count >= 3, let c = CorrelationEngine.pearson(pairs) else { continue }
+                guard pairs.count >= CorrelationEngine.minPairs, let c = CorrelationEngine.pearson(pairs) else { continue }
                 out.append(PairResult(
                     id: "\(s[i].id)~\(s[j].id)",
                     a: s[i], b: s[j], r: c.r, n: c.n

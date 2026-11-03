@@ -624,14 +624,15 @@ final class InsightsHubViewModel: ObservableObject {
         rankFor(currentOutcome)
     }
 
-    /// Re-rank the mover feed for a (possibly new) outcome selection — cheap, no DB.
+    /// Re-rank the mover feed for a (possibly new) outcome selection — no DB.
     func rankFor(_ outcome: Outcome) {
         currentOutcome = outcome
-        let outcomeDays = outcomeByKey[outcome.key] ?? [:]
-        ranked = EffectRanker.rank(behaviors: behaviours,
-                                   controls: controls,
-                                   outcomeByDay: outcomeDays,
-                                   outcome: outcome.outcomeName)
+        // The false-discovery family is every outcome the feed can show (behaviours × outcomes × lags),
+        // so switching outcomes cannot shop for a significant row.
+        var outcomes: [String: [String: Double]] = [:]
+        for o in Outcome.allCases { outcomes[o.outcomeName] = outcomeByKey[o.key] ?? [:] }
+        ranked = EffectRanker.rankFamily(behaviors: behaviours, controls: controls,
+                                         outcomes: outcomes)[outcome.outcomeName] ?? []
     }
 
     // MARK: Static shaping helpers

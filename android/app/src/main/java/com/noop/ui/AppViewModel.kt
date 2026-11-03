@@ -12,7 +12,7 @@ import com.noop.alarm.WindDownStore
 import com.noop.analytics.AnalyticsEngine
 import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
-import com.noop.analytics.IllnessSignalEngine
+import com.noop.analytics.IllnessInputs
 import com.noop.analytics.IllnessWatch
 import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.IntelligencePersistence
@@ -1173,7 +1173,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         days = days,
                         cycleOptedIn = _cycleTrackingEnabled.value,
                         loggedPeriodStarts = loggedPeriodStarts,
-                        journalContext = illnessJournalContext(days),
+                        journalYesQuestions = illnessJournalYes(days),
                         activityBins = lastCircadianBins.first,
                         daysObserved = lastCircadianBins.second,
                     )
@@ -3040,7 +3040,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     days = days,
                     cycleOptedIn = enabled,
                     loggedPeriodStarts = _periodStarts.value,
-                    journalContext = illnessJournalContext(days),
+                    journalYesQuestions = illnessJournalYes(days),
                     activityBins = bins.first,
                     daysObserved = bins.second,
                 )
@@ -3107,25 +3107,29 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             days = days,
             cycleOptedIn = _cycleTrackingEnabled.value,
             loggedPeriodStarts = starts,
-            journalContext = illnessJournalContext(days),
+            journalYesQuestions = illnessJournalYes(days),
             activityBins = bins.first,
             daysObserved = bins.second,
         )
     }
 
     /**
-     * Same-day confounder context for [IllnessSignalEngine] from the day's journal — alcohol / hard-or-late
-     * workout / "feeling unwell" suppress an anomaly so a hangover or a late session never reads as illness.
-     * Lightweight: derived from the latest day's exercise count + the cached "unwell" flag we can see here.
-     * (A fuller journal-tag read lands with the Mind pillar; this keeps the v5 pass honest without new I/O.)
+     * The journal questions answered YES on the recent nights' days (imported ∪ native, native winning a
+     * collision), for [IllnessInputs.context] to match on canonical catalog keys — alcohol, stress, sauna
+     * and "feeling sick or ill" all suppress or reframe the heads-up, the same as on Apple. A hard
+     * workout comes from the strain baseline inside [IllnessInputs], not from a session count.
      */
-    private fun illnessJournalContext(days: List<DailyMetric>): IllnessSignalEngine.Context {
-        val latest = days.lastOrNull()
-        val hardOrLate = (latest?.exerciseCount ?: 0) >= 2
-        return IllnessSignalEngine.Context(
-            hardOrLateWorkout = hardOrLate,
-            alreadyUnwell = false,
-        )
+    private suspend fun illnessJournalYes(days: List<DailyMetric>): List<String> {
+        val recent = IllnessInputs.recentDays(days.map { V5HealthSignals.illnessNight(it) })
+        if (recent.isEmpty()) return emptyList()
+        val from = recent.min()
+        val to = recent.max()
+        return runCatching {
+            mergeJournalEntries(
+                repository.journal("my-whoop", from, to),
+                repository.journal(JOURNAL_DEVICE_ID, from, to),
+            ).filter { it.answeredYes && it.day in recent }.map { it.question }
+        }.getOrDefault(emptyList())
     }
 
     /** Build today's fused multi-device record for [FusedRecordScreen] (v5 Local Multi-Device Fusion).

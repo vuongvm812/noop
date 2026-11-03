@@ -62,8 +62,8 @@ import com.noop.ingest.NutritionCsvImporter
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.noop.analytics.CorrelationEngine
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 // MARK: - Compare
 //
@@ -338,51 +338,6 @@ private fun dayOrdinal(day: String): Long? {
     return era.toLong() * 146097L + doe - 719468L
 }
 
-// MARK: - Correlation engine (ported from StrandAnalytics/CorrelationEngine.swift)
-
-private data class Correlation(val r: Double, val n: Int)
-
-private object CorrelationEngine {
-    /** Inner-join two day-keyed series on the day key → (x, y) pairs sorted by day. */
-    fun alignByDay(
-        a: List<Pair<String, Double>>,
-        b: List<Pair<String, Double>>,
-    ): List<Pair<Double, Double>> {
-        val mapA = HashMap<String, Double>()
-        for ((day, v) in a) mapA[day] = v
-        val mapB = HashMap<String, Double>()
-        for ((day, v) in b) mapB[day] = v
-        val common = mapA.keys.filter { mapB.containsKey(it) }.sorted()
-        return common.map { mapA[it]!! to mapB[it]!! }
-    }
-
-    /** Pearson r over the pairs. Null when <3 pairs or either variable has zero variance. */
-    fun pearson(xy: List<Pair<Double, Double>>): Correlation? {
-        val n = xy.size
-        if (n < 3) return null
-        val nD = n.toDouble()
-        var sumX = 0.0
-        var sumY = 0.0
-        for (p in xy) { sumX += p.first; sumY += p.second }
-        val meanX = sumX / nD
-        val meanY = sumY / nD
-        var sxx = 0.0
-        var syy = 0.0
-        var sxy = 0.0
-        for (p in xy) {
-            val dx = p.first - meanX
-            val dy = p.second - meanY
-            sxx += dx * dx
-            syy += dy * dy
-            sxy += dx * dy
-        }
-        if (sxx <= 0.0 || syy <= 0.0) return null
-        var r = sxy / (sqrt(sxx) * sqrt(syy))
-        if (r > 1.0) r = 1.0
-        if (r < -1.0) r = -1.0
-        return Correlation(r = r, n = n)
-    }
-}
 
 // MARK: - Root
 
@@ -1236,7 +1191,7 @@ private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
     for (i in 0 until s.size - 1) {
         for (j in i + 1 until s.size) {
             val pairs = CorrelationEngine.alignByDay(s[i].rows, s[j].rows)
-            if (pairs.size < 3) continue
+            if (pairs.size < CorrelationEngine.minPairs) continue
             val c = CorrelationEngine.pearson(pairs) ?: continue
             out.add(PairResult(a = s[i], b = s[j], r = c.r, n = c.n))
         }

@@ -34,8 +34,8 @@ import com.noop.data.DailyMetric
 import com.noop.data.MoodStore
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.noop.analytics.CorrelationEngine
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 // MARK: - Mind (mood check-in + mood ↔ body correlations)
 //
@@ -59,7 +59,10 @@ private val MOOD_FACES = listOf(
 )
 
 /** Check-ins needed before the correlation lines unlock (mirrors the Swift gate). */
-private const val MIND_GATE_DAYS = 7
+private const val MIND_GATE_DAYS = CorrelationEngine.minPairs
+
+/** Minimum |r| for a mood line (mirrors the Swift `minAbsR`). */
+private const val MIND_MIN_ABS_R = 0.3
 
 /** Shared verbatim footnote — IDENTICAL string on macOS/iOS; do not reword. */
 private const val MIND_FOOTNOTE =
@@ -281,15 +284,16 @@ private fun buildMindCorrelations(
     mood: List<Pair<String, Double>>,
 ): List<MindLine> {
     fun line(title: String, series: List<Pair<String, Double>>): MindLine? {
-        val c = MindCorrelationEngine.pearson(MindCorrelationEngine.alignByDay(mood, series))
-            ?: return null
+        // Same gates as the Swift MindSection: n ≥ minPairs and |r| ≥ 0.3, strongest first, three lines.
+        val c = CorrelationEngine.pearson(CorrelationEngine.alignByDay(series, mood)) ?: return null
+        if (c.n < MIND_GATE_DAYS || abs(c.r) < MIND_MIN_ABS_R) return null
         return MindLine(title, c.r, c.n)
     }
     return listOfNotNull(
         line("Mood ↔ HRV", days.mapNotNull { d -> d.avgHrv?.let { d.day to it } }),
         line("Mood ↔ Recovery", days.mapNotNull { d -> d.recovery?.let { d.day to it } }),
         line("Mood ↔ Sleep duration", days.mapNotNull { d -> d.totalSleepMin?.let { d.day to it } }),
-    )
+    ).sortedByDescending { abs(it.r) }.take(3)
 }
 
 private fun mindStrengthWord(r: Double): String {
@@ -303,49 +307,3 @@ private fun mindStrengthWord(r: Double): String {
     }
 }
 
-private data class MindCorrelation(val r: Double, val n: Int)
-
-/** Same math as the Compare screen's engine — both are value-for-value ports of
- *  StrandAnalytics/CorrelationEngine.swift (kept private per file; there is no shared
- *  com.noop.analytics CorrelationEngine to import yet). */
-private object MindCorrelationEngine {
-    /** Inner-join two day-keyed series on the day key → (x, y) pairs sorted by day. */
-    fun alignByDay(
-        a: List<Pair<String, Double>>,
-        b: List<Pair<String, Double>>,
-    ): List<Pair<Double, Double>> {
-        val mapA = HashMap<String, Double>()
-        for ((day, v) in a) mapA[day] = v
-        val mapB = HashMap<String, Double>()
-        for ((day, v) in b) mapB[day] = v
-        val common = mapA.keys.filter { mapB.containsKey(it) }.sorted()
-        return common.map { mapA[it]!! to mapB[it]!! }
-    }
-
-    /** Pearson r over the pairs. Null when <3 pairs or either variable has zero variance. */
-    fun pearson(xy: List<Pair<Double, Double>>): MindCorrelation? {
-        val n = xy.size
-        if (n < 3) return null
-        val nD = n.toDouble()
-        var sumX = 0.0
-        var sumY = 0.0
-        for (p in xy) { sumX += p.first; sumY += p.second }
-        val meanX = sumX / nD
-        val meanY = sumY / nD
-        var sxx = 0.0
-        var syy = 0.0
-        var sxy = 0.0
-        for (p in xy) {
-            val dx = p.first - meanX
-            val dy = p.second - meanY
-            sxx += dx * dx
-            syy += dy * dy
-            sxy += dx * dy
-        }
-        if (sxx <= 0.0 || syy <= 0.0) return null
-        var r = sxy / (sqrt(sxx) * sqrt(syy))
-        if (r > 1.0) r = 1.0
-        if (r < -1.0) r = -1.0
-        return MindCorrelation(r = r, n = n)
-    }
-}

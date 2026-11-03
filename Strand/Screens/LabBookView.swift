@@ -946,7 +946,7 @@ enum LabWindow: String, CaseIterable, Identifiable {
 
 enum LabBookSignals {
     /// The reading-count floor below which NO conclusion sentence renders (spec default 4).
-    static let floor = 4
+    static let floor = CorrelationEngine.minPairs
 
     /// The wearable metrics offered to pair a marker against. Strap-source keys read through the
     /// Explore freshest-wins path; weight resolves from Apple/Health-Connect/strap as available.

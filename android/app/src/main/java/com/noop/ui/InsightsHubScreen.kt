@@ -627,8 +627,11 @@ internal class InsightsHubViewModel {
     /** Re-rank the mover feed for a (possibly new) outcome — cheap, no DB. */
     fun rankFor(snapshot: Snapshot, outcome: InsightsOutcome): List<RankedEffect> {
         if (!snapshot.loaded) return emptyList()
-        val outcomeDays = snapshot.outcomeByKey[outcome.key] ?: emptyMap()
-        return EffectRanker.rank(snapshot.behaviours, snapshot.controls, outcomeDays, outcome.outcomeName)
+        // False-discovery family = every outcome the feed can show (twin of Swift InsightsHubView).
+        val outcomes = InsightsOutcome.values().associate { o ->
+            o.outcomeName to (snapshot.outcomeByKey[o.key] ?: emptyMap())
+        }
+        return EffectRanker.rankFamily(snapshot.behaviours, snapshot.controls, outcomes)[outcome.outcomeName].orEmpty()
     }
 }
 

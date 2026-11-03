@@ -1758,7 +1758,7 @@ struct MetricDetailView: View {
         for entry in others {
             let otherWindowed = entry.series.filter { myDays.contains($0.day) }
             let pairs = CorrelationEngine.alignByDay(windowed, otherWindowed)
-            guard pairs.count >= 10, let c = CorrelationEngine.pearson(pairs) else { continue }
+            guard pairs.count >= CorrelationEngine.minPairs, let c = CorrelationEngine.pearson(pairs) else { continue }
             if abs(c.r) >= 0.3 {
                 rows.append(CorrRow(id: entry.metric.id, metric: entry.metric, r: c.r, n: c.n))
             }

@@ -11,7 +11,8 @@ final class CorrelationEngineTests: XCTestCase {
         XCTAssertEqual(c.slope, 2.0, accuracy: 1e-9)
         XCTAssertEqual(c.intercept, 1.0, accuracy: 1e-9)
         XCTAssertEqual(c.n, 5)
-        XCTAssertEqual(c.pApprox, 0.0, accuracy: 1e-9)   // |r|=1 → p 0
+        XCTAssertEqual(c.pApprox, 1.0)                    // n=5 < minPairs → no inference offered
+        XCTAssertEqual(StatTests.correlationP(r: c.r, n: Double(c.n)), 0.0, accuracy: 1e-9)   // |r|=1 → p 0
     }
 
     func testPerfectNegativeCorrelation() {
@@ -29,19 +30,24 @@ final class CorrelationEngineTests: XCTestCase {
         let c = CorrelationEngine.pearson(xy)!
         XCTAssertEqual(c.r, 0.0, accuracy: 1e-9)
         XCTAssertEqual(c.slope, 0.0, accuracy: 1e-9)
-        // r=0 → t=0 → p≈1 (A&S erf leaves a ~1e-9 residual at z=0).
-        XCTAssertEqual(c.pApprox, 1.0, accuracy: 1e-6)
+        // r=0 → t=0 → p=1.
+        XCTAssertEqual(c.pApprox, 1.0, accuracy: 1e-12)
     }
 
     func testPearsonGoldenValues() {
         // x=[1..5], y=[2,4,5,4,5] → r=0.7745966692, slope 0.6, intercept 2.2,
-        // pApprox (A&S-erf normal approx) ≈ 0.0338947336.
+        // The normal tail used to read p ≈ 0.034 here; the Student-t(3) tail is ≈ 0.124, and with
+        // only 5 pairs (< minPairs) the engine offers no inference at all.
         let xy: [(Double, Double)] = [(1, 2), (2, 4), (3, 5), (4, 4), (5, 5)]
         let c = CorrelationEngine.pearson(xy)!
         XCTAssertEqual(c.r, 0.7745966692414834, accuracy: 1e-9)
         XCTAssertEqual(c.slope, 0.6, accuracy: 1e-9)
         XCTAssertEqual(c.intercept, 2.2, accuracy: 1e-9)
-        XCTAssertEqual(c.pApprox, 0.033894733597028104, accuracy: 1e-6)
+        XCTAssertEqual(c.pApprox, 1.0)
+        let t = c.r * (3.0 / (1 - c.r * c.r)).squareRoot()
+        XCTAssertEqual(StatTests.correlationP(r: c.r, n: 5),
+                       StatTests.studentTTwoSidedP(t: t, df: 3), accuracy: 1e-15)
+        XCTAssertEqual(StatTests.correlationP(r: c.r, n: 5), 0.124, accuracy: 1e-3)
     }
 
     func testPearsonTooFewReturnsNil() {

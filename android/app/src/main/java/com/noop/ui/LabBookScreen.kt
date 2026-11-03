@@ -56,6 +56,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.noop.analytics.Correlation
+import com.noop.analytics.CorrelationEngine
 import com.noop.analytics.LabBookProjection
 import com.noop.analytics.LabMarkerCategory
 import com.noop.analytics.MarkerCatalog
@@ -72,7 +74,6 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.sqrt
 
 // MARK: - Lab Book (Health Records pillar — v5) — Compose twin of LabBookView.swift
 //
@@ -96,7 +97,7 @@ import kotlin.math.sqrt
 private const val LAB_STRAP_DEVICE_ID = "my-whoop"
 
 /** Reading-count floor below which NO conclusion sentence renders (spec default 4). */
-private const val LAB_FLOOR = 4
+private const val LAB_FLOOR = CorrelationEngine.minPairs
 
 @Composable
 fun LabBookScreen(vm: AppViewModel) {
@@ -371,7 +372,7 @@ private fun MarkerDetailSheet(
     var signal by remember { mutableStateOf<LabSignal?>(null) }
     var window by remember { mutableStateOf(LabWindow.FORTNIGHT) }
     var pairs by remember { mutableStateOf<List<WindowedPair>>(emptyList()) }
-    var correlation by remember { mutableStateOf<LabCorrelation?>(null) }
+    var correlation by remember { mutableStateOf<Correlation?>(null) }
     var computing by remember { mutableStateOf(false) }
 
     LaunchedEffect(signal, window) {
@@ -388,7 +389,7 @@ private fun MarkerDetailSheet(
         val built = LabBookProjection.pairMarkerToWearable(markerSeries, wearable, window.days)
         pairs = built
         correlation = if (built.size >= LAB_FLOOR) {
-            pearson(LabBookProjection.correlationInput(built))
+            CorrelationEngine.pearson(LabBookProjection.correlationInput(built))
         } else {
             null
         }
@@ -478,7 +479,7 @@ private fun CorrelationResult(
     signal: LabSignal?,
     window: LabWindow,
     pairs: List<WindowedPair>,
-    correlation: LabCorrelation?,
+    correlation: Correlation?,
     computing: Boolean,
 ) {
     val n = pairs.size
@@ -731,34 +732,6 @@ private fun correlationColor(r: Double): Color {
     return base.copy(alpha = (0.55f + 0.45f * min(abs(r), 1.0)).toFloat())
 }
 
-/** Pearson r over the pairs — value-for-value with CompareScreen's engine (null when <3 or zero variance). */
-private data class LabCorrelation(val r: Double, val n: Int)
-
-private fun pearson(xy: List<Pair<Double, Double>>): LabCorrelation? {
-    val n = xy.size
-    if (n < 3) return null
-    val nD = n.toDouble()
-    var sumX = 0.0
-    var sumY = 0.0
-    for (p in xy) { sumX += p.first; sumY += p.second }
-    val meanX = sumX / nD
-    val meanY = sumY / nD
-    var sxx = 0.0
-    var syy = 0.0
-    var sxy = 0.0
-    for (p in xy) {
-        val dx = p.first - meanX
-        val dy = p.second - meanY
-        sxx += dx * dx
-        syy += dy * dy
-        sxy += dx * dy
-    }
-    if (sxx <= 0.0 || syy <= 0.0) return null
-    var r = sxy / (sqrt(sxx) * sqrt(syy))
-    if (r > 1.0) r = 1.0
-    if (r < -1.0) r = -1.0
-    return LabCorrelation(r, n)
-}
 
 private val labDayFmt = SimpleDateFormat("d MMM yyyy", Locale.US)
 private fun labDayLabel(epochSeconds: Long): String = labDayFmt.format(Date(epochSeconds * 1000L))
