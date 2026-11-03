@@ -24,6 +24,21 @@ object GarminWorkoutEffort {
     }
 
     /**
+     * Row limit for the Effort pass's workout read: no cap. The read is ascending by start, so any cap
+     * would leave the newest workouts of a long history unscored forever. Swift twin:
+     * `GarminWorkoutEffort.allRows`, which is the same 32-bit maximum.
+     */
+    const val ALL_ROWS = 2_147_483_647
+
+    /**
+     * Identity of one Garmin workout row for the pass's "already tried, too thin to score" memory: the
+     * watch id plus the row's primary key (start, sport) and its end, so an edited span is tried again.
+     * Swift twin: `GarminWorkoutEffort.attemptKey`.
+     */
+    fun attemptKey(deviceId: String, startTs: Long, endTs: Long, sport: String): String =
+        "$deviceId|$startTs|$endTs|$sport"
+
+    /**
      * The Effort to store on a Garmin row, or null to leave the row as it is: it already has one, or its
      * trace is too thin to score ([StrainScorer] never returns a fabricated number).
      * Swift twin: `GarminWorkoutEffort.strainToFill`.

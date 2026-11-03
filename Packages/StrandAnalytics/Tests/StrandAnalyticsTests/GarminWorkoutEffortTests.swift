@@ -28,6 +28,15 @@ final class GarminWorkoutEffortTests: XCTestCase {
         XCTAssertFalse(GarminWorkoutEffort.isWatchSource("apple-health"))
     }
 
+    /// The pass reads the whole history (a capped ascending read never reaches the newest rows), and the
+    /// "too thin to score" memory keys on the full row identity. Same literals as the Kotlin test.
+    func testFullHistoryReadAndAttemptKey() {
+        XCTAssertEqual(GarminWorkoutEffort.allRows, 2_147_483_647)
+        XCTAssertEqual(GarminWorkoutEffort.attemptKey(deviceId: "garmin-abc", startTs: 1_760_000_000,
+                                                      endTs: 1_760_003_600, sport: "running"),
+                       "garmin-abc|1760000000|1760003600|running")
+    }
+
     /// Unrounded Tanaka, or the override. Age 33 is 184.9: the old Swift path rounded it to 185.
     func testHrMaxIsUnroundedTanakaOrTheOverride() {
         XCTAssertEqual(ManualWorkoutRescore.hrMax(override: nil, age: 33), 184.9, accuracy: 1e-12)

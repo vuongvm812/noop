@@ -33,6 +33,13 @@ class GarminWorkoutEffortTest {
         assertFalse(GarminWorkoutEffort.isWatchSource("apple-health"))
     }
 
+    /** Same literals as the Swift `testFullHistoryReadAndAttemptKey`. */
+    @Test fun fullHistoryReadAndAttemptKey() {
+        assertEquals(2_147_483_647, GarminWorkoutEffort.ALL_ROWS)
+        assertEquals("garmin-abc|1760000000|1760003600|running",
+            GarminWorkoutEffort.attemptKey("garmin-abc", 1_760_000_000L, 1_760_003_600L, "running"))
+    }
+
     @Test fun hrMaxIsUnroundedTanakaOrTheOverride() {
         assertEquals(184.9, ManualWorkoutRescore.hrMax(null, 33.0), 1e-12)
         assertEquals(208.0, ManualWorkoutRescore.hrMax(null, 0.0), 1e-12)

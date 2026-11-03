@@ -54,6 +54,11 @@ final class IntelligenceEngine: ObservableObject {
     /// re-pass; this mirrors it). Reset by any pass whose heal finds nothing, restoring the budget.
     private var healRearmedThisCycle = false
 
+    /// #50: Garmin watch workouts the Effort pass found too thin to score, keyed by
+    /// `GarminWorkoutEffort.attemptKey`, so each pass does not re-read their HR. Process-lifetime only:
+    /// a relaunch retries them once, which picks up HR a later re-import added.
+    private var unscorableGarminWorkouts = Set<String>()
+
     /// #1005 BATTERY: in-memory per-day reuse for `analyzeRecent`'s pass-1 loop, keyed by day → (per-day
     /// cache key, the scored `DayScan`). On a heavy user (21 nights, ~178 k HR rows/night, a 1.26 GB store)
     /// every `newData` re-score re-read *every* night's raw streams and re-ran `analyzeDay`, even though a
@@ -3326,22 +3331,28 @@ final class IntelligenceEngine: ObservableObject {
     /// #50: fill the Effort of stored Garmin watch workouts. The history sync stores each activity with no
     /// strain and its per-second HR under the watch's own device id, which is also the row's `source`.
     /// Only rows still missing a strain are read, so a scored row is never touched again, and the whole
-    /// history is covered, so workouts stored before this pass existed are backfilled on its first run.
-    /// A row whose trace is too thin to score stays nil. Twin of the Kotlin `scoreGarminWorkouts`.
+    /// history is read with no row cap, so every workout stored before this pass existed is backfilled on
+    /// its first run (a capped ascending read would never reach the newest ones). A row whose trace is too
+    /// thin to score stays nil and is remembered for the life of the process, so later passes do not
+    /// re-read its HR. Twin of the Kotlin `scoreGarminWorkouts`.
     private func scoreGarminWorkouts(store: WhoopStore, deviceIds: [String], profile up: UserProfile,
                                      hrMax: Double, restingHR: Double?,
                                      effortMethod: StrainScorer.Method) async {
         let now = Int(Date().timeIntervalSince1970)
         for id in deviceIds where GarminWorkoutEffort.isWatchSource(id) {
-            guard let rows = try? await store.workouts(deviceId: id, from: 0, to: now, limit: 2_000) else { continue }
+            guard let rows = try? await store.workouts(deviceId: id, from: 0, to: now,
+                                                       limit: GarminWorkoutEffort.allRows) else { continue }
             var updated: [WorkoutRow] = []
             for row in rows where row.strain == nil && row.endTs > row.startTs {
+                let key = GarminWorkoutEffort.attemptKey(deviceId: id, startTs: row.startTs,
+                                                         endTs: row.endTs, sport: row.sport)
+                if unscorableGarminWorkouts.contains(key) { continue }
                 guard let samples = try? await store.hrSamples(deviceId: id, from: row.startTs, to: row.endTs,
-                                                               limit: 200_000),
-                      let strain = GarminWorkoutEffort.strainToFill(
-                          currentStrain: row.strain, windowSamples: samples, profile: up, hrMax: hrMax,
-                          restingHR: restingHR, effortMethod: effortMethod)
-                else { continue }
+                                                               limit: 200_000) else { continue }
+                guard let strain = GarminWorkoutEffort.strainToFill(
+                    currentStrain: row.strain, windowSamples: samples, profile: up, hrMax: hrMax,
+                    restingHR: restingHR, effortMethod: effortMethod)
+                else { unscorableGarminWorkouts.insert(key); continue }
                 updated.append(WorkoutRow(
                     startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
                     durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr, maxHr: row.maxHr,

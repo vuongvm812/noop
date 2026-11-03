@@ -18,6 +18,18 @@ public enum GarminWorkoutEffort {
         return s.hasPrefix("garmin-") && s != "garmin-import"
     }
 
+    /// Row limit for the Effort pass's workout read: no cap. The read is ascending by start, so any cap
+    /// would leave the newest workouts of a long history unscored forever. The 32-bit Int maximum, matching
+    /// the Kotlin LIMIT. Kotlin twin: `GarminWorkoutEffort.ALL_ROWS`.
+    public static let allRows = 2_147_483_647
+
+    /// Identity of one Garmin workout row for the pass's "already tried, too thin to score" memory: the
+    /// watch id plus the row's primary key (start, sport) and its end, so an edited span is tried again.
+    /// Kotlin twin: `GarminWorkoutEffort.attemptKey`.
+    public static func attemptKey(deviceId: String, startTs: Int, endTs: Int, sport: String) -> String {
+        "\(deviceId)|\(startTs)|\(endTs)|\(sport)"
+    }
+
     /// The Effort to store on a Garmin row, or nil to leave the row as it is: it already has one, or its
     /// trace is too thin to score (`StrainScorer` never returns a fabricated number).
     /// Kotlin twin: `GarminWorkoutEffort.strainToFill`.

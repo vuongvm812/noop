@@ -72,6 +72,14 @@ object IntelligenceEngine {
     @Volatile
     var stepsHasMotionSink: ((Boolean) -> Unit)? = null
 
+    /**
+     * #50: Garmin watch workouts the Effort pass found too thin to score, keyed by
+     * [GarminWorkoutEffort.attemptKey], so each pass does not re-read their HR. Process-lifetime only: a
+     * relaunch retries them once, which picks up HR a later re-import added. Passes are serialised by
+     * [analyzeGate], so a plain set is enough.
+     */
+    private val unscorableGarminWorkouts = HashSet<String>()
+
     /** #1121: days this pass skipped for too little raw HR, emitted as ONE line after the loop instead of
      *  one line each — see [skippedSleepDaysLine]. A FIELD, not a local, for a mechanical reason:
      *  [analyzeRecentOnCpu] is `suspend` and sits 64 bytes under the JVM ceiling #1524 guards, so one more
@@ -2416,8 +2424,10 @@ object IntelligenceEngine {
      * #50: fill the Effort of stored Garmin watch workouts. The history sync stores each activity with no
      * strain and its per-second HR under the watch's own device id, which is also the row's `source`. Only
      * rows still missing a strain are read, so a scored row is never touched again, and the whole history
-     * is covered, so workouts stored before this pass existed are backfilled on its first run. A row whose
-     * trace is too thin to score stays null. Twin of the Swift `scoreGarminWorkouts`.
+     * is read with no row cap, so every workout stored before this pass existed is backfilled on its first
+     * run (a capped ascending read would never reach the newest ones). A row whose trace is too thin to
+     * score stays null and is remembered for the life of the process, so later passes do not re-read its
+     * HR. Twin of the Swift `scoreGarminWorkouts`.
      */
     private suspend fun scoreGarminWorkouts(
         repo: WhoopRepository,
@@ -2430,14 +2440,21 @@ object IntelligenceEngine {
     ) {
         for (id in deviceIds.distinct()) {
             if (!GarminWorkoutEffort.isWatchSource(id)) continue
-            val rows = runCatching { repo.workouts(id, 0L, nowSeconds, 2_000) }.getOrNull() ?: continue
+            val rows = runCatching { repo.workouts(id, 0L, nowSeconds, GarminWorkoutEffort.ALL_ROWS) }
+                .getOrNull() ?: continue
             val updated = ArrayList<WorkoutRow>()
             for (row in rows) {
                 if (row.strain != null || row.endTs <= row.startTs) continue
+                val key = GarminWorkoutEffort.attemptKey(id, row.startTs, row.endTs, row.sport)
+                if (key in unscorableGarminWorkouts) continue
                 val samples = runCatching { repo.hrSamplesForDevice(id, row.startTs, row.endTs, 200_000) }
                     .getOrNull() ?: continue
                 val strain = GarminWorkoutEffort.strainToFill(
-                    row.strain, samples, profile, hrMax, restingHR, effortMethod) ?: continue
+                    row.strain, samples, profile, hrMax, restingHR, effortMethod)
+                if (strain == null) {
+                    unscorableGarminWorkouts.add(key)
+                    continue
+                }
                 updated.add(row.copy(strain = strain))
             }
             if (updated.isNotEmpty()) repo.upsertWorkouts(updated)
