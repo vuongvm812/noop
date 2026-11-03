@@ -220,7 +220,6 @@ final class GarminWatchIngestTests: XCTestCase {
         == spo2
         file idx=5 dt=128 st=32 num=104 ts=1100000004 size=1004
         metric 1731087296 spo2_pct 96.0000 fit269
-        metric 1731087416 spo2_pct 94.0000 fit269
         day 2024-11-08 1731020400..1731106800 steps=- dist=- act=- tot=- rhr=- hrv=- sleep=- deep=- light=- rem=- awake=- eff=- score=-
         refresh 2024-11-09 1731106800..1731193200
         == sleep

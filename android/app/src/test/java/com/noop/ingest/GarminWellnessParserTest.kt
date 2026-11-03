@@ -510,7 +510,7 @@ class GarminWellnessParserTest {
             for (r in s.restingHeartRate) out.add("rhr ${r.ts} ${r.value}")
             for (r in s.stress) out.add("stress ${r.ts} ${r.value}")
             for (r in s.bodyBattery) out.add("bb ${r.ts} ${r.value}")
-            for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent} conf=${num(r.confidence)} mode=${num(r.mode)}")
+            for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent}")
             for (r in s.respiration) out.add("resp ${r.ts} ${num(r.value)}")
             for (r in s.sleepLevels) out.add("level ${r.ts} ${r.value}")
             for (r in s.sleepMarks) out.add("mark ${r.ts} ${r.value}")
@@ -597,8 +597,7 @@ class GarminWellnessParserTest {
             hrv 1731087836 32.0000
             == spo2
             offset - complete true other 0 dropped 1
-            spo2 1731087296 96 conf=3 mode=3
-            spo2 1731087416 94 conf=- mode=1
+            spo2 1731087296 96
             == sleep
             offset 21600 complete true other 0 dropped 1
             level 1731087416 1
@@ -673,8 +672,8 @@ class GarminWellnessParserTest {
             offset 21600 complete true other 0 dropped 5
             rhr 1731088800 48
             rhr 1731088801 47
-            spo2 1731087316 70 conf=- mode=-
-            spo2 1731087326 100 conf=- mode=-
+            spo2 1731087316 70
+            spo2 1731087326 100
             resp 1731087346 4.0000
             resp 1731087356 60.0000
             hrv 1731087386 5.0000

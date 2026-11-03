@@ -41,8 +41,7 @@ final class GarminWellnessParserTests: XCTestCase {
         hrv 1731087836 32.0000
         == spo2
         offset - complete true other 0 dropped 1
-        spo2 1731087296 96 conf=3 mode=3
-        spo2 1731087416 94 conf=- mode=1
+        spo2 1731087296 96
         == sleep
         offset 21600 complete true other 0 dropped 1
         level 1731087416 1
@@ -117,8 +116,8 @@ final class GarminWellnessParserTests: XCTestCase {
         offset 21600 complete true other 0 dropped 5
         rhr 1731088800 48
         rhr 1731088801 47
-        spo2 1731087316 70 conf=- mode=-
-        spo2 1731087326 100 conf=- mode=-
+        spo2 1731087316 70
+        spo2 1731087326 100
         resp 1731087346 4.0000
         resp 1731087356 60.0000
         hrv 1731087386 5.0000

@@ -22,7 +22,9 @@ import Foundation
 //   211 MONITORING_HR_DATA  0 resting_heart_rate, 1 current_day_resting_heart_rate (preferred)
 //   227 STRESS_LEVEL        0 stress_level_value (sint16, negative = no reading), 1 stress_level_time,
 //                           3 body_energy (Body Battery, sint8)
-//   269 SPO2_DATA           0 reading_spo2 (%), 1 reading_confidence, 2 mode (1 manual, 3 automatic)
+//   269 SPO2_DATA           0 reading_spo2 (%), 2 mode (FIT spo2_measurement_type: 0 off wrist, 1 spot
+//                           check, 2 continuous, 3 periodic). Off-wrist and spot-check readings are
+//                           skipped (#52). 1 reading_confidence is not read: the FIT profile gives it no scale.
 //   21  EVENT               0 event, 1 event_type (0 start, 1 stop). Only event 74 is read: the watch's
 //                           own sleep window. OBSERVED on a Forerunner 165 (fw 29.05, 2026-11-03): the
 //                           sleep file carries one start and one stop, and they match the window the
@@ -53,8 +55,7 @@ import Foundation
 //
 // Plausible ranges (#52): SpO2 70-100 %, respiration 4-60 breaths/min (raw 400-6000), HRV values
 // 5-300 ms (raw 640-38400); a value outside is dropped as a sentinel or misread, never stored. The same
-// bounds are `WhoopStore.garminSpo2Min` / `garminSpo2Max` and the rest. SpO2 confidence and
-// mode are kept as decoded but not used: their scales are not confirmed on a watch.
+// bounds are `WhoopStore.garminSpo2Min` / `garminSpo2Max` and the rest.
 //
 // Timestamps: only field 253 and compressed-timestamp headers move the file's running timestamp. A
 // message without its own 253 takes the running one. MONITORING may instead carry `timestamp_16`, the
@@ -105,8 +106,6 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public struct Spo2: Equatable, Sendable {
         public let ts: Int64
         public let percent: Int
-        public let confidence: Int?
-        public let mode: Int?
     }
 
     /// One raw sleep sample slot (274). Heart rate and movement are nil when the row holds none.
@@ -254,6 +253,10 @@ public enum GarminWellnessParser {
                                  activeCalories: active.isEmpty ? nil : active.reduce(0, +))
         }
     }
+
+    /// The lowest SPO2_DATA mode kept: 0 (off wrist) and 1 (a manual spot check) are not background
+    /// readings (#52). Kotlin twin: `GarminWellnessParser.SPO2_MIN_BACKGROUND_MODE`.
+    static let spo2MinBackgroundMode = 2
 
     /// Rows further apart than this, with no sleep window around them, are two nights. Generous because
     /// the watch writes a row only when the stage changes.
@@ -490,7 +493,8 @@ public enum GarminWellnessParser {
                 if let v = Self.range(m.s(3), 0, 100) { out.bodyBattery.append(.init(ts: ts, value: v)) }
             case 269:
                 guard let ts = Self.unix(running), let pct = Self.range(m.u(0), 70, 100) else { return drop() }
-                out.spo2.append(.init(ts: ts, percent: pct, confidence: m.value(1), mode: m.value(2)))
+                if let mode = m.value(2), mode < GarminWellnessParser.spo2MinBackgroundMode { break }
+                out.spo2.append(.init(ts: ts, percent: pct))
             case 273:
                 noteOffset(local: m.u(2), fitTs: running)
                 rawStart = Self.unix(running)

@@ -346,7 +346,7 @@ enum WellnessFixtures {
         for r in s.restingHeartRate { out.append("rhr \(r.ts) \(r.value)") }
         for r in s.stress { out.append("stress \(r.ts) \(r.value)") }
         for r in s.bodyBattery { out.append("bb \(r.ts) \(r.value)") }
-        for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent) conf=\(num(r.confidence)) mode=\(num(r.mode))") }
+        for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent)") }
         for r in s.respiration { out.append("resp \(r.ts) \(num(r.value))") }
         for r in s.sleepLevels { out.append("level \(r.ts) \(r.value)") }
         for r in s.sleepMarks { out.append("mark \(r.ts) \(r.value)") }

@@ -78,7 +78,7 @@ data class GarminWellnessSamples(
     )
 
     data class DailyActivity(val day: String, val steps: Int?, val distanceM: Double?, val calories: Int?, val activeCalories: Int?)
-    data class Spo2(val ts: Long, val percent: Int, val confidence: Int?, val mode: Int?)
+    data class Spo2(val ts: Long, val percent: Int)
     data class SleepRaw(val ts: Long, val heartRate: Double?, val movement: Double?)
 
     /**
@@ -185,6 +185,12 @@ object GarminWellnessParser {
 
     /** Rows further apart than this, with no sleep window around them, are two nights. */
     const val FALLBACK_NIGHT_GAP_S = 4 * 3600L
+
+    /**
+     * The lowest SPO2_DATA mode kept: 0 (off wrist) and 1 (a manual spot check) are not background
+     * readings (#52). Swift twin: `GarminWellnessParser.spo2MinBackgroundMode`.
+     */
+    const val SPO2_MIN_BACKGROUND_MODE = 2
 
     /**
      * Folds a file's SLEEP_LEVEL rows ([GarminWellnessSamples.sleepLevels]) into nights. A night is the
@@ -455,7 +461,8 @@ object GarminWellnessParser {
                     val ts = unix(running)
                     val pct = range(m.u(0), 70, 100)
                     if (ts == null || pct == null) return drop()
-                    spo2.add(GarminWellnessSamples.Spo2(ts, pct, m.value(1), m.value(2)))
+                    val mode = m.value(2)
+                    if (mode == null || mode >= SPO2_MIN_BACKGROUND_MODE) spo2.add(GarminWellnessSamples.Spo2(ts, pct))
                 }
                 273 -> {
                     noteOffset(m.u(2), running)
