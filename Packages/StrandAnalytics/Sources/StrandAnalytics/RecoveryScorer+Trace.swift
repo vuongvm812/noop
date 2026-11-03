@@ -80,7 +80,8 @@ extension RecoveryScorer {
         // Per-driver baseline state lines (mean / spread / nValid / status). The skin-temp term carries no
         // baseline arg here (skinTempDev is already a deviation), so it has no baseline line.
         lines.append("charge baseline hrv mean=\(r2(hrvBaseline.baseline)) spread=\(r2(hrvBaseline.spread)) "
-            + "nValid=\(hrvBaseline.nValid) status=\(hrvBaseline.status.rawValue)")
+            + "nValid=\(hrvBaseline.nValid) status=\(hrvBaseline.status.rawValue)"
+            + (hrvBaseline.logDomain ? " domain=ln" : ""))
         if let b = rhrB {
             lines.append("charge baseline rhr mean=\(r2(b.baseline)) spread=\(r2(b.spread)) "
                 + "nValid=\(b.nValid) status=\(b.status.rawValue)")
@@ -105,7 +106,7 @@ extension RecoveryScorer {
         // L9: every WEIGHT / SCALE / centre constant goes through r2() too (not just the z-scores), so a
         // future non-round weight (e.g. 0.333) renders identically on Swift and Kotlin and the parity
         // fixture cannot silently desync. The values render the same as before today.
-        let hrvZRaw = zScore(hrv, mean: hrvBaseline.baseline, spread: hrvBaseline.spread)
+        let hrvZRaw = higherBetterZ(hrv, state: hrvBaseline)
         let sat = parasympatheticSaturation(hrvZ: hrvZRaw, rhrZ: rhrZForGuard)
         terms.append(("hrv", hrvZRaw, wHRV))
         lines.append("charge term hrv z=\(r2(hrvZRaw)) w=\(r2(wHRV)) (higher HRV is better)")
@@ -155,8 +156,13 @@ extension RecoveryScorer {
         // recovery(...) runs to produce the logistic input.
         let totalWeight = terms.reduce(0) { $0 + $1.w }
         let compositeZ = totalWeight > 0
-            ? terms.reduce(0) { $0 + $1.z * $1.w } / totalWeight
+            ? terms.reduce(0) { $0 + clampZ($1.z) * $1.w } / totalWeight
             : 0.0
+        // #53: name every term the ±termZClamp limit bit on, so a capped artefact night is visible.
+        let clamped = terms.filter { abs($0.z) > termZClamp }.map(\.name)
+        if !clamped.isEmpty {
+            lines.append("charge clamp terms=[\(clamped.joined(separator: ","))] limit=\(r2(termZClamp))")
+        }
         lines.append("charge renorm totalWeight=\(r2(totalWeight)) compositeZ=\(r2(compositeZ)) "
             + "(z = sum(z*w)/sum(w))")
 
@@ -179,7 +185,7 @@ extension RecoveryScorer {
         // wouldRaiseCharge recomputes the composite with the eased HRV z swapped in and runs it through
         // logisticScore(...) -- the SAME curve recovery() uses -- so the delta is exact, not estimated.
         if sat.active, let s = score, totalWeight > 0 {
-            let easedZ = terms.reduce(0) { $0 + ($1.name == "hrv" ? sat.easedHrvZ : $1.z) * $1.w } / totalWeight
+            let easedZ = terms.reduce(0) { $0 + clampZ($1.name == "hrv" ? sat.easedHrvZ : $1.z) * $1.w } / totalWeight
             let wouldBe = logisticScore(compositeZ: easedZ)
             lines.append("charge saturation active hrvZraw=\(r2(hrvZRaw)) rhrZ=\(r2(rhrZForGuard ?? 0)) "
                 + "damp=\(r2(sat.dampFraction)) wouldEaseHrvZTo=\(r2(sat.easedHrvZ)) "

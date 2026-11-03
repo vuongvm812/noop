@@ -223,6 +223,13 @@ data class BaselineState(
     val nightsSinceUpdate: Int,
     /** Cold-start / staleness status. */
     val status: BaselineStatus,
+    /**
+     * True when the baseline was built in the LOG domain (#53: the Charge HRV baseline, lnRMSSD).
+     * [baseline] is then the geometric mean back in the metric's own unit (ms), while [spread] is in ln
+     * units: a value's z is (ln value − ln baseline) / σ. Every z-scoring reader goes through
+     * [Baselines.z] / [RecoveryScorer] so the domain is applied in one place. Mirrors Swift.
+     */
+    val logDomain: Boolean = false,
 ) {
     /** True iff fully trusted (not calibrating or stale). */
     val trusted: Boolean get() = status == BaselineStatus.TRUSTED

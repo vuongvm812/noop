@@ -15,14 +15,11 @@ final class RecoveryOptionalBaselineUsableTests: XCTestCase {
     private var rhr: BaselineState { optionalBaselineFixture(60, 4) }
     private let statuses: [BaselineStatus] = [.calibrating, .provisional, .trusted, .stale]
     private let respiratoryValues: [Double?] = [nil, 10, 14, 18, 22]
-    private let effortValues: [Double?] = [nil, 0, 30, 60, 100]
 
-    private func optionalChargeFixture(respBase: BaselineState?, effortBase: BaselineState? = nil,
-                                       resp: Double? = 14, effort: Double? = 60) -> Double? {
+    private func optionalChargeFixture(respBase: BaselineState?, resp: Double? = 14) -> Double? {
         RecoveryScorer.recovery(hrv: 55, rhr: 58, resp: resp,
                                 hrvBaseline: hrv, rhrBaseline: rhr, respBaseline: respBase,
-                                sleepPerf: 0.85, skinTempDev: 0.2, recoveryIndexSlope: -0.5,
-                                effortBaseline: effortBase, priorDayEffort: effort)
+                                sleepPerf: 0.85, skinTempDev: 0.2)
     }
 
     func testUnusableRespirationScoresExactlyLikeAbsent() {
@@ -38,82 +35,42 @@ final class RecoveryOptionalBaselineUsableTests: XCTestCase {
         }
     }
 
-    func testUnusableEffortScoresExactlyLikeAbsent() {
-        let states = [Baselines.foldHistory([], cfg: Baselines.strainCfg),
-                      Baselines.foldHistory([-1, 101], cfg: Baselines.strainCfg),
-                      optionalBaselineFixture(45, 10, .stale)]
-        for base in states {
-            XCTAssertFalse(base.usable)
-            for value in effortValues {
-                XCTAssertEqual(optionalChargeFixture(respBase: nil, effortBase: base, effort: value)?.bitPattern,
-                               optionalChargeFixture(respBase: nil, effort: value)?.bitPattern)
-            }
-        }
-    }
-
     func testAllOptionalStateAndValuePairsMatchEligibleDriverContract() {
         let respStates: [BaselineState?] = [nil] + statuses.map { optionalBaselineFixture(16, 2, $0) }
-        let effortStates: [BaselineState?] = [nil] + statuses.map { optionalBaselineFixture(45, 10, $0) }
         var cases = 0
         var oracleLines: [String] = []
         for respBase in respStates {
-            for effortBase in effortStates {
-                for resp in respiratoryValues {
-                    for effort in effortValues {
-                        // The status-free API is the original math, with only eligible personal states supplied.
-                        let expected = RecoveryScorer.recovery(
-                            hrv: 55, rhr: 58, resp: resp,
-                            hrvBaseline: RecoveryScorer.DriverBaseline(hrv),
-                            rhrBaseline: RecoveryScorer.DriverBaseline(rhr),
-                            respBaseline: respBase.flatMap { $0.usable ? RecoveryScorer.DriverBaseline($0) : nil },
-                            sleepPerf: 0.85, skinTempDev: 0.2, recoveryIndexSlope: -0.5,
-                            effortBaseline: effortBase.flatMap { $0.usable ? RecoveryScorer.DriverBaseline($0) : nil },
-                            priorDayEffort: effort)
-                        let actual = optionalChargeFixture(respBase: respBase, effortBase: effortBase,
-                                                           resp: resp, effort: effort)
-                        XCTAssertEqual(actual?.bitPattern, expected?.bitPattern)
-                        if resp == 14, effort == 60 {
-                            let bits = actual.map { String($0.bitPattern, radix: 16) } ?? "nil"
-                            oracleLines.append("\(respBase?.status.rawValue ?? "nil")/\(effortBase?.status.rawValue ?? "nil")|\(bits)")
-                        }
-                        cases += 1
-                    }
+            for resp in respiratoryValues {
+                // The status-free API is the original math, with only eligible personal states supplied.
+                let expected = RecoveryScorer.recovery(
+                    hrv: 55, rhr: 58, resp: resp,
+                    hrvBaseline: RecoveryScorer.DriverBaseline(hrv),
+                    rhrBaseline: RecoveryScorer.DriverBaseline(rhr),
+                    respBaseline: respBase.flatMap { $0.usable ? RecoveryScorer.DriverBaseline($0) : nil },
+                    sleepPerf: 0.85, skinTempDev: 0.2)
+                let actual = optionalChargeFixture(respBase: respBase, resp: resp)
+                XCTAssertEqual(actual?.bitPattern, expected?.bitPattern)
+                if resp == 14 {
+                    let bits = actual.map { String($0.bitPattern, radix: 16) } ?? "nil"
+                    oracleLines.append("\(respBase?.status.rawValue ?? "nil")|\(bits)")
                 }
+                cases += 1
             }
         }
-        XCTAssertEqual(cases, 625)
-        // Compiled original Swift output with only eligible states supplied, copied verbatim to Kotlin.
+        XCTAssertEqual(cases, 25)
+        if ProcessInfo.processInfo.environment["PRINT_ORACLE"] != nil {
+            print("ORACLE2-BEGIN\n\(oracleLines.joined(separator: "\n"))\nORACLE2-END")
+        }
+        // Compiled Swift output with only eligible states supplied, copied verbatim to Kotlin.
         XCTAssertEqual(oracleLines.joined(separator: "\n"), """
-        nil/nil|4051b9be0a68921e
-        nil/calibrating|4051b9be0a68921e
-        nil/provisional|405119a83eb9de93
-        nil/trusted|405119a83eb9de93
-        nil/stale|4051b9be0a68921e
-        calibrating/nil|4051b9be0a68921e
-        calibrating/calibrating|4051b9be0a68921e
-        calibrating/provisional|405119a83eb9de93
-        calibrating/trusted|405119a83eb9de93
-        calibrating/stale|4051b9be0a68921e
-        provisional/nil|4051e5d635c94772
-        provisional/calibrating|4051e5d635c94772
-        provisional/provisional|40514d26488c9eb1
-        provisional/trusted|40514d26488c9eb1
-        provisional/stale|4051e5d635c94772
-        trusted/nil|4051e5d635c94772
-        trusted/calibrating|4051e5d635c94772
-        trusted/provisional|40514d26488c9eb1
-        trusted/trusted|40514d26488c9eb1
-        trusted/stale|4051e5d635c94772
-        stale/nil|4051b9be0a68921e
-        stale/calibrating|4051b9be0a68921e
-        stale/provisional|405119a83eb9de93
-        stale/trusted|405119a83eb9de93
-        stale/stale|4051b9be0a68921e
+        nil|4051c59416cf2fed
+        calibrating|4051c59416cf2fed
+        provisional|4051f31a1925a3f3
+        trusted|4051f31a1925a3f3
+        stale|4051c59416cf2fed
         """)
         XCTAssertNotEqual(optionalChargeFixture(respBase: nil)?.bitPattern,
                           optionalChargeFixture(respBase: optionalBaselineFixture(16, 2))?.bitPattern)
-        XCTAssertNotEqual(optionalChargeFixture(respBase: nil)?.bitPattern,
-                          optionalChargeFixture(respBase: nil, effortBase: optionalBaselineFixture(45, 10))?.bitPattern)
     }
 
     func testRespirationRowsUseExactlyTheEligibleBaseline() {
@@ -159,8 +116,7 @@ final class RecoveryOptionalBaselineUsableTests: XCTestCase {
             for optionalStatus in statuses {
                 let base = optionalBaselineFixture(16, 2, optionalStatus)
                 XCTAssertNil(RecoveryScorer.recovery(hrv: 55, rhr: 58, resp: 14,
-                    hrvBaseline: coldHrv, rhrBaseline: rhr, respBaseline: base, sleepPerf: 0.85,
-                    effortBaseline: optionalBaselineFixture(45, 10, optionalStatus), priorDayEffort: 60))
+                    hrvBaseline: coldHrv, rhrBaseline: rhr, respBaseline: base, sleepPerf: 0.85))
                 XCTAssertTrue(RecoveryScorer.chargeDrivers(hrv: 55, rhr: 58, resp: 14,
                     hrvBaseline: coldHrv, rhrBaseline: rhr, respBaseline: base, sleepPerf: 0.85).isEmpty)
                 let trace = RecoveryScorer.recoveryTrace(hrv: 55, rhr: 58, resp: 14,

@@ -105,6 +105,23 @@ extension WhoopStore {
         }
     }
 
+    /// Provenance rows for a computed namespace over a day range, limited to `keys`. The Charge baselines
+    /// (#53) read each own night's measuring source from these to rebuild the engine's device eras.
+    public func scoreInputSources(deviceId: String, from: String, to: String,
+                                  keys: [String]) async throws -> [ScoreInputProvenanceRow] {
+        guard !keys.isEmpty else { return [] }
+        let marks = Array(repeating: "?", count: keys.count).joined(separator: ",")
+        var args: [DatabaseValueConvertible] = [deviceId, from, to]
+        args.append(contentsOf: keys)
+        let sql = "SELECT day, key, sourceId FROM scoreInputProvenance "
+            + "WHERE deviceId = ? AND day >= ? AND day <= ? AND key IN (\(marks)) ORDER BY day, key"
+        return try syncRead { db in
+            try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args)).map {
+                ScoreInputProvenanceRow(day: $0["day"], key: $0["key"], sourceId: $0["sourceId"])
+            }
+        }
+    }
+
     /// Input source for one computed score. Missing means the score predates provenance storage or its
     /// attribution could not be persisted; callers must omit the badge instead of guessing.
     public func scoreInputSource(deviceId: String, day: String, key: String) async throws -> String? {

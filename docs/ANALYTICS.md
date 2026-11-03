@@ -158,13 +158,16 @@ Higher HRV versus your baseline means more Charge. Skin-temp folds in as a symme
 
 The skin-temp term uses the absolute deviation already computed as `DailyMetric.skinTempDevC` (a z-like ±°C), entered as a symmetric penalty `−|dev|/scale`. SpO₂ folds in **only when real** (imported) as a small penalty below ~95%; it's never fabricated and never applied on a bare 5/MG day. HRV's weight dropped from `0.60` to `0.55` to make room for skin-temp; when skin-temp is absent the weights renormalize, so the score matches the older HRV-led composite.
 
-Each metric is standardized to a **robust z-score** against the personal baseline (EWMA spread):
+Each metric is standardized to a z-score against its **per-day trailing baseline** (`ChargeBaselines`, #53): the mean and sample SD of the nights in the 60 calendar days ending the day before the scored day, so tonight never scores against itself and a stored day's Charge does not move as later nights arrive. HRV works in the log domain (lnRMSSD, Plews / Buchheit), σ floored at 0.05 ln:
 
 ```
-z = (value − mean) / (1.253 · spread)
+z_hrv = (ln hrv − ln baseline) / σ        baseline = exp(mean ln RMSSD)
+z     = (value − mean) / σ                (resting HR, respiration)
 ```
 
-The `1.253` converts an EWMA mean-absolute-deviation into an approximate Gaussian σ (`E[|X−μ|] = σ·√(2/π) ≈ σ/1.253`). For "lower is better" drivers (RHR, resp) the z is inverted by swapping value and mean. The sleep term is centered directly: `(sleepPerf − 0.85) / 0.12`.
+`BaselineState.spread` stores `σ / 1.253`, so every reader recovers σ as `1.253 · spread`. For "lower is better" drivers (RHR, resp) the z is inverted by swapping value and mean. The sleep term is centered directly: `(sleepPerf − 0.85) / 0.12` — kept absolute on purpose: Rest is already a 0–100 quality score against sleep need, and a personal z would rate a chronically short sleeper's short night as neutral. Every term's z is clamped to **±3** before weighting (`termZClamp`), so a Rest of 0 or one artefact HRV night cannot outweigh the rest.
+
+Each baseline starts at its era epoch (`ChargeBaselines.epochs`, the one helper the engine, the "What shaped it" rows, the calibration countdown and the readiness word all use): a manual Recalibrate, plus a Garmin switch for HRV / resting HR and any brand switch for respiration (#459). Imported vendor nights and same-brand wearable exports only seed a baseline while the own nights in the window number fewer than 14.
 
 Missing terms are dropped and weights renormalized. The weighted-mean z is squashed:
 
@@ -383,9 +386,9 @@ This composite is similar *in spirit* to WHOOP's Sleep Performance %, but the bl
 
 ## `Baselines` — personal rolling baselines
 
-Source: `Baselines.swift`. Per-metric personal baselines that `RecoveryScorer` consumes. Two interchangeable paths produce the same `BaselineState` shape.
+Source: `Baselines.swift`. Per-metric personal baselines, all producing the same `BaselineState` shape. **Charge no longer uses the EWMA** (#53): its baselines are the per-day trailing mean/SD in `ChargeBaselines.swift` (see Charge above). The EWMA remains for the other consumers listed in the code (daytime stress, Apple-Watch recovery, vitals banding).
 
-### 1. Winsorized EWMA (production model — `update` / `foldHistory`)
+### 1. Winsorized EWMA (`update` / `foldHistory`)
 
 A robust, recency-weighted center with an EWMA-of-absolute-deviation spread tracker:
 

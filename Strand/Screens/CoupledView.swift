@@ -59,8 +59,7 @@ struct CoupledView: View {
     /// Recovery cold-start: nights banked so far while the HRV baseline still seeds, nil once recovery
     /// exists. The SAME pure helper Today's ring reads, so the two screens can't disagree.
     private var calibrationNights: Int? {
-        RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                         dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+        RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: todayKey)?.hrv,
                                          hasRecovery: day?.recovery != nil)
     }
 
@@ -111,7 +110,7 @@ struct CoupledView: View {
     /// scored day today's own key wins, so Coupled's pill can't diverge from Today's onto yesterday (#787).
     private var readinessLevel: ReadinessEngine.Level {
         let anchor = (isCarryingRecovery ? carriedRecoveryDay?.day : day?.day) ?? Repository.logicalDayKey(Date())
-        return ReadinessEngine.evaluate(days: repo.days, today: anchor).level
+        return ReadinessEngine.evaluate(days: repo.days, today: anchor, epochs: repo.chargeEpochs(for: anchor)).level
     }
 
     var body: some View {
@@ -528,14 +527,14 @@ struct CoupledView: View {
     }
 
     /// The ordered Charge drivers for the displayed ring PLUS the confidence tier from the SAME HRV
-    /// baseline — the exact TodayView derivation (pure engine scoring against `repo.chargeBaselines`, the
+    /// baseline — the exact TodayView derivation (pure engine scoring against `repo.chargeBaselines(for:)`, the
     /// personal baselines resolved with the engine's own rule, #2525). nil for a calibrating / cold-start
     /// night, which gates the sheet through to the countdown instead. PERF: mirrors
     /// TodayView.chargeBreakdown() — the baselines are resolved once per refresh, so a body evaluation of
     /// the open sheet folds nothing.
     private func chargeBreakdown() -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
         guard let row = breakdownRow else { return nil }
-        guard let baselines = repo.chargeBaselines else { return nil }
+        guard let baselines = repo.chargeBaselines(for: row.day) else { return nil }
         return ChargeBreakdownWiring.breakdown(baselines: baselines, row: row, sleepPerfPercent: sleepPerformance)
     }
 

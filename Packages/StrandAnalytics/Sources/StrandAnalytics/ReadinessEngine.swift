@@ -90,7 +90,12 @@ public enum ReadinessEngine {
 
     /// Evaluate readiness from daily metrics. `days` may be in any order; the most recent day is
     /// treated as "today" unless `today` (a YYYY-MM-DD string) is given.
-    public static func evaluate(days: [DailyMetric], today: String? = nil) -> Readiness {
+    ///
+    /// `epochs` (#53) is the Charge baselines' era cut for `today` (`ChargeBaselines.Inputs.epochs`): the
+    /// HRV, resting-HR and respiration baselines here drop every night before their epoch, exactly as the
+    /// Charge baselines do, so the readiness word never compares a Garmin night with a WHOOP-era HRV.
+    public static func evaluate(days: [DailyMetric], today: String? = nil,
+                                epochs: ChargeBaselines.Epochs = .none) -> Readiness {
         // v7.0.2 perf (#707): `evaluate` SORTS the entire daily history and walks trailing windows every
         // call, and it is read from a SwiftUI computed property — so a `body` re-evaluation (the iOS twin of
         // a Compose recompose) re-runs the full-history sort on each ~1 Hz live-HR tick. The Today view also
@@ -98,11 +103,12 @@ public enum ReadinessEngine {
         // every OTHER caller and the first/uncached read. Key = `today` + a fingerprint over ONLY the row
         // fields the synthesis reads (day + avgHrv/restingHr/respRateBpm/strain), so a new sync re-keys but a
         // cosmetic reorder does not. Result is a small `Readiness`; no row arrays are retained.
-        let key = ReadinessKey(today: today, rows: Self.rowsFingerprint(days))
-        return evaluateCache.value(key) { evaluateUncached(days: days, today: today) }
+        let key = ReadinessKey(today: today, epochs: epochs, rows: Self.rowsFingerprint(days))
+        return evaluateCache.value(key) { evaluateUncached(days: days, today: today, epochs: epochs) }
     }
 
-    private struct ReadinessKey: Hashable { let today: String?; let rows: StreamFingerprint }
+    private struct ReadinessKey: Hashable { let today: String?; let epochs: ChargeBaselines.Epochs
+        let rows: StreamFingerprint }
     private static let evaluateCache = AnalyticsMemoCache<ReadinessKey, Readiness>(capacity: 16)
 
     /// Fingerprint the readiness-relevant columns of the daily rows without re-sorting or copying them.
@@ -126,7 +132,8 @@ public enum ReadinessEngine {
         return StreamFingerprint(count: days.count, firstTs: minDayHash, lastTs: maxDayHash, checksum: sum)
     }
 
-    private static func evaluateUncached(days: [DailyMetric], today: String?) -> Readiness {
+    private static func evaluateUncached(days: [DailyMetric], today: String?,
+                                         epochs: ChargeBaselines.Epochs) -> Readiness {
         let sorted = days.sorted { $0.day < $1.day }
         // When an explicit `today` is given (the dashboard passes the device's real local day key), use
         // the row for THAT day and nothing else: a stale historical import has no row for today, so the
@@ -142,13 +149,17 @@ public enum ReadinessEngine {
                              signals: [], acwr: nil, monotony: nil)
         }
         let history = sorted.filter { $0.day < latest.day }   // everything before today
+        // #53: each baseline starts at its era epoch, the cut the Charge baselines use.
+        let hrvHistory = history.filter { !ChargeBaselines.beforeEpoch($0.day, epochs.hrv) }
+        let rhrHistory = history.filter { !ChargeBaselines.beforeEpoch($0.day, epochs.restingHR) }
+        let respHistory = history.filter { !ChargeBaselines.beforeEpoch($0.day, epochs.resp) }
 
         var signals: [Signal] = []
 
         // HRV readiness ------------------------------------------------------
         let hrvSignal = zSignal(
             value: latest.avgHrv,
-            baseline: history.suffix(baselineWindow).compactMap { $0.avgHrv },
+            baseline: hrvHistory.suffix(baselineWindow).compactMap { $0.avgHrv },
             key: "hrv", label: "HRV",
             unit: "ms",
             decimals: 0,
@@ -164,7 +175,7 @@ public enum ReadinessEngine {
         // Resting-HR drift ---------------------------------------------------
         let rhrSignal = zSignal(
             value: latest.restingHr.map(Double.init),
-            baseline: history.suffix(baselineWindow).compactMap { $0.restingHr.map(Double.init) },
+            baseline: rhrHistory.suffix(baselineWindow).compactMap { $0.restingHr.map(Double.init) },
             key: "rhr", label: "Resting HR",
             unit: "bpm",
             decimals: 0,
@@ -182,7 +193,7 @@ public enum ReadinessEngine {
         // use wider resp-only z thresholds (WATCH 1.5 / BAD 2.0) than HRV/RHR so a single noisy night
         // can't flip RUNDOWN. Mirrors the Kotlin reference (#78) for cross-platform parity.
         if let rr = latest.respRateBpm, SleepStager.respPlausibleRangeBpm.contains(rr) {
-            let base = history.suffix(baselineWindow).compactMap { $0.respRateBpm }
+            let base = respHistory.suffix(baselineWindow).compactMap { $0.respRateBpm }
             if base.count >= minBaseline, let m = mean(base),
                SleepStager.respPlausibleRangeBpm.contains(m), let sd = sampleSD(base), sd > 0 {
                 let z = (rr - m) / sd
@@ -231,7 +242,7 @@ public enum ReadinessEngine {
         // RD-confidence: surface how much history backs the read (HRV baseline density, the primary
         // readiness driver). A read off a 7-night baseline must not look as certain as one off the full
         // 30-night window. Insufficient reads carry .calibrating.
-        let hrvBaselineNights = history.suffix(baselineWindow).compactMap { $0.avgHrv }.count
+        let hrvBaselineNights = hrvHistory.suffix(baselineWindow).compactMap { $0.avgHrv }.count
         let confidence = ScoreConfidence.readiness(hasRead: level != .insufficient,
                                                    baselineNights: hrvBaselineNights,
                                                    fullWindow: baselineWindow)

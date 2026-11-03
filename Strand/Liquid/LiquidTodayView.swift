@@ -1653,7 +1653,8 @@ struct LiquidTodayView: View {
         let day = resolveDisplayDay()
         cachedDisplayDay = day
         await reloadRRUnitPolicy()
-        cachedReadiness = ReadinessEngine.evaluate(days: repo.days, today: day?.day)
+        cachedReadiness = ReadinessEngine.evaluate(days: repo.days, today: day?.day,
+                                                   epochs: repo.chargeEpochs(for: day?.day))
         // Prior-day vitals carry, resolved ONCE here (never in body). Bound to today's own key so it can't
         // echo today's still-forming row; only on today (a past day's own row is the whole story).
         let tkey = cachedDisplayDay?.day ?? selectedDayKey
@@ -1667,8 +1668,7 @@ struct LiquidTodayView: View {
         // classic Today reads, so the two screens agree on when a wearer is genuinely mid-calibration
         // rather than simply lacking a scored night.
         let calNights = (selectedDayOffset == 0)
-            ? RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                               dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+            ? RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: tkey)?.hrv,
                                                hasRecovery: day?.recovery != nil)
             : nil
         let priorScored = TodayView.lastScoredRecoveryDay(
@@ -1930,7 +1930,8 @@ struct LiquidTodayView: View {
     /// pass (readinessWord + synthLine + readiness.summary). The fallback runs only in the brief window
     /// before the first load() populates the cache.
     private var readiness: ReadinessEngine.Readiness {
-        cachedReadiness ?? ReadinessEngine.evaluate(days: repo.days, today: cachedDisplayDay?.day)
+        cachedReadiness ?? ReadinessEngine.evaluate(days: repo.days, today: cachedDisplayDay?.day,
+                                                    epochs: repo.chargeEpochs(for: cachedDisplayDay?.day))
     }
 
     /// One card-level provenance label. Identical winners collapse to one name; mixed scores show at most

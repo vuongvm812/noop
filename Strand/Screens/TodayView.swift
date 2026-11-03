@@ -834,10 +834,10 @@ struct TodayView: View {
 
     /// The ordered "What shaped it" Charge drivers for the displayed Charge ring, PLUS the confidence tier
     /// computed from the SAME folded HRV baseline. PURE derivation from the SAME `displayDay` (post-#814
-    /// union-read row) the ring already shows, plus the HRV/RHR/resp baselines `repo.chargeBaselines`
+    /// union-read row) the ring already shows, plus the HRV/RHR/resp baselines `repo.chargeBaselines(for:)`
     /// resolved with the engine's own rule (#2525), so a row can NEVER describe a term the ring's number
     /// didn't use. This is NOT a second store read: it reads only data already resolved into
-    /// `repo.chargeBaselines`/`displayDay`. nil for a calibrating / cold-start night (no usable HRV baseline
+    /// `repo.chargeBaselines(for:)`/`displayDay`. nil for a calibrating / cold-start night (no usable HRV baseline
     /// or no value), so the sheet gates through to the calibration countdown instead.
     ///
     /// PERF: this replaces the two separate computed properties (`chargeDrivers` +
@@ -846,7 +846,8 @@ struct TodayView: View {
     /// and the sheet reads drivers + confidence out of a single sheet-local `let`.
     private func chargeBreakdown() -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
         guard let row = chargeBreakdownRow else { return nil }
-        guard let baselines = repo.chargeBaselines else { return nil }
+        // #53: the baselines THIS row's day was scored against (window ending the day before, era-cut).
+        guard let baselines = repo.chargeBaselines(for: row.day) else { return nil }
         return ChargeBreakdownWiring.breakdown(baselines: baselines, row: row, sleepPerfPercent: restScore)
     }
 
@@ -1145,13 +1146,15 @@ struct TodayView: View {
         // key instead (the section header then stamps "Last night · <date>"). Honest: it's the real prior
         // read, not a fabricated today's, and today's own readiness wins the instant tonight is scored.
         let anchor = lastScoredRecoveryDay?.day ?? Repository.logicalDayKey(Date())
-        return ReadinessEngine.evaluate(days: repo.days, today: anchor)
+        return ReadinessEngine.evaluate(days: repo.days, today: anchor, epochs: repo.chargeEpochs(for: anchor))
     }
 
     private func computeCalibration() -> Int? {
         guard selectedDayOffset == 0 else { return nil }
-        return RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                                dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+        // #53: counts the nights today's own baseline holds (era cut included), so the countdown cannot
+        // read calibrated while the engine still returns no score.
+        let day = repo.today?.day ?? Repository.logicalDayKey(Date())
+        return RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: day)?.hrv,
                                                 hasRecovery: repo.today?.recovery != nil)
     }
 

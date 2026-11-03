@@ -19,8 +19,8 @@ import kotlin.math.max
  * sits relative to that band. A single bad night barely moves the 7-night baseline, so the reading is far
  * more robust than a raw single-night z.
  *
- * INPUT: the SAME nightly RMSSD series RecoveryScorer / ReadinessEngine consume — DailyMetric.avgHrv[]
- * in ms, oldest -> newest (nulls allowed for missing nights). Physiologically implausible nights are
+ * INPUT: day-keyed nightly RMSSD (DailyMetric.day + avgHrv) in ms; windows are CALENDAR days ending today
+ * (#53) (nulls allowed for missing nights). Physiologically implausible nights are
  * dropped through the shared [Baselines.hrvCfg] bounds (5..250 ms) so one decode glitch can't skew it.
  *
  * OUTPUT ([HRVReadinessResult]): the tier (primed / normal / suppressed), the 7-night baseline and the
@@ -58,27 +58,24 @@ object HRVReadiness {
     // Constants (name them; mirror Swift exactly)
     // ─────────────────────────────────────────────────────────────────────────
 
-    /** Short rolling baseline window (nights) — the Plews/Altini 7-night HRV baseline. */
+    /** Short rolling baseline window, in CALENDAR days ending today (#53: it used to be the last 7 valid
+     *  nights, which after a week off the strap could span a month). */
     const val ROLL_WINDOW: Int = 7
 
-    /** Long personal-normal window (nights) when enough valid nights exist. */
+    /** Long personal-normal window, in calendar days ending today. */
     const val LONG_WINDOW: Int = 60
 
-    /** Long-window fallback (nights) when fewer than [LONG_WINDOW] valid nights are banked. */
-    const val LONG_WINDOW_FALLBACK: Int = 30
+    /** Fewest valid nights the 7-day window must hold for a reading (and for one CV point). */
+    const val MIN_ROLL_NIGHTS: Int = 3
 
     /** Smallest-worthwhile-change half-width factor: the normal band is longMean ± SWC_K·longSD. */
     const val SWC_K: Double = 0.5
 
-    /**
-     * Minimum VALID nights before a reading is offered (else null + the honest calibrating edge). Its OWN
-     * constant — deliberately NOT aliased to [WatchRecovery.minBaselineNights]: the SWC band needs a longer
-     * warm-up than the watch-recovery gate. It only mirrors WatchRecovery's nil+.calibrating HONESTY
-     * pattern, not its value.
-     */
+    /** Minimum VALID nights inside the long window before a reading is offered (else null + the honest
+     *  calibrating edge). Its OWN constant, deliberately NOT aliased to [WatchRecovery.minBaselineNights]. */
     const val MIN_NIGHTS: Int = 14
 
-    /** Trailing nights over which the CV trend (overreaching watch) is fit. */
+    /** Calendar days over which the CV trend (overreaching watch) is fit. */
     const val CV_TREND_WINDOW: Int = 28
 
     /** Floor on the long-window SD so a flat history yields a deterministic, tiny non-degenerate normal
@@ -91,36 +88,41 @@ object HRVReadiness {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Compute the Plews/Altini HRV-readiness reading. Returns null (calibrating) below [MIN_NIGHTS]
-     * valid nights — never a fabricated value.
+     * Compute the Plews/Altini HRV-readiness reading over CALENDAR windows ending [today]. Returns null
+     * (calibrating) below [MIN_NIGHTS] valid nights in the long window or [MIN_ROLL_NIGHTS] in the last 7
+     * days — never a fabricated value.
      *
-     * @param avgHrv nightly RMSSD (ms), oldest -> newest; nulls = missing nights. Out-of-range nights
+     * @param dayKeys `yyyy-MM-dd` per value (any order; unparseable keys and days after [today] are dropped).
+     * @param avgHrv nightly RMSSD (ms), parallel to [dayKeys]; nulls = missing nights. Out-of-range nights
      *   (outside [Baselines.hrvCfg] 5..250 ms) are dropped as decode artefacts.
+     * @param today the day the windows end on.
+     * Swift twin: `HRVReadiness.evaluate(dayKeys:avgHrv:today:)`.
      */
-    fun evaluate(avgHrv: List<Double?>): HRVReadinessResult? {
+    fun evaluate(dayKeys: List<String>, avgHrv: List<Double?>, today: String): HRVReadinessResult? {
         val cfg = Baselines.hrvCfg
-        // Drop nulls + physiologically implausible nights (shared bounds), keep order oldest -> newest.
-        val valid = avgHrv.mapNotNull { v ->
-            if (v != null && cfg.minVal <= v && v <= cfg.maxVal) v else null
+        val t = Baselines.isoEpochDay(today) ?: return null
+        // (epoch day, ln RMSSD) for every valid night on or before today, oldest first. A repeated day keeps
+        // its last value.
+        val byDay = HashMap<Int, Double>()
+        for (i in 0 until minOf(dayKeys.size, avgHrv.size)) {
+            val v = avgHrv[i] ?: continue
+            if (!(cfg.minVal <= v && v <= cfg.maxVal)) continue
+            val d = Baselines.isoEpochDay(dayKeys[i]) ?: continue
+            if (d > t) continue
+            byDay[d] = ln(max(v, 1.0))
         }
-        // Honesty gate: below MIN_NIGHTS valid nights we refuse to score (calibrating). Never fabricate.
-        if (valid.size < MIN_NIGHTS) return null
+        val nights = byDay.keys.sorted().map { it to byDay.getValue(it) }
+        /** The nights in the `days` calendar days ending at night `end`. Swift twin: `HRVReadiness.window`. */
+        fun window(end: Int, days: Int): List<Double> =
+            nights.filter { it.first <= end && end - it.first < days }.map { it.second }
 
-        // Log domain: ln RMSSD (Plews/Altini). max(.,1.0) guards ln of a sub-1 value; bounds already keep it >=5.
-        val ell = valid.map { ln(max(it, 1.0)) }
+        val longEll = window(t, LONG_WINDOW)
+        val rollEll = window(t, ROLL_WINDOW)
+        if (longEll.size < MIN_NIGHTS || rollEll.size < MIN_ROLL_NIGHTS) return null
 
-        // 7-night rolling baseline (the short, robust HRV baseline).
-        val baseline7 = RecoveryForecaster.mean(ell.takeLast(ROLL_WINDOW))
-
-        // Long personal-normal window: LONG_WINDOW if we have that many valid nights, else the 30-night fallback.
-        val longWin = if (valid.size >= LONG_WINDOW) LONG_WINDOW else LONG_WINDOW_FALLBACK
-        val longEll = ell.takeLast(longWin)
+        val baseline7 = RecoveryForecaster.mean(rollEll)
         val longMean = RecoveryForecaster.mean(longEll)
-        // SD over the long window; if fewer than 2 long nights, fall back to the 7-night SD; floored so a
-        // flat history gives a deterministic tiny band rather than an ULP-fragile zero-width one.
-        val longSDraw = if (longEll.size >= 2) RecoveryForecaster.sampleSD(longEll)
-        else RecoveryForecaster.sampleSD(ell.takeLast(ROLL_WINDOW))
-        val longSD = max(longSDraw, LONG_SD_FLOOR)
+        val longSD = max(RecoveryForecaster.sampleSD(longEll), LONG_SD_FLOOR)
 
         // Smallest-worthwhile-change band (±0.5 SD in the log domain).
         val swcHalf = SWC_K * longSD
@@ -134,17 +136,15 @@ object HRVReadiness {
             else -> ReadinessTier.SUPPRESSED
         }
 
-        // Overreaching watch (INFORMATIONAL — never changes the tier): a sustained FALLING coefficient-of-
-        // variation trend while the 7-night baseline sits below the long mean (parasympathetic overreach).
-        // Build a rolling CV series (one point per night with a full trailing-7 window) over the last
-        // CV_TREND_WINDOW nights, then OLS its slope.
+        // Overreaching watch (INFORMATIONAL — never changes the tier): a falling CV trend over the last
+        // CV_TREND_WINDOW days while the 7-day baseline sits below the long mean. One CV point per day whose
+        // trailing 7 calendar days hold at least MIN_ROLL_NIGHTS nights; OLS slope over the points.
         val cvSeries = ArrayList<Double>()
-        val cvStart = max(ROLL_WINDOW - 1, ell.size - CV_TREND_WINDOW)
-        for (i in cvStart until ell.size) {
-            val w = ell.subList(i - ROLL_WINDOW + 1, i + 1)
+        for (end in (t - CV_TREND_WINDOW + 1)..t) {
+            val w = window(end, ROLL_WINDOW)
+            if (w.size < MIN_ROLL_NIGHTS) continue
             val m = RecoveryForecaster.mean(w)
-            val cv = if (m != 0.0) 100.0 * RecoveryForecaster.sampleSD(w) / m else 0.0
-            cvSeries.add(cv)
+            cvSeries.add(if (m != 0.0) 100.0 * RecoveryForecaster.sampleSD(w) / m else 0.0)
         }
         val cvSlope = RecoveryForecaster.leastSquaresSlope(cvSeries)
         val overreachingWatch = cvSlope < 0.0 && baseline7 < longMean

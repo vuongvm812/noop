@@ -40,7 +40,6 @@ class RecoveryRequiredHrvBaselineTest {
         // case below supplies exactly one optional driver with the HRV baseline absent.
         val rhrB = RecoveryScorer.DriverBaseline(mean = 55.0, spread = 3.0 / 1.253)
         val respB = RecoveryScorer.DriverBaseline(mean = 14.5, spread = 1.0 / 1.253)
-        val effortB = RecoveryScorer.DriverBaseline(mean = 40.0, spread = 15.0 / 1.253)
 
         // The issue's minimal reproduction: sleepPerf as the only weighted term.
         assertNull(
@@ -74,29 +73,12 @@ class RecoveryRequiredHrvBaselineTest {
                 sleepPerf = null, skinTempDev = 0.4,
             ),
         )
-        // Recovery-Index term alone.
-        assertNull(
-            RecoveryScorer.recovery(
-                hrv = 50.0, rhr = 60.0, resp = null,
-                hrvBaseline = null, rhrBaseline = null, respBaseline = null,
-                sleepPerf = null, recoveryIndexSlope = -1.0,
-            ),
-        )
-        // Activity-Balance term alone.
-        assertNull(
-            RecoveryScorer.recovery(
-                hrv = 50.0, rhr = 60.0, resp = null,
-                hrvBaseline = null, rhrBaseline = null, respBaseline = null,
-                sleepPerf = null, effortBaseline = effortB, priorDayEffort = 80.0,
-            ),
-        )
         // Every optional driver at once still cannot substitute for the required HRV baseline.
         assertNull(
             RecoveryScorer.recovery(
                 hrv = 50.0, rhr = 60.0, resp = 14.0,
                 hrvBaseline = null, rhrBaseline = rhrB, respBaseline = respB,
-                sleepPerf = 0.85, skinTempDev = 0.4, recoveryIndexSlope = -1.0,
-                effortBaseline = effortB, priorDayEffort = 80.0,
+                sleepPerf = 0.85, skinTempDev = 0.4,
             ),
         )
     }

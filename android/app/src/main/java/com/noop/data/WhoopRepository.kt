@@ -968,6 +968,23 @@ class WhoopRepository(
     suspend fun scoreInputSource(deviceId: String, day: String, key: String): String? =
         dao.scoreInputSource(deviceId, day, key)
 
+    /** Provenance rows for [deviceId] over a day range, limited to [keys] (#53). Empty for no keys.
+     *  Swift twin: `WhoopStore.scoreInputSources`. */
+    suspend fun scoreInputSources(
+        deviceId: String, from: String, to: String, keys: List<String>,
+    ): List<ScoreInputProvenanceRow> =
+        if (keys.isEmpty()) emptyList() else dao.scoreInputSources(deviceId, from, to, keys)
+
+    /** The provenance rows over the computed ("-noop") union [computedDailyUnionFlow] reads, active id first,
+     *  limited to [keys]: the dashboard's per-night source for the Charge baselines' era cut (#53). */
+    fun computedScoreInputSourcesFlow(
+        activeStrapId: String, from: String, to: String, keys: List<String>,
+    ): Flow<List<ScoreInputProvenanceRow>> {
+        if (keys.isEmpty()) return kotlinx.coroutines.flow.flowOf(emptyList())
+        val flows = computedSourceIds(activeStrapId).map { dao.scoreInputSourcesFlow(it, from, to, keys) }
+        return if (flows.size == 1) flows[0] else combine(flows) { rows -> rows.toList().flatten() }
+    }
+
     suspend fun upsertMetricSeriesWithProvenance(
         rows: List<MetricSeriesRow>,
         provenance: List<ScoreInputProvenanceRow>,

@@ -54,8 +54,9 @@ final class GarminScoringInputsTests: XCTestCase {
     }
 
     func testOvernightHrvSamplesStandInForAMissingLastNightAverage() {
-        let samples = [GarminScoringInputs.Sample(ts: 500, value: 99),     // before the night: ignored
-                       .init(ts: 1_000, value: 40), .init(ts: 5_000, value: 44), .init(ts: 10_000, value: 48)]
+        // Twelve in-night values (an hour of five-minute samples, #53) plus one before the night that is ignored.
+        let samples: [GarminScoringInputs.Sample] = [.init(ts: 500, value: 99)]
+            + (0..<12).map { .init(ts: 1_000 + $0 * 750, value: $0 % 2 == 0 ? 40 : 48) }
         let r = GarminScoringInputs.resolve(computedRestingHr: nil, computedHrv: nil, computedResp: nil,
                                             watch: .init(restingHr: nil, lastNightHrvMs: nil),
                                             hrvSamples: samples, watchRespRateBpm: nil, nights: night)
@@ -73,6 +74,20 @@ final class GarminScoringInputsTests: XCTestCase {
         XCTAssertEqual(r.avgHrv, 33)
         XCTAssertEqual(r.hrvBasis, .computed)
         XCTAssertEqual(r.respRateBpm, 15)
+    }
+
+    /// #53: three five-minute values (a quarter hour) no longer stand for a night; twelve (an hour) do, and
+    /// so does a short night the samples cover at least half of.
+    func testNightMeanNeedsAnHourOrHalfTheNight() {
+        let long = [GarminScoringInputs.Night(start: 0, end: 8 * 3_600)]
+        let eleven = (0..<11).map { GarminScoringInputs.Sample(ts: 600 + $0 * 300, value: 50) }
+        XCTAssertNil(GarminScoringInputs.nightMean(eleven, nights: long))
+        let twelve = eleven + [.init(ts: 4_000, value: 62)]
+        XCTAssertEqual(GarminScoringInputs.nightMean(twelve, nights: long), 51)
+        let nap = [GarminScoringInputs.Night(start: 0, end: 1_800), .init(start: 900, end: 2_400)]
+        XCTAssertEqual(GarminScoringInputs.sleepSeconds(nap), 2_400)
+        XCTAssertEqual(GarminScoringInputs.nightMean((0..<4).map { .init(ts: $0 * 300, value: 40) }, nights: nap), 40)
+        XCTAssertNil(GarminScoringInputs.nightMean((0..<3).map { .init(ts: $0 * 300, value: 40) }, nights: nap))
     }
 
     func testNoNightMeansNoOvernightMeans() {
@@ -157,6 +172,7 @@ final class GarminScoringInputsTests: XCTestCase {
              .init(ts: 9_000, value: 47), .init(ts: 9_001, value: 80)],
             [.init(ts: 2_000, value: -1), .init(ts: 3_000, value: 0), .init(ts: 4_000, value: 35),
              .init(ts: 5_000, value: 36), .init(ts: 6_000, value: 37.5)],
+            (0..<12).map { .init(ts: 1_200 + $0 * 600, value: 40 + Double($0) / 4) },
         ]
         // The watch row's stored overnight respiration.
         let respValues: [Double?] = [nil, 19.583_333_333_333_332]
@@ -169,7 +185,7 @@ final class GarminScoringInputsTests: XCTestCase {
             for (wi, w) in watches.enumerated() {
                 for (hi, h) in hrvSets.enumerated() {
                     for (ri, rv) in respValues.enumerated() {
-                        for (ni, n) in [[], nights].enumerated() {
+                        for (ni, n) in [[], nights, [.init(start: 1_000, end: 2_500)]].enumerated() {
                             // A stored respiration only exists with a watch row.
                             let r = GarminScoringInputs.resolve(computedRestingHr: c.0, computedHrv: c.1,
                                                                 computedResp: c.2, watch: w, hrvSamples: h,
@@ -341,244 +357,454 @@ final class GarminScoringInputsTests: XCTestCase {
     stored oura-import nil
     resolve c0 w0 h0 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h0 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h0 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h0 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h0 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h0 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h1 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h1 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h1 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h1 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h1 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h1 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h2 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w0 h2 r0 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h2 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h2 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h2 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w0 h2 r1 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h2 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h2 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h3 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w0 h3 r0 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h3 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h3 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w0 h3 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w0 h3 r1 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h3 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h3 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h4 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h4 r0 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h4 r0 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h4 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w0 h4 r1 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w0 h4 r1 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=nil/nil
     resolve c0 w1 h0 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h0 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w1 h0 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h0 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w1 h0 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h0 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w1 h1 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h1 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w1 h1 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h1 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w1 h1 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h1 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w1 h2 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w1 h2 r0 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w1 h2 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w1 h2 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h2 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w1 h2 r1 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w1 h2 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h2 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w1 h3 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w1 h3 r0 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w1 h3 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w1 h3 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w1 h3 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w1 h3 r1 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w1 h3 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h3 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h4 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w1 h4 r0 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w1 h4 r0 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w1 h4 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w1 h4 r1 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w1 h4 r1 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c0 w2 h0 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h0 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
+    resolve c0 w2 h0 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h0 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w2 h0 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h0 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w2 h1 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h1 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
+    resolve c0 w2 h1 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h1 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w2 h1 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h1 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w2 h2 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
-    resolve c0 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
+    resolve c0 w2 h2 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h2 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h2 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w2 h3 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
-    resolve c0 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
+    resolve c0 w2 h3 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
     resolve c0 w2 h3 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h3 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h4 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=nil/nil
+    resolve c0 w2 h4 r0 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w2 h4 r0 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w2 h4 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w2 h4 r1 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w2 h4 r1 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c0 w3 h0 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h0 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h0 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h0 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h0 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h0 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h1 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h1 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h1 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h1 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h1 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h1 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h2 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h2 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h2 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h2 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h2 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h2 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h3 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h3 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h3 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
     resolve c0 w3 h3 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w3 h3 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h3 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h4 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h4 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h4 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=nil/nil
+    resolve c0 w3 h4 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h4 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c0 w3 h4 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c0 w4 h0 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h0 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w4 h0 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h0 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w4 h0 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h0 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w4 h1 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h1 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w4 h1 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h1 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w4 h1 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h1 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w4 h2 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w4 h2 r0 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w4 h2 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w4 h2 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h2 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w4 h2 r1 n1 -> rhr=nil/nil hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w4 h2 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h2 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c0 w4 h3 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
-    resolve c0 w4 h3 r0 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w4 h3 r0 n1 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w4 h3 r0 n2 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
     resolve c0 w4 h3 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c0 w4 h3 r1 n1 -> rhr=nil/nil hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w4 h3 r1 n1 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h3 r1 n2 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h4 r0 n0 -> rhr=nil/nil hrv=nil/nil/none resp=nil/nil
+    resolve c0 w4 h4 r0 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w4 h4 r0 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=nil/nil
+    resolve c0 w4 h4 r1 n0 -> rhr=nil/nil hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c0 w4 h4 r1 n1 -> rhr=nil/nil hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c0 w4 h4 r1 n2 -> rhr=nil/nil hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c1 w0 h0 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h0 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h0 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h0 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h0 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h0 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h1 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h1 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h1 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h1 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h1 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h1 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h2 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w0 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h2 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h2 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w0 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h2 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h3 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w0 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h3 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w0 h3 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w0 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h3 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r0 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r0 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r1 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w0 h4 r1 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=14.2000/my-whoop-noop
     resolve c1 w1 h0 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h0 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w1 h0 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h0 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w1 h0 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h0 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w1 h1 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h1 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w1 h1 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h1 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w1 h1 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h1 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w1 h2 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w1 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w1 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w1 h2 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h2 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w1 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w1 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h2 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w1 h3 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w1 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w1 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w1 h3 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w1 h3 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w1 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w1 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h3 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h4 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w1 h4 r0 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w1 h4 r0 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w1 h4 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w1 h4 r1 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w1 h4 r1 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c1 w2 h0 r0 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h0 r0 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w2 h0 r0 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h0 r1 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w2 h0 r1 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h0 r1 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w2 h1 r0 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h1 r0 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w2 h1 r0 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h1 r1 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w2 h1 r1 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h1 r1 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w2 h2 r0 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w2 h2 r0 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h2 r1 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h2 r1 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w2 h3 r0 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w2 h3 r0 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w2 h3 r1 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h3 r1 n2 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h4 r0 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w2 h4 r0 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w2 h4 r0 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w2 h4 r1 n0 -> rhr=63/garmin-watch hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w2 h4 r1 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w2 h4 r1 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c1 w3 h0 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h0 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h0 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h0 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h0 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h0 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h1 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h1 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h1 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h1 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h1 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h1 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h2 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h2 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h2 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h2 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h2 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h2 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h3 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h3 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h3 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
     resolve c1 w3 h3 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w3 h3 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h3 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h4 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h4 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h4 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=14.2000/my-whoop-noop
+    resolve c1 w3 h4 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h4 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c1 w3 h4 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c1 w4 h0 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h0 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w4 h0 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h0 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w4 h0 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h0 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w4 h1 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h1 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w4 h1 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h1 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w4 h1 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h1 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w4 h2 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w4 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w4 h2 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w4 h2 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h2 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w4 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w4 h2 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h2 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
     resolve c1 w4 h3 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
-    resolve c1 w4 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w4 h3 r0 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w4 h3 r0 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
     resolve c1 w4 h3 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
-    resolve c1 w4 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w4 h3 r1 n1 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h3 r1 n2 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h4 r0 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=14.2000/my-whoop-noop
+    resolve c1 w4 h4 r0 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w4 h4 r0 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=14.2000/my-whoop-noop
+    resolve c1 w4 h4 r1 n0 -> rhr=58/my-whoop-noop hrv=31.7500/my-whoop-noop/noop resp=19.5833/garmin-watch
+    resolve c1 w4 h4 r1 n1 -> rhr=58/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c1 w4 h4 r1 n2 -> rhr=58/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c2 w0 h0 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h0 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h0 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h0 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h0 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h0 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h1 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h1 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h1 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h1 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h1 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h1 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h2 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w0 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h2 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h2 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w0 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h2 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h3 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w0 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h3 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w0 h3 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w0 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h3 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r0 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r0 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r1 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w0 h4 r1 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.0000/my-whoop-noop
     resolve c2 w1 h0 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h0 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w1 h0 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h0 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w1 h0 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h0 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w1 h1 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h1 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w1 h1 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h1 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w1 h1 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h1 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w1 h2 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w1 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w1 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w1 h2 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h2 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w1 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w1 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h2 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w1 h3 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w1 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w1 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w1 h3 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w1 h3 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w1 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w1 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h3 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h4 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w1 h4 r0 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w1 h4 r0 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w1 h4 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w1 h4 r1 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w1 h4 r1 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c2 w2 h0 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h0 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w2 h0 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h0 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w2 h0 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h0 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w2 h1 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h1 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w2 h1 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h1 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w2 h1 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h1 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w2 h2 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w2 h2 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w2 h2 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h2 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w2 h2 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h2 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w2 h3 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w2 h3 r0 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w2 h3 r0 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w2 h3 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w2 h3 r1 n1 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h3 r1 n2 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h4 r0 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w2 h4 r0 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w2 h4 r0 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w2 h4 r1 n0 -> rhr=63/garmin-watch hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w2 h4 r1 n1 -> rhr=63/garmin-watch hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w2 h4 r1 n2 -> rhr=63/garmin-watch hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     resolve c2 w3 h0 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h0 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h0 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h0 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h0 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h0 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h1 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h1 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h1 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h1 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h1 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h1 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h2 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h2 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h2 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h2 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h2 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h2 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h3 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h3 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h3 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
     resolve c2 w3 h3 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w3 h3 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h3 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h4 r0 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h4 r0 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h4 r0 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.0000/my-whoop-noop
+    resolve c2 w3 h4 r1 n0 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h4 r1 n1 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
+    resolve c2 w3 h4 r1 n2 -> rhr=49/garmin-watch hrv=52.5000/garmin-watch/fit370 resp=19.5833/garmin-watch
     resolve c2 w4 h0 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h0 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w4 h0 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h0 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w4 h0 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h0 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w4 h1 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h1 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w4 h1 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h1 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w4 h1 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h1 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w4 h2 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w4 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w4 h2 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w4 h2 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h2 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w4 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=42.0000/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w4 h2 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h2 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
     resolve c2 w4 h3 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
-    resolve c2 w4 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w4 h3 r0 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w4 h3 r0 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
     resolve c2 w4 h3 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
-    resolve c2 w4 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=36.1667/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w4 h3 r1 n1 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h3 r1 n2 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h4 r0 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.0000/my-whoop-noop
+    resolve c2 w4 h4 r0 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w4 h4 r0 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.0000/my-whoop-noop
+    resolve c2 w4 h4 r1 n0 -> rhr=75/my-whoop-noop hrv=nil/nil/none resp=19.5833/garmin-watch
+    resolve c2 w4 h4 r1 n1 -> rhr=75/my-whoop-noop hrv=41.3750/garmin-watch/fit371 resp=19.5833/garmin-watch
+    resolve c2 w4 h4 r1 n2 -> rhr=75/my-whoop-noop hrv=40.2500/garmin-watch/fit371 resp=19.5833/garmin-watch
     era 0 0.0000
     era 1 0.0000
     era 2 1790899200.0000

@@ -69,14 +69,16 @@ class RecoveryDriversTest {
             baseline = 60.0, spread = 0.1, nValid = 14,
             nightsSinceUpdate = 0, status = BaselineStatus.TRUSTED,
         )
+        // #53: resting HR sits inside the ±3 term clamp so the HRV marginal alone moves (re-searched ties,
+        // the Swift ChargeDriversTests values).
         val positiveBelowTie = hrvMarginal(
-            33.09890762408082, 58.541, positiveHRVBaseline, positiveRHRBaseline,
+            30.017981401673083, 59.7015, positiveHRVBaseline, positiveRHRBaseline,
         )
         val positiveTie = hrvMarginal(
-            33.099135135290354, 58.541, positiveHRVBaseline, positiveRHRBaseline,
+            30.017981401673087, 59.7015, positiveHRVBaseline, positiveRHRBaseline,
         )
         val positiveBeyondTie = hrvMarginal(
-            33.09936273466694, 58.541, positiveHRVBaseline, positiveRHRBaseline,
+            30.01798140167309, 59.7015, positiveHRVBaseline, positiveRHRBaseline,
         )
         assertTrue(positiveBelowTie.first < 0.5)
         assertEquals(0, positiveBelowTie.second)

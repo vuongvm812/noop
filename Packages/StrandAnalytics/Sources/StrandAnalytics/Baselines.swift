@@ -53,14 +53,21 @@ public struct BaselineState: Equatable, Sendable {
     public let nightsSinceUpdate: Int
     /// Cold-start / staleness status.
     public let status: BaselineStatus
+    /// True when the baseline was built in the LOG domain (#53: the Charge HRV baseline, lnRMSSD).
+    /// `baseline` is then the geometric mean back in the metric's own unit (ms), so it still reads and
+    /// displays as one, while `spread` is in ln units: a value's z is (ln value − ln baseline) / σ.
+    /// Every z-scoring reader goes through `Baselines.z(_:state:)` / `RecoveryScorer` so the domain is
+    /// applied in one place. False for every linear baseline, which keeps their behaviour unchanged.
+    public let logDomain: Bool
 
     public init(baseline: Double, spread: Double, nValid: Int,
-                nightsSinceUpdate: Int, status: BaselineStatus) {
+                nightsSinceUpdate: Int, status: BaselineStatus, logDomain: Bool = false) {
         self.baseline = baseline
         self.spread = spread
         self.nValid = nValid
         self.nightsSinceUpdate = nightsSinceUpdate
         self.status = status
+        self.logDomain = logDomain
     }
 
     /// True iff fully trusted (not calibrating or stale).
@@ -315,7 +322,7 @@ public enum Baselines {
 
     /// Days from civil epoch (proleptic Gregorian) for an ISO `yyyy-MM-dd`, or nil if unparseable. TZ-free
     /// (Howard Hinnant's algorithm), so Swift and Kotlin agree bit-for-bit on the day difference.
-    static func isoEpochDay(_ iso: String) -> Int? {
+    public static func isoEpochDay(_ iso: String) -> Int? {
         let p = iso.split(separator: "-")
         guard p.count == 3, let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]), m >= 1, m <= 12 else { return nil }
         let yy = m <= 2 ? y - 1 : y
@@ -324,6 +331,23 @@ public enum Baselines {
         let doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1
         let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
         return era * 146097 + doe - 719468
+    }
+
+    /// The `yyyy-MM-dd` key for a civil epoch day: the exact inverse of `isoEpochDay` (Howard Hinnant's
+    /// civil_from_days), TZ-free so Swift and Kotlin agree. Kotlin twin: `Baselines.isoDayFromEpochDay`.
+    public static func isoDay(fromEpochDay z0: Int) -> String {
+        let z = z0 + 719468
+        let era = (z >= 0 ? z : z - 146096) / 146097
+        let doe = z - era * 146097
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        let mp = (5 * doy + 2) / 153
+        let d = doy - (153 * mp + 2) / 5 + 1
+        let m = mp < 10 ? mp + 3 : mp - 9
+        let y = yoe + era * 400 + (m <= 2 ? 1 : 0)
+        let ys = String(y), ms = String(m), ds = String(d)
+        return String(repeating: "0", count: max(0, 4 - ys.count)) + ys + "-"
+            + (ms.count < 2 ? "0" : "") + ms + "-" + (ds.count < 2 ? "0" : "") + ds
     }
 
     // MARK: - Winsorized EWMA update (production model)
@@ -606,11 +630,19 @@ public enum Baselines {
     /// Compute z / delta / ratio / in-normal-range for a value vs a baseline.
     /// z uses (value − baseline) / sigma(state); see `sigma(_:)` for the 1.253 conversion.
     public static func deviation(_ value: Double, state: BaselineState) -> Deviation {
-        let sig = sigma(state)
-        let z = (value - state.baseline) / sig
+        let z = Self.z(value, state: state)
         let delta = value - state.baseline
         let ratio = state.baseline != 0 ? (value / state.baseline - 1.0) : 0.0
         return Deviation(z: z, delta: delta, ratio: ratio, inNormalRange: abs(z) <= 1.0)
+    }
+
+    /// The z of `value` against `state`, in the state's own domain: linear (value − baseline) / σ, or for a
+    /// log-domain state (#53) (ln value − ln baseline) / σ, with both arguments floored at 1 before the log
+    /// (the HRV bounds already keep a valid night at 5 ms or more). Kotlin twin: `Baselines.z`.
+    public static func z(_ value: Double, state: BaselineState) -> Double {
+        let sig = sigma(state)
+        if state.logDomain { return (log(max(value, 1.0)) - log(max(state.baseline, 1.0))) / sig }
+        return (value - state.baseline) / sig
     }
 
     // MARK: - Trailing-window mean/SD (simple, auditable)

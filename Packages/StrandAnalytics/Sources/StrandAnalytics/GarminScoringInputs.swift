@@ -22,8 +22,16 @@ import Foundation
 // byte-identical by the oracle in GarminScoringInputsTests / GarminScoringInputsTest.
 public enum GarminScoringInputs {
 
-    /// Fewest in-sleep samples a mean is formed from. Five-minute HRV values: 3 = a quarter hour of sleep.
-    public static let minNightSamples = 3
+    /// Fewest in-sleep samples a mean is formed from on its own: twelve five-minute HRV values is an hour of
+    /// sleep (#53; three, a quarter hour, let a sliver of the night stand for all of it).
+    public static let minNightSamples = 12
+
+    /// Alternatively, the samples may cover at least this fraction of the sleep window (each sample standing
+    /// for `sampleIntervalSec`), so a short but fully sampled night still resolves.
+    public static let minNightCoverage = 0.5
+
+    /// The watch's sampling interval for the coverage rule: its overnight HRV values are five-minute values.
+    public static let sampleIntervalSec = 300
 
     /// One timestamped watch sample (unix seconds, value in the kind's unit).
     public struct Sample: Equatable, Sendable {
@@ -69,8 +77,9 @@ public enum GarminScoringInputs {
         public let respRateSource: FusionSource?
     }
 
-    /// Mean of the samples inside any of `nights` (inclusive bounds), or nil under `minNightSamples`. Each
-    /// sample counts once even when blocks overlap. Non-finite and non-positive values are skipped.
+    /// Mean of the samples inside any of `nights` (inclusive bounds), or nil unless there are at least
+    /// `minNightSamples` of them or they cover `minNightCoverage` of the sleep window (#53). Each sample
+    /// counts once even when blocks overlap. Non-finite and non-positive values are skipped.
     /// Kotlin twin: `GarminScoringInputs.nightMean`.
     public static func nightMean(_ samples: [Sample], nights: [Night]) -> Double? {
         var sum = 0.0
@@ -81,7 +90,29 @@ public enum GarminScoringInputs {
                 n += 1
             }
         }
-        return n >= minNightSamples ? sum / Double(n) : nil
+        guard n > 0 else { return nil }
+        if n >= minNightSamples { return sum / Double(n) }
+        let window = sleepSeconds(nights)
+        guard window > 0, Double(n * sampleIntervalSec) >= minNightCoverage * Double(window) else { return nil }
+        return sum / Double(n)
+    }
+
+    /// Seconds covered by the union of `nights` (overlapping blocks counted once).
+    /// Kotlin twin: `GarminScoringInputs.sleepSeconds`.
+    static func sleepSeconds(_ nights: [Night]) -> Int {
+        let sorted = nights.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+        var total = 0
+        var curStart = 0, curEnd = 0, open = false
+        for b in sorted {
+            if open && b.start <= curEnd {
+                curEnd = max(curEnd, b.end)
+            } else {
+                if open { total += curEnd - curStart }
+                curStart = b.start; curEnd = b.end; open = true
+            }
+        }
+        if open { total += curEnd - curStart }
+        return total
     }
 
     /// Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. `computed*` are NOOP's own

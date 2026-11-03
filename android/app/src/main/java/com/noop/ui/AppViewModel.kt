@@ -838,35 +838,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * #2525: the Charge baselines (HRV, resting HR, respiration) resolved with the engine's own rule from the
-     * imported and own daily rows, read apart because the rule needs to know which nights are imported. The
-     * single funnel every Charge readout below the headline reads (the "What shaped it" rows, the
-     * calibration count, the confidence tier), so none of them can fold a different history than the score
-     * was computed against. Anchored on today's local day and the two recalibration epochs, read on each
-     * emission exactly as the engine reads them per pass. The read range starts at this ViewModel's first
-     * window start, so it only ever covers MORE days than the window; [ChargeBaselines.history] trims to the
-     * current one. Mirrors the Swift `Repository.chargeBaselines`.
+     * #2525, #53: the stored rows the Charge baselines are resolved from, in the same buckets the engine
+     * reads (imported, own computed, same-brand export seed), plus each night's measuring source and the two
+     * recalibration epochs. The single funnel every Charge readout below the headline reads: the "What shaped
+     * it" rows, the calibration countdown and the confidence tier call [ChargeBaselines.Inputs.resolve] for
+     * the day they display, and the readiness word cuts on [ChargeBaselines.Inputs.epochs], so none of them
+     * can read a different baseline (or era) than the day was scored against. Own nights' sources come from
+     * the provenance the engine recorded ([ChargeBaselines.recordedSources]); an unknown one and every
+     * imported day fall back to [deviceId], the id the engine passes as `importedDeviceId`. The read range
+     * reaches [CHARGE_BASELINE_READ_DAYS] before this ViewModel's first local day, so a day browsed back that
+     * far still sees its full window. Mirrors the Swift `Repository.chargeBaselines`.
      */
-    val chargeBaselines: StateFlow<ChargeBaselines.Resolved?> = run {
+    val chargeBaselines: StateFlow<ChargeBaselines.Inputs?> = run {
         val startSec = System.currentTimeMillis() / 1000L
         val startTz = java.util.TimeZone.getDefault().getOffset(startSec * 1000L) / 1000L
-        val from = Baselines.cutoffKey(AnalyticsEngine.dayString(startSec, startTz), ChargeBaselines.windowDays - 1)
+        val from = Baselines.cutoffKey(AnalyticsEngine.dayString(startSec, startTz), CHARGE_BASELINE_READ_DAYS)
         combine(
             repository.importedDailyUnionFlow(deviceId, from, "9999-12-31"),
             repository.computedDailyUnionFlow(deviceId, from, "9999-12-31"),
             // #31: same-brand export nights seed at the lowest precedence, as in the engine.
             repository.baselineSeedDailyUnionFlow(deviceId, from, "9999-12-31"),
-        ) { imported, own, seed ->
-            val nowSec = System.currentTimeMillis() / 1000L
-            val tz = java.util.TimeZone.getDefault().getOffset(nowSec * 1000L) / 1000L
+            repository.computedScoreInputSourcesFlow(
+                deviceId, from, "9999-12-31", ChargeBaselines.sourceKeyPrecedence,
+            ),
+        ) { imported, own, seed, provenance ->
             val prefs = NoopPrefs.of(appContext)
-            ChargeBaselines.resolveWithSeed(
+            chargeBaselineInputs(
                 imported = imported,
                 own = own,
-                anchorDay = AnalyticsEngine.dayString(nowSec, tz),
-                hrvEpoch = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
-                recoveryEpoch = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
                 seed = seed,
+                provenance = provenance,
+                importedSourceId = deviceId,
+                hrvRecalibration = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
+                recoveryRecalibration = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
             )
         }
             .flowOn(Dispatchers.Default)

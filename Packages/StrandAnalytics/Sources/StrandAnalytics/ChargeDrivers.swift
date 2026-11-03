@@ -166,7 +166,7 @@ extension RecoveryScorer {
         // low, decoupled resting HR)? Detection ONLY: the guard's easing is not applied, so deltaPoints
         // below is the full, unguarded HRV penalty. The verdict merely NAMES the detected pattern so the
         // UI can surface it while real firings accumulate. See the MARK header in RecoveryScorer.swift.
-        let hrvZFull = zScore(hrv, mean: hrvBaseline.baseline, spread: hrvBaseline.spread)
+        let hrvZFull = higherBetterZ(hrv, state: hrvBaseline)
         let rhrZFull: Double? = rhrB.map { zScore($0.baseline, mean: rhr, spread: $0.spread) }
         let hrvSaturationDetected = parasympatheticSaturation(hrvZ: hrvZFull, rhrZ: rhrZFull).active
 

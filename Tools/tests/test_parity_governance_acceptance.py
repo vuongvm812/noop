@@ -1030,6 +1030,91 @@ class GovernanceRatchetTests(unittest.TestCase):
         errors = parity_ratchet.compare_metadata(self.root, base, offline=True)
         self.assertTrue(any("remove-function-pair" in error for error in errors), errors)
 
+    # A second pair keeps the file pair alive, so a fixture retires one function rather than a file.
+    RETIRED_KEEP_SWIFT = "    /// Kotlin twin: `Engine.keep`.\n    static func keep() -> Int { 1 }\n"
+    RETIRED_KEEP_KOTLIN = "fun keep(): Int = 1"
+
+    def retired_pair_fixture(self) -> tuple[Path, Path, str, str]:
+        swift = self.root / "Packages/StrandAnalytics/Sources/StrandAnalytics/Engine.swift"
+        kotlin = self.root / "android/app/src/main/java/com/noop/analytics/Engine.kt"
+        swift.parent.mkdir(parents=True, exist_ok=True)
+        kotlin.parent.mkdir(parents=True, exist_ok=True)
+        swift.write_text(
+            "enum Engine {\n" + self.RETIRED_KEEP_SWIFT
+            + "    /// Kotlin twin: `Engine.score`.\n    static func score(_ value: Int) -> Int { value }\n}\n",
+            encoding="utf-8",
+        )
+        kotlin.write_text(
+            "object Engine { " + self.RETIRED_KEEP_KOTLIN + "\n fun score(value: Int): Int = value }\n",
+            encoding="utf-8",
+        )
+        compact = parity_ledger.build_compact_twin_map(self.root)
+        self.write("Tools/parity_twin_map.json", compact)
+        self.write(
+            "Tools/parity_ledger_baseline.json",
+            parity_ledger.build_compact_baseline(parity_ledger.scan(self.root, compact)),
+        )
+        base = self.commit()
+        identity = (
+            "Packages/StrandAnalytics/Sources/StrandAnalytics/Engine.swift::score/1#1\0"
+            "android/app/src/main/java/com/noop/analytics/Engine.kt::score/1#1"
+        )
+        return swift, kotlin, base, identity
+
+    def retired_pair_registry(self, identity: str) -> dict:
+        return {"schema_version": 1, "dispositions": [{
+            "type": "retired_pair", "kind": "remove-function-pair",
+            "identity": identity,
+            "identity_sha256": parity_ledger._canonical_sha256(identity),
+            "issue": "bhelm/noop#78",
+            "reason": "The scorer this twin served was deleted on both platforms.",
+        }]}
+
+    def refresh_snapshots(self) -> None:
+        refreshed = parity_ledger.build_compact_twin_map(self.root)
+        self.write("Tools/parity_twin_map.json", refreshed)
+        self.write(
+            "Tools/parity_ledger_baseline.json",
+            parity_ledger.build_compact_baseline(parity_ledger.scan(self.root, refreshed)),
+        )
+
+    def test_retired_pair_accepts_a_twin_deleted_on_both_platforms(self) -> None:
+        swift, kotlin, base, identity = self.retired_pair_fixture()
+        swift.write_text("enum Engine {\n" + self.RETIRED_KEEP_SWIFT + "}\n", encoding="utf-8")
+        kotlin.write_text("object Engine { " + self.RETIRED_KEEP_KOTLIN + " }\n", encoding="utf-8")
+        self.refresh_snapshots()
+        errors = parity_ratchet.compare_metadata(self.root, base, offline=True)
+        self.assertTrue(any("remove-function-pair" in error for error in errors), errors)
+
+        self.write("Tools/parity_dispositions.json", self.retired_pair_registry(identity))
+        self.assertEqual([], parity_ratchet.compare_metadata(self.root, base, offline=True))
+
+    def test_retired_pair_cannot_waive_a_one_sided_removal(self) -> None:
+        swift, kotlin, base, identity = self.retired_pair_fixture()
+        swift.write_text("enum Engine {\n" + self.RETIRED_KEEP_SWIFT + "}\n", encoding="utf-8")
+        self.write("Tools/parity_dispositions.json", self.retired_pair_registry(identity))
+        self.refresh_snapshots()
+        errors = parity_ratchet.compare_metadata(self.root, base, offline=True)
+        self.assertTrue(
+            any("retired_pair" in error and "keeps a live endpoint" in error and "Engine.kt" in error
+                for error in errors),
+            errors,
+        )
+
+    def test_retired_pair_cannot_waive_a_dropped_claim(self) -> None:
+        swift, _kotlin, base, identity = self.retired_pair_fixture()
+        swift.write_text(
+            "enum Engine {\n" + self.RETIRED_KEEP_SWIFT
+            + "    static func score(_ value: Int) -> Int { value }\n}\n",
+            encoding="utf-8",
+        )
+        self.write("Tools/parity_dispositions.json", self.retired_pair_registry(identity))
+        self.refresh_snapshots()
+        errors = parity_ratchet.compare_metadata(self.root, base, offline=True)
+        self.assertEqual(
+            2, sum("keeps a live endpoint" in error for error in errors), errors
+        )
+
     def test_lower_debt_count_cannot_mask_replacement_identity_in_ratchet(self) -> None:
         swift = self.root / "Packages/StrandAnalytics/Sources/StrandAnalytics/Engine.swift"
         kotlin = self.root / "android/app/src/main/java/com/noop/analytics/Engine.kt"

@@ -55,6 +55,49 @@ class DispositionKindVocabularyTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 parity_ratchet._validate_dispositions(doc, "test")
 
+    def test_every_required_pair_removal_kind_is_declarable_as_retired_pair(self) -> None:
+        pair = "A.swift::a/1#1" + chr(0) + "A.kt::a/1#1"
+        base = dict(self.EMPTY)
+        for name in ("function_pairs", "property_pairs", "constant_pairs"):
+            base[name] = [pair]
+        required = parity_ratchet._required_v3_exemptions(base, dict(self.EMPTY), set(), set())
+        kinds = {kind for kind, _ in required}
+        self.assertEqual(set(parity_ratchet.RETIRED_PAIR_INVENTORY), kinds)
+        for kind in sorted(kinds):
+            doc = {"schema_version": 1, "dispositions": [{
+                "type": "retired_pair", "kind": kind, "identity": pair,
+                "identity_sha256": parity_ledger._canonical_sha256(pair),
+                "issue": "bhelm/noop#78",
+                "reason": "Deleted on both platforms for this vocabulary test.",
+            }]}
+            with self.subTest(kind=kind):
+                parity_ratchet._validate_dispositions(doc, "test")
+
+    def test_retired_pair_rejects_malformed_entries(self) -> None:
+        pair = "A.swift::a/1#1" + chr(0) + "A.kt::a/1#1"
+        good = {
+            "type": "retired_pair", "kind": "remove-function-pair", "identity": pair,
+            "identity_sha256": parity_ledger._canonical_sha256(pair),
+            "issue": "bhelm/noop#78", "reason": "Deleted on both platforms for this test.",
+        }
+        parity_ratchet._validate_dispositions({"schema_version": 1, "dispositions": [good]}, "test")
+        flipped = "A.kt::a/1#1" + chr(0) + "A.swift::a/1#1"
+        bad = {
+            "one-sided kind": {**good, "kind": "add-unpaired-function"},
+            "platform key": {**good, "platform": "swift"},
+            "missing issue": {k: v for k, v in good.items() if k != "issue"},
+            "uncanonical issue": {**good, "issue": "#53"},
+            "short reason": {**good, "reason": "gone"},
+            "hash": {**good, "identity_sha256": "0" * 64},
+            "endpoint order": {**good, "identity": flipped,
+                               "identity_sha256": parity_ledger._canonical_sha256(flipped)},
+        }
+        for label, item in bad.items():
+            with self.subTest(case=label), self.assertRaises(Exception):
+                parity_ratchet._validate_dispositions(
+                    {"schema_version": 1, "dispositions": [item]}, "test"
+                )
+
     def test_property_kind_is_singular(self) -> None:
         self.assertIn("add-unpaired-property", self._required_kinds())
         self.assertNotIn("add-unpaired-propertie", self._required_kinds())

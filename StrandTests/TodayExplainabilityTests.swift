@@ -102,18 +102,18 @@ final class TodayExplainabilityTests: XCTestCase {
         // carry through is the production one.
         // Twin of the Kotlin `scoreState_gapLongerThanTheChargeWindow_calibratesRatherThanCarrying`.
         let anchor = "2026-02-11"
-        // 2026-01-01..2026-01-14 are 41..28 days before the anchor: fourteen nights, every one of them
-        // outside the 21-day window (which opens 2026-01-22).
+        // 2025-11-01..2025-11-14 are 102..89 days before the anchor: fourteen nights, every one of them
+        // outside the 60-day window (#53; it opens 2025-12-13).
         let oldNights: [(day: String, value: Double?)] = (1...14).map {
-            (day: String(format: "2026-01-%02d", $0), value: 70)
+            (day: String(format: "2025-11-%02d", $0), value: 70)
         }
         let remaining: (Int?) -> Int? = { $0.map { max(1, Baselines.minNightsSeed - $0) } }
 
-        // BEFORE #2525: the fold saw every banked night, so nValid was 14, over `minNightsSeed`, the
+        // BEFORE #2525: the baseline saw every banked night, so nValid was 14, over `minNightsSeed`, the
         // count was nil and the carry won. That is the "Latest sleep" the test above describes.
-        let unwindowed = RecoveryScorer.calibrationNights(nightlyHrv: oldNights.map(\.value),
-                                                          dayKeys: oldNights.map(\.day),
-                                                          hasRecovery: false)
+        let unbounded = ChargeBaselines.state(values: oldNights.map(\.value), dayKeys: oldNights.map(\.day),
+                                              metric: .hrv, anchorDay: anchor, baselineEpoch: 0)
+        let unwindowed = RecoveryScorer.calibrationNights(hrvBaseline: unbounded, hasRecovery: false)
         XCTAssertNil(unwindowed, "fourteen banked nights were trusted, so the tile carried")
         XCTAssertEqual(MetricTileState.resolve(hasTodayValue: false,
                                                calibratingNightsRemaining: remaining(unwindowed),
@@ -122,17 +122,13 @@ final class TodayExplainabilityTests: XCTestCase {
                        .carriedLastNight(date: "14 Jan", stale: true))
 
         // SINCE #2525: the window drops all fourteen, so the fold is empty and the count is 0.
-        let history = ChargeBaselines.history(imported: [],
-                                              own: oldNights,
-                                              anchorDay: anchor,
-                                              cfg: Baselines.hrvCfg,
-                                              baselineEpoch: 0)
-        XCTAssertEqual(history.ownValidNights, 0)
-        XCTAssertTrue(history.values.isEmpty, "nights outside the window must not reach the fold")
+        let resolved = ChargeBaselines.resolveDay(scoredDay: anchor, imported: .init(), own: .init(hrv: oldNights),
+                                                  seed: .init(), sourceDays: [], hrvRecalibration: 0,
+                                                  recoveryRecalibration: 0)
+        XCTAssertEqual(resolved?.hrvHistory.ownValidNights, 0)
+        XCTAssertTrue(resolved?.hrvHistory.values.isEmpty ?? false, "nights outside the window must not reach the fold")
 
-        let n = RecoveryScorer.calibrationNights(nightlyHrv: history.values,
-                                                 dayKeys: history.dayKeys,
-                                                 hasRecovery: false)
+        let n = RecoveryScorer.calibrationNights(hrvBaseline: resolved?.hrv, hasRecovery: false)
         XCTAssertEqual(n, 0)
         XCTAssertEqual(MetricTileState.resolve(hasTodayValue: false,
                                                calibratingNightsRemaining: remaining(n),

@@ -162,120 +162,6 @@ final class RecoveryScorerTests: XCTestCase {
         XCTAssertEqual(RecoveryScorer.band(90), "green")
     }
 
-    // MARK: - Recovery Index / Activity-Balance folded into recovery(...)
-
-    func testRecoveryIndexAndActivityBalanceDefaultNilByteIdenticalToBefore() {
-        // Both new terms default to nil; the score must be EXACTLY the same whether the caller
-        // omits them (every pre-existing call site in the app) or supplies nil explicitly —
-        // proving the addition is non-breaking for every caller that does not yet supply the
-        // two new signals. Covers BOTH overloads (BaselineState convenience + raw DriverBaseline).
-        let omitted = RecoveryScorer.recovery(
-            hrv: 55, rhr: 52, resp: 14.0,
-            hrvBaseline: baseline(mean: 50, sigma: 6),
-            rhrBaseline: baseline(mean: 55, sigma: 3),
-            respBaseline: baseline(mean: 14.5, sigma: 1),
-            sleepPerf: 0.9,
-            skinTempDev: 0.4)!
-        let explicitNil = RecoveryScorer.recovery(
-            hrv: 55, rhr: 52, resp: 14.0,
-            hrvBaseline: baseline(mean: 50, sigma: 6),
-            rhrBaseline: baseline(mean: 55, sigma: 3),
-            respBaseline: baseline(mean: 14.5, sigma: 1),
-            sleepPerf: 0.9,
-            skinTempDev: 0.4,
-            recoveryIndexSlope: nil,
-            effortBaseline: nil,
-            priorDayEffort: nil)!
-        XCTAssertEqual(omitted, explicitNil, accuracy: 1e-9)
-
-        let hrvB = RecoveryScorer.DriverBaseline(mean: 50, spread: 6 / 1.253)
-        let rhrB = RecoveryScorer.DriverBaseline(mean: 55, spread: 3 / 1.253)
-        let rawOmitted = RecoveryScorer.recovery(
-            hrv: 55, rhr: 52, resp: nil,
-            hrvBaseline: hrvB, rhrBaseline: rhrB, respBaseline: nil,
-            sleepPerf: 0.9, skinTempDev: 0.4)!
-        let rawExplicitNil = RecoveryScorer.recovery(
-            hrv: 55, rhr: 52, resp: nil,
-            hrvBaseline: hrvB, rhrBaseline: rhrB, respBaseline: nil,
-            sleepPerf: 0.9, skinTempDev: 0.4, hrvBaselineUsable: true,
-            recoveryIndexSlope: nil, effortBaseline: nil, priorDayEffort: nil)!
-        XCTAssertEqual(rawOmitted, rawExplicitNil, accuracy: 1e-9)
-    }
-
-    func testRecoveryIndexSteeperDeclineRaisesChargeMoreThanFlatOrRising() {
-        // Pin HRV/RHR/sleep at neutral so the ONLY thing moving is the slope term.
-        func score(_ slope: Double?) -> Double {
-            RecoveryScorer.recovery(
-                hrv: 50, rhr: 55, resp: nil,
-                hrvBaseline: baseline(mean: 50, sigma: 6),
-                rhrBaseline: baseline(mean: 55, sigma: 3),
-                respBaseline: nil,
-                sleepPerf: RecoveryScorer.sleepPerfCenter,
-                recoveryIndexSlope: slope)!
-        }
-        let flat = score(0.0)
-        let mildDecline = score(-1.0)
-        let steepDecline = score(-4.0)
-        let rising = score(2.0)
-
-        // Multiple distinct slopes recovered in the expected order (derived-signal rule): a
-        // steeper decline raises the Charge contribution more than a flat or rising night.
-        XCTAssertGreaterThan(steepDecline, mildDecline)
-        XCTAssertGreaterThan(mildDecline, flat)
-        XCTAssertGreaterThan(flat, rising)
-    }
-
-    func testActivityBalanceHighEffortYesterdayLowersChargeVsRestDay() {
-        // Baseline drivers pinned ABOVE-center (positive composite z), same rigor as the
-        // skin-temp precedent test, so the effort term's renormalization dilution has a
-        // direction to push against.
-        func score(_ effort: Double?) -> Double {
-            RecoveryScorer.recovery(
-                hrv: 58, rhr: 50, resp: nil,
-                hrvBaseline: baseline(mean: 50, sigma: 6),
-                rhrBaseline: baseline(mean: 55, sigma: 3),
-                respBaseline: nil,
-                sleepPerf: 0.92,
-                effortBaseline: baseline(mean: 40, sigma: 15),
-                priorDayEffort: effort)!
-        }
-        let neutral = score(nil)
-        let atBaseline = score(40.0)     // exactly typical -> present term, z=0, dilutes toward center
-        let restDay = score(10.0)        // well below normal -> supports recovery further
-        let hardDay = score(65.0)        // above normal -> pulls recovery down
-        let veryHardDay = score(90.0)    // far above normal -> pulls down more
-
-        XCTAssertLessThan(atBaseline, neutral,
-            "a present at-baseline effort term still dilutes an above-center composite toward the logistic center")
-        XCTAssertGreaterThan(restDay, atBaseline, "a lighter-than-normal day supports recovery vs a typical day")
-        XCTAssertGreaterThan(atBaseline, hardDay, "a harder-than-normal day pulls recovery down vs a typical day")
-        // Multiple distinct levels recovered in strictly the expected monotonic order
-        // (derived-signal rule): more effort yesterday -> lower Charge contribution.
-        XCTAssertGreaterThan(restDay, hardDay)
-        XCTAssertGreaterThan(hardDay, veryHardDay)
-    }
-
-    func testActivityBalanceDropsTermUnlessBothValueAndBaselineArePresent() {
-        func score(effort: Double?, effortBaseline base: BaselineState?) -> Double {
-            RecoveryScorer.recovery(
-                hrv: 50, rhr: 55, resp: nil,
-                hrvBaseline: baseline(mean: 50, sigma: 6),
-                rhrBaseline: baseline(mean: 55, sigma: 3),
-                respBaseline: nil,
-                sleepPerf: RecoveryScorer.sleepPerfCenter,
-                effortBaseline: base,
-                priorDayEffort: effort)!
-        }
-        let neither = score(effort: nil, effortBaseline: nil)
-        let valueOnly = score(effort: 80.0, effortBaseline: nil)
-        let baselineOnly = score(effort: nil, effortBaseline: baseline(mean: 40, sigma: 15))
-        let both = score(effort: 80.0, effortBaseline: baseline(mean: 40, sigma: 15))
-
-        XCTAssertEqual(neither, valueOnly, accuracy: 1e-9, "a value with no baseline must drop the term")
-        XCTAssertEqual(neither, baselineOnly, accuracy: 1e-9, "a baseline with no value must drop the term")
-        XCTAssertNotEqual(both, neither, "supplying BOTH must actually change the score")
-    }
-
     // MARK: - Required HRV baseline on the raw DriverBaseline overload (#40)
 
     func testRawOverloadRefusesToScoreWithoutHRVBaseline() {
@@ -285,7 +171,6 @@ final class RecoveryScorerTests: XCTestCase {
         // case below supplies exactly one optional driver with the HRV baseline absent.
         let rhrB = RecoveryScorer.DriverBaseline(mean: 55, spread: 3 / 1.253)
         let respB = RecoveryScorer.DriverBaseline(mean: 14.5, spread: 1 / 1.253)
-        let effortB = RecoveryScorer.DriverBaseline(mean: 40, spread: 15 / 1.253)
 
         // The issue's minimal reproduction: sleepPerf as the only weighted term.
         XCTAssertNil(RecoveryScorer.recovery(
@@ -307,22 +192,11 @@ final class RecoveryScorerTests: XCTestCase {
             hrv: 50, rhr: 60, resp: nil,
             hrvBaseline: nil, rhrBaseline: nil, respBaseline: nil,
             sleepPerf: nil, skinTempDev: 0.4))
-        // Recovery-Index term alone.
-        XCTAssertNil(RecoveryScorer.recovery(
-            hrv: 50, rhr: 60, resp: nil,
-            hrvBaseline: nil, rhrBaseline: nil, respBaseline: nil,
-            sleepPerf: nil, recoveryIndexSlope: -1.0))
-        // Activity-Balance term alone.
-        XCTAssertNil(RecoveryScorer.recovery(
-            hrv: 50, rhr: 60, resp: nil,
-            hrvBaseline: nil, rhrBaseline: nil, respBaseline: nil,
-            sleepPerf: nil, effortBaseline: effortB, priorDayEffort: 80.0))
         // Every optional driver at once still cannot substitute for the required HRV baseline.
         XCTAssertNil(RecoveryScorer.recovery(
             hrv: 50, rhr: 60, resp: 14.0,
             hrvBaseline: nil, rhrBaseline: rhrB, respBaseline: respB,
-            sleepPerf: 0.85, skinTempDev: 0.4, recoveryIndexSlope: -1.0,
-            effortBaseline: effortB, priorDayEffort: 80.0))
+            sleepPerf: 0.85, skinTempDev: 0.4))
     }
 
     func testRawOverloadPreservesColdStartAndValidScores() {

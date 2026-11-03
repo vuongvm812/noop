@@ -622,37 +622,10 @@
     {
       "type": "out_of_scope_twin",
       "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::baselineImports/3#1",
-      "identity_sha256": "f0c566bea1e122bce085625a7f4e07ba45fb0b4e92d0d417f564b091a1ab7711",
-      "platform": "kotlin",
-      "rationale": "baselineImports reads the imported WHOOP rows the baselines fold (hist) together with the same-brand wearable-export seed (#31, vuongvm812/noop#31), in one call so analyzeRecentOnCpu stays under its JaCoCo size budget; the Swift engine reads hist and the seed inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::chargeHistories/13#1",
-      "identity_sha256": "c1a5ed05247682a12ebd1300d4d9573e85cd71cf4426d183ce67c098adfb1a6d",
-      "platform": "kotlin",
-      "rationale": "chargeHistories builds the era-cut epochs and the HRV / resting-HR / respiration Charge histories with the same-brand export seed (#31, vuongvm812/noop#31); it was lifted out of analyzeRecentOnCpu for its JaCoCo size budget, and the Swift engine builds the same values inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::computeHabitualSleep/8#1",
       "identity_sha256": "2990cd69a6af39dc853f6665695ef9520a936a073eab24b983c4585d10577070",
       "platform": "kotlin",
       "rationale": "Swift IntelligenceEngine.computeHabitualSleep has the same role in the excluded app layer; #31 (vuongvm812/noop#31) adds the wearable-export nights on both, by the same gap-fill. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::eraSourceDays/5#1",
-      "identity_sha256": "cd9d678dd367019091b5f3dd5477e8fbfaa8f40b437ccab8fd1440c2ddd55242",
-      "platform": "kotlin",
-      "rationale": "eraSourceDays builds the (day, source) pairs the respiration and Garmin baseline-era cuts read, now tagging a seeded export night with its export source (#31, vuongvm812/noop#31); the Swift engine builds the same pairs inline (respCandidateDays + respSourceByDay) in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
       "twin_path": "Strand/Data/IntelligenceEngine.swift"
     },
     {
@@ -671,15 +644,6 @@
       "identity_sha256": "ba8bcd888fc9b2333602554bb462b39d7697822aff486c4bb7f0909afdf8ffa6",
       "platform": "kotlin",
       "rationale": "seedSourceByDay tags each seeded export day with the first seed source holding it (#31, vuongvm812/noop#31); the Swift engine builds the same map inline (respSourceByDay) in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
-      "twin_path": "Strand/Data/IntelligenceEngine.swift"
-    },
-    {
-      "type": "out_of_scope_twin",
-      "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::seededHistory/7#1",
-      "identity_sha256": "3731b2f9e9a4490b3621b2da8842a6358bb53792c3a6c794966ffded064ea4de",
-      "platform": "kotlin",
-      "rationale": "seededHistory calls ChargeBaselines.history with the WHOOP-import, own and same-brand export seed nights for one metric (#31, vuongvm812/noop#31); it exists to keep analyzeRecentOnCpu under its JaCoCo size budget, and the Swift engine calls ChargeBaselines.history inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. This disposition does not assert behavioural parity: the shared rules it calls (WearableHistory, ChargeBaselines.history's seed input, fillSleepGaps / SleepMerge.fillingGaps, foldWearableHistory) are paired and checked against the shared oracle Tools/parity_cases/wearable_history.json on both platforms.",
       "twin_path": "Strand/Data/IntelligenceEngine.swift"
     },
     {
@@ -769,6 +733,154 @@
       "platform": "kotlin",
       "rationale": "Gained the watch VO2max argument that tags a watch value as Garmin (vuongvm812/noop#51); the Swift twin, IntelligenceEngine.vo2MaxProvenance, lives in the excluded app layer with the same parameter.",
       "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/ChargeBaselines.kt::fromRows/1#1",
+      "identity_sha256": "49ea565549e6d1ed63d24fc5965bed517482839b2c5d3d2f445eff0a53eccbbb",
+      "platform": "kotlin",
+      "rationale": "ChargeBaselines.Nights.fromRows (#53, vuongvm812/noop#53) builds the four metric histories from daily rows; its Swift twin is the initializer Nights.init(rows:), which the ledger does not inventory as a function. Both are pinned by the shared Charge baselines oracle (ChargeBaselinesTests / ChargeBaselinesOracleTest)."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/ReadinessEngine.kt::readinessKey/3#1",
+      "identity_sha256": "0fb41045964243c83228a52480ba6ca531b4fe1921484cfcfe1aa3d408f8064c",
+      "platform": "kotlin",
+      "rationale": "readinessKey builds the process-local readiness cache key, now including the Charge era epochs (#53, vuongvm812/noop#53). Swift builds the same ReadinessKey inline in ReadinessEngine.evaluate; the key never crosses platforms, so there is no function to pair."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorer.kt::recovery/8#1",
+      "identity_sha256": "e952892c23aca5ae93919e61ef7d45ddefed0440e1ded62d33f965bf84e74eb7",
+      "platform": "kotlin",
+      "rationale": "The BaselineState convenience overload of RecoveryScorer.recovery lost its effort and Recovery Index parameters (#53, vuongvm812/noop#53). Its Swift twin, the BaselineState overload of RecoveryScorer.recovery, has a label list that is a prefix of the DriverBaseline overload's, so no selector claim resolves to it alone. Both overloads are pinned by the shared RecoveryOptionalBaselineUsable oracle on both platforms."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer.swift::recovery/8#1",
+      "identity_sha256": "1cae8f249d57ca9495ea4c6acb9b3ad4db4fb313fdd25650e847888bee09cd35",
+      "platform": "swift",
+      "rationale": "The BaselineState convenience overload of RecoveryScorer.recovery lost its effort and Recovery Index parameters (#53, vuongvm812/noop#53). Kotlin overloads carry no parameter labels in the ledger, so a Swift claim cannot pick its Kotlin twin out from the DriverBaseline overload of the same name. Both overloads are pinned by the shared RecoveryOptionalBaselineUsable oracle on both platforms."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::scoreInputSources/4#1",
+      "identity_sha256": "85e4fab977e4c37b28e648d69115728c7210ff196a56cc51a1707e3ff57d1d77",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO method reading a range of score-input provenance rows (#53, vuongvm812/noop#53). The paired read is WhoopRepository.scoreInputSources, whose Swift twin WhoopStore.scoreInputSources runs the same SELECT through GRDB directly, so there is no Swift DAO function to pair with."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::scoreInputSourcesFlow/4#1",
+      "identity_sha256": "a7af22ef5efd2d5688236e6f93deda88371b087d0a749db85bb4027838483ad9",
+      "platform": "kotlin",
+      "rationale": "Room @Query DAO Flow over the same provenance range as scoreInputSources (#53, vuongvm812/noop#53), feeding the dashboard Charge baselines. Swift reads the rows once per Repository.refresh through WhoopStore.scoreInputSources, so there is no Swift DAO or Flow function to pair with."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::computedScoreInputSourcesFlow/4#1",
+      "identity_sha256": "5084c15eaef85ef8eff806208505e64d1cb24d097adaf8b24d59e85a938ca5e9",
+      "platform": "kotlin",
+      "rationale": "computedScoreInputSourcesFlow reads the Charge baseline provenance across the computed namespaces for the dashboard (#53, vuongvm812/noop#53); Swift Repository.refresh reads the same rows per computed id in the excluded app layer. This disposition records the role twin only.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::baselineImports/7#1",
+      "identity_sha256": "c70c5fd36771b3e1065d3105f92f588ef3b1ddfe396b2500fa53ab71a5a5a99c",
+      "platform": "kotlin",
+      "rationale": "baselineImports now also reads the stored own computed rows and their provenance for the Charge baseline window (#53, vuongvm812/noop#53); the Swift engine reads them inline in IntelligenceEngine in Strand/Data, the app target the ledger does not scan. The shared rules it feeds (ChargeBaselines.resolveDay, sourceDays, recordedSources) are paired and pinned by the Charge baselines oracle.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::chargeBaselinesByDay/10#1",
+      "identity_sha256": "dd4a799eafdba2f74df1725d8b1feef319db214a185ce25347a9c55d594e5494",
+      "platform": "kotlin",
+      "rationale": "chargeBaselinesByDay assembles the per-day Charge baseline inputs (#53, vuongvm812/noop#53) outside the size-budgeted analyzeRecentOnCpu; the Swift engine builds the same values inline in IntelligenceEngine in Strand/Data. The shared rules it calls are paired and pinned by the Charge baselines oracle.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::forDay/1#1",
+      "identity_sha256": "cfa3ddfe0cf6cd506fb569811e3a4377c771717c3adf21530948687e08096b76",
+      "platform": "kotlin",
+      "rationale": "ChargeDays.forDay resolves one scored day's trailing Charge baselines (#53, vuongvm812/noop#53); its Swift role twin is the local chargeBaselines(for:) in IntelligenceEngine in Strand/Data. Both call the paired ChargeBaselines.resolveDay.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/ChargeBaselines.swift::none",
+      "identity_sha256": "c41f493f12e1fba64d07a635282d483a15fe2af9611be18da03e1bc59141bb9b",
+      "platform": "swift",
+      "rationale": "ChargeBaselines.Epochs.none (#53, vuongvm812/noop#53) is a struct value, so its Kotlin twin ChargeBaselines.Epochs.none is a plain val in a companion object (Kotlin const val cannot hold a data class) and the ledger's const-val rule cannot pair it. Both are pinned by the shared Charge baselines oracle (ChargeBaselinesTests / ChargeBaselinesOracleTest)."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/ChargeBaselines.swift::sourceKeyPrecedence",
+      "identity_sha256": "6d308b6d02d76198d2ba1a97c53935c5ae0d60b0e2b54eaec90095b7f1d9142a",
+      "platform": "swift",
+      "rationale": "ChargeBaselines.sourceKeyPrecedence (#53, vuongvm812/noop#53) is an array, so its Kotlin twin ChargeBaselines.sourceKeyPrecedence is a plain val List (Kotlin const val cannot hold a List) and the ledger's const-val rule cannot pair it. Both read orders are pinned by the recordedSources tests on both platforms."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-function-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/ChargeBaselines.swift::resolve/5#1\u0000android/app/src/main/java/com/noop/analytics/ChargeBaselines.kt::resolve/5#1",
+      "identity_sha256": "5116630029939c0839ff7030c6ace4bce9b07f1aad9458d31f088cf5da098340",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The EWMA fold that built the Charge baselines is replaced on both platforms by the per-day trailing 60-night mean and sample SD (ChargeBaselines.resolveDay / state). Nothing calls the old fold-based resolve any more, so both twins are deleted rather than kept as dead code."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-function-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/ChargeBaselines.swift::resolveWithSeed/6#1\u0000android/app/src/main/java/com/noop/analytics/ChargeBaselines.kt::resolveWithSeed/6#1",
+      "identity_sha256": "e32cb0cabc839acaf5b1bea82946c07589c51b030dee6cce05764b422dfcce7c",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The seeded variant of the old EWMA Charge baseline fold is replaced on both platforms by ChargeBaselines.resolveDay, which takes the export seed directly. Nothing calls resolveWithSeed any more, so both twins are deleted."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::longWindowFallback\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::LONG_WINDOW_FALLBACK",
+      "identity_sha256": "09ec99041ba38e282301e3731220fb63c1a5bf599d5690dbf802d7eece03060f",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness now uses calendar windows (7 and 60 days) on both platforms instead of night-count windows, so the short-history fallback length is no longer read anywhere and both constants are deleted."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer.swift::recoveryIndexScaleBpmPerHr\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorer.kt::recoveryIndexScaleBpmPerHr",
+      "identity_sha256": "1dd15ce9324fcdbbe5ebd80a8a741c2620e05635faaa581fb01cdf9f33f53e93",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The Recovery Index term was never wired into the Charge score on either platform; it is removed together with its weight, so its scale constant is deleted on both platforms."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer.swift::wActivityBalance\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorer.kt::wActivityBalance",
+      "identity_sha256": "943b46210cba0c9098ba0c64a6aacac90a28716517c4fa8c9134a275ba3f199c",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The Activity Balance term was never wired into the Charge score on either platform; the term and its weight are deleted on both platforms instead of carrying an unused weight."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer.swift::wRecoveryIndex\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorer.kt::wRecoveryIndex",
+      "identity_sha256": "3de7b4b3e9ba87af35ff5fb4e24aa16d602d3d62a6e7f68ba3b4f642910444a6",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The Recovery Index term was never wired into the Charge score on either platform; the term and its weight are deleted on both platforms instead of carrying an unused weight."
     }
   ]
 }

@@ -3,6 +3,7 @@ package com.noop.analytics
 import com.noop.data.HrSample
 import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -31,21 +32,13 @@ import kotlin.math.roundToInt
  * the term drops and the remaining weights renormalize, so the score is IDENTICAL to
  * the pre-skin-temp model (the no-skin-temp path is byte-for-byte unchanged).
  *
- * Two OPTIONAL Oura-Readiness-style terms (dormant until a caller supplies them):
- *   overnight resting-HR DECLINE slope ("Recovery Index")      → W_RECOVERY_INDEX    = 0.05
- *   previous-day Effort vs personal baseline ("Activity Balance" /
- *   "Previous Day Activity", collapsed into one term)          → W_ACTIVITY_BALANCE  = 0.05
- * Both are ADDITIVE and NON-BREAKING: each is null unless the caller supplies it, in which
- * case it folds in with its small weight above; when null the term drops and the weights
- * renormalize exactly like the skin-temp term, so the default score for every existing caller
- * is BYTE-IDENTICAL to before either term existed. Recovery Index needs no personal baseline
- * (a fixed, documented bpm/hour scale, same style as sleepPerf/skin-temp); Activity Balance
- * needs BOTH the previous-day Effort value AND its EWMA baseline ([Baselines.strainCfg]) —
- * supplying only one drops the term.
+ * Recovery Index (overnight HR slope) and Activity Balance (previous-day Effort) terms were declared here
+ * but never passed by any caller, so they were removed (#53) rather than left as dead weights.
  *
- * Each metric is standardized to a robust z-score against the personal baseline
- * (mean + EWMA-abs-dev spread). Missing terms are dropped and the weights
- * renormalized. The composite z is squashed through a logistic anchored so that
+ * Each metric is standardized to a z-score against the personal trailing baseline (#53:
+ * [ChargeBaselines]; HRV in the log domain), and each term's z is clamped to ±[termZClamp] before
+ * weighting so one artefact night or a zero Rest cannot dominate. Missing terms are dropped and the
+ * weights renormalized. The composite z is squashed through a logistic anchored so that
  * Z = 0 → ~58% (WHOOP's published population-average recovery).
  *
  * Cold-start: if the HRV baseline (dominant driver) is not yet usable
@@ -83,30 +76,14 @@ object RecoveryScorer {
     const val skinTempDevScale: Double = 1.0
 
     /**
-     * Recovery-Index weight (overnight resting-HR DECLINE slope — Oura's "Recovery Index"
-     * contributor). Small and additive like [wSkinTemp]: folds in only when a slope is
-     * supplied. Mirrors Swift `RecoveryScorer.wRecoveryIndex`.
+     * Per-term z clamp (#53): every term's z is limited to ±3 before weighting. Without it a Rest of 0 read
+     * as a sleep z of −7.1 and an artefact HRV night at z −5 or below, either of which outweighed every other
+     * term on its own. Three SDs is already the edge of the logistic's useful range. Mirrors Swift.
      */
-    const val wRecoveryIndex: Double = 0.05
+    const val termZClamp: Double = 3.0
 
-    /**
-     * Recovery-Index slope scale (bpm/hour): a slope this many bpm/hour steeper than flat (0)
-     * costs/earns ≈ 1 z-unit before weighting. Resting HR falling through the night is the
-     * physiologically expected, good pattern; flat or rising (illness, alcohol, a late
-     * stimulant, restlessness) is not. The SIGN carries the meaning (negative = declining =
-     * good), unlike skin-temp's symmetric |deviation| penalty. Mirrors Swift
-     * `RecoveryScorer.recoveryIndexScaleBpmPerHr`.
-     */
-    const val recoveryIndexScaleBpmPerHr: Double = 2.0
-
-    /**
-     * Activity-Balance / previous-day-Effort weight (collapses Oura's "Previous Day Activity"
-     * and "Activity Balance" readiness contributors into one term). Small and additive like
-     * [wSkinTemp]: folds in only when BOTH a previous-day Effort value and its personal EWMA
-     * baseline ([Baselines.strainCfg]) are supplied. Mirrors Swift
-     * `RecoveryScorer.wActivityBalance`.
-     */
-    const val wActivityBalance: Double = 0.05
+    /** One term's z clamped to ±[termZClamp]. Swift twin: `RecoveryScorer.clampZ`. */
+    internal fun clampZ(z: Double): Double = max(-termZClamp, min(termZClamp, z))
 
     /** Logistic spread: ±2 z-units ≈ full Red–Green band (15%–95%). */
     const val logisticK: Double = 1.6
@@ -272,8 +249,40 @@ object RecoveryScorer {
      * A baseline driver: mean + spread (internal abs-dev units, as in [BaselineState]).
      * Mirrors Swift `RecoveryScorer.DriverBaseline`.
      */
-    data class DriverBaseline(val mean: Double, val spread: Double) {
-        constructor(state: BaselineState) : this(mean = state.baseline, spread = state.spread)
+    data class DriverBaseline(
+        val mean: Double,
+        val spread: Double,
+        /** True for a log-domain (lnRMSSD) baseline: [mean] is the geometric mean, [spread] in ln units. */
+        val logDomain: Boolean = false,
+    ) {
+        constructor(state: BaselineState) :
+            this(mean = state.baseline, spread = state.spread, logDomain = state.logDomain)
+    }
+
+    /** z of a higher-is-better value against a baseline, in the baseline's own domain (the HRV term).
+     *  Swift twin: `RecoveryScorer.higherBetterZ(_:_:)`. */
+    internal fun higherBetterZ(value: Double, b: DriverBaseline): Double =
+        if (b.logDomain) (ln(max(value, 1.0)) - ln(max(b.mean, 1.0))) / max(1.253 * b.spread, 1e-9)
+        else zScore(value, b.mean, b.spread)
+
+    /** [higherBetterZ] over a [BaselineState]. Swift twin: `RecoveryScorer.higherBetterZ(_:state:)`. */
+    internal fun higherBetterZ(value: Double, state: BaselineState): Double =
+        higherBetterZ(value, DriverBaseline(state))
+
+    /**
+     * The calibration countdown read straight off the resolved HRV baseline (#53): its valid-night count
+     * while below the seed gate, null once recovery exists or the gate is crossed. The dashboard passes the
+     * [ChargeBaselines.Resolved.hrv] for the displayed day, so the countdown counts exactly the nights the
+     * ring's baseline holds, era cut included. Swift twin: `RecoveryScorer.calibrationNights(hrvBaseline:)`.
+     */
+    fun calibrationNights(
+        hrvBaseline: BaselineState?,
+        hasRecovery: Boolean,
+        seed: Int = Baselines.minNightsSeed,
+    ): Int? {
+        if (hasRecovery) return null
+        val n = hrvBaseline?.nValid ?: 0
+        return n.takeIf { it in 0 until seed }
     }
 
     /** Robust z-score using EWMA spread: (value − mean) / (1.253 × spread). */
@@ -304,19 +313,7 @@ object RecoveryScorer {
      *   identical to the pre-skin-temp model).
      * @param hrvBaselineUsable whether the HRV baseline has enough nights
      *   (BaselineState.usable). When false, returns null (cold-start).
-     * @param recoveryIndexSlope overnight resting-HR DECLINE slope (bpm/hour), supplied by the
-     *   caller. Negative (declining) supports recovery; positive (rising)
-     *   limits it, weight [wRecoveryIndex]. null (the default) drops the term and the
-     *   weights renormalize, so the no-slope score is IDENTICAL to before this parameter
-     *   existed.
-     * @param effortBaseline personal EWMA baseline of daily Effort/strain
-     *   ([Baselines.strainCfg]). Needs [priorDayEffort] too — supplying only one drops
-     *   the term.
-     * @param priorDayEffort yesterday's Effort/strain (0–100, StrainScorer.strain). Lower vs
-     *   [effortBaseline] supports recovery, same "lower is better" direction as RHR/resp,
-     *   weight [wActivityBalance]. null (the default, like effortBaseline) drops the term
-     *   and the weights renormalize, so the no-effort score is IDENTICAL to before either
-     *   parameter existed.
+     * Swift twin: `RecoveryScorer.recovery(hrv:rhr:resp:hrvBaseline:rhrBaseline:respBaseline:sleepPerf:skinTempDev:hrvBaselineUsable:)`.
      */
     fun recovery(
         hrv: Double,
@@ -328,9 +325,6 @@ object RecoveryScorer {
         sleepPerf: Double?,
         skinTempDev: Double? = null,
         hrvBaselineUsable: Boolean = true,
-        recoveryIndexSlope: Double? = null,
-        effortBaseline: DriverBaseline? = null,
-        priorDayEffort: Double? = null,
     ): Double? {
         // Cold-start gate: HRV is the dominant driver; if its baseline isn't
         // usable, refuse to score (more honest than a fabricated value).
@@ -350,7 +344,7 @@ object RecoveryScorer {
         // signature is still detected and reported out-of-band (Charge trace + RecoveryDrivers verdict)
         // so real firings can be counted first. See the header above for why, and swap in
         // parasympatheticSaturation(hrvZ, rhrZ).easedHrvZ here to enable it.
-        terms.add(zScore(hrv, hrvB.mean, hrvB.spread) to wHRV)
+        terms.add(higherBetterZ(hrv, hrvB) to wHRV)
         // RHR term: lower is better → (μ − x) / σ.
         rhrBaseline?.let { b ->
             terms.add(zScore(b.mean, rhr, b.spread) to wRHR)
@@ -368,26 +362,12 @@ object RecoveryScorer {
         if (skinTempDev != null) {
             terms.add((-abs(skinTempDev) / skinTempDevScale) to wSkinTemp)
         }
-        // Recovery-Index term: overnight HR-DECLINE slope (bpm/hour). No baseline needed (a
-        // fixed, documented scale, same style as sleepPerf/skin-temp). Negative (declining)
-        // supports recovery; positive (rising) limits it. Added only when supplied.
-        if (recoveryIndexSlope != null) {
-            terms.add((-recoveryIndexSlope / recoveryIndexScaleBpmPerHr) to wRecoveryIndex)
-        }
-        // Activity-Balance / previous-day-Effort term: lower vs personal baseline is better,
-        // same "lower is better" direction as RHR/resp → (μ − x) / σ. Needs BOTH the value
-        // and a baseline, matching resp's pattern; added only when both are supplied.
-        if (priorDayEffort != null && effortBaseline != null) {
-            terms.add(
-                zScore(effortBaseline.mean, priorDayEffort, effortBaseline.spread) to wActivityBalance,
-            )
-        }
 
         if (terms.isEmpty()) return null
         val totalWeight = terms.sumOf { it.second }
         if (totalWeight <= 0.0) return null
 
-        val z = terms.sumOf { it.first * it.second } / totalWeight
+        val z = terms.sumOf { clampZ(it.first) * it.second } / totalWeight
         return logisticScore(z)
     }
 
@@ -417,9 +397,6 @@ object RecoveryScorer {
         respBaseline: BaselineState?,
         sleepPerf: Double?,
         skinTempDev: Double? = null,
-        recoveryIndexSlope: Double? = null,
-        effortBaseline: BaselineState? = null,
-        priorDayEffort: Double? = null,
     ): Double? = recovery(
         hrv = hrv,
         rhr = rhr,
@@ -436,8 +413,5 @@ object RecoveryScorer {
         sleepPerf = sleepPerf,
         skinTempDev = skinTempDev,
         hrvBaselineUsable = hrvBaseline.usable,
-        recoveryIndexSlope = recoveryIndexSlope,
-        effortBaseline = effortBaseline?.takeIf { it.usable }?.let { DriverBaseline(it) },
-        priorDayEffort = priorDayEffort,
     )
 }

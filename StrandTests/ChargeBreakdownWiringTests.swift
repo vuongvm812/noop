@@ -8,8 +8,9 @@ import WhoopStore
 /// This suite could not exist before: the derivation lived as a private method inside `TodayView` (and a
 /// byte-identical copy inside `CoupledView`), reachable only by rendering the view, so the iOS end of the
 /// "What shaped it" path had no test at all while Android's did. `ChargeBreakdownWiring.breakdown` is that
-/// derivation lifted out unchanged. Since #2525 it scores against `Repository.chargeBaselines`, the
-/// baselines `ChargeBaselines.resolve` builds with the engine's own rule, so these cases resolve first.
+/// derivation lifted out unchanged. Since #2525/#53 it scores against `Repository.chargeBaselines(for:)`, the
+/// per-day baselines `ChargeBaselines.Inputs.resolve` builds with the engine's own rule, so these cases
+/// resolve first.
 ///
 /// Case mapping against the Kotlin suite, stated so the gap is legible rather than implied:
 ///   * `rhrRowIsAbsentWhenTheRestingHrBaselineIsNotUsable` - twinned below.
@@ -28,9 +29,11 @@ final class ChargeBreakdownWiringTests: XCTestCase {
 
     /// The breakdown for `row` against own nights `days` (plus `imported`), anchored on `row`'s day.
     private func breakdown(_ days: [DailyMetric], imported: [DailyMetric] = [], row: DailyMetric,
-                           hrvEpoch: Double = 0) -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
-        let baselines = ChargeBaselines.resolve(imported: imported, own: days, anchorDay: row.day,
-                                                hrvEpoch: hrvEpoch, recoveryEpoch: 0)
+                           hrvEpoch: Double = 0, sources: [ChargeBaselines.SourceDay] = [])
+        -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
+        let inputs = ChargeBaselines.Inputs(imported: imported, own: days, seed: [], sourceDays: sources,
+                                            hrvRecalibration: hrvEpoch, recoveryRecalibration: 0)
+        guard let baselines = inputs.resolve(scoredDay: row.day) else { return nil }
         return ChargeBreakdownWiring.breakdown(baselines: baselines, row: row, sleepPerfPercent: 85)
     }
 
@@ -120,5 +123,29 @@ final class ChargeBreakdownWiringTests: XCTestCase {
         let withImport = breakdown(own + [today], imported: lowImport, row: today)
         XCTAssertEqual(alone?.drivers.map(\.baselineText), withImport?.drivers.map(\.baselineText))
         XCTAssertEqual(alone?.drivers.map(\.deltaPoints), withImport?.drivers.map(\.deltaPoints))
+    }
+
+    /// #53 bug 1: after a WHOOP -> Garmin switch the engine starts a new baseline, so the first Garmin days
+    /// have no score. The breakdown and the countdown must say the same, not describe the WHOOP baseline.
+    func testTheEraCutReachesTheBreakdownAndTheCountdown() {
+        let whoop = (1...20).map { day(String(format: "2026-01-%02d", $0), hrv: 70) }
+        let garmin = (21...23).map { day(String(format: "2026-01-%02d", $0), hrv: 45) }
+        let sources = whoop.map { ChargeBaselines.SourceDay(day: $0.day, sourceId: "my-whoop") }
+            + garmin.map { ChargeBaselines.SourceDay(day: $0.day, sourceId: "garmin-AAA") }
+        let today = garmin.last!
+        XCTAssertNil(breakdown(whoop + garmin, row: today, sources: sources),
+                     "two Garmin nights before today: the engine has no usable baseline, so no rows")
+        XCTAssertNotNil(breakdown(whoop + garmin, row: today), "without the era cut the WHOOP nights would score")
+        let inputs = ChargeBaselines.Inputs(imported: [], own: whoop + garmin, seed: [], sourceDays: sources,
+                                            hrvRecalibration: 0, recoveryRecalibration: 0)
+        XCTAssertEqual(RecoveryScorer.calibrationNights(hrvBaseline: inputs.resolve(scoredDay: today.day)?.hrv,
+                                                        hasRecovery: false), 2)
+        // The readiness word uses the same cut: the WHOOP-era 70 ms nights are not its HRV baseline.
+        let epochs = inputs.epochs(scoredDay: today.day)
+        XCTAssertGreaterThan(epochs.hrv, 0)
+        let cut = ReadinessEngine.evaluate(days: whoop + garmin, today: today.day, epochs: epochs)
+        XCTAssertFalse(cut.signals.contains { $0.key == "hrv" }, "too few Garmin nights for an HRV signal")
+        let uncut = ReadinessEngine.evaluate(days: whoop + garmin, today: today.day)
+        XCTAssertTrue(uncut.signals.contains { $0.key == "hrv" })
     }
 }

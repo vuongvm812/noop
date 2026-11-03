@@ -148,7 +148,7 @@ object RecoveryDrivers {
         // decoupled resting HR)? Detection ONLY: the guard's easing is not applied, so deltaPoints below is
         // the full, unguarded HRV penalty. The verdict merely NAMES the detected pattern so the UI can
         // surface it while real firings accumulate. See the header in RecoveryScorer.kt.
-        val hrvZFull = RecoveryScorer.zScore(hrv, hrvBaseline.baseline, hrvBaseline.spread)
+        val hrvZFull = RecoveryScorer.higherBetterZ(hrv, hrvBaseline)
         val rhrZFull: Double? = rhrB?.let { RecoveryScorer.zScore(it.baseline, rhr, it.spread) }
         val hrvSaturationDetected =
             RecoveryScorer.parasympatheticSaturation(hrvZ = hrvZFull, rhrZ = rhrZFull).active

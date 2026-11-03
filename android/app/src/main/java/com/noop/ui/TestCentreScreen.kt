@@ -1302,7 +1302,8 @@ private fun HrvReadinessReadoutTC(days: List<DailyMetric>) {
         val cfg = Baselines.hrvCfg
         val series = days.map { it.avgHrv }
         val valid = series.count { v -> v != null && v >= cfg.minVal && v <= cfg.maxVal }
-        HRVReadiness.evaluate(series) to valid
+        // #53: calendar windows ending on today's logical day.
+        HRVReadiness.evaluate(days.map { it.day }, series, logicalDayKeyNow()) to valid
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (result != null) {

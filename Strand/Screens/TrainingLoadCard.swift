@@ -7,8 +7,7 @@ import WhoopStore
 
 // MARK: - Training Load card (CTL / ATL / TSB)
 //
-// The first UI surface for the long-horizon training-load model (TrainingLoadEngine, added with the
-// paired `ReadinessEngine.evaluateWithTrainingLoad`). It overlays chronic load (CTL, the 42-day
+// The UI surface for the long-horizon training-load model (TrainingLoadEngine). It overlays chronic load (CTL, the 42-day
 // fitness proxy) and acute load (ATL, the 7-day fatigue proxy); the gap between the two lines IS the
 // TSB / "form" (CTL − ATL), surfaced as the headline number and a footer stat.
 //
@@ -71,8 +70,8 @@ struct TrainingLoadCard: View {
         return "\(days.count)|" + tail.map { "\($0.day):\($0.strain ?? -1)" }.joined(separator: ",")
     }
 
-    /// Model straight from the training-load engine — NOT the paired `evaluateWithTrainingLoad`, which
-    /// would also run the full Readiness synthesis this card never uses. `DailyMetric.strain` is the load.
+    /// Model straight from the training-load engine; the card needs no Readiness synthesis.
+    /// `DailyMetric.strain` is the load.
     private static func computeResult(days: [DailyMetric]) -> TrainingLoadEngine.Result {
         let loads = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain) }
         return TrainingLoadEngine.evaluate(days: loads)

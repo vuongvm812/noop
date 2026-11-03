@@ -98,7 +98,8 @@ object RecoveryScorerTrace {
         // Per-driver baseline state lines (mean / spread / nValid / status).
         lines.add(
             "charge baseline hrv mean=${r2(hrvBaseline.baseline)} spread=${r2(hrvBaseline.spread)} " +
-                "nValid=${hrvBaseline.nValid} status=${hrvBaseline.status.raw}",
+                "nValid=${hrvBaseline.nValid} status=${hrvBaseline.status.raw}" +
+                (if (hrvBaseline.logDomain) " domain=ln" else ""),
         )
         rhrB?.let { b ->
             lines.add(
@@ -114,7 +115,7 @@ object RecoveryScorerTrace {
         }
 
         // Per-term z * weight, built with the EXACT expressions recovery(...) uses, in the SAME append order.
-        val terms = ArrayList<Pair<Double, Double>>() // (z, weight)
+        val terms = ArrayList<Triple<String, Double, Double>>() // (name, z, weight)
 
         // Resting-HR z, computed up front so the saturation guard can read the HRV<->RHR coupling before
         // the HRV term is built. null when there is no RHR baseline. Numerically identical to the z
@@ -128,14 +129,14 @@ object RecoveryScorerTrace {
         // This is the RAW z, exactly as recovery() scores it: the parasympathetic-saturation easing is
         // detected and reported below but NOT applied, so the trace's HRV term matches the scored one.
         // NOTE: the HRV term is always terms[0]; the counterfactual below relies on that.
-        val hrvZRaw = RecoveryScorer.zScore(hrv, hrvBaseline.baseline, hrvBaseline.spread)
+        val hrvZRaw = RecoveryScorer.higherBetterZ(hrv, hrvBaseline)
         val sat = RecoveryScorer.parasympatheticSaturation(hrvZ = hrvZRaw, rhrZ = rhrZForGuard)
-        terms.add(hrvZRaw to RecoveryScorer.wHRV)
+        terms.add(Triple("hrv", hrvZRaw, RecoveryScorer.wHRV))
         lines.add("charge term hrv z=${r2(hrvZRaw)} w=${r2(RecoveryScorer.wHRV)} (higher HRV is better)")
 
         // RHR term: lower is better -> (mu - x) / sigma. (Reuses the z computed for the guard.)
         if (rhrZForGuard != null) {
-            terms.add(rhrZForGuard to RecoveryScorer.wRHR)
+            terms.add(Triple("rhr", rhrZForGuard, RecoveryScorer.wRHR))
             lines.add("charge term rhr z=${r2(rhrZForGuard)} w=${r2(RecoveryScorer.wRHR)} (lower RHR is better)")
         } else {
             nilTerms.add("rhr")
@@ -144,7 +145,7 @@ object RecoveryScorerTrace {
         // Resp term: lower is better, optional (needs BOTH the value and a baseline).
         if (resp != null && respB != null) {
             val z = RecoveryScorer.zScore(respB.baseline, resp, respB.spread)
-            terms.add(z to RecoveryScorer.wResp)
+            terms.add(Triple("resp", z, RecoveryScorer.wResp))
             lines.add("charge term resp z=${r2(z)} w=${r2(RecoveryScorer.wResp)} (lower resp is better)")
         } else {
             nilTerms.add("resp")
@@ -153,7 +154,7 @@ object RecoveryScorerTrace {
         // Sleep-performance / Rest-quality term: no baseline needed, centered at sleepPerfCenter.
         if (sleepPerf != null) {
             val z = (sleepPerf - RecoveryScorer.sleepPerfCenter) / RecoveryScorer.sleepPerfScale
-            terms.add(z to RecoveryScorer.wSleep)
+            terms.add(Triple("sleepPerf", z, RecoveryScorer.wSleep))
             lines.add(
                 "charge term sleepPerf z=${r2(z)} w=${r2(RecoveryScorer.wSleep)} " +
                     "(rest=${r2(sleepPerf)} center=${r2(RecoveryScorer.sleepPerfCenter)})",
@@ -165,7 +166,7 @@ object RecoveryScorerTrace {
         // Skin-temp term: SYMMETRIC penalty on |deviation|, added only when supplied.
         if (skinTempDev != null) {
             val z = -abs(skinTempDev) / RecoveryScorer.skinTempDevScale
-            terms.add(z to RecoveryScorer.wSkinTemp)
+            terms.add(Triple("skinTempDev", z, RecoveryScorer.wSkinTemp))
             lines.add(
                 "charge term skinTempDev z=${r2(z)} w=${r2(RecoveryScorer.wSkinTemp)} " +
                     "(dev=${r2(skinTempDev)}C penalty=-|dev|/${r2(RecoveryScorer.skinTempDevScale)})",
@@ -182,8 +183,14 @@ object RecoveryScorerTrace {
 
         // Renormalization: total surviving weight and the weighted composite z, the SAME math recovery(...)
         // runs to produce the logistic input.
-        val totalWeight = terms.sumOf { it.second }
-        val compositeZ = if (totalWeight > 0.0) terms.sumOf { it.first * it.second } / totalWeight else 0.0
+        val totalWeight = terms.sumOf { it.third }
+        val compositeZ =
+            if (totalWeight > 0.0) terms.sumOf { RecoveryScorer.clampZ(it.second) * it.third } / totalWeight else 0.0
+        // #53: name every term the ±termZClamp limit bit on, so a capped artefact night is visible.
+        val clamped = terms.filter { abs(it.second) > RecoveryScorer.termZClamp }.map { it.first }
+        if (clamped.isNotEmpty()) {
+            lines.add("charge clamp terms=[${clamped.joinToString(",")}] limit=${r2(RecoveryScorer.termZClamp)}")
+        }
         lines.add(
             "charge renorm totalWeight=${r2(totalWeight)} compositeZ=${r2(compositeZ)} " +
                 "(z = sum(z*w)/sum(w))",
@@ -211,8 +218,9 @@ object RecoveryScorerTrace {
         // terms[0]) and runs it through RecoveryScorer.logisticScore -- the SAME curve recovery() uses --
         // so the delta is exact, not estimated. Mirrors the Swift trace line exactly.
         if (sat.active && score != null && totalWeight > 0.0) {
-            val easedZ = terms.withIndex()
-                .sumOf { (i, t) -> (if (i == 0) sat.easedHrvZ else t.first) * t.second } / totalWeight
+            val easedZ = terms
+                .sumOf { t -> RecoveryScorer.clampZ(if (t.first == "hrv") sat.easedHrvZ else t.second) * t.third } /
+                totalWeight
             val wouldBe = RecoveryScorer.logisticScore(easedZ)
             lines.add(
                 "charge saturation active hrvZraw=${r2(hrvZRaw)} rhrZ=${r2(rhrZForGuard ?: 0.0)} " +

@@ -1057,14 +1057,11 @@ fun TodayScreen(
     // (Baselines.minNightsSeed valid nights). Show honest "calibrating, N of 4 nights" progress
     // instead of a bare "No Data" so a new BLE-only user knows scores are coming, not broken. (PR #85)
     val recoveryCalibration: Int? = if (selectedDayOffset == 0) {
-        // Thread the persisted "Recalibrate HRV baseline" epoch (0 = none) so N folds the SAME
-        // epoch-aware history the recovery engine folds — otherwise a post-recalibration user's pre-epoch
-        // nights inflate the count past the seed gate and the score side wrongly reads NeedsStrap (Bug B).
-        val hrvEpoch = NoopPrefs.of(context).getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble()
-        recoveryCalibrationNights(
-            chargeBaselines?.hrvHistory?.values.orEmpty(), chargeBaselines?.hrvHistory?.dayKeys.orEmpty(),
-            displayMetric?.recovery != null, hrvEpoch,
-        )
+        // #53: N is the valid-night count of the HRV baseline resolved for the displayed day, the one the
+        // ring scores against: it already drops nights before the recalibration epoch (Bug B) and before a
+        // device-era cut, so neither can inflate the count past the seed gate.
+        val todayBaselines = remember(chargeBaselines, selectedDayKey) { chargeBaselines?.resolve(selectedDayKey) }
+        recoveryCalibrationNights(todayBaselines?.hrv, displayMetric?.recovery != null)
     } else {
         null
     }
@@ -1785,6 +1782,7 @@ fun TodayScreen(
                                 recoveryCalibration = recoveryCalibration,
                                 carriedDay = lastScoredRecoveryDay,
                                 days = days,
+                                chargeBaselines = chargeBaselines,
                                 synthesisExpanded = synthesisExpanded,
                                 onToggleSynthesis = { synthesisExpanded = !synthesisExpanded },
                                 onOpenReadiness = { showChargeBreakdown = true },
@@ -3466,6 +3464,8 @@ private fun SynthesisHeroCard(
     // taps to toggle it / open the Charge breakdown (where the full Readiness card lives). Defaults keep old
     // call sites compiling; the Today call site supplies them.
     days: List<DailyMetric> = emptyList(),
+    // #53: the Charge baselines' inputs, so the readiness word cuts on the same device era.
+    chargeBaselines: ChargeBaselines.Inputs? = null,
     synthesisExpanded: Boolean = true,
     onToggleSynthesis: () -> Unit = {},
     onOpenReadiness: () -> Unit = {},
@@ -3501,9 +3501,10 @@ private fun SynthesisHeroCard(
             // S4 (#205): the one-word readiness read kept on the hero now the full Readiness card folded
             // into the Charge-ring tap. Push / Maintain / Rest; hidden when there isn't enough history.
             // Tapping it opens the Charge breakdown, where the full Readiness card now lives.
-            val readinessLevel = remember(days) {
+            val readinessLevel = remember(days, chargeBaselines) {
+                val key = logicalDayKeyNow()
                 if (days.isEmpty()) ReadinessEngine.Level.INSUFFICIENT
-                else ReadinessEngine.evaluate(days, today = logicalDayKeyNow()).level
+                else ReadinessEngine.evaluate(days, today = key, epochs = chargeBaselines.epochsFor(key)).level
             }
             readinessWord(readinessLevel)?.let { wordRes ->
                 ReadinessHeroPill(word = uiString(wordRes), level = readinessLevel, onTap = onOpenReadiness)
@@ -5363,7 +5364,7 @@ private fun TodayLayoutEditorDialog(
 @Composable
 internal fun ChargeBreakdownSheet(
     days: List<DailyMetric>,
-    chargeBaselines: ChargeBaselines.Resolved?,
+    chargeBaselines: ChargeBaselines.Inputs?,
     displayDay: DailyMetric?,
     carriedDay: DailyMetric?,
     showReadiness: Boolean,
@@ -5411,7 +5412,7 @@ internal fun ChargeBreakdownSheet(
                 RecoveryContributorsSection(day = displayDay, carriedDay = carriedDay)
                 // S4: the SEPARATE Readiness block now lives here behind the Charge-ring tap (today-only,
                 // matching the old inline gate). A one-word read (Push / Maintain / Rest) stays on the hero.
-                if (showReadiness) ReadinessSection(days, carriedDay = carriedDay)
+                if (showReadiness) ReadinessSection(days, chargeBaselines, carriedDay = carriedDay)
                 onOpenTrend?.let { openTrend ->
                     Row(
                         modifier = Modifier
@@ -5520,7 +5521,7 @@ internal fun ChargeBreakdownSheet(
 
 @Composable
 private fun RecoveryDriversSection(
-    chargeBaselines: ChargeBaselines.Resolved?,
+    chargeBaselines: ChargeBaselines.Inputs?,
     displayDay: DailyMetric?,
     carriedDay: DailyMetric? = null,
 ) {
@@ -5528,10 +5529,12 @@ private fun RecoveryDriversSection(
     // day (#543) so the breakdown matches the carried ring instead of vanishing at the rollover. The
     // baselines already carry both recalibration epochs (#2315), applied where they were resolved (#2525).
     val readDay = carriedDay ?: displayDay
-    val drivers = remember(chargeBaselines, readDay) { recoveryChargeDrivers(chargeBaselines, readDay) }
+    // #53: the baselines THIS day was scored against (window ending the day before, its own era).
+    val resolved = remember(chargeBaselines, readDay) { readDay?.let { chargeBaselines?.resolve(it.day) } }
+    val drivers = remember(resolved, readDay) { recoveryChargeDrivers(resolved, readDay) }
     if (drivers.isEmpty()) return
 
-    val tier = remember(chargeBaselines, readDay) { chargeConfidenceTier(chargeBaselines, readDay) }
+    val tier = remember(resolved, readDay) { chargeConfidenceTier(resolved, readDay) }
     val overline = carriedDay?.let { uiString(R.string.today_charge_carried, carriedCaption(it.day).localized()) }
         ?: uiString(R.string.trends_charge)
 
@@ -7610,7 +7613,11 @@ private fun readinessSignalDetail(signal: ReadinessEngine.Signal): String {
 }
 
 @Composable
-private fun ReadinessSection(days: List<DailyMetric>, carriedDay: DailyMetric? = null) {
+private fun ReadinessSection(
+    days: List<DailyMetric>,
+    chargeBaselines: ChargeBaselines.Inputs?,
+    carriedDay: DailyMetric? = null,
+) {
     // Logical day (rolls at 04:00 local), so readiness keeps reading the evening's row in the small
     // hours instead of an empty new-calendar-day row (#144). Mirrors the Today-row resolution.
     //
@@ -7620,7 +7627,10 @@ private fun ReadinessSection(days: List<DailyMetric>, carriedDay: DailyMetric? =
     // anchor on the last scored day's key instead, and stamp the overline "Last night · <date>". Honest:
     // it's the real prior read; today's own readiness wins the instant tonight is scored.
     val anchorKey = carriedDay?.day ?: logicalDayKeyNow()
-    val readiness = remember(days, anchorKey) { ReadinessEngine.evaluate(days, today = anchorKey) }
+    // #53: the readiness baselines start where the Charge baselines' era does for that day.
+    val readiness = remember(days, chargeBaselines, anchorKey) {
+        ReadinessEngine.evaluate(days, today = anchorKey, epochs = chargeBaselines.epochsFor(anchorKey))
+    }
     if (readiness.level == ReadinessEngine.Level.INSUFFICIENT) return
 
     val overline = carriedDay?.let { carriedCaption(it.day).localized() }

@@ -1,6 +1,7 @@
 package com.noop.analytics
 
 import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -292,7 +293,7 @@ object Baselines {
 
     /** Days from civil epoch (proleptic Gregorian) for an ISO `yyyy-MM-dd`, or null if unparseable. TZ-free
      *  (Howard Hinnant's algorithm), so Kotlin and Swift agree bit-for-bit on the day difference. */
-    internal fun isoEpochDay(iso: String): Int? {
+    fun isoEpochDay(iso: String): Int? {
         val p = iso.split("-")
         if (p.size != 3) return null
         val y = p[0].toIntOrNull() ?: return null
@@ -305,6 +306,25 @@ object Baselines {
         val doy = (153 * (if (m > 2) m - 3 else m + 9) + 2) / 5 + d - 1
         val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
         return era * 146097 + doe - 719468
+    }
+
+    /** The `yyyy-MM-dd` key for a civil epoch day: the exact inverse of [isoEpochDay] (Howard Hinnant's
+     *  civil_from_days), TZ-free so Kotlin and Swift agree. Swift twin: `Baselines.isoDay(fromEpochDay:)`. */
+    fun isoDayFromEpochDay(z0: Int): String {
+        val z = z0 + 719468
+        val era = (if (z >= 0) z else z - 146096) / 146097
+        val doe = z - era * 146097
+        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = doy - (153 * mp + 2) / 5 + 1
+        val m = if (mp < 10) mp + 3 else mp - 9
+        val y = yoe + era * 400 + (if (m <= 2) 1 else 0)
+        val ys = y.toString()
+        val ms = m.toString()
+        val ds = d.toString()
+        return "0".repeat(maxOf(0, 4 - ys.length)) + ys + "-" +
+            (if (ms.length < 2) "0" else "") + ms + "-" + (if (ds.length < 2) "0" else "") + ds
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -567,11 +587,21 @@ object Baselines {
      * z uses (value − baseline) / sigma(state); see [sigma] for the 1.253 conversion.
      */
     fun deviation(value: Double, state: BaselineState): Deviation {
-        val sigma = sigma(state)
-        val z = (value - state.baseline) / sigma
+        val z = z(value, state)
         val delta = value - state.baseline
         val ratio = if (state.baseline != 0.0) (value / state.baseline - 1.0) else 0.0
         return Deviation(z = z, delta = delta, ratio = ratio, inNormalRange = abs(z) <= 1.0)
+    }
+
+    /**
+     * The z of [value] against [state], in the state's own domain: linear (value − baseline) / σ, or for a
+     * log-domain state (#53) (ln value − ln baseline) / σ, with both arguments floored at 1 before the log.
+     * Swift twin: `Baselines.z(_:state:)`.
+     */
+    fun z(value: Double, state: BaselineState): Double {
+        val sig = sigma(state)
+        if (state.logDomain) return (ln(max(value, 1.0)) - ln(max(state.baseline, 1.0))) / sig
+        return (value - state.baseline) / sig
     }
 
     // ─────────────────────────────────────────────────────────────────────────

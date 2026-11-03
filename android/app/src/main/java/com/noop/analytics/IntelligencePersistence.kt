@@ -103,6 +103,11 @@ internal object IntelligencePersistence {
         val byCell = LinkedHashMap<Pair<String, String>, ScoreInputProvenanceRow>()
         for (daily in dailies) {
             val source = ownerByDay[daily.day] ?: continue
+            // #53: which source measured this night, recorded for EVERY persisted day with an owner (not only
+            // those with a Charge), so later passes and the dashboard rebuild the same device eras. Mirrors Swift.
+            byCell[daily.day to ChargeBaselines.baselineSourceKey] = ScoreInputProvenanceRow(
+                computedId, daily.day, ChargeBaselines.baselineSourceKey, source,
+            )
             if (daily.recovery != null) {
                 val legacy = legacySnapshots[daily.day]
                 val recoverySource = legacy?.recoverySource ?: if (legacy == null) source else null

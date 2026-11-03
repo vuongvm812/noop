@@ -11,7 +11,7 @@ import org.junit.Test
 
 /**
  * Unit tests for the Today "What shaped it" wiring: [recoveryChargeDrivers] (scores against the Charge
- * baselines [ChargeBaselines.resolve] builds with the engine's rule, #2525, then defers to
+ * baselines [ChargeBaselines.Inputs.resolve] builds with the engine's rule, #2525, then defers to
  * RecoveryDrivers.chargeDrivers) and [chargeConfidenceTier] (surfaces the existing ScoreConfidence). Pure
  * JVM, no Robolectric. Mirrors the iOS chargeDrivers wiring tests.
  */
@@ -31,13 +31,13 @@ class RecoveryDriversUiTest {
         recovery = recovery, efficiency = efficiency, totalSleepMin = sleepMin, skinTempDevC = skinTempDevC,
     )
 
-    /** The Charge baselines for own nights [days] (plus [imported]), anchored on [anchor]. */
+    /** The Charge baselines (#53) day [anchor] is scored against: own nights [days] (plus [imported]) BEFORE it. */
     private fun resolved(
         days: List<DailyMetric>,
         anchor: String,
         imported: List<DailyMetric> = emptyList(),
         hrvEpoch: Double = 0.0,
-    ) = ChargeBaselines.resolve(imported, days, anchor, hrvEpoch = hrvEpoch, recoveryEpoch = 0.0)
+    ) = ChargeBaselines.Inputs(imported, days, emptyList(), emptyList(), hrvEpoch, 0.0).resolve(anchor)
 
     private fun drivers(days: List<DailyMetric>, day: DailyMetric?, hrvEpoch: Double = 0.0) =
         recoveryChargeDrivers(resolved(days, day?.day ?: days.last().day, hrvEpoch = hrvEpoch), day)

@@ -132,17 +132,26 @@ object ReadinessEngine {
      * the Swift ReadinessEngine.evaluateCache. Key = [today] + an ORDER-INDEPENDENT fingerprint over ONLY
      * the rows' readiness fields (day + avgHrv/restingHr/respRateBpm/strain), so a new sync re-keys but a
      * cosmetic reorder does not. The cached result is a small immutable [Readiness]; no row arrays retained.
+     *
+     * [epochs] (#53) is the Charge baselines' era cut for [today] (`ChargeBaselines.Inputs.epochs`): the HRV,
+     * resting-HR and respiration baselines here drop every night before their epoch, exactly as the Charge
+     * baselines do, so the readiness word never compares a Garmin night with a WHOOP-era HRV.
+     * Swift twin: `ReadinessEngine.evaluate(days:today:epochs:)`.
      */
-    fun evaluate(days: List<DailyMetric>, today: String? = null): Readiness {
-        val key = readinessKey(today, days)
+    fun evaluate(
+        days: List<DailyMetric>,
+        today: String? = null,
+        epochs: ChargeBaselines.Epochs = ChargeBaselines.Epochs.none,
+    ): Readiness {
+        val key = readinessKey(today, epochs, days)
         synchronized(evaluateCacheLock) { evaluateCache[key] }?.let { return it }
-        val result = evaluateUncached(days, today)   // computed OUTSIDE the lock (the expensive sort/walk)
+        val result = evaluateUncached(days, today, epochs)   // computed OUTSIDE the lock (the expensive sort/walk)
         synchronized(evaluateCacheLock) { evaluateCache[key] = result }
         return result
     }
 
     private data class ReadinessKey(
-        val today: String?, val count: Int, val minDay: Int, val maxDay: Int, val checksum: Long,
+        val today: String?, val epochs: ChargeBaselines.Epochs, val count: Int, val minDay: Int, val maxDay: Int, val checksum: Long,
     )
 
     private const val EVALUATE_CACHE_CAP = 16
@@ -160,7 +169,7 @@ object ReadinessEngine {
      *  reorder does not. Internal to this process's cache only (never compared cross-platform), so it need
      *  NOT match the Swift hash byte-for-byte; a collision only costs one extra recompute. Mirrors Swift
      *  `rowsFingerprint`: FNV-style commutative fold over (day, avgHrv, restingHr, respRateBpm, strain). */
-    private fun readinessKey(today: String?, days: List<DailyMetric>): ReadinessKey {
+    private fun readinessKey(today: String?, epochs: ChargeBaselines.Epochs, days: List<DailyMetric>): ReadinessKey {
         var sum = 1469598103934665603L
         var minDay = 0
         var maxDay = 0
@@ -174,12 +183,17 @@ object ReadinessEngine {
             val dh = d.day.hashCode()
             if (i == 0) { minDay = dh; maxDay = dh } else { minDay = minOf(minDay, dh); maxDay = maxOf(maxDay, dh) }
         }
-        return ReadinessKey(today, days.size, minDay, maxDay, sum)
+        return ReadinessKey(today, epochs, days.size, minDay, maxDay, sum)
     }
 
     /** The uncached readiness synthesis (formerly the body of [evaluate]). [days] may be in any order; the
-     *  most recent day is "today" unless [today] is given. */
-    private fun evaluateUncached(days: List<DailyMetric>, today: String? = null): Readiness {
+     *  most recent day is "today" unless [today] is given.
+     *  Swift twin: `ReadinessEngine.evaluateUncached`. */
+    private fun evaluateUncached(
+        days: List<DailyMetric>,
+        today: String?,
+        epochs: ChargeBaselines.Epochs,
+    ): Readiness {
         val sorted = days.sortedBy { it.day }
         // When an explicit [today] is given (the dashboard passes the device's real local day key), use
         // the row for THAT day and nothing else: a stale historical import has no row for today, so the
@@ -196,13 +210,17 @@ object ReadinessEngine {
             )
         }
         val history = sorted.filter { it.day < latest.day }   // everything before today
+        // #53: each baseline starts at its era epoch, the cut the Charge baselines use.
+        val hrvHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.hrv) }
+        val rhrHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.restingHR) }
+        val respHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.resp) }
 
         val signals = mutableListOf<Signal>()
 
         // HRV readiness ------------------------------------------------------
         val hrvSignal = zSignal(
             value = latest.avgHrv,
-            baseline = history.takeLast(baselineWindow).mapNotNull { it.avgHrv },
+            baseline = hrvHistory.takeLast(baselineWindow).mapNotNull { it.avgHrv },
             key = "hrv", labelRes = Copy.TODAY_READINESS_SIGNAL_HRV,
             unit = MetricUnit.MS, decimals = 0,
             higherIsBetter = true,
@@ -218,7 +236,7 @@ object ReadinessEngine {
         // Resting-HR drift ---------------------------------------------------
         val rhrSignal = zSignal(
             value = latest.restingHr?.toDouble(),
-            baseline = history.takeLast(baselineWindow).mapNotNull { it.restingHr?.toDouble() },
+            baseline = rhrHistory.takeLast(baselineWindow).mapNotNull { it.restingHr?.toDouble() },
             key = "rhr", labelRes = Copy.TODAY_READINESS_SIGNAL_RESTING_HR,
             unit = MetricUnit.BPM, decimals = 0,
             higherIsBetter = false,
@@ -238,7 +256,7 @@ object ReadinessEngine {
         // reach BAD (which would feed recoveryDown), while a sustained genuine rise still flags.
         val rr = latest.respRateBpm
         if (rr != null && rr in respPlausibleRange) {
-            val base = history.takeLast(baselineWindow).mapNotNull { it.respRateBpm }
+            val base = respHistory.takeLast(baselineWindow).mapNotNull { it.respRateBpm }
             val m = mean(base)
             val sd = sampleSD(base)
             if (base.size >= minBaseline && m != null && m in respPlausibleRange && sd != null && sd > 0) {
@@ -302,7 +320,7 @@ object ReadinessEngine {
         // RD-confidence: surface how much history backs the read (HRV baseline density, the primary
         // readiness driver). A read off a 7-night baseline must not look as certain as one off the full
         // 30-night window. Insufficient reads carry CALIBRATING.
-        val hrvBaselineNights = history.takeLast(baselineWindow).mapNotNull { it.avgHrv }.count()
+        val hrvBaselineNights = hrvHistory.takeLast(baselineWindow).mapNotNull { it.avgHrv }.count()
         val confidence = ScoreConfidence.readiness(
             hasRead = level != Level.INSUFFICIENT,
             baselineNights = hrvBaselineNights,

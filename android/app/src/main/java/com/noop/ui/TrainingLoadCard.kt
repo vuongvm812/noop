@@ -39,8 +39,8 @@ import kotlin.math.max
  */
 @Composable
 fun TrainingLoadCard(days: List<DailyMetric>, modifier: Modifier = Modifier) {
-    // Model straight from the training-load engine — NOT the paired evaluateWithTrainingLoad, which
-    // would also run the full Readiness synthesis this card never uses. DailyMetric.strain is the load.
+    // Model straight from the training-load engine; the card needs no Readiness synthesis.
+    // DailyMetric.strain is the load.
     val loads = days.map { TrainingLoadEngine.DailyLoad(it.day, it.strain) }
     val result = TrainingLoadEngine.evaluate(loads)
     val latest = result.points.lastOrNull()

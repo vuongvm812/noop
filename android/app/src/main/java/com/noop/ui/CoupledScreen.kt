@@ -146,22 +146,23 @@ fun CoupledScreen(
     // Materialized from the same all-source physiological cycle as Effort, calories, HR, and steps.
     val workoutsToday = todayRow?.exerciseCount ?: 0
     val context = LocalContext.current
-    val hrvEpoch = remember { NoopPrefs.of(context).getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble() }
+    // #53: today's Charge baselines, resolved for the day the read describes, so the calibration countdown
+    // counts the nights the ring's own baseline holds (era cut included).
+    val todayBaselines = remember(chargeBaselines, todayKey) { chargeBaselines?.resolve(todayKey) }
     // #1458: carry through the SAME helper Today uses, not a local re-derivation. The local copy was
     // `days.lastOrNull { it.recovery != null && it.day < todayKey }`, which has no `todayScored` guard —
     // so on a day that HAS a score it still returned a prior day, and the hero's Charge sheet opened that
     // older night while the card beside it showed today's number. It also missed the #547 upper bound
     // (a future-dated row from a bad strap clock is how that bug read "12 Jul") and the calibrating gate.
     // One helper, one answer: the card and its own detail sheet cannot disagree again.
-    val carriedRecoveryDay = remember(days, chargeBaselines, todayKey, todayRow, hrvEpoch, logicalKey, localKey) {
+    val carriedRecoveryDay = remember(days, todayBaselines, todayKey, todayRow, logicalKey, localKey) {
         lastScoredRecoveryDay(
             days = days,
             selectedDayKey = todayKey,
             isToday = true,   // the Coupled view has no day selector; it is always today
             todayScored = todayRow?.recovery != null,
             isCalibrating = recoveryCalibrationNights(
-                chargeBaselines?.hrvHistory?.values.orEmpty(), chargeBaselines?.hrvHistory?.dayKeys.orEmpty(),
-                hasRecovery = todayRow?.recovery != null, hrvBaselineEpoch = hrvEpoch,
+                todayBaselines?.hrv, hasRecovery = todayRow?.recovery != null,
             ) != null,
             today = maxOf(logicalKey, localKey),
         )
@@ -182,19 +183,17 @@ fun CoupledScreen(
     // On-device readiness, computed EXACTLY as Today does, so the one-word pill matches the home screen.
     // The carried anchor is gated on isCarrying (Today's !todayScored gate): on a normal scored day today's
     // own key wins, so Coupled's pill can't diverge from Today's onto yesterday (#787).
-    val readinessLevel = remember(days, carriedRecoveryDay, todayRow, isCarrying) {
+    val readinessLevel = remember(days, chargeBaselines, carriedRecoveryDay, todayRow, isCarrying) {
         val anchor = (if (isCarrying) carriedRecoveryDay?.day else todayRow?.day) ?: logicalKey
-        ReadinessEngine.evaluate(days, anchor).level
+        // #53: the readiness baselines start where the Charge baselines' era does.
+        ReadinessEngine.evaluate(days, anchor, chargeBaselines.epochsFor(anchor)).level
     }
 
     // Recovery cold-start nights (the SAME pure helper Today's ring reads), for the honest calibrating
-    // caption + accessibility copy while the HRV baseline still seeds. Threads the persisted
-    // "Recalibrate HRV baseline" epoch so N folds the SAME epoch-aware history the engine folds (Bug B).
-    val calibrationNights = remember(chargeBaselines, todayRow, hrvEpoch) {
-        recoveryCalibrationNights(
-            chargeBaselines?.hrvHistory?.values.orEmpty(), chargeBaselines?.hrvHistory?.dayKeys.orEmpty(),
-            hasRecovery = todayRow?.recovery != null, hrvBaselineEpoch = hrvEpoch,
-        )
+    // caption + accessibility copy while the HRV baseline still seeds. Reads today's resolved HRV baseline,
+    // which already applies the recalibration epoch and the device-era cut (#53).
+    val calibrationNights = remember(todayBaselines, todayRow) {
+        recoveryCalibrationNights(todayBaselines?.hrv, hasRecovery = todayRow?.recovery != null)
     }
 
     // The Charge breakdown (the hero's tap target, the EXISTING Today sheet) + the scoring guide it

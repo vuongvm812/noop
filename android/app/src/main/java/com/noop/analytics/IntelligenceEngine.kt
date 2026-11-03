@@ -734,9 +734,11 @@ object IntelligenceEngine {
         // re-score in pass 2. Collected oldest-first to match foldHistory's replay order.
         // foldHistory winsorizes outliers. days() is oldest-first (Swift ascending).
         // #31: read beside it, in the same call, the active device's same-brand export rows that seed the
-        // Charge baselines (see [chargeHistories]).
-        val baselineImports = baselineImports(repo, ownerSource, importedDeviceId)
-        val hist = baselineImports.first
+        // Charge baselines (see [chargeBaselinesByDay]).
+        val baselineImports = baselineImports(
+            repo, ownerSource, importedDeviceId, computedId, nowSeconds, tzOffsetSeconds, maxDays,
+        )
+        val hist = baselineImports.hist
         // CAPTURE-B: per-day resolved read owner + HR-row count, captured in pass 1, consumed by pass 2's
         // universal dayOwner emit (which reuses the SAME importedWhoopDays / appleHealthDays sets pass 2
         // builds for daySourceToken, so there is no extra read). Only populated when the universal sink is
@@ -1550,73 +1552,20 @@ object IntelligenceEngine {
             recoveryTraceSink,
         )
 
-        // ── Charge baselines (#2525). Each baseline is folded from the wearer's OWN nights over the last
-        // [ChargeBaselines.windowDays] calendar days, counted back from today; imported vendor nights only
-        // SEED it until the own nights alone would be trusted, then drop out (see [ChargeBaselines]). This
-        // is still the recovery fix: the "-noop" nightly avgHrv/restingHr feed the baseline, so a BLE-only
-        // user crosses Baselines.minNightsSeed (4 valid nights) and recovery lights up.
-        //
-        // Before #2525 the own nights came from this pass's scan window while `hist` (every imported row,
-        // however old) was folded in full, so the import kept about a third of the weight for good. The window
-        // is the scan window's own 21 days, so the own nights are exactly this pass's in-memory pass-1 values
-        // (a full-history repair pass scores more days; the window trims it to the same 21), and a BLE-only
-        // user folds the same nights as before. Mirrors Swift.
+        // ── Charge baselines (#2525, #53). Each scored day D is scored against the nights BEFORE it, over
+        // [ChargeBaselines.windowDays] calendar days ending D − 1: a trailing mean and SD (ln RMSSD for HRV), so
+        // tonight never scores against itself and a stored day's Charge does not move as later nights arrive.
+        // The own nights are the STORED computed rows overlaid with this pass's fresh values; imported vendor
+        // nights (then same-brand export nights, #31) only seed until the own nights would be trusted. Built in
+        // [chargeBaselinesByDay], outside this size-budgeted method. Mirrors Swift.
         val oldestDay = AnalyticsEngine.dayString(
             nowLocalMidnight - (maxDays - 1) * SECONDS_PER_DAY, tzOffsetSeconds,
         )
         val newestDay = AnalyticsEngine.dayString(nowLocalMidnight, tzOffsetSeconds)
-        val ownNights = { byDay: Map<String, Double?> -> byDay.entries.map { it.key to it.value } }
-
-        // Which SOURCE measured each night's respiration — the input `Baselines.deviceEraEpoch` (#459)
-        // needs for the resp fold below. `resolvedScoreOwnerByDay` (THIS PASS's freshly resolved per-day
-        // owner, before any re-homing) is the only per-night source this pass knows, and it covers every own
-        // night the window holds. The imported rows in `hist` are stored under `importedDeviceId` and are
-        // tagged with it, which buckets to WHOOP; the days this engine scores are written under `computedId`,
-        // never into `hist`. Mirrors Swift. Built in [eraSourceDays], outside this size-capped method.
-        // #31 + #459: the era cuts and the three seeded Charge histories, built in [chargeHistories] (outside
-        // this size-budgeted method). Same rule as before for a WHOOP wearer; a Garmin wearer's same-brand
-        // export nights seed at the lowest precedence and share the Garmin era.
-        val charge = chargeHistories(
-            baselineImports.second, importedDeviceId, newestDay, hist, resolvedScoreOwnerByDay,
-            nightlyHrvByDay, nightlyRhrByDay, nightlyRespByDay, baselineEpoch, recoveryEpoch,
-            hrvCfg, rhrCfg, respCfg,
-        )
-        val hrvHistory = charge.hrv
-        val rhrHistory = charge.rhr
-        val respHistory = charge.resp
-        val hrvEpoch = charge.hrvEpoch
-        val rhrEpoch = charge.rhrEpoch
-        val respEpoch = charge.respEpoch
-        // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
-        // so its history is the own nights alone. (PR #85)
-        val skinHistory = ChargeBaselines.history(
-            emptyList(), ownNights(nightlySkinByDay), newestDay, skinCfg, recoveryEpoch,
-        )
-        // #2525: one Recovery test-mode line naming what each of the four baselines was folded from (own
-        // nights, or own nights still seeded by the import), read off the same histories the folds consume.
-        recoveryTraceSink?.invoke(
-            ChargeBaselines.logLine(newestDay, hrvHistory, rhrHistory, respHistory, skinHistory),
-        )
-        // #1614: the per-night HRV fold, traced (see [emitHrvFoldTrace] for scope and why it is a call
-        // rather than an inline lambda). Sits immediately above the fold it describes, and takes the SAME
-        // baselineEpoch, so the trace can only ever describe the fold the scorer actually performed.
-        emitHrvFoldTrace(recoveryTraceSink, hrvHistory.values, hrvHistory.dayKeys, hrvCfg, hrvEpoch)
-        val hrvBase2 = Baselines.foldHistory(hrvHistory.values, hrvHistory.dayKeys, hrvCfg, hrvEpoch)
-        val rhrBase2 = Baselines.foldHistory(rhrHistory.values, rhrHistory.dayKeys, rhrCfg, rhrEpoch)
-        // Gated on `usable` because RecoveryScorer includes the resp term whenever a baseline object is
-        // present , a CALIBRATING (<4-night) baseline would let one noisy night move recovery (mirrors the
-        // skin-temp use-site gate).
-        val respBase2 = Baselines
-            .foldHistory(respHistory.values, respHistory.dayKeys, respCfg, respEpoch)
-            .takeIf { it.usable }
-        // Gated on `usable` for consistency with the resp baseline above AND the Swift reference
-        // (`skinFold.usable ? skinFold : nil`) , the use-site re-checks `usable` too, so this is
-        // belt-and-suspenders, but it keeps the platforms byte-aligned.
-        val skinBase2 = Baselines
-            .foldHistory(skinHistory.values, skinHistory.dayKeys, skinCfg, recoveryEpoch)
-            .takeIf { it.usable }
-        val baselines2 = ProfileBaselines(
-            hrv = hrvBase2, restingHR = rhrBase2, resp = respBase2, skinTemp = skinBase2,
+        val chargeDays = chargeBaselinesByDay(
+            baselineImports, importedDeviceId, resolvedScoreOwnerByDay,
+            nightlyHrvByDay, nightlyRhrByDay, nightlyRespByDay, nightlySkinByDay,
+            baselineEpoch, recoveryEpoch, recoveryTraceSink,
         )
 
         // Real (non-detected) workouts in the scored window, used to de-duplicate detected bouts so a
@@ -1713,6 +1662,8 @@ object IntelligenceEngine {
                 res, dayEditedRows, tzOffsetSeconds, habitualMidsleepSec,
                 physiologicalSteps, computedId, restRows,
             )
+            // #53: this day's own baselines (window ending the day before).
+            val baselines2 = chargeDays.forDay(res.daily.day)
             val daily = recomputeRecoveryDaily(editedDaily, res.nightlySkinTempC, baselines2)
             val recovery = daily.recovery
             val skinTempDevC = daily.skinTempDevC
@@ -2557,103 +2508,83 @@ object IntelligenceEngine {
         }
     }
 
-    /**
-     * The (day, source) pairs the baseline era cuts read (#459): every imported-history day and every night
-     * this pass scored, each tagged with its resolved owner, the imported id when it has none. Feeds both the
-     * respiration era and the Garmin HRV / resting-HR era. Swift: `respCandidateDays` + `respSourceByDay`.
-     */
-    private fun eraSourceDays(
-        hist: List<DailyMetric>,
-        nightlyRespByDay: Map<String, Double?>,
-        ownerByDay: Map<String, String>,
-        importedDeviceId: String,
-        seedSourceByDay: Map<String, String> = emptyMap(),
-    ): List<Pair<String, String>> {
-        val histDays = hist.map { it.day }.toSet()
-        // A seeded export night keeps its own source unless an owner or the WHOOP import holds that day.
-        return (histDays + nightlyRespByDay.keys + seedSourceByDay.keys).sorted()
-            .map { day ->
-                day to (ownerByDay[day] ?: seedSourceByDay[day]?.takeIf { day !in histDays } ?: importedDeviceId)
-            }
+    /** One pass's Charge baselines per scored day (#53): [forDay] resolves the day's four baselines through
+     *  [ChargeBaselines.resolveDay] and, in Recovery test mode, emits that day's [ChargeBaselines.logLine].
+     *  Resp and skin are passed only when usable: a calibrating baseline must not move Charge. */
+    internal class ChargeDays(
+        private val imported: ChargeBaselines.Nights,
+        private val own: ChargeBaselines.Nights,
+        private val seed: ChargeBaselines.Nights,
+        val sourceDays: List<ChargeBaselines.SourceDay>,
+        private val hrvRecalibration: Double,
+        private val recoveryRecalibration: Double,
+        private val traceSink: ((String) -> Unit)?,
+    ) {
+        fun forDay(day: String): ProfileBaselines {
+            val r = ChargeBaselines.resolveDay(
+                day, imported, own, seed, sourceDays, hrvRecalibration, recoveryRecalibration,
+            ) ?: return ProfileBaselines()
+            traceSink?.invoke(
+                ChargeBaselines.logLine(day, r.hrvHistory, r.restingHRHistory, r.respHistory, r.skinHistory),
+            )
+            return ProfileBaselines(
+                hrv = r.hrv, restingHR = r.restingHR,
+                resp = r.resp.takeIf { it.usable }, skinTemp = r.skin.takeIf { it.usable },
+            )
+        }
     }
 
-    /** The era-cut epochs and the HRV / resting-HR / respiration Charge histories for one pass (#2525,
-     *  #459, #31). Moved out of [analyzeRecentOnCpu], which is size-budgeted; the logic is unchanged apart
-     *  from the same-brand export seed. Swift builds the same values inline. */
-    internal class ChargeHistories(
-        val hrv: ChargeBaselines.History,
-        val rhr: ChargeBaselines.History,
-        val resp: ChargeBaselines.History,
-        val hrvEpoch: Double,
-        val rhrEpoch: Double,
-        val respEpoch: Double,
-    )
-
-    private fun chargeHistories(
-        seed: Pair<List<DailyMetric>, Map<String, String>>,
+    /**
+     * The per-day Charge baselines for one pass (#53). Own nights are the stored computed rows overlaid with
+     * this pass's fresh nightly values (a rescored day's fresh value, null included, wins). Each night's
+     * measuring source, for the device-era cut (#459), is this pass's resolved owner for a scanned day, else
+     * the source recorded when an older day was scored ([ChargeBaselines.recordedSources]), else
+     * [importedDeviceId]; the dashboard rebuilds its eras by the same rule. Kept out of the size-budgeted
+     * [analyzeRecentOnCpu]. Swift builds the same values inline (`chargeBaselines(for:)`).
+     */
+    internal fun chargeBaselinesByDay(
+        imports: BaselineImports,
         importedDeviceId: String,
-        newestDay: String,
-        hist: List<DailyMetric>,
         resolvedScoreOwnerByDay: Map<String, String>,
         nightlyHrvByDay: Map<String, Double?>,
         nightlyRhrByDay: Map<String, Double?>,
         nightlyRespByDay: Map<String, Double?>,
-        baselineEpoch: Double,
-        recoveryEpoch: Double,
-        hrvCfg: MetricCfg,
-        rhrCfg: MetricCfg,
-        respCfg: MetricCfg,
-    ): ChargeHistories {
-            // #31: the active device's own-brand wearable-export nights seed at the lowest precedence, through
-            // the same seed ids and rule as the dashboard's ChargeBaselines.resolve, each tagged with its export
-            // source so the era cut reads it as the brand it is (a `garmin-import` night and a `garmin-<uuid>`
-            // night share one era). A WHOOP wearer has no seed ids, so their fold is unchanged. Mirrors Swift.
-                val eraSourceDays = eraSourceDays(
-                hist, nightlyRespByDay, resolvedScoreOwnerByDay, importedDeviceId, seed.second,
-            )
-            // Resp baseline: WITHIN one brand it pooled imported (cloud) values with on-device RSA estimates;
-            // since #2525 the two meet only while the import seeds. ACROSS brands it is not acceptable: a WHOOP
-            // export reports its own measured rate (~16.1 on this history) while an Oura ring reports the rate
-            // its firmware measured (~14.6), so pooling them turns a strap SWITCH into a ~3 sigma illness-ward
-            // step against a ~0.52 bpm spread — a device artifact scored as physiology, the same failure #459
-            // named for HRV. `deviceEraEpoch` returns 0.0 for a single-brand history (every WHOOP-origin id —
-            // import, strap, the computed sibling, the Apple/HC riders — buckets to one brand), so a WHOOP-only
-            // user is unaffected; `max` with the manual Recalibrate epoch keeps whichever cut is LATER, since
-            // both mean "ignore nights before this".
-            val respEpoch = maxOf(recoveryEpoch, Baselines.deviceEraEpoch(eraSourceDays))
-            // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
-            // switch to or from one starts a new baseline era for both (#459). 0.0 when no night in the window is
-            // a Garmin night, so every other history folds exactly as before. Mirrors Swift.
-            val garminEraEpoch = GarminScoringInputs.baselineEraEpoch(eraSourceDays)
-            val hrvEpoch = maxOf(baselineEpoch, garminEraEpoch)
-            val rhrEpoch = maxOf(recoveryEpoch, garminEraEpoch)
-            // HRV honours noop.hrvBaselineEpoch; rhr/resp/skin honour noop.recoveryBaselineEpoch, so the manual
-            // Recalibrate restarts the whole Charge build-up together. A 0.0 epoch drops nothing.
-            val hrvHistory = seededHistory(hist, seed.first, nightlyHrvByDay, newestDay, hrvCfg, hrvEpoch) { it.avgHrv }
-            val rhrHistory = seededHistory(hist, seed.first, nightlyRhrByDay, newestDay, rhrCfg, rhrEpoch) {
-                it.restingHr?.toDouble()
-            }
-            val respHistory = seededHistory(hist, seed.first, nightlyRespByDay, newestDay, respCfg, respEpoch) {
-                it.respRateBpm
-            }
-        return ChargeHistories(hrvHistory, rhrHistory, respHistory, hrvEpoch, rhrEpoch, respEpoch)
+        nightlySkinByDay: Map<String, Double?>,
+        hrvRecalibration: Double,
+        recoveryRecalibration: Double,
+        traceSink: ((String) -> Unit)?,
+    ): ChargeDays {
+        val ownHrv = HashMap<String, Double?>()
+        val ownRhr = HashMap<String, Double?>()
+        val ownResp = HashMap<String, Double?>()
+        val ownSkin = HashMap<String, Double?>()
+        for (row in imports.storedOwn) {
+            ownHrv[row.day] = row.avgHrv
+            ownRhr[row.day] = row.restingHr?.toDouble()
+            ownResp[row.day] = row.respRateBpm
+            ownSkin[row.day] = row.skinTempC
+        }
+        ownHrv.putAll(nightlyHrvByDay)
+        ownRhr.putAll(nightlyRhrByDay)
+        ownResp.putAll(nightlyRespByDay)
+        ownSkin.putAll(nightlySkinByDay)
+        val pairs = { byDay: Map<String, Double?> -> byDay.keys.sorted().map { it to byDay[it] } }
+        val own = ChargeBaselines.Nights(pairs(ownHrv), pairs(ownRhr), pairs(ownResp), pairs(ownSkin))
+        val imported = ChargeBaselines.Nights.fromRows(imports.hist).copy(skin = emptyList())
+        val seed = ChargeBaselines.Nights.fromRows(imports.seedRows).copy(skin = emptyList())
+        val recorded = ChargeBaselines.recordedSources(
+            imports.provenance.map { ChargeBaselines.ProvenanceRow(it.day, it.key, it.sourceId) },
+        )
+        val sourceDays = ChargeBaselines.sourceDays(
+            own = ownHrv.keys.sorted().map { it to (resolvedScoreOwnerByDay[it] ?: recorded[it]) },
+            ownFallbackId = importedDeviceId,
+            importedDays = imports.hist.map { it.day },
+            importedSourceId = importedDeviceId,
+            seed = imports.seedSourceByDay.entries.sortedBy { it.key }
+                .map { ChargeBaselines.SourceDay(it.key, it.value) },
+        )
+        return ChargeDays(imported, own, seed, sourceDays, hrvRecalibration, recoveryRecalibration, traceSink)
     }
-
-    /** One metric's Charge history: the WHOOP-import nights, this pass's own nights, and the same-brand
-     *  export seed (#31), through [ChargeBaselines.history]. Kept out of the size-budgeted
-     *  [analyzeRecentOnCpu]. Swift calls `ChargeBaselines.history` inline. */
-    private fun seededHistory(
-        hist: List<DailyMetric>,
-        seedRows: List<DailyMetric>,
-        own: Map<String, Double?>,
-        anchorDay: String,
-        cfg: MetricCfg,
-        epoch: Double,
-        value: (DailyMetric) -> Double?,
-    ): ChargeBaselines.History = ChargeBaselines.historyWithSeed(
-        hist.map { it.day to value(it) }, own.entries.map { it.key to it.value }, anchorDay, cfg, epoch,
-        seed = seedRows.map { it.day to value(it) },
-    )
 
     /** The active device whose brand picks the wearable-export history and seed ids (#31). Swift reads
      *  `registry.activeDeviceId()` (`regActiveId`); a null ownerSource falls back to the imported id. */
@@ -2673,14 +2604,52 @@ object IntelligenceEngine {
         return WhoopRepository.unionByDay(seedLists).sortedBy { it.day } to seedSourceByDay(seedIds, seedLists)
     }
 
-    /** The imported WHOOP rows the baselines read (`hist`) and the same-brand export seed (#31), in one
-     *  call so the size-budgeted [analyzeRecentOnCpu] gains no suspension point. */
+    /** The stored rows a pass's Charge baselines read (#2525, #31, #53): the imported WHOOP rows (`hist`),
+     *  the same-brand export seed and the export source each seeded day is tagged with, the stored computed
+     *  rows from [ChargeBaselines.windowDays] before the scan window's oldest day, and their recorded
+     *  per-night sources. */
+    internal class BaselineImports(
+        val hist: List<DailyMetric>,
+        val seedRows: List<DailyMetric>,
+        val seedSourceByDay: Map<String, String>,
+        val storedOwn: List<DailyMetric> = emptyList(),
+        val provenance: List<ScoreInputProvenanceRow> = emptyList(),
+    )
+
+    /** Every stored read the Charge baselines need, in one call so the size-budgeted [analyzeRecentOnCpu]
+     *  gains no suspension point. The own-row and provenance reads degrade to empty on failure, as the Swift
+     *  `try?` does. */
     private suspend fun baselineImports(
         repo: WhoopRepository,
         ownerSource: DayOwnerSource?,
         importedDeviceId: String,
-    ): Pair<List<DailyMetric>, Pair<List<DailyMetric>, Map<String, String>>> =
-        repo.days(importedDeviceId) to wearableBaselineSeed(repo, ownerSource, importedDeviceId)
+        computedId: String,
+        nowSeconds: Long,
+        tzOffsetSeconds: Long,
+        maxDays: Int,
+    ): BaselineImports {
+        val midnight = midnightLocal(nowSeconds, tzOffsetSeconds)
+        val oldestDay = AnalyticsEngine.dayString(midnight - (maxDays - 1) * SECONDS_PER_DAY, tzOffsetSeconds)
+        val newestDay = AnalyticsEngine.dayString(midnight, tzOffsetSeconds)
+        val ownFrom = Baselines.isoEpochDay(oldestDay)
+            ?.let { Baselines.isoDayFromEpochDay(it - ChargeBaselines.windowDays) } ?: oldestDay
+        val seed = wearableBaselineSeed(repo, ownerSource, importedDeviceId)
+        val storedOwn = try {
+            repo.dailyMetrics(computedId, ownFrom, newestDay)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val provenance = try {
+            repo.scoreInputSources(computedId, ownFrom, newestDay, ChargeBaselines.sourceKeyPrecedence)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return BaselineImports(repo.days(importedDeviceId), seed.first, seed.second, storedOwn, provenance)
+    }
 
     /** The export source each seeded day is tagged with: the first [seedIds] entry holding a row for it.
      *  Swift builds the same map inline (`respSourceByDay`). */
@@ -2730,33 +2699,6 @@ object IntelligenceEngine {
             out.add(WatchScoredDay(row.day, res.recovery, res.confidence))
         }
         return out
-    }
-
-    /**
-     * #1614: emit the per-night HRV baseline fold when the Recovery test mode is on (a non-null sink IS
-     * the gate, as with [recoveryTraceLines]).
-     *
-     * HRV ONLY, deliberately: it is Charge's dominant driver and the one whose spread the score divides
-     * by, so tracing all four baselines would quadruple the log for the three that are not the question
-     * being asked. Capped at the last 14 nights, enough to see whether the spread is lifting without an
-     * established user's history burying the rest of the export. The WHOLE history is still folded, so
-     * the state the scorer reads is untouched.
-     *
-     * Deliberately its own function rather than inlined at the fold site: [analyzeRecentOnCpu] sits a
-     * few dozen bytes under a hard bytecode budget (the JVM's 64K per-method ceiling, with headroom
-     * reserved for JaCoCo instrumentation), and inlining this tipped it over. That is the one place the
-     * two platforms diverge in shape: the Swift wiring has no such constraint and reads inline.
-     */
-    private fun emitHrvFoldTrace(
-        sink: ((String) -> Unit)?,
-        hrvSeq: List<Double?>,
-        hrvDayKeys: List<String>,
-        hrvCfg: MetricCfg,
-        baselineEpoch: Double,
-    ) {
-        if (sink == null) return
-        BaselinesTrace.foldHistoryTrace(hrvSeq, hrvDayKeys, hrvCfg, "hrv", baselineEpoch, tail = 14)
-            .lines.forEach(sink)
     }
 
     /**

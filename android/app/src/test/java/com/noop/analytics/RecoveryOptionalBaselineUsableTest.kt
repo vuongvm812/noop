@@ -21,14 +21,11 @@ class RecoveryOptionalBaselineUsableTest {
     private val statuses = listOf(BaselineStatus.CALIBRATING, BaselineStatus.PROVISIONAL,
         BaselineStatus.TRUSTED, BaselineStatus.STALE)
     private val respiratoryValues = listOf(null, 10.0, 14.0, 18.0, 22.0)
-    private val effortValues = listOf(null, 0.0, 30.0, 60.0, 100.0)
 
-    private fun optionalChargeFixture(respBase: BaselineState?, effortBase: BaselineState? = null,
-        resp: Double? = 14.0, effort: Double? = 60.0) = RecoveryScorer.recovery(
+    private fun optionalChargeFixture(respBase: BaselineState?, resp: Double? = 14.0) = RecoveryScorer.recovery(
         hrv = 55.0, rhr = 58.0, resp = resp,
         hrvBaseline = hrv, rhrBaseline = rhr, respBaseline = respBase,
-        sleepPerf = 0.85, skinTempDev = 0.2, recoveryIndexSlope = -0.5,
-        effortBaseline = effortBase, priorDayEffort = effort,
+        sleepPerf = 0.85, skinTempDev = 0.2,
     )
 
     @Test fun unusableRespirationScoresExactlyLikeAbsent() {
@@ -44,77 +41,37 @@ class RecoveryOptionalBaselineUsableTest {
         }
     }
 
-    @Test fun unusableEffortScoresExactlyLikeAbsent() {
-        val states = listOf(Baselines.foldHistory(emptyList(), Baselines.strainCfg),
-            Baselines.foldHistory(listOf(-1.0, 101.0), Baselines.strainCfg),
-            optionalBaselineFixture(45.0, 10.0, BaselineStatus.STALE))
-        for (base in states) {
-            assertFalse(base.usable)
-            for (value in effortValues) {
-                assertEquals(optionalChargeFixture(null, effort = value)?.toRawBits(),
-                    optionalChargeFixture(null, base, effort = value)?.toRawBits())
-            }
-        }
-    }
-
     @Test fun allOptionalStateAndValuePairsMatchEligibleDriverContract() {
         val respStates = listOf(null) + statuses.map { optionalBaselineFixture(16.0, 2.0, it) }
-        val effortStates = listOf(null) + statuses.map { optionalBaselineFixture(45.0, 10.0, it) }
         var cases = 0
         val oracleLines = ArrayList<String>()
-        for (respBase in respStates) for (effortBase in effortStates) {
-            for (resp in respiratoryValues) for (effort in effortValues) {
-                val expected = RecoveryScorer.recovery(
-                    hrv = 55.0, rhr = 58.0, resp = resp,
-                    hrvBaseline = RecoveryScorer.DriverBaseline(hrv),
-                    rhrBaseline = RecoveryScorer.DriverBaseline(rhr),
-                    respBaseline = respBase?.takeIf { it.usable }?.let { RecoveryScorer.DriverBaseline(it) },
-                    sleepPerf = 0.85, skinTempDev = 0.2, recoveryIndexSlope = -0.5,
-                    effortBaseline = effortBase?.takeIf { it.usable }?.let { RecoveryScorer.DriverBaseline(it) },
-                    priorDayEffort = effort,
-                )
-                val actual = optionalChargeFixture(respBase, effortBase, resp, effort)
-                assertEquals(expected?.toRawBits(), actual?.toRawBits())
-                if (resp == 14.0 && effort == 60.0) {
-                    val bits = actual?.let { java.lang.Long.toHexString(it.toRawBits()) } ?: "nil"
-                    oracleLines.add("${respBase?.status?.raw ?: "nil"}/${effortBase?.status?.raw ?: "nil"}|$bits")
-                }
-                cases++
+        for (respBase in respStates) for (resp in respiratoryValues) {
+            val expected = RecoveryScorer.recovery(
+                hrv = 55.0, rhr = 58.0, resp = resp,
+                hrvBaseline = RecoveryScorer.DriverBaseline(hrv),
+                rhrBaseline = RecoveryScorer.DriverBaseline(rhr),
+                respBaseline = respBase?.takeIf { it.usable }?.let { RecoveryScorer.DriverBaseline(it) },
+                sleepPerf = 0.85, skinTempDev = 0.2,
+            )
+            val actual = optionalChargeFixture(respBase, resp)
+            assertEquals(expected?.toRawBits(), actual?.toRawBits())
+            if (resp == 14.0) {
+                val bits = actual?.let { java.lang.Long.toHexString(it.toRawBits()) } ?: "nil"
+                oracleLines.add("${respBase?.status?.raw ?: "nil"}|$bits")
             }
+            cases++
         }
-        assertEquals(625, cases)
-        // Compiled original Swift stdout; exact Double bits, shared with the Swift regression.
+        assertEquals(25, cases)
+        // Compiled Swift stdout; exact Double bits, shared with the Swift regression.
         assertEquals("""
-            nil/nil|4051b9be0a68921e
-            nil/calibrating|4051b9be0a68921e
-            nil/provisional|405119a83eb9de93
-            nil/trusted|405119a83eb9de93
-            nil/stale|4051b9be0a68921e
-            calibrating/nil|4051b9be0a68921e
-            calibrating/calibrating|4051b9be0a68921e
-            calibrating/provisional|405119a83eb9de93
-            calibrating/trusted|405119a83eb9de93
-            calibrating/stale|4051b9be0a68921e
-            provisional/nil|4051e5d635c94772
-            provisional/calibrating|4051e5d635c94772
-            provisional/provisional|40514d26488c9eb1
-            provisional/trusted|40514d26488c9eb1
-            provisional/stale|4051e5d635c94772
-            trusted/nil|4051e5d635c94772
-            trusted/calibrating|4051e5d635c94772
-            trusted/provisional|40514d26488c9eb1
-            trusted/trusted|40514d26488c9eb1
-            trusted/stale|4051e5d635c94772
-            stale/nil|4051b9be0a68921e
-            stale/calibrating|4051b9be0a68921e
-            stale/provisional|405119a83eb9de93
-            stale/trusted|405119a83eb9de93
-            stale/stale|4051b9be0a68921e
+            nil|4051c59416cf2fed
+            calibrating|4051c59416cf2fed
+            provisional|4051f31a1925a3f3
+            trusted|4051f31a1925a3f3
+            stale|4051c59416cf2fed
         """.trimIndent(), oracleLines.joinToString("\n"))
         assertNotEquals(optionalChargeFixture(null)?.toRawBits(),
             optionalChargeFixture(optionalBaselineFixture(16.0, 2.0))?.toRawBits())
-        assertNotEquals(optionalChargeFixture(null)?.toRawBits(),
-            optionalChargeFixture(null, optionalBaselineFixture(45.0, 10.0))?.toRawBits())
     }
 
     @Test fun respirationRowsUseExactlyTheEligibleBaseline() {
@@ -161,8 +118,7 @@ class RecoveryOptionalBaselineUsableTest {
             for (optionalStatus in statuses) {
                 val base = optionalBaselineFixture(16.0, 2.0, optionalStatus)
                 assertNull(RecoveryScorer.recovery(hrv = 55.0, rhr = 58.0, resp = 14.0,
-                    hrvBaseline = coldHrv, rhrBaseline = rhr, respBaseline = base, sleepPerf = 0.85,
-                    effortBaseline = optionalBaselineFixture(45.0, 10.0, optionalStatus), priorDayEffort = 60.0))
+                    hrvBaseline = coldHrv, rhrBaseline = rhr, respBaseline = base, sleepPerf = 0.85))
                 assertTrue(RecoveryDrivers.chargeDrivers(hrv = 55.0, rhr = 58.0, resp = 14.0,
                     hrvBaseline = coldHrv, rhrBaseline = rhr, respBaseline = base, sleepPerf = 0.85).isEmpty())
                 val trace = RecoveryScorerTrace.recoveryTrace(hrv = 55.0, rhr = 58.0, resp = 14.0,
