@@ -3713,6 +3713,10 @@ final class IntelligenceEngine: ObservableObject {
         for s in kept {
             let day = AnalyticsEngine.dayString(s.endTs, offsetSec: offsetSec)
             blocksByDay[day, default: []].append((s.effectiveStartTs, s.endTs, s.efficiency))
+            // #55: each regularity window uses the zone offset in force at its own onset, so a clock change
+            // does not shift a night's epochs. Day KEYS stay on the run's one offset: per #2517 a day is a
+            // fixed 86,400 s window and the transition hour is recorded (dayWindowSkewLine), not corrected,
+            // and no per-night offset is stored that could re-key history after travel.
             let zoneOffset = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs)))
             windows.append(.init(start: s.effectiveStartTs, end: s.endTs, offsetSec: zoneOffset))
         }

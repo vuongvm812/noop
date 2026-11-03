@@ -2982,6 +2982,10 @@ object IntelligenceEngine {
                 SleepScoring.napMinutes(blocks.map { SleepScoring.Block(it.effectiveStartTs, it.endTs, it.efficiency) })
             }
         val tz = java.util.TimeZone.getDefault()
+        // #55: each regularity window uses the zone offset in force at its own onset, so a clock change
+        // does not shift a night's epochs. Day KEYS stay on the run's one offset: per #2517 a day is a
+        // fixed 86,400 s window and the transition hour is recorded (dayWindowSkewLine), not corrected,
+        // and no per-night offset is stored that could re-key history after travel.
         val windows = sessions.map {
             SleepRegularity.Window(it.effectiveStartTs, it.endTs, (tz.getOffset(it.effectiveStartTs * 1000L) / 1000).toLong())
         }
