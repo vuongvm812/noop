@@ -28,6 +28,9 @@ object IllnessInputs {
     const val gapNights: Int = 1
     const val baselineNights: Int = 28
     const val hardWorkoutZ: Double = 2.0
+    /** Swift twin: `IllnessInputs.strainCfg` — the 0–100 Effort scale, a wide floor for training swings. */
+    val strainCfg: MetricCfg
+        get() = MetricCfg(minVal = 0.0, maxVal = 100.0, floorSpread = 5.0, halfLifeB = 14.0, halfLifeS = 21.0)
     const val phaseJumpMinutes: Double = 180.0
     const val phaseBaselineMinNights: Int = 7
     const val phaseBaselineMinConcentration: Double = 0.5
@@ -133,7 +136,7 @@ object IllnessInputs {
     }
 
     internal fun hardWorkout(nights: List<Night>, base: List<Night>): Boolean {
-        val state = Baselines.foldHistory(base.map { it.strain }, Baselines.strainCfg)
+        val state = Baselines.foldHistory(base.map { it.strain }, strainCfg)
         if (!state.usable) return false
         val end = nights.size - 1
         val start = maxOf(0, nights.size - recentNights - 1)

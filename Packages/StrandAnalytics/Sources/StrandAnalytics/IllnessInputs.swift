@@ -38,6 +38,11 @@ public enum IllnessInputs {
     public static let baselineNights: Int = 28
     /// A day's strain at/above this many personal spreads over its baseline counts as a hard workout.
     public static let hardWorkoutZ: Double = 2.0
+    /// The daily-strain baseline the hard-workout test folds: bounds match the 0–100 Effort scale; the
+    /// floor is wide because a rest day against a hard day is a normal, large swing.
+    public static var strainCfg: MetricCfg {
+        MetricCfg(minVal: 0.0, maxVal: 100.0, floorSpread: 5.0, halfLifeB: 14.0, halfLifeS: 21.0)
+    }
     /// A recent sleep midpoint this far (minutes, circular) from the baseline's counts as a body-clock jump.
     public static let phaseJumpMinutes: Double = 180
     /// Baseline nights with a sleep midpoint needed before the jump test has a reference.
@@ -177,7 +182,7 @@ public enum IllnessInputs {
     /// so a habitual two-session day is not a confounder but an unusually heavy one is.
     /// Kotlin twin: `IllnessInputs.hardWorkout`.
     static func hardWorkout(_ nights: [Night], base: [Night]) -> Bool {
-        let state = Baselines.foldHistory(base.map(\.strain), cfg: Baselines.strainCfg)
+        let state = Baselines.foldHistory(base.map(\.strain), cfg: strainCfg)
         guard state.usable else { return false }
         let end = nights.count - 1
         let start = Swift.max(0, nights.count - recentNights - 1)
