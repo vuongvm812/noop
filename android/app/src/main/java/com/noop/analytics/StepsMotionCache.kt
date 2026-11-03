@@ -17,7 +17,7 @@ package com.noop.analytics
  * gravity changes, and the key below is the whole story.
  *
  * Unlike the day-scan cache this one PERSISTS across launches, and the paragraph above is why it can. A
- * persisted day scan would have to carry `dayScanCacheConfigSig`, which folds in baselines1 and the habitual
+ * persisted day scan would have to carry `dayScanCacheConfigSig`, which folds in the habitual
  * sleep terms - and `sleepConsistency` (1-CV over 28 nights) and `habitualMidsleepSec` (a circular mean)
  * shift with ANY night moving, so it would invalidate wholesale on exactly the passes it would need to
  * survive. Nothing pass-global reaches this fold, so the payload stays valid while gravity stands still and

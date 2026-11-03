@@ -66,6 +66,7 @@ object RecoveryScorerTrace {
         respBaseline: BaselineState?,
         sleepPerf: Double?,
         skinTempDev: Double? = null,
+        hrvPriorWeek: List<Double> = emptyList(),
     ): Pair<Double?, List<String>> {
         val lines = ArrayList<String>()
         val nilTerms = ArrayList<String>()
@@ -83,6 +84,7 @@ object RecoveryScorerTrace {
             hrv = hrv, rhr = rhr, resp = resp,
             hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
             respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+            hrvPriorWeek = hrvPriorWeek,
         )
 
         // Cold-start gate: HRV baseline not usable -> recovery() returns null before any term is built.
@@ -184,16 +186,32 @@ object RecoveryScorerTrace {
         // Renormalization: total surviving weight and the weighted composite z, the SAME math recovery(...)
         // runs to produce the logistic input.
         val totalWeight = terms.sumOf { it.third }
-        val compositeZ =
+        val termsZ =
             if (totalWeight > 0.0) terms.sumOf { RecoveryScorer.clampZ(it.second) * it.third } / totalWeight else 0.0
+        // #53: the 7-day HRV trend modifier, added on top of the renormalised terms (0 inside the band).
+        val trend = RecoveryScorer.hrvTrend(hrv, hrvPriorWeek, RecoveryScorer.DriverBaseline(hrvBaseline))
+        val trendShift = trend?.let { RecoveryScorer.wHRVTrend * it.z } ?: 0.0
+        val compositeZ = termsZ + trendShift
         // #53: name every term the ±termZClamp limit bit on, so a capped artefact night is visible.
         val clamped = terms.filter { abs(it.second) > RecoveryScorer.termZClamp }.map { it.first }
         if (clamped.isNotEmpty()) {
             lines.add("charge clamp terms=[${clamped.joinToString(",")}] limit=${r2(RecoveryScorer.termZClamp)}")
         }
+        if (trend != null) {
+            lines.add(
+                "charge trend hrv7=${r2(trend.rollingMs)} band=${r2(trend.normalLowMs)}-${r2(trend.normalHighMs)} " +
+                    "nights=${hrvPriorWeek.size + 1} z=${r2(trend.z)} w=${r2(RecoveryScorer.wHRVTrend)} " +
+                    "(7-day rolling lnRMSSD vs the smallest worthwhile change)",
+            )
+        } else {
+            lines.add(
+                "charge trend hrv7=nil nights=${hrvPriorWeek.size + 1} " +
+                    "(needs >=${RecoveryScorer.hrvTrendMinNights} nights in 7 days)",
+            )
+        }
         lines.add(
             "charge renorm totalWeight=${r2(totalWeight)} compositeZ=${r2(compositeZ)} " +
-                "(z = sum(z*w)/sum(w))",
+                "(z = sum(z*w)/sum(w) + trend)",
         )
 
         // Final logistic score + band, read from recovery(...) verbatim.
@@ -220,7 +238,7 @@ object RecoveryScorerTrace {
         if (sat.active && score != null && totalWeight > 0.0) {
             val easedZ = terms
                 .sumOf { t -> RecoveryScorer.clampZ(if (t.first == "hrv") sat.easedHrvZ else t.second) * t.third } /
-                totalWeight
+                totalWeight + trendShift
             val wouldBe = RecoveryScorer.logisticScore(easedZ)
             lines.add(
                 "charge saturation active hrvZraw=${r2(hrvZRaw)} rhrZ=${r2(rhrZForGuard ?: 0.0)} " +

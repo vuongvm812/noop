@@ -51,13 +51,13 @@ class ChargeBaselineEraWiringTest {
         assertEquals("garmin-AAA", inputs.sourceDays.single { it.day == key(0) }.sourceId)
         assertEquals("my-whoop", inputs.sourceDays.single { it.day == key(5) }.sourceId)
         val cut = LocalDate.parse(key(2)).toEpochDay().toDouble() * 86_400
-        assertEquals(ChargeBaselines.Epochs(cut, cut, cut, 0.0), inputs.epochs(key(0)))
+        assertEquals(ChargeBaselines.Epochs(cut, cut, cut, 0.0), inputs.resolve(key(0))?.epochs)
         // The last WHOOP day is still in the WHOOP era.
-        assertEquals(ChargeBaselines.Epochs.none, inputs.epochs(key(3)))
+        assertEquals(ChargeBaselines.Epochs.none, inputs.resolve(key(3))?.epochs)
         // A night with no recorded source falls back to the engine's importedDeviceId.
         val bare = chargeBaselineInputs(emptyList(), own, emptyList(), emptyList(), "my-whoop", 0.0, 0.0)
         assertTrue(bare.sourceDays.all { it.sourceId == "my-whoop" })
-        assertEquals(ChargeBaselines.Epochs.none, bare.epochs(key(0)))
+        assertEquals(ChargeBaselines.Epochs.none, bare.resolve(key(0))?.epochs)
     }
 
     /** The first Garmin night has nothing before it in its era: no usable HRV baseline, so no driver rows and
@@ -84,16 +84,18 @@ class ChargeBaselineEraWiringTest {
         assertTrue(recoveryChargeDrivers(r, day).isNotEmpty())
     }
 
-    /** The readiness word never compares a Garmin night with the WHOOP-era HRV baseline. */
+    /** The readiness word reads the same baselines, so it never compares a Garmin night with the WHOOP-era
+     *  HRV baseline. */
     @Test fun readinessIgnoresWhoopEraHrv() {
         val days = own.sortedBy { it.day }
-        val withCut = ReadinessEngine.evaluate(days, key(0), inputs.epochsFor(key(0)))
+        val resolved = inputs.resolve(key(0))
+        assertTrue((resolved?.epochs?.hrv ?: 0.0) > 0.0)
+        val withCut = ReadinessEngine.evaluate(days, key(0), resolved)
         val noCut = ReadinessEngine.evaluate(days, key(0))
         // Two Garmin nights is too few for an HRV signal; without the cut a WHOOP baseline flags 40 ms low.
         assertTrue(withCut.signals.none { it.key == "hrv" })
         assertTrue(noCut.signals.any { it.key == "hrv" })
         assertNotEquals(noCut, withCut)
-        assertEquals(ChargeBaselines.Epochs.none, (null as ChargeBaselines.Inputs?).epochsFor(key(0)))
         assertEquals(Baselines.minNightsSeed, 4)
     }
 }

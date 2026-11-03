@@ -38,8 +38,9 @@ import kotlin.math.roundToInt
  * Each metric is standardized to a z-score against the personal trailing baseline (#53:
  * [ChargeBaselines]; HRV in the log domain), and each term's z is clamped to ±[termZClamp] before
  * weighting so one artefact night or a zero Rest cannot dominate. Missing terms are dropped and the
- * weights renormalized. The composite z is squashed through a logistic anchored so that
- * Z = 0 → ~58% (WHOOP's published population-average recovery).
+ * weights renormalized. A 7-day rolling lnRMSSD outside the smallest-worthwhile-change band adds a
+ * small trend modifier ([hrvTrend], weight [wHRVTrend]) on top. The composite z is squashed through a
+ * logistic anchored so that Z = 0 → ~58% (WHOOP's published population-average recovery).
  *
  * Cold-start: if the HRV baseline (dominant driver) is not yet usable
  * (< MIN_NIGHTS_SEED valid nights), recovery() returns null. Callers may use
@@ -84,6 +85,64 @@ object RecoveryScorer {
 
     /** One term's z clamped to ±[termZClamp]. Swift twin: `RecoveryScorer.clampZ`. */
     internal fun clampZ(z: Double): Double = max(-termZClamp, min(termZClamp, z))
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // HRV trend modifier (#53, the Plews/Altini smallest worthwhile change)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** Weight of the HRV trend modifier, ADDED to the composite z (not renormalised with the terms), so a
+     *  7-day trend inside the normal band leaves Charge exactly where the nightly terms put it. */
+    const val wHRVTrend: Double = 0.15
+
+    /** Calendar days in the rolling HRV window, tonight included. */
+    const val hrvTrendWindowDays: Int = 7
+
+    /** Fewest valid nights (tonight included) the window must hold before the trend is read. */
+    const val hrvTrendMinNights: Int = 3
+
+    /** Smallest-worthwhile-change half-width: the normal band is the baseline ± hrvTrendSwcK·σ (ln). */
+    const val hrvTrendSwcK: Double = 0.5
+
+    /**
+     * Where the 7-day rolling lnRMSSD sits against the HRV baseline's normal band. Swift twin:
+     * `RecoveryScorer.HRVTrend`.
+     *
+     * @property rollingMs the 7-day rolling HRV (ms) = exp(mean ln HRV over the window, tonight included).
+     * @property normalLowMs the normal band's lower edge (ms) = exp(baseline ln mean − hrvTrendSwcK·σ).
+     * @property normalHighMs the normal band's upper edge (ms) = exp(baseline ln mean + hrvTrendSwcK·σ).
+     * @property z the modifier's z: how far the rolling mean sits OUTSIDE the band, in σ (0 inside it),
+     *   clamped to ±[termZClamp].
+     */
+    data class HRVTrend(
+        val rollingMs: Double,
+        val normalLowMs: Double,
+        val normalHighMs: Double,
+        val z: Double,
+    )
+
+    /**
+     * The HRV trend for tonight: the mean lnRMSSD of tonight and the valid nights of the six calendar days
+     * before it ([priorWeek], ms) against the log-domain HRV baseline. Outside the smallest-worthwhile-change
+     * band (Plews 2012/2013, Buchheit 2014) the excess beyond the band edge, in σ, is the modifier; inside it
+     * the modifier is 0. null when the baseline is not in the log domain or the window holds fewer than
+     * [hrvTrendMinNights] nights. A single night barely moves a 7-day mean, which is why the trend modifies
+     * Charge rather than replacing the nightly HRV term. Swift twin: `RecoveryScorer.hrvTrend`.
+     */
+    fun hrvTrend(hrv: Double, priorWeek: List<Double>, baseline: DriverBaseline): HRVTrend? {
+        if (!baseline.logDomain || priorWeek.size + 1 < hrvTrendMinNights) return null
+        var sum = ln(max(hrv, 1.0))
+        for (v in priorWeek) sum += ln(max(v, 1.0))
+        val roll = sum / (priorWeek.size + 1).toDouble()
+        val mu = ln(max(baseline.mean, 1.0))
+        val sigma = max(1.253 * baseline.spread, 1e-9)
+        val half = hrvTrendSwcK * sigma
+        val d = roll - mu
+        val excess = if (d > half) d - half else if (d < -half) d + half else 0.0
+        return HRVTrend(
+            rollingMs = exp(roll), normalLowMs = exp(mu - half), normalHighMs = exp(mu + half),
+            z = clampZ(excess / sigma),
+        )
+    }
 
     /** Logistic spread: ±2 z-units ≈ full Red–Green band (15%–95%). */
     const val logisticK: Double = 1.6
@@ -313,7 +372,9 @@ object RecoveryScorer {
      *   identical to the pre-skin-temp model).
      * @param hrvBaselineUsable whether the HRV baseline has enough nights
      *   (BaselineState.usable). When false, returns null (cold-start).
-     * Swift twin: `RecoveryScorer.recovery(hrv:rhr:resp:hrvBaseline:rhrBaseline:respBaseline:sleepPerf:skinTempDev:hrvBaselineUsable:)`.
+     * @param hrvPriorWeek the valid HRV nights (ms) of the six calendar days before tonight, for the 7-day
+     *   trend modifier ([hrvTrend]). Empty leaves the modifier out.
+     * Swift twin: `RecoveryScorer.recovery(hrv:rhr:resp:hrvBaseline:rhrBaseline:respBaseline:sleepPerf:skinTempDev:hrvBaselineUsable:hrvPriorWeek:)`.
      */
     fun recovery(
         hrv: Double,
@@ -325,6 +386,7 @@ object RecoveryScorer {
         sleepPerf: Double?,
         skinTempDev: Double? = null,
         hrvBaselineUsable: Boolean = true,
+        hrvPriorWeek: List<Double> = emptyList(),
     ): Double? {
         // Cold-start gate: HRV is the dominant driver; if its baseline isn't
         // usable, refuse to score (more honest than a fabricated value).
@@ -367,7 +429,9 @@ object RecoveryScorer {
         val totalWeight = terms.sumOf { it.second }
         if (totalWeight <= 0.0) return null
 
-        val z = terms.sumOf { clampZ(it.first) * it.second } / totalWeight
+        var z = terms.sumOf { clampZ(it.first) * it.second } / totalWeight
+        // The 7-day HRV trend modifies the composite only when it leaves the normal band.
+        hrvTrend(hrv, hrvPriorWeek, hrvB)?.let { z += wHRVTrend * it.z }
         return logisticScore(z)
     }
 
@@ -386,7 +450,7 @@ object RecoveryScorer {
     /**
      * Convenience overload taking [BaselineState] directly. HRV must be usable for a score;
      * unusable optional personal baselines are omitted before weight renormalization.
-     * Mirrors the Swift `recovery(...)` overload.
+     * Swift twin: `RecoveryScorer.recovery(hrv:rhr:resp:hrvBaseline:rhrBaseline:respBaseline:sleepPerf:skinTempDev:hrvPriorWeek:)`.
      */
     fun recovery(
         hrv: Double,
@@ -397,6 +461,7 @@ object RecoveryScorer {
         respBaseline: BaselineState?,
         sleepPerf: Double?,
         skinTempDev: Double? = null,
+        hrvPriorWeek: List<Double> = emptyList(),
     ): Double? = recovery(
         hrv = hrv,
         rhr = rhr,
@@ -413,5 +478,6 @@ object RecoveryScorer {
         sleepPerf = sleepPerf,
         skinTempDev = skinTempDev,
         hrvBaselineUsable = hrvBaseline.usable,
+        hrvPriorWeek = hrvPriorWeek,
     )
 }

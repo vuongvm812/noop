@@ -25,28 +25,27 @@ final class DayCacheConfigFieldTests: XCTestCase {
     func testTheMovedFieldIsNamed() {
         XCTAssertEqual(
             IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[0] = "moved" }),
-            "hrvBaseline"
+            "age"
         )
     }
 
-    /// The field log's leading suspicion was a rolling baseline, which is index 0 and 1. Naming them
-    /// apart is the whole point: one is HRV drifting, the other resting heart rate.
-    func testTheTwoBaselinesAreToldApart() {
+    /// Neighbouring fields are told apart, and the last index still resolves.
+    func testNeighbouringFieldsAreToldApart() {
         XCTAssertEqual(
             IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[1] = "moved" }),
-            "rhrBaseline"
+            "sex"
         )
         XCTAssertEqual(
-            IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[15] = "moved" }),
+            IntelligenceEngine.changedConfigField(previous: fullSig(), current: fullSig { $0[13] = "moved" }),
             "dayCycleMode"
         )
     }
 
     /// Several at once happens on a settings change that touches more than one knob.
     func testSeveralMoversAreAllNamed() {
-        let after = fullSig { $0[0] = "a"; $0[14] = "b" }
+        let after = fullSig { $0[0] = "a"; $0[12] = "b" }
         XCTAssertEqual(IntelligenceEngine.changedConfigField(previous: fullSig(), current: after),
-                       "hrvBaseline+effortMethod")
+                       "age+effortMethod")
     }
 
     /// The signature starts EMPTY rather than nil, so the first drop of a process has nothing to diff
@@ -72,7 +71,7 @@ final class DayCacheConfigFieldTests: XCTestCase {
     /// as two different causes depending on which phone the reporter happens to hold.
     func testTheFieldListMatchesTheKotlinTwin() {
         XCTAssertEqual(IntelligenceEngine.dayCacheConfigFields, [
-            "hrvBaseline", "rhrBaseline", "age", "sex", "stepTicksPerStep", "maxHROverride",
+            "age", "sex", "stepTicksPerStep", "maxHROverride",
             "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
             "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
             "effortMethod", "dayCycleMode",

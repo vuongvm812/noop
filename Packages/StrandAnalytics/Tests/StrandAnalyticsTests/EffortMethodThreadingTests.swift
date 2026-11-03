@@ -86,6 +86,5 @@ final class EffortMethodThreadingTests: XCTestCase {
         XCTAssertEqual(e.daily.restingHr, b.daily.restingHr)
         XCTAssertEqual(e.daily.avgHrv, b.daily.avgHrv)
         XCTAssertEqual(e.sleepSessions.count, b.sleepSessions.count)
-        XCTAssertEqual(e.recovery, b.recovery)
     }
 }

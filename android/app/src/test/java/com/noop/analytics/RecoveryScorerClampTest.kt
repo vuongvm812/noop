@@ -61,9 +61,11 @@ class RecoveryScorerClampTest {
         assertTrue(lines.any { it.startsWith("charge baseline hrv ") && it.endsWith(" domain=ln") })
         val clamp = lines.single { it.startsWith("charge clamp ") }
         assertEquals("charge clamp terms=[hrv,sleepPerf] limit=3.0", clamp)
-        // The clamp line sits right before the renorm line, whose composite is the clamped one.
+        // The clamp line sits right before the trend line (#53) and then the renorm line, whose composite
+        // is the clamped one.
         val i = lines.indexOf(clamp)
-        assertTrue(lines[i + 1].startsWith("charge renorm "))
+        assertTrue(lines[i + 1].startsWith("charge trend "))
+        assertTrue(lines[i + 2].startsWith("charge renorm "))
         // No clamp line when nothing exceeds the limit; no domain tag on a linear baseline.
         val (_, calm) = RecoveryScorerTrace.recoveryTrace(52.0, 60.0, null, state(50.0, 5.0), rhrB, null, 0.8)
         assertFalse(calm.any { it.startsWith("charge clamp ") })

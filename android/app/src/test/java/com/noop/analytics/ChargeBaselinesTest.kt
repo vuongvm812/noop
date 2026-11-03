@@ -330,7 +330,6 @@ class ChargeBaselinesTest {
                 ChargeBaselines.Nights.fromRows(own), ChargeBaselines.Nights(), sources, 0.0, 0.0,
             )
             assertEquals(direct, inputs.resolve(day))
-            assertEquals(direct?.epochs, inputs.epochs(day))
         }
         // Garmin era starts at day -2: day -2 has no night before it in its era, day -1 has one.
         assertEquals(1, inputs.resolve(dayKey(anchorEpochDay - 1))?.hrv?.nValid)

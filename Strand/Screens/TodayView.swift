@@ -1057,14 +1057,10 @@ struct TodayView: View {
         let conf: ScoreConfidence
         switch metricKey {
         case "recovery":
-            // Same HRV-baseline gate the Charge engine uses, fed by the loaded nightly SDNN history.
-            // #2315: with the recalibration epoch, which is what makes the claim above true. Without it this
-            // gate folded the whole history while the Charge engine folded from the epoch, so the pill could
-            // read solid off nights the ring is no longer using.
-            let hrvBase = Baselines.foldHistory(repo.days.map(\.avgHrv), dayKeys: repo.days.map(\.day),
-                                                cfg: Baselines.hrvCfg,
-                                                baselineEpoch: Baselines.hrvBaselineEpoch())
-            conf = ScoreConfidence.charge(recovery: displayDay?.recovery, hrvBaseline: hrvBase)
+            // #53: the confidence the watch number was scored with, through the engine's own resolver
+            // (`WatchRecovery.score` over the same Apple Health rows and the same trailing baseline), so the
+            // pill can never read solid off nights the ring is not using.
+            conf = displayDay.map { repo.watchCharge(for: $0.day).confidence } ?? .calibrating
         case "sleep_performance":
             // A watch night with a Rest score reads as built; without one it's still calibrating.
             conf = restScore != nil ? .building : .calibrating
@@ -1146,7 +1142,7 @@ struct TodayView: View {
         // key instead (the section header then stamps "Last night · <date>"). Honest: it's the real prior
         // read, not a fabricated today's, and today's own readiness wins the instant tonight is scored.
         let anchor = lastScoredRecoveryDay?.day ?? Repository.logicalDayKey(Date())
-        return ReadinessEngine.evaluate(days: repo.days, today: anchor, epochs: repo.chargeEpochs(for: anchor))
+        return ReadinessEngine.evaluate(days: repo.days, today: anchor, baselines: repo.chargeBaselines(for: anchor))
     }
 
     private func computeCalibration() -> Int? {

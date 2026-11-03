@@ -88,7 +88,7 @@ object ChargeBaselines {
         Baselines.isoEpochDay(forScoredDay)?.let { Baselines.isoDayFromEpochDay(it - 1) }
 
     /** True when [day] starts before [epoch] (seconds), so a baseline starting at that epoch drops it. The
-     *  day starts at UTC midnight, the rule `Baselines.foldHistory` has always used. An unparseable key is
+     *  day starts at UTC midnight. An unparseable key is
      *  dropped whenever an epoch is set. Swift twin: `ChargeBaselines.beforeEpoch`. */
     fun beforeEpoch(day: String, epoch: Double): Boolean {
         if (epoch <= 0) return false
@@ -388,7 +388,26 @@ object ChargeBaselines {
         val restingHR: BaselineState,
         val resp: BaselineState,
         val skin: BaselineState,
-    )
+    ) {
+        /** The valid HRV nights (ms) of the six calendar days before [scoredDay], era cut included: the rest
+         *  of the 7-day window the Charge HRV trend modifier reads ([RecoveryScorer.hrvTrend]).
+         *  Swift twin: `ChargeBaselines.Resolved.hrvPriorWeek`. */
+        val hrvPriorWeek: List<Double>
+            get() {
+                val d = Baselines.isoEpochDay(scoredDay) ?: return emptyList()
+                val cfg = Metric.HRV.cfg
+                val out = ArrayList<Double>()
+                for ((i, key) in hrvHistory.dayKeys.withIndex()) {
+                    val v = hrvHistory.values[i] ?: continue
+                    if (!(cfg.minVal <= v && v <= cfg.maxVal)) continue
+                    val k = Baselines.isoEpochDay(key) ?: continue
+                    if (k >= d || d - k >= RecoveryScorer.hrvTrendWindowDays) continue
+                    if (beforeEpoch(key, epochs.hrv)) continue
+                    out.add(v)
+                }
+                return out
+            }
+    }
 
     /**
      * Resolve the four baselines for [scoredDay]: window ending the day before, epochs from [epochs]. Skin
@@ -447,11 +466,6 @@ object ChargeBaselines {
             hrvRecalibration = hrvRecalibration,
             recoveryRecalibration = recoveryRecalibration,
         )
-
-        /** The era epochs for [scoredDay], for readers that need only the cut (the readiness word).
-         *  Swift twin: `Inputs.epochs(scoredDay:)`. */
-        fun epochs(scoredDay: String): Epochs =
-            ChargeBaselines.epochs(sourceDays, scoredDay, hrvRecalibration, recoveryRecalibration)
     }
 
     // ─────────────────────────────────────────────────────────────────────────

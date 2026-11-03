@@ -427,7 +427,7 @@ class HomeLocalizationTest(unittest.TestCase):
         )[0]
         verdicts = set(re.findall(r'(?:return|\?|:)\s*"([^"]+)"', verdict_block))
         # Pin the unique-key set size so syntax changes cannot silently evade extraction.
-        self.assertEqual(18, len(verdicts), "Verdict extraction changed; review the catalog contract")
+        self.assertEqual(21, len(verdicts), "Verdict extraction changed; review the catalog contract")
 
         catalog = audit.load_catalog(ROOT / "Strand/Resources/Localizable.xcstrings")
         missing = []

@@ -45,13 +45,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.BuildConfig
 import com.noop.analytics.Baselines
 import com.noop.analytics.BatteryEstimator
-import com.noop.analytics.HRVReadiness
-import com.noop.analytics.ReadinessTier
 import com.noop.ble.LiveState
 import com.noop.ble.PuffinExperiment
 import com.noop.ble.WhoopBleClient
 import com.noop.ble.WhoopModel
-import com.noop.data.DailyMetric
 import com.noop.data.GravitySample
 import com.noop.data.HrSample
 import com.noop.polar.PolarModel
@@ -70,7 +67,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /**
  * Settings -> Test Centre (spec section 7), the Android twin of TestCentreView. Four sections: domain
@@ -461,7 +457,7 @@ fun TestCentreScreen(vm: AppViewModel, onOpenGroundTruthCollector: () -> Unit = 
         )
 
         // --- Section 4: Experimental algorithms ---
-        ExperimentalAlgorithmsCard(vm)
+        ExperimentalAlgorithmsCard()
     }
 
     pendingReport?.let { p ->
@@ -1242,19 +1238,14 @@ private val EXPORT_KEEP_OPTIONS = listOf(3, 7, 14, 30, 60)
  * Test Centre → Experimental algorithms. The single home for OPT-IN, off-by-default, non-clinical research
  * variants that swap which model computes a metric (never detection, never a stored WHOOP value). Each toggle
  * writes the SAME [PuffinExperiment] key its Swift twin reads, so the platforms stay in lockstep. Hosts the
- * HR-from-PPG sub-lag interpolation variant and the read-only HRV-readiness (Plews/Altini) tier readout.
- * Twin of the Swift TestCentreView experimentalAlgorithmsCard.
+ * HR-from-PPG sub-lag interpolation variant. (The HRV-readiness readout that sat here was promoted into
+ * Charge as the HRV 7-day trend, #53.) Twin of the Swift TestCentreView experimentalAlgorithmsCard.
  */
 @Composable
-private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
+private fun ExperimentalAlgorithmsCard() {
     val context = LocalContext.current
     val puffin = remember { PuffinExperiment.from(context) }
     var ppgHrSubLag by remember { mutableStateOf(puffin.ppgHrSubLagInterp) }
-    var hrvReadiness by remember { mutableStateOf(puffin.hrvReadiness) }
-    // The SAME nightly HRV series the recovery UI reads (repo-merged DailyMetric.avgHrv, oldest-first), fed
-    // into the pure HRVReadiness engine ONLY to render the toggle's own reading inline below — the default
-    // Charge ring / analyzeDay path is never touched, and this feeds no downstream gate.
-    val recentDays by vm.recentDays.collectAsStateWithLifecycle()
     SettingsSectionTC(
         icon = Icons.Filled.Science,
         title = uiString(R.string.l10n_test_centre_screen_experimental_algorithms_e09581e2),
@@ -1269,63 +1260,6 @@ private fun ExperimentalAlgorithmsCard(vm: AppViewModel) {
                     "seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default.",
                 checked = ppgHrSubLag,
                 onCheckedChange = { ppgHrSubLag = it; puffin.ppgHrSubLagInterp = it },
-            )
-            ToggleRowTC(
-                title = uiString(R.string.l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f),
-                description = "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: " +
-                    "it shows whether your 7-night HRV baseline sits above, inside, or below your personal " +
-                    "normal band. It changes nothing else - the Charge ring is identical whether this is on or " +
-                    "off. This is rough / early testing, not yet validated against varying real data (n=1).",
-                checked = hrvReadiness,
-                onCheckedChange = { hrvReadiness = it; puffin.hrvReadiness = it },
-            )
-            // The toggle's OWN effect, shown in place: when on, the live Plews/Altini reading. Nothing renders
-            // when off, so the flag off is zero behaviour change and feeds no downstream gate.
-            if (hrvReadiness) HrvReadinessReadoutTC(recentDays)
-        }
-    }
-}
-
-/**
- * Inline, opt-in HRV-readiness readout. Renders directly under the "HRV readiness (Plews/Altini)" toggle when
- * the flag is on, so the toggle's own effect is visible in place. Reads the SAME repo-merged nightly
- * [DailyMetric.avgHrv] series (oldest-first) the recovery UI has and runs it through the pure [HRVReadiness]
- * engine — it never touches the default Charge ring or analyzeDay. Below [HRVReadiness.MIN_NIGHTS] valid
- * nights it shows the honest calibrating count instead of a fabricated tier. Twin of the Swift
- * `hrvReadinessReadout`.
- */
-@Composable
-private fun HrvReadinessReadoutTC(days: List<DailyMetric>) {
-    // Memoize the pure evaluate + valid-night count against the day-list identity so it only recomputes when
-    // the series actually changes (not on every recomposition).
-    val (result, validCount) = remember(days) {
-        val cfg = Baselines.hrvCfg
-        val series = days.map { it.avgHrv }
-        val valid = series.count { v -> v != null && v >= cfg.minVal && v <= cfg.maxVal }
-        // #53: calendar windows ending on today's logical day.
-        HRVReadiness.evaluate(days.map { it.day }, series, logicalDayKeyNow()) to valid
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        if (result != null) {
-            val (word, color) = when (result.tier) {
-                ReadinessTier.PRIMED -> "primed" to Palette.statusPositive
-                ReadinessTier.NORMAL -> "normal" to Palette.textPrimary
-                ReadinessTier.SUPPRESSED -> "suppressed" to Palette.statusWarning
-            }
-            Text(uiString(R.string.l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e, word), style = NoopType.subhead, color = color)
-            val base = result.baseline7Ms.roundToInt()
-            val lo = result.normalLowMs.roundToInt()
-            val hi = result.normalHighMs.roundToInt()
-            val watch = if (result.overreachingWatch) ", overreaching watch" else ""
-            Text(
-                uiString(R.string.l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6, base, lo, hi, watch),
-                style = NoopType.footnote, color = Palette.textTertiary,
-            )
-        } else {
-            Text(uiString(R.string.l10n_test_centre_screen_hrv_readiness_experimental_924f61bc), style = NoopType.subhead, color = Palette.textTertiary)
-            Text(
-                uiString(R.string.l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706, validCount, HRVReadiness.MIN_NIGHTS),
-                style = NoopType.footnote, color = Palette.textTertiary,
             )
         }
     }

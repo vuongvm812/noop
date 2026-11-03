@@ -205,7 +205,7 @@ final class Repository: ObservableObject {
     /// The stored rows and device eras the Charge baselines are resolved from (#2525, #53), rebuilt on every
     /// `refresh()`. Every Charge readout below the headline (the "What shaped it" rows, the calibration
     /// count, the confidence tier) and the readiness word resolve the DISPLAYED day through
-    /// `chargeBaselines(for:)` / `chargeEpochs(for:)`, the same per-day rule and era cut the engine scored
+    /// `chargeBaselines(for:)`, the same per-day rule and era cut the engine scored
     /// that day with, so none of them can describe a different baseline than the ring. nil until the first
     /// refresh.
     @Published private(set) var chargeBaselineInputs: ChargeBaselines.Inputs?
@@ -216,11 +216,15 @@ final class Repository: ObservableObject {
         chargeBaselineInputs?.resolve(scoredDay: day)
     }
 
-    /// The Charge baselines' era epochs for `day` (none before the first refresh), for the readiness word.
-    func chargeEpochs(for day: String?) -> ChargeBaselines.Epochs {
-        guard let day, let inputs = chargeBaselineInputs else { return .none }
-        return inputs.epochs(scoredDay: day)
+    /// The Apple Health daily rows the engine scores the watch Charge from, rebuilt on every `refresh()`.
+    @Published private(set) var watchRows: [DailyMetric] = []
+
+    /// The watch Charge for `day` through the engine's own resolver (`WatchRecovery.score`), so the watch
+    /// confidence pill reads the same trailing baseline the watch number was scored on (#53).
+    func watchCharge(for day: String) -> WatchRecovery.Result {
+        WatchRecovery.score(day: day, rows: watchRows)
     }
+
     /// Cached sleep sessions over the recent window, oldest→newest.
     @Published var sleeps: [CachedSleepSession] = []
     /// Imported (export-verbatim) sleep figures by day. Empty until a WHOOP import lands.
@@ -958,6 +962,7 @@ final class Repository: ObservableObject {
         let importedSleep: [String: ImportedSleepFigures]
         let days: [DailyMetric]
         let chargeBaselineInputs: ChargeBaselines.Inputs
+        let watchRows: [DailyMetric]
         let sleeps: [CachedSleepSession]
         let vitalRows: [SourcedDailyMetric]
         let freshness: RepositoryFreshness
@@ -1135,6 +1140,7 @@ final class Repository: ObservableObject {
                         ownFallbackId: ownFallbackId, importedDays: imported.map(\.day),
                         importedSourceId: ownFallbackId, seed: seedSources),
                     hrvRecalibration: hrvEpoch, recoveryRecalibration: recoveryEpoch),
+                watchRows: apple,
                 sleeps: Self.mergeSleep(imported: impSleep, computed: compSleep, history: histSleep),
                 vitalRows: Self.sourceRows(imported: imported, computed: computed, apple: apple,
                                            history: historySourced),
@@ -1153,6 +1159,7 @@ final class Repository: ObservableObject {
         let unchanged = loaded
             && merged.days == days
             && merged.chargeBaselineInputs == chargeBaselineInputs
+            && merged.watchRows == watchRows
             && merged.sleeps == sleeps
             && merged.importedSleep == importedSleep
             && merged.vitalRows == vitalRows
@@ -1164,6 +1171,7 @@ final class Repository: ObservableObject {
         self.importedSleep = merged.importedSleep
         self.days = merged.days
         self.chargeBaselineInputs = merged.chargeBaselineInputs
+        self.watchRows = merged.watchRows
         self.sleeps = merged.sleeps
         self.vitalRows = merged.vitalRows
         self.freshness = merged.freshness

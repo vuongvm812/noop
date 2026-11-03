@@ -3504,7 +3504,7 @@ private fun SynthesisHeroCard(
             val readinessLevel = remember(days, chargeBaselines) {
                 val key = logicalDayKeyNow()
                 if (days.isEmpty()) ReadinessEngine.Level.INSUFFICIENT
-                else ReadinessEngine.evaluate(days, today = key, epochs = chargeBaselines.epochsFor(key)).level
+                else ReadinessEngine.evaluate(days, today = key, baselines = chargeBaselines?.resolve(key)).level
             }
             readinessWord(readinessLevel)?.let { wordRes ->
                 ReadinessHeroPill(word = uiString(wordRes), level = readinessLevel, onTap = onOpenReadiness)
@@ -5592,6 +5592,7 @@ private fun DriverRow(driver: ChargeDriver) {
         ChargeDriverLabel.SLEEP_QUALITY -> uiString(R.string.today_driver_sleep_quality)
         ChargeDriverLabel.RESPIRATORY_RATE -> uiString(R.string.today_driver_respiratory)
         ChargeDriverLabel.SKIN_TEMPERATURE -> uiString(R.string.today_driver_skin_temperature)
+        ChargeDriverLabel.HRV_7_DAY_TREND -> uiString(R.string.today_driver_hrv_trend)
     }
     val valueText = when (driver.unit) {
         ChargeDriverUnit.MILLISECONDS -> uiString(R.string.today_driver_value_ms, driver.value.roundToInt())
@@ -5606,7 +5607,13 @@ private fun DriverRow(driver: ChargeDriver) {
             String.format(Locale.getDefault(), "%+.1f", driver.value),
         )
     }
-    val baselineText = driver.baseline?.let { baseline -> when (driver.unit) {
+    // The HRV 7-day trend row reads against a normal band, not a single baseline (#53).
+    val rangeText = if (driver.rangeLow != null && driver.rangeHigh != null) {
+        uiString(R.string.today_driver_range_ms, driver.rangeLow.roundToInt(), driver.rangeHigh.roundToInt())
+    } else {
+        null
+    }
+    val baselineText = rangeText ?: driver.baseline?.let { baseline -> when (driver.unit) {
         ChargeDriverUnit.MILLISECONDS -> uiString(R.string.today_driver_baseline_ms, baseline.roundToInt())
         ChargeDriverUnit.BEATS_PER_MINUTE -> uiString(R.string.today_driver_baseline_bpm, baseline.roundToInt())
         ChargeDriverUnit.BREATHS_PER_MINUTE -> uiString(
@@ -5638,6 +5645,9 @@ private fun DriverRow(driver: ChargeDriver) {
         ChargeDriverVerdict.NEAR_BASELINE -> uiString(R.string.today_driver_near_baseline)
         ChargeDriverVerdict.WARMER_THAN_BASELINE_LIMITING -> uiString(R.string.today_driver_warmer_limiting)
         ChargeDriverVerdict.COOLER_THAN_BASELINE_LIMITING -> uiString(R.string.today_driver_cooler_limiting)
+        ChargeDriverVerdict.HRV_TREND_ABOVE_RANGE_SUPPORTING -> uiString(R.string.today_driver_hrv_trend_above)
+        ChargeDriverVerdict.HRV_TREND_BELOW_RANGE_FATIGUE -> uiString(R.string.today_driver_hrv_trend_below)
+        ChargeDriverVerdict.HRV_TREND_INSIDE_RANGE -> uiString(R.string.today_driver_hrv_trend_inside)
     }
     val driverA11y = uiString(R.string.today_driver_a11y, label, valueText, baselineText, signed, verdict)
     Row(
@@ -7627,9 +7637,9 @@ private fun ReadinessSection(
     // anchor on the last scored day's key instead, and stamp the overline "Last night · <date>". Honest:
     // it's the real prior read; today's own readiness wins the instant tonight is scored.
     val anchorKey = carriedDay?.day ?: logicalDayKeyNow()
-    // #53: the readiness baselines start where the Charge baselines' era does for that day.
+    // #53: the readiness signals read the Charge baselines that day was scored against.
     val readiness = remember(days, chargeBaselines, anchorKey) {
-        ReadinessEngine.evaluate(days, today = anchorKey, epochs = chargeBaselines.epochsFor(anchorKey))
+        ReadinessEngine.evaluate(days, today = anchorKey, baselines = chargeBaselines?.resolve(anchorKey))
     }
     if (readiness.level == ReadinessEngine.Level.INSUFFICIENT) return
 

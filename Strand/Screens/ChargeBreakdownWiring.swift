@@ -52,7 +52,8 @@ enum ChargeBreakdownWiring {
             rhrBaseline: rhrBase.usable ? rhrBase : nil,
             respBaseline: respBase.usable ? respBase : nil,
             sleepPerf: sleepPerfPercent.map { $0 / 100.0 },
-            skinTempDev: row.skinTempDevC)
+            skinTempDev: row.skinTempDevC,
+            hrvPriorWeek: baselines.hrvPriorWeek)
         return (drivers, ScoreConfidence.charge(recovery: row.recovery, hrvBaseline: hrvBase))
     }
 }

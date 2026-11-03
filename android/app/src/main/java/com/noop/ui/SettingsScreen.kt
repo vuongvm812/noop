@@ -627,7 +627,7 @@ fun SettingsScreen(
     var showModelComparison by remember { mutableStateOf(false) }
 
     // "Recalibrate Charge baseline" confirm dialog (Charge advanced). Writes now-seconds to BOTH the
-    // noop.hrvBaselineEpoch and noop.recoveryBaselineEpoch prefs so foldHistory re-seeds every baseline
+    // noop.hrvBaselineEpoch and noop.recoveryBaselineEpoch prefs so the Charge baselines re-seed every baseline
     // that feeds Charge from tonight onward; the standing analyze loop picks it up on its next pass.
     // Fixes a baseline poisoned by a bad first week (worn sick, or early nights that anchored too high).
     var showRecalibrateConfirm by remember { mutableStateOf(false) }
@@ -3489,7 +3489,7 @@ fun SettingsScreen(
         // off and holds your Charge wrong for a couple of weeks while the rolling average catches up.
         // Recalibrate re-learns it from tonight onward. Writes now-seconds to BOTH noop.hrvBaselineEpoch
         // and noop.recoveryBaselineEpoch (so HRV plus resting HR / respiration / skin temp re-anchor);
-        // foldHistory drops every night before that epoch and re-seeds. Mirrors the iOS/Mac button.
+        // the Charge baselines drop every night before that epoch and re-seed. Mirrors the iOS/Mac button.
         SettingsCard(
             icon = Icons.Filled.Favorite,
             title = uiString(R.string.l10n_settings_screen_charge_d4e1aee4),
@@ -3627,7 +3627,7 @@ fun SettingsScreen(
                         onClick = {
                             // Re-anchor EVERY baseline that feeds Charge — HRV plus resting HR /
                             // respiration / skin temp — by writing now-seconds to BOTH shared epoch keys
-                            // (the EXACT same keys the iOS/Mac button + Baselines.foldHistory use), via
+                            // (the EXACT same keys the iOS/Mac button + ChargeBaselines use), via
                             // the single cross-platform source of truth. Stored as whole epoch SECONDS in
                             // a Long (SharedPreferences has no putDouble; the readers do getLong→toDouble),
                             // matching the "epoch SECONDS" the keys document. No stored day is deleted.
@@ -3637,7 +3637,7 @@ fun SettingsScreen(
                             editor.apply()
                             showRecalibrateConfirm = false
                             // Nudge an immediate re-analyze so the change is felt now; the standing
-                            // 15-min analyze loop also re-runs foldHistory regardless. No-ops cleanly
+                            // 15-min analyze loop also re-resolves the baselines regardless. No-ops cleanly
                             // when the strap isn't connected.
                             vm.syncNow()
                             Toast.makeText(

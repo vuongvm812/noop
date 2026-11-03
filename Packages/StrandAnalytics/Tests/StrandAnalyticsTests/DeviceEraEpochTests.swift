@@ -108,7 +108,7 @@ final class DeviceEraEpochTests: XCTestCase {
         XCTAssertEqual(Baselines.brandBucket("garmin-import"), "garmin")
     }
 
-    // MARK: the epoch actually re-seeds foldHistory across the scale jump
+    // MARK: the epoch actually re-seeds the Charge baseline across the scale jump
 
     func testEpochDropsPreSwitchNightsFromTheFold() {
         let values: [Double?] = Array(repeating: 135.0, count: 15) + Array(repeating: 90.0, count: 6)
@@ -120,8 +120,8 @@ final class DeviceEraEpochTests: XCTestCase {
         for d in 16...21 { sourceDays.append((day: String(format: "2026-05-%02d", d), sourceId: "my-whoop")) }
 
         let eraEpoch = Baselines.deviceEraEpoch(sourceDays)
-        let mixed = Baselines.foldHistory(values, dayKeys: dayKeys, cfg: Baselines.hrvCfg, baselineEpoch: 0.0)
-        let gated = Baselines.foldHistory(values, dayKeys: dayKeys, cfg: Baselines.hrvCfg, baselineEpoch: eraEpoch)
+        let mixed = ChargeBaselines.state(values: values, dayKeys: dayKeys, metric: .hrv, anchorDay: dayKeys.last!, baselineEpoch: 0.0)
+        let gated = ChargeBaselines.state(values: values, dayKeys: dayKeys, metric: .hrv, anchorDay: dayKeys.last!, baselineEpoch: eraEpoch)
         XCTAssertLessThan(gated.baseline, mixed.baseline,
                           "era-gated baseline sits near the WHOOP era, not the Oura-inflated mean")
         XCTAssertLessThanOrEqual(gated.baseline, 100.0, "era-gated baseline is close to the WHOOP nightly level")

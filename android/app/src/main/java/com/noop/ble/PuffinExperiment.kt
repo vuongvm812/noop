@@ -98,15 +98,6 @@ class PuffinExperiment(
         get() = prefs.getBoolean(KEY_PPG_HR_SUBLAG_INTERP, false)
         set(v) = prefs.edit().putBoolean(KEY_PPG_HR_SUBLAG_INTERP, v).apply()
 
-    /** True if the user opted in to the experimental "HRV readiness (Plews/Altini)" tier readout (default
-     *  false): a read-only Test Centre readout of the SWC log-HRV tier ([com.noop.analytics.HRVReadiness]).
-     *  It changes NOTHING downstream — the Charge ring stays byte-identical whether on or off; it only
-     *  surfaces the tier + baseline band in the Experimental algorithms card. Rough / early (n=1, not yet
-     *  validated against varying real data). Mirrors the macOS `PuffinExperiment.hrvReadinessKey`. */
-    var hrvReadiness: Boolean
-        get() = prefs.getBoolean(KEY_HRV_READINESS, false)
-        set(v) = prefs.edit().putBoolean(KEY_HRV_READINESS, v).apply()
-
     /** True if the user opted in to "Motion-aware wake refinement" (default false, #364 "Proposal 2"
      *  follow-up): a post-pass ([com.noop.analytics.WakeMotionRefinement]) over the already-staged
      *  hypnogram that reclassifies a scored WAKE segment to `light` when its per-minute step-tick cadence
@@ -268,7 +259,7 @@ class PuffinExperiment(
      * probe, all of which target hardware that may not support
      * them. Pure analysis flags are deliberately left alone even when they only do anything on one
      * family — [ppgHrSubLagInterp] only affects v26 optical records, which a 4.0 never sends, so it is
-     * inert rather than misapplied. [experimentalSleepV2], [hrvReadiness] and [motionAwareWake] are
+     * inert rather than misapplied. [experimentalSleepV2] and [motionAwareWake] are
      * model-agnostic (the last self-gates on observed sample density, never on family, per #345).
      */
     fun resetFiveMGGatedProbes() {
@@ -344,9 +335,6 @@ class PuffinExperiment(
 
         /** "HR-from-PPG sub-lag interpolation" opt-in (mirrors macOS `PuffinExperiment.ppgHrSubLagInterpKey`). */
         const val KEY_PPG_HR_SUBLAG_INTERP = "noopPpgHrSubLagInterp"
-
-        /** "HRV readiness (Plews/Altini)" readout opt-in (mirrors macOS `PuffinExperiment.hrvReadinessKey`). */
-        const val KEY_HRV_READINESS = "noopHrvReadiness"
 
         /** "Motion-aware wake refinement" opt-in (mirrors macOS `PuffinExperiment.motionAwareWakeKey`). */
         const val KEY_MOTION_AWARE_WAKE = "noopMotionAwareWake"

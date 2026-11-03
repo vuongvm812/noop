@@ -70,7 +70,7 @@ object AnalyzeRecentDayCache {
      *   (`analysisFingerprint`, v2); this is the same widening at day granularity, which is where the reuse
      *   decision is actually made.
      *
-     * Inputs that feed `analyzeDay` but are pass-global rather than per-day (profile, baselines1, sleep need
+     * Inputs that feed `analyzeDay` but are pass-global rather than per-day (profile, sleep need
      * / consistency, habitual midsleep, tz, stager toggles) are NOT in this key — the engine drops the whole
      * cache when its pass config signature changes, which covers them.
      */

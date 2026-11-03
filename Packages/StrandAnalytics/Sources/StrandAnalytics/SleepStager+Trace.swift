@@ -87,8 +87,7 @@ extension SleepStager {
         }
     }
 
-    /// Round to 2 decimal places for the trace detail fields. Local to the trace so the inline
-    /// emitters in `detectSleepUncached` can call it unqualified (AnalyticsEngine.round2 is a
-    /// separate type's helper). Formatting only, never a scoring path.
+    /// Round to 2 decimal places for the trace detail fields, callable unqualified from the inline
+    /// emitters in `detectSleepUncached`. Formatting only, never a scoring path.
     static func round2(_ v: Double) -> Double { (v * 100.0).rounded() / 100.0 }
 }

@@ -68,6 +68,26 @@ class AnalyticsEngineProvidedSleepTest {
         assertNotNull(res.daily.restingHr)
     }
 
+    /** #53: Charge needs the day's own trailing baselines, which the engine resolves per day in its second
+     *  pass, so the per-day analysis never scores it, even on a night with HRV and resting HR. Twin of the
+     *  Swift `AnalyticsEngineTests.testAnalyzeDayLeavesChargeToTheSecondPass`. */
+    @Test
+    fun analyzeDayLeavesChargeToTheSecondPass() {
+        val sleepStart = dayStart - 4 * 3600
+        val sleepEnd = sleepStart + 600 * 60
+        val (hr, rr) = nightStreams(sleepStart, sleepEnd)
+        val provided = listOf(
+            DetectedSleep(sleepStart, sleepEnd, 0.75, hypnogram(sleepStart), restingHR = null, avgHRV = null),
+        )
+        val res = AnalyticsEngine.analyzeDay(day = day, hr = hr, rr = rr, profile = profile,
+            providedSleep = provided)
+        assertNotNull(res.daily.avgHrv)
+        assertNotNull(res.daily.restingHr)
+        assertNull(res.daily.recovery)
+        assertNull(res.daily.skinTempDevC)
+        assertEquals(res.nightlySkinTempC, res.daily.skinTempC)
+    }
+
     @Test
     fun emptyProvidedSleepIsByteIdenticalToOmitting() {
         val (hr, rr) = nightStreams(dayStart - 4 * 3600, dayStart + 6 * 3600)
@@ -113,7 +133,6 @@ class AnalyticsEngineProvidedSleepTest {
             skinTempAnchorRaw = null,
             spo2 = emptyList(),
             profile = profile,
-            baselines = ProfileBaselines(),
             maxHROverride = null,
             tzOffsetSeconds = 0,
             wristOff = emptyList(),

@@ -335,7 +335,6 @@ final class ChargeBaselinesTests: XCTestCase {
                                                     own: .init(rows: own), seed: .init(), sourceDays: sources,
                                                     hrvRecalibration: 0, recoveryRecalibration: 0)
             XCTAssertEqual(inputs.resolve(scoredDay: day), direct)
-            XCTAssertEqual(inputs.epochs(scoredDay: day), direct?.epochs)
         }
         // Garmin era starts at day -2: day -2 has no night before it in its era, day -1 has one.
         XCTAssertEqual(inputs.resolve(scoredDay: Self.dayKey(Self.anchorEpochDay - 1))?.hrv.nValid, 1)

@@ -34,11 +34,6 @@ internal fun recoveryCalibrationNights(
  *  60-day window plus room to browse back a quarter, so a past day still resolves its full window. */
 internal const val CHARGE_BASELINE_READ_DAYS: Int = ChargeBaselines.windowDays + 90
 
-/** The Charge era epochs for [day] (#53), or none before the first emission: what the readiness baselines
- *  cut on, so the readiness word never compares across a device era the ring did not. */
-internal fun ChargeBaselines.Inputs?.epochsFor(day: String): ChargeBaselines.Epochs =
-    this?.epochs(day) ?: ChargeBaselines.Epochs.none
-
 /**
  * The dashboard's [ChargeBaselines.Inputs] from the stored rows (#53), by the engine's rule: own nights'
  * sources from the recorded provenance ([ChargeBaselines.recordedSources]), an unknown one falling back to
@@ -113,6 +108,7 @@ internal fun recoveryChargeDrivers(
         respBaseline = respBase,
         sleepPerf = sleepPerf,
         skinTempDev = day.skinTempDevC,
+        hrvPriorWeek = resolved.hrvPriorWeek,
     )
 }
 

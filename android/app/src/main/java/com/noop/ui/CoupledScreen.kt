@@ -185,8 +185,8 @@ fun CoupledScreen(
     // own key wins, so Coupled's pill can't diverge from Today's onto yesterday (#787).
     val readinessLevel = remember(days, chargeBaselines, carriedRecoveryDay, todayRow, isCarrying) {
         val anchor = (if (isCarrying) carriedRecoveryDay?.day else todayRow?.day) ?: logicalKey
-        // #53: the readiness baselines start where the Charge baselines' era does.
-        ReadinessEngine.evaluate(days, anchor, chargeBaselines.epochsFor(anchor)).level
+        // #53: the readiness signals read the Charge baselines that day was scored against.
+        ReadinessEngine.evaluate(days, anchor, chargeBaselines?.resolve(anchor)).level
     }
 
     // Recovery cold-start nights (the SAME pure helper Today's ring reads), for the honest calibrating

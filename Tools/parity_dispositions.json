@@ -753,22 +753,6 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorer.kt::recovery/8#1",
-      "identity_sha256": "e952892c23aca5ae93919e61ef7d45ddefed0440e1ded62d33f965bf84e74eb7",
-      "platform": "kotlin",
-      "rationale": "The BaselineState convenience overload of RecoveryScorer.recovery lost its effort and Recovery Index parameters (#53, vuongvm812/noop#53). Its Swift twin, the BaselineState overload of RecoveryScorer.recovery, has a label list that is a prefix of the DriverBaseline overload's, so no selector claim resolves to it alone. Both overloads are pinned by the shared RecoveryOptionalBaselineUsable oracle on both platforms."
-    },
-    {
-      "type": "platform_specific",
-      "kind": "add-unpaired-function",
-      "identity": "swift\u0000Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer.swift::recovery/8#1",
-      "identity_sha256": "1cae8f249d57ca9495ea4c6acb9b3ad4db4fb313fdd25650e847888bee09cd35",
-      "platform": "swift",
-      "rationale": "The BaselineState convenience overload of RecoveryScorer.recovery lost its effort and Recovery Index parameters (#53, vuongvm812/noop#53). Kotlin overloads carry no parameter labels in the ledger, so a Swift claim cannot pick its Kotlin twin out from the DriverBaseline overload of the same name. Both overloads are pinned by the shared RecoveryOptionalBaselineUsable oracle on both platforms."
-    },
-    {
-      "type": "platform_specific",
-      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopDao.kt::scoreInputSources/4#1",
       "identity_sha256": "85e4fab977e4c37b28e648d69115728c7210ff196a56cc51a1707e3ff57d1d77",
       "platform": "kotlin",
@@ -881,6 +865,102 @@
       "identity_sha256": "3de7b4b3e9ba87af35ff5fb4e24aa16d602d3d62a6e7f68ba3b4f642910444a6",
       "issue": "vuongvm812/noop#53",
       "reason": "The Recovery Index term was never wired into the Charge score on either platform; the term and its weight are deleted on both platforms instead of carrying an unused weight."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-function-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/ChargeDrivers.swift::chargeDrivers/8#1\u0000android/app/src/main/java/com/noop/analytics/RecoveryDrivers.kt::chargeDrivers/8#1",
+      "identity_sha256": "fc34901c1a578cbd5026bf6e89f20c0356529e0b26e62b41e59ea25f19d33d5e",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The Charge drivers and trace gained the hrvPriorWeek parameter for the HRV 7-day trend modifier on both platforms, so the 8-argument pair is retired and the 9-argument functions are paired by their twin claims."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-function-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/RecoveryScorer+Trace.swift::recoveryTrace/8#1\u0000android/app/src/main/java/com/noop/analytics/RecoveryScorerTrace.kt::recoveryTrace/8#1",
+      "identity_sha256": "3b75210608fb09e2c6bd0e9951e65994d0fbe76cd1c5d369f9a352f2f05a98d7",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The Charge drivers and trace gained the hrvPriorWeek parameter for the HRV 7-day trend modifier on both platforms, so the 8-argument pair is retired and the 9-argument functions are paired by their twin claims."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-property-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/Baselines.swift::readinessHRVLnCfg@property#1\u0000android/app/src/main/java/com/noop/analytics/Baselines.kt::readinessHRVLnCfg@property#1",
+      "identity_sha256": "a524f03294902057665aec88aa44542e3bb43be42fddf9df33278ef3e555d23e",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The ln-domain readiness HRV config only served the readiness word's private EWMA fold, which is replaced on both platforms by the Charge baselines; the config and its accessor are deleted."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-property-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/Baselines.swift::strainCfg@property#1\u0000android/app/src/main/java/com/noop/analytics/Baselines.kt::strainCfg@property#1",
+      "identity_sha256": "45e83bdf27e77c2204862c49ca0a54524332a7c7abc3f66bb646e7edd4fd5048",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The strain baseline config only served the Activity Balance term, which was never wired into Charge and is deleted on both platforms; the config and its accessor go with it."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::cvTrendWindow\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::CV_TREND_WINDOW",
+      "identity_sha256": "893828751f61c44cabcd95b60cf3c984579a408be0c35e11f98b09717abd0341",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::longSDFloor\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::LONG_SD_FLOOR",
+      "identity_sha256": "51502f1055379d4d06430c13c61c40a10b99b6c19294c6d756b4c67279374378",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::longWindow\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::LONG_WINDOW",
+      "identity_sha256": "e7a00c8e35b81e3bc7692873ffa786702c2520381541a00548eee2bda7510217",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::minNights\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::MIN_NIGHTS",
+      "identity_sha256": "d209f5fb65079315aa36d17f23fcc44d5d3e44570203effb290ae349c851963f",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::rollWindow\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::ROLL_WINDOW",
+      "identity_sha256": "7e5d63edb54a8c0d5c7aa3a8d706d88a0a3a5ef6d52391630c87910f842aa51d",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/HRVReadiness.swift::swcK\u0000android/app/src/main/java/com/noop/analytics/HRVReadiness.kt::SWC_K",
+      "identity_sha256": "0c72e63205f917375245222356eef5256d1b342c3a6158666eae4bd5027ece97",
+      "issue": "vuongvm812/noop#53",
+      "reason": "HRVReadiness and its Test Centre readout are retired on both platforms: its 7-day rolling lnRMSSD against the smallest-worthwhile-change band was promoted into Charge as the HRV 7-day trend modifier (RecoveryScorer.hrvTrend, hrvTrendWindowDays / hrvTrendMinNights / hrvTrendSwcK), so its own window, floor and gate constants no longer exist."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/ReadinessEngine.swift::baselineWindow\u0000android/app/src/main/java/com/noop/analytics/ReadinessEngine.kt::baselineWindow",
+      "identity_sha256": "5ebccc00fa7d5d724a1c010afb42e5d3a0479713e6ae85f6dd398ef5d24f7a75",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The readiness word now z-scores against the displayed day's Charge baselines (ChargeBaselines.Resolved) on both platforms instead of its own 30-row EWMA window, so its private window length and minimum-night constants are deleted."
+    },
+    {
+      "type": "retired_pair",
+      "kind": "remove-constant-pair",
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/ReadinessEngine.swift::minBaseline\u0000android/app/src/main/java/com/noop/analytics/ReadinessEngine.kt::minBaseline",
+      "identity_sha256": "93c6e82d00630668b8a2ac30c6a5bfa09f78dea1b54225b896621eb717e57671",
+      "issue": "vuongvm812/noop#53",
+      "reason": "The readiness word now z-scores against the displayed day's Charge baselines (ChargeBaselines.Resolved) on both platforms instead of its own 30-row EWMA window, so its private window length and minimum-night constants are deleted."
     }
   ]
 }

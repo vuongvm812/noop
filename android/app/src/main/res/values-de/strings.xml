@@ -939,10 +939,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">Atemsitzung starten</string>
     <string name="l10n_stress_screen_stress_bad33342">Stress</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">Deine letzten %1$s Stunden sind im hohen Band geblieben. Ein paar Minuten of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">7-Nacht-Basislinie %1$s ms, normal %2$s zu %3$s ms%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">Schreibe auch das Bandprotokoll in das Systemprotokoll (Logcat) für die Entwicklung über adb. Standardmäßig ausgeschaltet.</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android läuft dies über WorkManager (Doze kann es verzögern).</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">Kalibrierung (%1$s/%2$s Nächte)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">Abbrechen</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">Täglicher Autoexport</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">Debug Logging</string>
@@ -957,9 +955,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">Dies löscht jede geplante Bandprotokoll- und Rohdaten-Erfassungsdatei, die NOOP gespeichert hat. Dies kann nicht rückgängig gemacht werden.</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">Heads up: Dieser Testmodus ist ausgeschaltet, so dass der Bericht keine Erfassung dafür hat. Für a useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">HR-from-PPG Sublag Interpolation (v26 gap-fill)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">HRV-Bereitschaft (experimentell)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">HRV-Reife (experimentell): %1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">HRV-Bereitschaft (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Neu kalibrieren</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Ladungs-Basislinie neu kalibrieren</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Deine Ladungs-Basislinie neu kalibrieren?</string>
@@ -2508,6 +2503,11 @@
     <string name="today_driver_near_baseline">nahe am Basiswert</string>
     <string name="today_driver_warmer_limiting">wärmer als der Basiswert, begrenzt die Erholung</string>
     <string name="today_driver_cooler_limiting">kühler als der Basiswert, begrenzt die Erholung</string>
+    <string name="today_driver_hrv_trend">HRV-Trend (7 Tage)</string>
+    <string name="today_driver_range_ms">Normalbereich %1$d-%2$d ms</string>
+    <string name="today_driver_hrv_trend_above">7-Tage-Schnitt über deinem Normalbereich, stützt die Erholung</string>
+    <string name="today_driver_hrv_trend_below">7-Tage-Schnitt unter deinem Normalbereich, ein Zeichen angesammelter Ermüdung</string>
+    <string name="today_driver_hrv_trend_inside">7-Tage-Schnitt in deinem Normalbereich</string>
     <string name="today_driver_a11y">%1$s, %2$s, %3$s, %4$s Punkte, %5$s</string>
     <string name="scoring_guide_daily_scores">Deine Tageswerte</string>
     <string name="scoring_guide_three_scores">Die drei Werte</string>

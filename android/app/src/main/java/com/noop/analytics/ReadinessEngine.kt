@@ -1,8 +1,6 @@
 package com.noop.analytics
 
 import com.noop.data.DailyMetric
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
@@ -17,8 +15,11 @@ import kotlin.math.sqrt
  * Same windows, same thresholds, same outputs.
  *
  * Signals and their references:
- * - **HRV readiness** — z-score of today's HRV against the personal trailing baseline. A drop of
+ * - **HRV readiness** — z-score of today's lnRMSSD against the personal trailing baseline. A drop of
  *   roughly half a standard deviation flags autonomic fatigue (Plews et al. 2013; Buchheit 2014).
+ *   HRV, resting HR and respiration are read against the SAME per-day Charge baselines the ring is
+ *   scored on ([ChargeBaselines], #53), so the readiness word and the Charge ring cannot disagree about
+ *   where a night sits.
  * - **Resting-HR drift** — elevated resting HR vs baseline is a classic overtraining / illness
  *   signal (Lamberts et al. 2004).
  * - **Respiratory-rate drift** — a rise in sleeping respiratory rate is an early illness signal.
@@ -104,8 +105,6 @@ object ReadinessEngine {
 
     // MARK: Tunables (named so the thresholds are auditable)
 
-    private const val baselineWindow = 30   // days for HRV / RHR / RR baselines
-    private const val minBaseline = 7       // need at least this many baseline nights
     private const val acuteWindow = 7
     private const val chronicWindow = 28
     private const val minChronic = 14       // need at least this much strain history for ACWR
@@ -133,25 +132,28 @@ object ReadinessEngine {
      * the rows' readiness fields (day + avgHrv/restingHr/respRateBpm/strain), so a new sync re-keys but a
      * cosmetic reorder does not. The cached result is a small immutable [Readiness]; no row arrays retained.
      *
-     * [epochs] (#53) is the Charge baselines' era cut for [today] (`ChargeBaselines.Inputs.epochs`): the HRV,
-     * resting-HR and respiration baselines here drop every night before their epoch, exactly as the Charge
-     * baselines do, so the readiness word never compares a Garmin night with a WHOOP-era HRV.
-     * Swift twin: `ReadinessEngine.evaluate(days:today:epochs:)`.
+     * [baselines] (#53) are the Charge baselines the displayed day was scored against
+     * (`ChargeBaselines.Inputs.resolve`): the HRV, resting-HR and respiration signals are z-scored against
+     * exactly those states, era cut included, so the readiness word and the ring agree. null resolves the
+     * same per-day rule from [days] alone (no imports, no device eras), for callers with nothing else to hand.
+     * Swift twin: `ReadinessEngine.evaluate(days:today:baselines:)`.
      */
     fun evaluate(
         days: List<DailyMetric>,
         today: String? = null,
-        epochs: ChargeBaselines.Epochs = ChargeBaselines.Epochs.none,
+        baselines: ChargeBaselines.Resolved? = null,
     ): Readiness {
-        val key = readinessKey(today, epochs, days)
+        val key = readinessKey(today, baselines, days)
         synchronized(evaluateCacheLock) { evaluateCache[key] }?.let { return it }
-        val result = evaluateUncached(days, today, epochs)   // computed OUTSIDE the lock (the expensive sort/walk)
+        val result = evaluateUncached(days, today, baselines)   // computed OUTSIDE the lock (the expensive sort/walk)
         synchronized(evaluateCacheLock) { evaluateCache[key] = result }
         return result
     }
 
     private data class ReadinessKey(
-        val today: String?, val epochs: ChargeBaselines.Epochs, val count: Int, val minDay: Int, val maxDay: Int, val checksum: Long,
+        val today: String?,
+        val hrv: BaselineState?, val restingHR: BaselineState?, val resp: BaselineState?,
+        val count: Int, val minDay: Int, val maxDay: Int, val checksum: Long,
     )
 
     private const val EVALUATE_CACHE_CAP = 16
@@ -169,7 +171,9 @@ object ReadinessEngine {
      *  reorder does not. Internal to this process's cache only (never compared cross-platform), so it need
      *  NOT match the Swift hash byte-for-byte; a collision only costs one extra recompute. Mirrors Swift
      *  `rowsFingerprint`: FNV-style commutative fold over (day, avgHrv, restingHr, respRateBpm, strain). */
-    private fun readinessKey(today: String?, epochs: ChargeBaselines.Epochs, days: List<DailyMetric>): ReadinessKey {
+    private fun readinessKey(
+        today: String?, baselines: ChargeBaselines.Resolved?, days: List<DailyMetric>,
+    ): ReadinessKey {
         var sum = 1469598103934665603L
         var minDay = 0
         var maxDay = 0
@@ -183,7 +187,9 @@ object ReadinessEngine {
             val dh = d.day.hashCode()
             if (i == 0) { minDay = dh; maxDay = dh } else { minDay = minOf(minDay, dh); maxDay = maxOf(maxDay, dh) }
         }
-        return ReadinessKey(today, epochs, days.size, minDay, maxDay, sum)
+        return ReadinessKey(
+            today, baselines?.hrv, baselines?.restingHR, baselines?.resp, days.size, minDay, maxDay, sum,
+        )
     }
 
     /** The uncached readiness synthesis (formerly the body of [evaluate]). [days] may be in any order; the
@@ -192,7 +198,7 @@ object ReadinessEngine {
     private fun evaluateUncached(
         days: List<DailyMetric>,
         today: String?,
-        epochs: ChargeBaselines.Epochs,
+        baselines: ChargeBaselines.Resolved?,
     ): Readiness {
         val sorted = days.sortedBy { it.day }
         // When an explicit [today] is given (the dashboard passes the device's real local day key), use
@@ -210,22 +216,22 @@ object ReadinessEngine {
             )
         }
         val history = sorted.filter { it.day < latest.day }   // everything before today
-        // #53: each baseline starts at its era epoch, the cut the Charge baselines use.
-        val hrvHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.hrv) }
-        val rhrHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.restingHR) }
-        val respHistory = history.filter { !ChargeBaselines.beforeEpoch(it.day, epochs.resp) }
+        // #53: the Charge baselines for this day (window ending the day before, era-cut).
+        val charge = baselines ?: ChargeBaselines.resolveDay(
+            scoredDay = latest.day, imported = ChargeBaselines.Nights(), own = ChargeBaselines.Nights.fromRows(history),
+            seed = ChargeBaselines.Nights(), sourceDays = emptyList(), hrvRecalibration = 0.0,
+            recoveryRecalibration = 0.0,
+        )
 
         val signals = mutableListOf<Signal>()
 
         // HRV readiness ------------------------------------------------------
         val hrvSignal = zSignal(
             value = latest.avgHrv,
-            baseline = hrvHistory.takeLast(baselineWindow).mapNotNull { it.avgHrv },
+            baseline = charge?.hrv,
             key = "hrv", labelRes = Copy.TODAY_READINESS_SIGNAL_HRV,
             unit = MetricUnit.MS, decimals = 0,
             higherIsBetter = true,
-            cfg = Baselines.readinessHRVLnCfg,   // RD2: ln-space spine, reject off
-            logDomain = true,   // RD1: lnRMSSD — HRV is right-skewed
             goodTextRes = Copy.TODAY_READINESS_HRV_GOOD,
             neutralTextRes = Copy.TODAY_READINESS_NORMAL_RANGE,
             watchTextRes = Copy.TODAY_READINESS_HRV_WATCH,
@@ -236,11 +242,10 @@ object ReadinessEngine {
         // Resting-HR drift ---------------------------------------------------
         val rhrSignal = zSignal(
             value = latest.restingHr?.toDouble(),
-            baseline = rhrHistory.takeLast(baselineWindow).mapNotNull { it.restingHr?.toDouble() },
+            baseline = charge?.restingHR,
             key = "rhr", labelRes = Copy.TODAY_READINESS_SIGNAL_RESTING_HR,
             unit = MetricUnit.BPM, decimals = 0,
             higherIsBetter = false,
-            cfg = Baselines.restingHRCfg,   // RD2: raw-bpm spine, reject off
             goodTextRes = Copy.TODAY_READINESS_RHR_GOOD,
             neutralTextRes = Copy.TODAY_READINESS_NORMAL_RANGE,
             watchTextRes = Copy.TODAY_READINESS_RHR_WATCH,
@@ -251,16 +256,15 @@ object ReadinessEngine {
         // Respiratory-rate drift (illness early signal) ----------------------
         // respRateBpm may be a clean cloud value OR a higher-variance on-device RSA estimate
         // (WHOOP5 BLE-only) and carries no source flag, so gate conservatively for BOTH: keep the
-        // minBaseline + sd>0 guard, only act on physiologically plausible sleeping-RR (~8-25 bpm),
+        // usable-baseline guard, only act on physiologically plausible sleeping-RR (~8-25 bpm),
         // and use wider resp-only z thresholds (WATCH 1.5 / BAD 2.0) so a single noisy night can't
         // reach BAD (which would feed recoveryDown), while a sustained genuine rise still flags.
         val rr = latest.respRateBpm
         if (rr != null && rr in respPlausibleRange) {
-            val base = respHistory.takeLast(baselineWindow).mapNotNull { it.respRateBpm }
-            val m = mean(base)
-            val sd = sampleSD(base)
-            if (base.size >= minBaseline && m != null && m in respPlausibleRange && sd != null && sd > 0) {
-                val z = (rr - m) / sd
+            val b = charge?.resp
+            if (b != null && b.usable && b.baseline in respPlausibleRange) {
+                val m = b.baseline
+                val z = (rr - m) / maxOf(1.253 * b.spread, 1e-9)
                 val respEvidence = Evidence.MetricVsBaseline(rr, m, 1, MetricUnit.RPM)
                 if (z >= respZBad) {
                     signals.add(
@@ -318,13 +322,13 @@ object ReadinessEngine {
             hasHistory = history.isNotEmpty() || acwr != null,
         )
         // RD-confidence: surface how much history backs the read (HRV baseline density, the primary
-        // readiness driver). A read off a 7-night baseline must not look as certain as one off the full
-        // 30-night window. Insufficient reads carry CALIBRATING.
-        val hrvBaselineNights = hrvHistory.takeLast(baselineWindow).mapNotNull { it.avgHrv }.count()
+        // readiness driver), on the Charge baseline's own trust gate so the two tiers agree. A read off a
+        // thin baseline must not look as certain as one off a trusted one. Insufficient reads carry
+        // CALIBRATING.
         val confidence = ScoreConfidence.readiness(
             hasRead = level != Level.INSUFFICIENT,
-            baselineNights = hrvBaselineNights,
-            fullWindow = baselineWindow,
+            baselineNights = charge?.hrv?.nValid ?: 0,
+            fullWindow = Baselines.minNightsTrust,
         )
         return Readiness(
             level = level, headlineRes = headlineRes, summaryRes = summaryRes,
@@ -335,39 +339,19 @@ object ReadinessEngine {
 
     // MARK: Signal builders
 
-    /** Build a z-score signal for a metric where the baseline is the trailing window. */
+    /** Build a z-score signal against a Charge baseline (HRV in the log domain, the others linear). No
+     *  signal while that baseline is not usable, exactly as the Charge score drops the term.
+     *  Swift twin: `ReadinessEngine.zSignal`. */
     private fun zSignal(
-        value: Double?, baseline: List<Double>,
+        value: Double?, baseline: BaselineState?,
         key: String, labelRes: Copy, unit: MetricUnit, decimals: Int, higherIsBetter: Boolean,
-        cfg: MetricCfg,
-        logDomain: Boolean = false,
         goodTextRes: Copy, neutralTextRes: Copy,
         watchTextRes: Copy, badTextRes: Copy,
     ): Signal? {
-        if (value == null || baseline.size < minBaseline) return null
-        // RD1: right-skewed metrics (HRV/RMSSD) are z-scored in the LOG domain — lnRMSSD is closer to
-        // normal, so a symmetric z is statistically valid, whereas a raw-ms z over-weights the long
-        // upper tail and misstates tail rarity (Plews/Altini; the app's own HRVReadiness works this
-        // way). RHR/resp are ~normal and stay linear. Evidence stays in the metric's own units, but the
-        // baseline shown is then the GEOMETRIC mean (exp of the log-mean) — a typical night, not an
-        // outlier-inflated arithmetic mean.
-        val tv = if (logDomain) ln(maxOf(value, 1.0)) else value
-        val tb = if (logDomain) baseline.map { ln(maxOf(it, 1.0)) } else baseline
-        // RD2: fold the trailing baseline through the shared Winsorized-EWMA spine — recency-weighted,
-        // σ-floored (a tight baseline can't saturate the z), and Winsor-clamped so a single freak night
-        // is DAMPED not folded raw — instead of a flat mean + sample SD. Hard-outlier REJECTION is off
-        // (`rejectHardOutliers = false`): a re-folded trailing window must ADAPT to a recent sustained
-        // shift (fitness change / device swap) rather than reject the new normal as a run of outliers —
-        // the window-fold vs incremental-fold distinction, validated on real HRV history. `cfg` is in
-        // the SAME space as `tb` (ln for HRV, linear for RHR); center + spread come back σ-floored.
-        // Mirrors Swift ReadinessEngine.zSignal.
-        val state = Baselines.foldHistory(tb, cfg, rejectHardOutliers = false)
-        if (!state.usable) return null
-        val sigma = maxOf(1.253 * state.spread, 1e-9)   // robust σ from the EWMA-abs-dev spread
-        if (sigma <= 0) return null
-        val m = state.baseline
+        if (value == null || baseline == null || !baseline.usable) return null
         // Orient z so positive always means "better".
-        val z = (if (higherIsBetter) (tv - m) else (m - tv)) / sigma
+        val z = if (higherIsBetter) RecoveryScorer.higherBetterZ(value, baseline)
+        else (baseline.baseline - value) / maxOf(1.253 * baseline.spread, 1e-9)
         val flag: Flag
         val detailRes: Copy
         when {
@@ -376,10 +360,9 @@ object ReadinessEngine {
             z >= -1.0 -> { flag = Flag.WATCH; detailRes = watchTextRes }
             else -> { flag = Flag.BAD; detailRes = badTextRes }
         }
-        // The numbers behind the read: today's value vs the baseline mean, in the metric's units. In the
-        // log domain the baseline shown is the geometric mean (exp of the log-mean), not arithmetic.
-        val baselineShown = if (logDomain) exp(m) else m
-        val evidence = Evidence.MetricVsBaseline(value, baselineShown, decimals, unit)
+        // The numbers behind the read: today's value vs the baseline, in the metric's units. `baseline` is the
+        // geometric mean (ms) for the log-domain HRV state, the mean otherwise.
+        val evidence = Evidence.MetricVsBaseline(value, baseline.baseline, decimals, unit)
         return Signal(key = key, labelRes = labelRes, detailRes = detailRes, flag = flag, evidence = evidence)
     }
 

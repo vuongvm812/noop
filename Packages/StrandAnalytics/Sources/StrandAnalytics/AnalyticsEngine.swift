@@ -53,10 +53,15 @@ public enum AnalyticsEngine {
         public let restingHR: BaselineState?
         public let resp: BaselineState?
         public let skinTemp: BaselineState?
+        /// The valid HRV nights (ms) of the six days before the scored day, for the 7-day trend
+        /// modifier (`ChargeBaselines.Resolved.hrvPriorWeek`). Empty leaves the modifier out.
+        public let hrvPriorWeek: [Double]
         public init(hrv: BaselineState? = nil, restingHR: BaselineState? = nil,
-                    resp: BaselineState? = nil, skinTemp: BaselineState? = nil) {
+                    resp: BaselineState? = nil, skinTemp: BaselineState? = nil,
+                    hrvPriorWeek: [Double] = []) {
             self.hrv = hrv; self.restingHR = restingHR; self.resp = resp
             self.skinTemp = skinTemp
+            self.hrvPriorWeek = hrvPriorWeek
         }
     }
 
@@ -79,16 +84,6 @@ public enum AnalyticsEngine {
         /// not run. Always populated otherwise — including (especially) when `workouts` is empty, which is
         /// the case the counts exist to explain.
         public let detectionFunnel: WorkoutDetector.DetectionFunnel?
-        /// Recovery / "Charge" score [0,100] or nil (cold-start / no HRV baseline).
-        public let recovery: Double?
-        /// Ordered Charge driver breakdown (one row per real term that fed the score, biggest
-        /// mover first). Empty when there is no score (cold-start) or no driver computed. The UI
-        /// renders one row per driver under the Charge ring; it never recomputes the score.
-        public let chargeDrivers: [ChargeDriver]
-        /// A5: skin temperature as a RELATIVE deviation-from-baseline marker (a trend, never a
-        /// clinical absolute), or nil when no deviation is available. Carries the signed °C
-        /// deviation + the relative tier (cooler / typical / warmer) for the UI to present.
-        public let skinTempRelative: SkinTempRelative?
         /// Day strain / "Effort" [0,100] or nil (insufficient HR samples / invalid HRR).
         public let strain: Double?
         /// Rest composite [0,100] or nil (no asleep time). This is the value the
@@ -96,9 +91,9 @@ public enum AnalyticsEngine {
         /// 0.20 + restorative share 0.20 + consistency 0.10). The downstream metric-series
         /// builder reads it from here; the Charge "Rest quality" term reads it ÷100.
         public let restScore: Double?
-        /// Per-score confidence tiers (Charge / Effort / Rest) for the small label under
-        /// each score. Always present (worst case `.calibrating`).
-        public let chargeConfidence: ScoreConfidence
+        /// Per-score confidence tiers (Effort / Rest) for the small label under each score. Always present
+        /// (worst case `.calibrating`). Charge is scored in the engine's second pass against each day's own
+        /// baselines (#53), so it has no tier here.
         public let effortConfidence: ScoreConfidence
         public let restConfidence: ScoreConfidence
         /// Wear-gated mean in-bed skin temperature (°C) for this night, or nil when no worn
@@ -126,27 +121,21 @@ public enum AnalyticsEngine {
 
         public init(daily: DailyMetric, sleepSessions: [SleepSession],
                     cachedSleep: [CachedSleepSession], workouts: [ExerciseSession],
-                    recovery: Double?, strain: Double?, nightlySkinTempC: Double? = nil,
+                    strain: Double?, nightlySkinTempC: Double? = nil,
                     restScore: Double? = nil,
-                    chargeConfidence: ScoreConfidence = .calibrating,
                     effortConfidence: ScoreConfidence = .calibrating,
                     restConfidence: ScoreConfidence = .calibrating,
                     sessionMotionByStart: [Int: [Double]] = [:],
                     sessionSleepStateByStart: [Int: [Int]] = [:],
-                    chargeDrivers: [ChargeDriver] = [],
-                    skinTempRelative: SkinTempRelative? = nil,
                     detectionFunnel: WorkoutDetector.DetectionFunnel? = nil,
                     mainNightBlocks: [SleepStageTotals.NightBlock] = []) {
             self.daily = daily; self.sleepSessions = sleepSessions
             self.mainNightBlocks = mainNightBlocks
             self.cachedSleep = cachedSleep; self.workouts = workouts
             self.detectionFunnel = detectionFunnel
-            self.recovery = recovery; self.strain = strain
-            self.chargeDrivers = chargeDrivers
-            self.skinTempRelative = skinTempRelative
+            self.strain = strain
             self.nightlySkinTempC = nightlySkinTempC
             self.restScore = restScore
-            self.chargeConfidence = chargeConfidence
             self.effortConfidence = effortConfidence
             self.restConfidence = restConfidence
             self.sessionMotionByStart = sessionMotionByStart
@@ -319,7 +308,6 @@ public enum AnalyticsEngine {
     ///   - hr/rr/resp/gravity: the day's raw streams (the wider window around the
     ///     night may be passed; sleep detection finds the in-bed span itself).
     ///   - profile: user profile (age/sex/weight/height) for HRmax + calories.
-    ///   - baselines: personal baselines for recovery normalization.
     ///   - maxHROverride: explicit HRmax (bpm) to use for strain/zones; nil →
     ///     Tanaka from profile.age.
     /// The night's respiratory rate (breaths/min) from a strap's OWN per-window rate rows, or nil when
@@ -426,7 +414,6 @@ public enum AnalyticsEngine {
                                   // Default empty keeps pure-function callers/tests + non-4.0 nights nil.
                                   spo2: [SpO2Sample] = [],
                                   profile: UserProfile,
-                                  baselines: ProfileBaselines = ProfileBaselines(),
                                   maxHROverride: Double? = nil,
                                   // Wall-clock UTC offset (seconds) for the sleep detector's daytime
                                   // false-sleep guard (#90). Default 0 keeps pure-function callers/tests
@@ -898,19 +885,12 @@ public enum AnalyticsEngine {
         let sleepStart = matched.map { $0.start }.min()
         let sleepEnd = matched.map { $0.end }.max()
 
-        // ── Skin-temperature deviation (offline) ──────────────────────────────
-        // Computed BEFORE recovery so Charge can fold it in. Wear-gated in-bed mean
-        // (baseline-independent, harvested every pass) + the deviation against the
-        // personal baseline. In pass 1 baselines.skinTemp is nil so the deviation is nil
-        // and the mean is harvested; IntelligenceEngine seeds the baseline from those means
-        // and re-derives the deviation in pass 2 (mirrors avgHrv→recovery). APPROXIMATE.
+        // ── Skin temperature (offline) ────────────────────────────────────────
+        // Wear-gated in-bed mean, baseline-independent like avgHrv. IntelligenceEngine resolves each
+        // day's own skin baseline in its second pass (#53) and derives the deviation there, with Charge.
         let nightlySkinTempC = wornNightlySkinTempC(matched, hr: hr, skinTemp: skinTemp,
                                                     family: skinTempFamily, anchorRaw: skinTempAnchorRaw,
                                                     wornToleranceSec: skinTempWornToleranceSec)
-        let skinTempDevC: Double? = nightlySkinTempC.flatMap { (v: Double) -> Double? in
-            guard let b = baselines.skinTemp, b.usable else { return nil }
-            return round2(Baselines.deviation(v, state: b).delta)
-        }
 
         // ── Raw SpO2 (WHOOP 4.0 v24 PPG ADC) ──────────────────────────────────
         // Nightly red/IR ADC means over the detected in-bed spans, or nil when the night carried no raw
@@ -918,37 +898,9 @@ public enum AnalyticsEngine {
         // as-is for the Health "Raw SpO₂" tile — NOT a calibrated blood-oxygen %. (#93)
         let nightlySpo2Raw = nightlySpo2RawMeans(matched, spo2: spo2)
 
-        // ── Recovery / "Charge" ───────────────────────────────────────────────
-        var recovery: Double? = nil
-        // Ordered "why is Charge what it is" rows, built from the SAME inputs as the score
-        // (empty when there is no score / cold-start). Surfaced on DayResult for the UI.
-        var chargeDrivers: [ChargeDriver] = []
-        if let hrvVal = avgHRVDaily, let rhrVal = restingHRDaily, let hrvBase = baselines.hrv {
-            // Rest-quality term = the Rest composite ÷100 (replaces raw efficiency).
-            let sleepPerf = restScore.map { $0 / 100.0 }
-            recovery = RecoveryScorer.recovery(
-                hrv: hrvVal,
-                rhr: Double(rhrVal),
-                resp: respRateDaily,       // term drops + renormalizes when nil / no baseline
-                hrvBaseline: hrvBase,
-                rhrBaseline: baselines.restingHR,
-                respBaseline: baselines.resp,
-                sleepPerf: sleepPerf,
-                skinTempDev: skinTempDevC)  // symmetric penalty; drops + renormalizes when nil
-            // Driver breakdown from the identical inputs; omits any missing term, never faked.
-            chargeDrivers = RecoveryScorer.chargeDrivers(
-                hrv: hrvVal,
-                rhr: Double(rhrVal),
-                resp: respRateDaily,
-                hrvBaseline: hrvBase,
-                rhrBaseline: baselines.restingHR,
-                respBaseline: baselines.resp,
-                sleepPerf: sleepPerf,
-                skinTempDev: skinTempDevC)
-        }
-        // A5: skin temp as a RELATIVE deviation marker (trend, not a clinical absolute). nil
-        // when no deviation is available (no baseline yet / not worn) so the UI shows nothing.
-        let skinTempRelative = RecoveryScorer.skinTempRelative(deviationC: skinTempDevC)
+        // Recovery / "Charge" is NOT scored here: it needs the day's own trailing baselines, which the
+        // engine resolves per day in its second pass (#53, `IntelligenceEngine`). Every field this pass
+        // produces is baseline-independent.
 
         // ── Strain / "Effort" (cardiovascular load over the full CALENDAR day) ──
         // Integrate dayHr ([localMidnight, localMidnight+24h), clamped to `now` for today) when the
@@ -1073,20 +1025,18 @@ public enum AnalyticsEngine {
             disturbances: matched.isEmpty ? nil : disturbances,
             restingHr: restingHRDaily,
             avgHrv: avgHRVDaily,
-            recovery: recovery,
+            recovery: nil,
             strain: strain,
             exerciseCount: workouts.count,
             spo2Pct: nil,
-            skinTempDevC: skinTempDevC,
+            skinTempDevC: nil,
             respRateBpm: respRateDaily,
             steps: stepsTotal,
             activeKcalEst: activeKcalEst,
             spo2Red: nightlySpo2Raw?.red,
             spo2Ir: nightlySpo2Raw?.ir,
             avgSdnn: avgSDNNDaily,
-            // The ABSOLUTE this pass's deviation was derived from (#1636). Set HERE, beside
-            // `skinTempDevC`, so the engine's own row is symmetric: any path that persists this
-            // struct directly keeps both thermal values, not just the one.
+            // The ABSOLUTE the second pass derives the deviation from (#1636).
             skinTempC: nightlySkinTempC,
             // "Every session this day was staged from heart rate alone."
             //
@@ -1141,7 +1091,6 @@ public enum AnalyticsEngine {
         }
 
         // ── Per-score confidence tiers ────────────────────────────────────────
-        let chargeConfidence = ScoreConfidence.charge(recovery: recovery, hrvBaseline: baselines.hrv)
         let effortConfidence = ScoreConfidence.effort(strain: strain, hrSampleCount: hr.count)
         // Rest confidence with H9: downgrade a high-efficiency night whose deep+REM share is implausibly low
         // to low-confidence (likely staging miss) — honest, no faked stages. tstS/efficiency are the
@@ -1155,16 +1104,13 @@ public enum AnalyticsEngine {
                                                   stageCoverage: stageCoverage)
 
         return DayResult(daily: daily, sleepSessions: matched, cachedSleep: cachedSleep,
-                         workouts: workouts, recovery: recovery, strain: strain,
+                         workouts: workouts, strain: strain,
                          nightlySkinTempC: nightlySkinTempC,
                          restScore: restScore,
-                         chargeConfidence: chargeConfidence,
                          effortConfidence: effortConfidence,
                          restConfidence: restConfidence,
                          sessionMotionByStart: sessionMotionByStart,
                          sessionSleepStateByStart: sessionSleepStateByStart,
-                         chargeDrivers: chargeDrivers,
-                         skinTempRelative: skinTempRelative,
                          detectionFunnel: detectionFunnel,
                          mainNightBlocks: mainGroup.map { SleepStageTotals.NightBlock(start: $0.start, end: $0.end) })
     }
@@ -1322,9 +1268,6 @@ public enum AnalyticsEngine {
                              deepSeconds: deepSec)
         }
     }
-
-    /// Round to 2 decimal places (matches the imported/demo skin-temp deviation precision).
-    static func round2(_ v: Double) -> Double { (v * 100.0).rounded() / 100.0 }
 
     /// Min worn, in-bed skin-temp samples (1 Hz ⇒ seconds) before a nightly mean is trusted.
     /// ~5 min guards against a few stray samples fabricating a baseline value.

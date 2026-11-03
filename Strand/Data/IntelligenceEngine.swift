@@ -89,7 +89,7 @@ final class IntelligenceEngine: ObservableObject {
     /// In-memory and per-process exactly like `dayScanCache`; see `StepsMotionCache` for why this one needs
     /// no config signature. Pruned to the calibration window each pass so it cannot grow without bound.
     private var stepsMotionCache: [String: (key: String, motion: Double)] = [:]
-    /// The scoring-config signature the `dayScanCache` entries were produced under (profile / baselines1 /
+    /// The scoring-config signature the `dayScanCache` entries were produced under (profile /
     /// tz / sleep need+consistency / habitual midsleep / stager toggles). Those feed `analyzeDay` but are
     /// pass-global, not in the per-day key, so when the current pass's signature differs every cached scan is
     /// potentially stale and the whole cache is dropped. Empty until the first pass.
@@ -105,7 +105,7 @@ final class IntelligenceEngine: ObservableObject {
     /// `static let` inherits that isolation, and neither a nonisolated function nor a synchronous test
     /// could then touch it. `[String]` is Sendable, so sharing it is safe.
     nonisolated static let dayCacheConfigFields: [String] = [
-        "hrvBaseline", "rhrBaseline", "age", "sex", "stepTicksPerStep", "maxHROverride",
+        "age", "sex", "stepTicksPerStep", "maxHROverride",
         "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
         "effortMethod", "dayCycleMode",
@@ -818,11 +818,6 @@ final class IntelligenceEngine: ObservableObject {
             }
         }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
-        guard let hrvCfg = Baselines.metricCfg["hrv"],
-              let rhrCfg = Baselines.metricCfg["resting_hr"],
-              let respCfg = Baselines.metricCfg["resp"],
-              let skinCfg = Baselines.metricCfg["skin_temp"] else { return }
-
         // #836 (idle-tick gate): re-scoring a 21-day window re-reads ~21×54 h of raw data and re-runs
         // analyzeDay over it. After a big Apple Health import (a reporter's: 2.1 M rows, ~190 k HR/day) that
         // is multi-second, memory-heavy work, and the 15-minute steady-state tick (AppModel) repeats it
@@ -927,28 +922,18 @@ final class IntelligenceEngine: ObservableObject {
         // boundary inside the window is a negligible edge case for an hour-of-day band.)
         let tzOffset = TimeZone.current.secondsFromGMT()
 
-        // ── Pass 1: analyse each offloaded night against the IMPORTED-ONLY baseline. For a BLE-only
-        // user the imported daily rows are empty, so the HRV baseline isn't usable yet and recovery is
-        // null here , but each night's avgHrv/restingHr are computed baseline-INDEPENDENTLY, so we
-        // harvest them to SEED the baseline and re-score in pass 2. foldHistory winsorizes outliers.
+        // ── Pass 1: analyse each offloaded night. `analyzeDay` reads no personal baseline: every field it
+        // produces is baseline-independent, and pass 2 resolves each day's own trailing baselines (#53)
+        // and scores recovery, its drivers and its confidence there.
         //
-        // Read the imported rows DIRECTLY (deviceId is the imported id; computed rows live under the
-        // sibling `-noop` id) over the full history, sorted chronologically , NOT `repo.days`, which is
+        // `hist` is the imported rows the pass-2 baselines read, read DIRECTLY (deviceId is the imported
+        // id; computed rows live under the sibling `-noop` id) over the full history, sorted chronologically , NOT `repo.days`, which is
         // the merged published cache (it pre-loads prior computed `-noop` rows and back-fills nil
         // imported HRV/RHR/resp fields from computed values). Using the merge contaminated this very
         // "imported-only" baseline with computed values and made the fold window depend on whichever
         // refresh last ran (4000 vs 120 days). This mirrors the Android port's `days(importedDeviceId)`.
         let hist = ((try? await store.dailyMetrics(deviceId: deviceId, from: "0000-01-01", to: "9999-12-31")) ?? [])
             .sorted { $0.day < $1.day }
-        // HRV baseline honours the manual "Recalibrate baseline" epoch (noop.hrvBaselineEpoch); the
-        // resting-HR baseline honours the Charge-wide sibling (noop.recoveryBaselineEpoch). Pass the
-        // per-value "yyyy-MM-dd" day keys (parallel to the values) so foldHistory can drop every night
-        // before the epoch. A 0 / absent epoch makes this byte-identical to the plain fold, so scoring is
-        // unchanged until the user taps Recalibrate.
-        let hrvBase1 = Baselines.foldHistory(hist.map { $0.avgHrv }, dayKeys: hist.map { $0.day }, cfg: hrvCfg)
-        let rhrBase1 = Baselines.foldHistory(hist.map { $0.restingHr.map(Double.init) }, dayKeys: hist.map { $0.day },
-                                             cfg: rhrCfg, baselineEpoch: Baselines.recoveryBaselineEpoch())
-        let baselines1 = AnalyticsEngine.ProfileBaselines(hrv: hrvBase1, restingHR: rhrBase1)
 
         // Keep each night's small result (daily metrics + sessions), NOT the raw streams , every field
         // except recovery is baseline-independent, so pass 2 only re-scores the cheap recovery
@@ -1086,13 +1071,13 @@ final class IntelligenceEngine: ObservableObject {
         // inline in pass 1 and therefore needed per-day recorders to reach the same place.)
         let dayCacheEligible = true
         // The pass config signature — every input that feeds `analyzeDay` but is NOT in the per-day key, so
-        // a change to any of them must invalidate every cached night. baselines1 is signed structurally
-        // (any BaselineState field change ⇒ a different string); Doubles by raw bit-pattern (exact, locale-
-        // free). Only ever compared to itself in memory, so cross-platform string identity isn't required.
+        // a change to any of them must invalidate every cached night. Doubles by raw bit-pattern (exact,
+        // locale-free). Only ever compared to itself in memory, so cross-platform string identity isn't
+        // required. Pass 1 reads no baselines (#53), so no baseline is part of it.
         //
         // These are NOT all "stable across an offload storm", as this comment claimed until #1538 went
-        // looking. #1402 already had to fix `baselines1` for exactly that wrong assumption, and three more
-        // fields have the same shape: `sleepNeedHours`, `sleepConsistency` and `habitualMidsleepSec` all
+        // looking. #1402 had to fix the pass-1 baselines (since removed) for exactly that wrong assumption,
+        // and three more fields have the same shape: `sleepNeedHours`, `sleepConsistency` and `habitualMidsleepSec` all
         // come out of `computeHabitualSleep(windowEnd: now)`, which reads the computed `-noop` sleep
         // sessions THE PREVIOUS PASS BANKED — a feedback loop from this pass's own output. Any night whose
         // banked session moves changes them: `sleepConsistency` is 1−CV over 28 nights and
@@ -1114,8 +1099,6 @@ final class IntelligenceEngine: ObservableObject {
         // `changedConfigField` refuses to name anything when the counts disagree, but it cannot see a
         // REORDER, which would quietly label the wrong field.
         let dayCacheConfigSig = [
-            String(describing: baselines1.hrv),
-            String(describing: baselines1.restingHR),
             String(up.age.bitPattern), up.sex, String(up.stepTicksPerStep.bitPattern),
             maxHR.map { String($0.bitPattern) } ?? "nil",
             "\(tzOffset)",
@@ -1253,7 +1236,7 @@ final class IntelligenceEngine: ObservableObject {
                 // 4.0, the window-wide skin anchor (a re-anchor from another night shifts that night's skin
                 // conversion without moving its HR). A 5/MG banks skin-temp centidegrees directly — no
                 // per-device raw anchor — so its anchor slot stays nil. Pass-global inputs (profile/
-                // baselines1/toggles) already dropped the whole cache above on change. A miss falls straight
+                // toggles) already dropped the whole cache above on change. A miss falls straight
                 // through to the identical full path.
                 var dayCacheKey: String? = nil
                 if dayCacheEligible,
@@ -1562,7 +1545,7 @@ final class IntelligenceEngine: ObservableObject {
                                                      skinTempAnchorRaw: skinAnchorRaw,   // #938 second capture
                                                      skinTempWornToleranceSec: skinWornToleranceSec,   // #1467
                                                      spo2: spo2,                   // #93
-                                                     profile: up, baselines: baselines1, maxHROverride: maxHR,
+                                                     profile: up, maxHROverride: maxHR,
                                                      tzOffsetSeconds: tzOffset, wristOff: wristOff,
                                                      sleepNeedHours: sleepNeedHours,
                                                      sleepConsistency: sleepConsistency,
@@ -2104,7 +2087,8 @@ final class IntelligenceEngine: ObservableObject {
             // Resp and skin are passed only when usable: a calibrating baseline must not move Charge.
             return AnalyticsEngine.ProfileBaselines(hrv: r.hrv, restingHR: r.restingHR,
                                                     resp: r.resp.usable ? r.resp : nil,
-                                                    skinTemp: r.skin.usable ? r.skin : nil)
+                                                    skinTemp: r.skin.usable ? r.skin : nil,
+                                                    hrvPriorWeek: r.hrvPriorWeek)
         }
 
         // Real (non-detected) workouts in the scored window, used to de-duplicate detected bouts so a
@@ -3378,7 +3362,7 @@ final class IntelligenceEngine: ObservableObject {
         return RecoveryScorer.recovery(hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
                                        hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
                                        respBaseline: baselines.resp, sleepPerf: restQuality,
-                                       skinTempDev: daily.skinTempDevC)
+                                       skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
     }
 
     /// The ordered "what shaped it" Charge driver list for one day (SHARED CONTRACT). Pure: it feeds the
@@ -3396,7 +3380,7 @@ final class IntelligenceEngine: ObservableObject {
         return RecoveryScorer.chargeDrivers(hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
                                             hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
                                             respBaseline: baselines.resp, sleepPerf: restQuality,
-                                            skinTempDev: daily.skinTempDevC)
+                                            skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
     }
 
     /// The Charge term-breakdown trace lines for one day (Recovery test mode, Group G). Pure: it feeds the
@@ -3415,7 +3399,7 @@ final class IntelligenceEngine: ObservableObject {
             hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
             hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
             respBaseline: baselines.resp, sleepPerf: restQuality,
-            skinTempDev: daily.skinTempDevC)
+            skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
         // Prefix each line with the day key so a multi-night export stays parseable, matching the sleep
         // trace's per-day shape. Strip ONLY the leading "charge " token the trace builder writes (every
         // line starts with it), then re-emit as "charge day=<day> ...".
@@ -3448,17 +3432,17 @@ final class IntelligenceEngine: ObservableObject {
     nonisolated static func watchRecoveries(appleRows: [DailyMetric],
                                 strapRecoveryDays: Set<String> = []) -> [WatchScoredDay] {
         let rows = appleRows.sorted { $0.day < $1.day }
+        let epochDays = rows.map { Baselines.isoEpochDay($0.day) }
         var out: [WatchScoredDay] = []
+        var lo = 0
         for (i, row) in rows.enumerated() where !strapRecoveryDays.contains(row.day) {
-            // Trailing baseline history = every earlier apple-health day with a usable value. Today is the
-            // current row; the baseline is built from the days BEFORE it so it can't see its own value.
-            let prior = rows[..<i]
-            let sdnnHistory = prior.compactMap { $0.avgHrv }
-            let rhrHistory = prior.compactMap { $0.restingHr.map(Double.init) }
-            let res = WatchRecovery.compute(todaySDNN: row.avgHrv,
-                                            todayRHR: row.restingHr,
-                                            sdnnHistory: sdnnHistory,
-                                            rhrHistory: rhrHistory)
+            // #53: each day reads its own trailing 60-day baseline (`WatchRecovery.score`, the funnel the
+            // dashboard's watch pill shares). Only the rows inside that window are handed over, so a long
+            // history stays linear rather than re-filtering every earlier day for every day.
+            if let d = epochDays[i] {
+                while lo < i, let e = epochDays[lo], d - e > ChargeBaselines.windowDays { lo += 1 }
+            }
+            let res = WatchRecovery.score(day: row.day, rows: Array(rows[lo...i]))
             out.append(WatchScoredDay(day: row.day, recovery: res.recovery, confidence: res.confidence))
         }
         return out
@@ -3696,11 +3680,10 @@ extension AnalyticsEngine.DayResult {
     func with(daily d: DailyMetric) -> AnalyticsEngine.DayResult {
         AnalyticsEngine.DayResult(
             daily: d, sleepSessions: sleepSessions, cachedSleep: cachedSleep, workouts: workouts,
-            recovery: recovery, strain: strain, nightlySkinTempC: nightlySkinTempC, restScore: restScore,
-            chargeConfidence: chargeConfidence, effortConfidence: effortConfidence,
+            strain: strain, nightlySkinTempC: nightlySkinTempC, restScore: restScore,
+            effortConfidence: effortConfidence,
             restConfidence: restConfidence, sessionMotionByStart: sessionMotionByStart,
-            sessionSleepStateByStart: sessionSleepStateByStart, chargeDrivers: chargeDrivers,
-            skinTempRelative: skinTempRelative, detectionFunnel: detectionFunnel,
+            sessionSleepStateByStart: sessionSleepStateByStart, detectionFunnel: detectionFunnel,
             mainNightBlocks: mainNightBlocks)
     }
 }

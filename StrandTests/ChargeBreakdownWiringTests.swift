@@ -140,10 +140,10 @@ final class ChargeBreakdownWiringTests: XCTestCase {
                                             hrvRecalibration: 0, recoveryRecalibration: 0)
         XCTAssertEqual(RecoveryScorer.calibrationNights(hrvBaseline: inputs.resolve(scoredDay: today.day)?.hrv,
                                                         hasRecovery: false), 2)
-        // The readiness word uses the same cut: the WHOOP-era 70 ms nights are not its HRV baseline.
-        let epochs = inputs.epochs(scoredDay: today.day)
-        XCTAssertGreaterThan(epochs.hrv, 0)
-        let cut = ReadinessEngine.evaluate(days: whoop + garmin, today: today.day, epochs: epochs)
+        // The readiness word reads the same baselines: the WHOOP-era 70 ms nights are not its HRV baseline.
+        let resolved = inputs.resolve(scoredDay: today.day)
+        XCTAssertGreaterThan(resolved?.epochs.hrv ?? 0, 0)
+        let cut = ReadinessEngine.evaluate(days: whoop + garmin, today: today.day, baselines: resolved)
         XCTAssertFalse(cut.signals.contains { $0.key == "hrv" }, "too few Garmin nights for an HRV signal")
         let uncut = ReadinessEngine.evaluate(days: whoop + garmin, today: today.day)
         XCTAssertTrue(uncut.signals.contains { $0.key == "hrv" })

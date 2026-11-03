@@ -164,7 +164,6 @@ class VendorRespRateTest {
      */
     @Test
     fun respBaselineFoldsTheCurrentDeviceEraOnly() {
-        val cfg = Baselines.metricCfg["resp"]!!
         val dayKeys = ArrayList<String>()
         val values = ArrayList<Double?>()
         val sources = ArrayList<Pair<String, String>>()
@@ -178,8 +177,8 @@ class VendorRespRateTest {
         val epoch = Baselines.deviceEraEpoch(sources)
         assertTrue("a brand switch must open a new era", epoch > 0.0)
 
-        val scoped = Baselines.foldHistory(values, dayKeys, cfg, epoch)
-        val pooled = Baselines.foldHistory(values, dayKeys, cfg, 0.0)
+        val scoped = ChargeBaselines.state(values, dayKeys, ChargeBaselines.Metric.RESP, dayKeys.last(), epoch)
+        val pooled = ChargeBaselines.state(values, dayKeys, ChargeBaselines.Metric.RESP, dayKeys.last(), 0.0)
         assertEquals("the era-scoped baseline sits on the ring's own nights", 14.6, scoped.baseline, 0.05)
         assertTrue(
             "the pooled baseline is dragged up by the previous strap — the defect",

@@ -119,7 +119,7 @@ class DeviceEraEpochTest {
         assertEquals("garmin", Baselines.brandBucket("garmin-import"))
     }
 
-    // ── the epoch actually re-seeds foldHistory across the scale jump ────────────────────────────
+    // ── the epoch actually re-seeds the Charge baseline across the scale jump ────────────────────────────
 
     @Test fun epochDropsPreSwitchNightsFromTheFold() {
         // 15 Oura nights at ~135 ms then 6 WHOOP nights at ~90 ms. Folding the WHOLE history anchors
@@ -137,8 +137,8 @@ class DeviceEraEpochTest {
             for (d in 16..21) add("2026-05-%02d".format(d) to "my-whoop")
         }
         val eraEpoch = Baselines.deviceEraEpoch(sourceDays)
-        val mixed = Baselines.foldHistory(values, dayKeys, Baselines.hrvCfg, 0.0)
-        val gated = Baselines.foldHistory(values, dayKeys, Baselines.hrvCfg, eraEpoch)
+        val mixed = ChargeBaselines.state(values, dayKeys, ChargeBaselines.Metric.HRV, dayKeys.last(), 0.0)
+        val gated = ChargeBaselines.state(values, dayKeys, ChargeBaselines.Metric.HRV, dayKeys.last(), eraEpoch)
         assertTrue("era-gated baseline sits near the WHOOP era, not the Oura-inflated mean",
             gated.baseline < mixed.baseline)
         assertTrue("era-gated baseline is close to the WHOOP nightly level", gated.baseline <= 100.0)

@@ -30,9 +30,9 @@ import kotlin.math.roundToLong
  * Faithful Kotlin port of StrandAnalytics/AnalyticsEngine.swift (verified on macOS).
  * Same algorithm, same constants, same thresholds; Kotlin-ized types, Double math.
  *
- * Given a day's raw streams + a user profile + personal baselines, it runs the
- * individual analyzers (SleepStager / RecoveryScorer / StrainScorer / WorkoutDetector
- * / Baselines) and assembles a [com.noop.data.DailyMetric] (Room cache shape) plus the
+ * Given a day's raw streams + a user profile, it runs the
+ * individual analyzers (SleepStager / StrainScorer / WorkoutDetector)
+ * and assembles a [com.noop.data.DailyMetric] (Room cache shape) plus the
  * detected [DetectedSleep] sessions.
  *
  * This is a PURE function over its inputs — it does NOT touch the database
@@ -323,9 +323,9 @@ object AnalyticsEngine {
      * @param hr/rr/resp/gravity the day's raw streams (the wider window around the
      *   night may be passed; sleep detection finds the in-bed span itself).
      * @param profile user profile (age/sex/weight/height) for HRmax + calories.
-     * @param baselines personal baselines for recovery normalization.
      * @param maxHROverride explicit HRmax (bpm) to use for strain/zones; null →
      *   Tanaka from profile.age.
+     * Swift twin: `AnalyticsEngine.analyzeDay`.
      */
     fun analyzeDay(
         day: String,
@@ -358,8 +358,7 @@ object AnalyticsEngine {
         daySteps: List<StepSample>? = null,
         dayGravity: List<GravitySample>? = null,
         // Wear-gated nightly skin-temp mean is harvested here (baseline-independent); IntelligenceEngine
-        // seeds a personal baseline from these means across nights and re-derives skinTempDevC in pass 2
-        // (same two-pass shape as avgHrv→recovery). (PR #85)
+        // resolves each day's own skin baseline and derives skinTempDevC in pass 2 (#53). (PR #85)
         skinTemp: List<SkinTempSample> = emptyList(),
         // Device family that wrote [skinTemp], so the raw→°C conversion picks the right scale (#938):
         // 5/MG banks CENTIDEGREES (raw/100), the WHOOP 4.0 v24 field is a RAW ADC on a different scale.
@@ -384,7 +383,6 @@ object AnalyticsEngine {
         // empty keeps pure-function callers/tests + non-4.0 nights null.
         spo2: List<Spo2Sample> = emptyList(),
         profile: UserProfile,
-        baselines: ProfileBaselines = ProfileBaselines(),
         maxHROverride: Double? = null,
         // Wall-clock UTC offset (seconds) for the sleep detector's daytime false-sleep guard (#90).
         // Default 0 keeps pure-function callers/tests on UTC; IntelligenceEngine passes the device's
@@ -777,17 +775,11 @@ object AnalyticsEngine {
         @Suppress("UNUSED_VARIABLE") val sleepStart = matched.minOfOrNull { it.start }
         @Suppress("UNUSED_VARIABLE") val sleepEnd = matched.maxOfOrNull { it.end }
 
-        // ── Skin-temperature deviation (offline) ──────────────────────────────
-        // Wear-gated in-bed mean (baseline-independent, harvested every pass) + the deviation against
-        // the personal baseline. In pass 1 baselines.skinTemp is null so the deviation is null and the
-        // mean is harvested; IntelligenceEngine seeds the baseline from those means and re-derives the
-        // deviation in pass 2 (mirrors avgHrv→recovery). Computed BEFORE Charge so the Charge skin-temp
-        // penalty can read it. APPROXIMATE. (PR #85)
+        // ── Skin temperature (offline) ────────────────────────────────────────
+        // Wear-gated in-bed mean, baseline-independent like avgHrv. IntelligenceEngine resolves each day's
+        // own skin baseline in its second pass (#53) and derives the deviation there, with Charge. (PR #85)
         val nightlySkinTempC = wornNightlySkinTempC(matched, hr, skinTemp, skinTempFamily, skinTempAnchorRaw,
             wornToleranceSec = skinTempWornToleranceSec)
-        val skinTempDevC: Double? = nightlySkinTempC?.let { v ->
-            baselines.skinTemp?.takeIf { it.usable }?.let { round2(Baselines.deviation(v, it).delta) }
-        }
 
         // ── Raw SpO2 (WHOOP 4.0 v24 PPG ADC) ──────────────────────────────────
         // Nightly red/IR ADC means over the detected in-bed spans, or null when the night carried no raw
@@ -843,25 +835,9 @@ object AnalyticsEngine {
             }
         }
 
-        // ── Recovery / Charge ─────────────────────────────────────────────────
-        var recovery: Double? = null
-        val hrvVal = avgHRVDaily
-        val rhrVal = restingHRDaily
-        val hrvBase = baselines.hrv
-        if (hrvVal != null && rhrVal != null && hrvBase != null) {
-            // Charge "Rest quality" term reads the Rest composite ÷100 (0..1), not raw efficiency.
-            val sleepPerf = rest?.let { it / 100.0 }
-            recovery = RecoveryScorer.recovery(
-                hrv = hrvVal,
-                rhr = rhrVal.toDouble(),
-                resp = respRateDaily, // term drops + renormalizes when null / no baseline
-                hrvBaseline = hrvBase,
-                rhrBaseline = baselines.restingHR,
-                respBaseline = baselines.resp,
-                sleepPerf = sleepPerf,
-                skinTempDev = skinTempDevC, // symmetric penalty; term drops + renormalizes when null
-            )
-        }
+        // Recovery / "Charge" is NOT scored here: it needs the day's own trailing baselines, which the
+        // engine resolves per day in its second pass (#53, [IntelligenceEngine]). Every field this pass
+        // produces is baseline-independent.
 
         // ── Strain ("Effort") — cardiovascular load over the full CALENDAR day ──
         // Integrate dayHr ([localMidnight, +24h), clamped to now for today) when supplied so Effort
@@ -1019,25 +995,22 @@ object AnalyticsEngine {
             // and silently retired the #1879 note. Deriving it from `hrOnly` states what the flag has
             // always meant and is independent of how the physiology set is chosen.
             sleepHrOnly = if (matched.isEmpty()) null else matched.all { it.hrOnly },
-            recovery = recovery,
+            recovery = null,
             strain = strain,
             exerciseCount = workouts.size,
             spo2Pct = null,
-            skinTempDevC = skinTempDevC,
+            skinTempDevC = null,
             respRateBpm = respRateDaily,
             steps = stepsTotal,
             activeKcalEst = activeKcalEst,
             spo2Red = nightlySpo2Raw?.first,
             spo2Ir = nightlySpo2Raw?.second,
             avgSdnn = avgSDNNDaily,
-            // The ABSOLUTE this pass's deviation was derived from (#1636). Set HERE, beside
-            // skinTempDevC, so the engine's own row is symmetric: any path that persists this
-            // row directly keeps both thermal values, not just the one.
+            // The ABSOLUTE the second pass derives the deviation from (#1636).
             skinTempC = nightlySkinTempC,
         )
 
         // ── Per-score confidence tiers (mirror Swift ScoreConfidence.derive decisions) ──
-        val chargeConfidence = ScoreConfidence.forCharge(recovery, baselines.hrv)
         val effortConfidence = ScoreConfidence.forEffort(strain, hr.size)
         // Rest confidence with H9 + the #345 sparse-motion guard: downgrade to low-confidence a night whose
         // deep+REM share is implausibly low on a high-efficiency night (H9 staging miss) OR that was staged
@@ -1086,11 +1059,9 @@ object AnalyticsEngine {
             daily = daily,
             sleepSessions = matched,
             workouts = workouts,
-            recovery = recovery,
             strain = strain,
             rest = rest,
             nightlySkinTempC = nightlySkinTempC,
-            chargeConfidence = chargeConfidence,
             effortConfidence = effortConfidence,
             restConfidence = restConfidence,
             sessionMotionByStart = sessionMotionByStart,

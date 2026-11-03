@@ -841,8 +841,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * #2525, #53: the stored rows the Charge baselines are resolved from, in the same buckets the engine
      * reads (imported, own computed, same-brand export seed), plus each night's measuring source and the two
      * recalibration epochs. The single funnel every Charge readout below the headline reads: the "What shaped
-     * it" rows, the calibration countdown and the confidence tier call [ChargeBaselines.Inputs.resolve] for
-     * the day they display, and the readiness word cuts on [ChargeBaselines.Inputs.epochs], so none of them
+     * it" rows, the calibration countdown, the confidence tier and the readiness word call
+     * [ChargeBaselines.Inputs.resolve] for the day they display, so none of them
      * can read a different baseline (or era) than the day was scored against. Own nights' sources come from
      * the provenance the engine recorded ([ChargeBaselines.recordedSources]); an unknown one and every
      * imported day fall back to [deviceId], the id the engine passes as `importedDeviceId`. The read range
@@ -1354,7 +1354,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
                         // Manual "Recalibrate baseline" anchor (Settings → Charge advanced). The analytics
                         // layer is Context-free, so read the epoch (whole seconds, written as a Long by the
-                        // button) here and thread it down — foldHistory drops every HRV night before it.
+                        // button) here and thread it down — the Charge HRV baseline drops every night before it.
                         baselineEpoch = NoopPrefs.of(appContext)
                             .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
                         recoveryEpoch = NoopPrefs.of(appContext)

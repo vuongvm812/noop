@@ -1002,10 +1002,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">Avvia una sessione di Respira</string>
     <string name="l10n_stress_screen_stress_bad33342">Stress</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">Le tue ultime %1$s ore sono rimaste nella fascia alta. Qualche minuto of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">Linea di base su 7 notti %1$s ms, normale da %2$s a %3$s ms%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">Scrivi il log della fascia anche nel log di sistema (logcat) per lo sviluppo tramite adb. Disattivato per impostazione predefinita.</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android lo esegue tramite WorkManager (Doze può ritardarlo).</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">Calibrazione (%1$s/%2$s notti)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">Annulla</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">Esportazione automatica giornaliera</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">Log di debug</string>
@@ -1020,9 +1018,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">Questo elimina ogni file pianificato di log della fascia e di cattura grezza salvato da NOOP. Questa azione non può essere annullata.</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">Attenzione: questa modalità di test è disattivata, quindi il report non contiene alcuna cattura per essa. Per un useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">Interpolazione sub-lag della FC da PPG (riempimento lacune v26)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">Prontezza HRV (sperimentale)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">Prontezza HRV (sperimentale): %1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">Prontezza HRV (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Ricalibra</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Ricalibra la linea di base della carica</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Ricalibrare la linea di base della tua carica?</string>
@@ -2560,6 +2555,11 @@
     <string name="today_driver_near_baseline">vicino alla linea di base</string>
     <string name="today_driver_warmer_limiting">più calda della linea di base, limita il recupero</string>
     <string name="today_driver_cooler_limiting">più fredda della linea di base, limita il recupero</string>
+    <string name="today_driver_hrv_trend">Andamento HRV (7 giorni)</string>
+    <string name="today_driver_range_ms">Intervallo normale %1$d-%2$d ms</string>
+    <string name="today_driver_hrv_trend_above">media di 7 giorni sopra il tuo intervallo normale, favorisce il recupero</string>
+    <string name="today_driver_hrv_trend_below">media di 7 giorni sotto il tuo intervallo normale, segno di fatica accumulata</string>
+    <string name="today_driver_hrv_trend_inside">media di 7 giorni nel tuo intervallo normale</string>
     <string name="today_driver_a11y">%1$s, %2$s, %3$s, %4$s punti, %5$s</string>
     <string name="scoring_guide_daily_scores">I tuoi punteggi giornalieri</string>
     <string name="scoring_guide_three_scores">I tre punteggi</string>

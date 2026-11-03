@@ -425,7 +425,7 @@ object IntelligenceEngine {
         persistStepsCalibration: (StepsEstimateEngine.Calibration) -> Unit = {},
         // Manual "Recalibrate baseline" anchor (noop.hrvBaselineEpoch, epoch SECONDS; 0 = none). The
         // analytics layer is Context-free, so the caller reads it from SharedPreferences and passes it
-        // down to the HRV foldHistory. Default 0.0 → no recalibration, so other callers are unaffected.
+        // down to the Charge HRV baseline ([ChargeBaselines]). Default 0.0 → no recalibration, so other callers are unaffected.
         baselineEpoch: Double = 0.0,
         // The Charge-wide recalibration anchor (noop.recoveryBaselineEpoch); re-anchors resting HR / resp /
         // skin-temp the same way baselineEpoch re-anchors HRV, so a manual Recalibrate restarts all of
@@ -684,11 +684,6 @@ object IntelligenceEngine {
         // sessions the heal below deleted this pass. The public wrapper re-runs ONCE when it is non-zero
         // so the affected days re-score against the cleaned store.
     ): Pair<List<Computed>, Int> {
-        val hrvCfg = Baselines.metricCfg["hrv"] ?: return emptyList<Computed>() to 0
-        val rhrCfg = Baselines.metricCfg["resting_hr"] ?: return emptyList<Computed>() to 0
-        val skinCfg = Baselines.metricCfg["skin_temp"] ?: return emptyList<Computed>() to 0
-        val respCfg = Baselines.metricCfg["resp"] ?: return emptyList<Computed>() to 0
-
         val computedId = importedDeviceId + "-noop"
 
         // Device wall-clock offset (seconds east of UTC) for the sleep detector's daytime
@@ -726,15 +721,11 @@ object IntelligenceEngine {
         // id the read path resolves to, and the universal line proves read == write rather than diverging.
         val activeWriteId = (universalSink?.let { ownerSource?.activeWriteId() }) ?: importedDeviceId
 
-        // ── Pass 1: detect + aggregate each offloaded night, scoring against the
-        // imported-only baseline. For a BLE-only user repo.days(importedDeviceId) is
-        // empty, so the HRV baseline is NOT usable and res.recovery is null here , but
-        // the per-night avgHrv/restingHr are computed WITHOUT any baseline dependency
-        // (SleepStager + AnalyticsEngine), so we harvest them to SEED the baseline and
-        // re-score in pass 2. Collected oldest-first to match foldHistory's replay order.
-        // foldHistory winsorizes outliers. days() is oldest-first (Swift ascending).
-        // #31: read beside it, in the same call, the active device's same-brand export rows that seed the
-        // Charge baselines (see [chargeBaselinesByDay]).
+        // ── Pass 1: detect + aggregate each offloaded night. `analyzeDay` reads no personal baseline: every
+        // field it produces is baseline-independent (SleepStager + AnalyticsEngine), and pass 2 resolves
+        // each day's own trailing baselines (#53) and scores recovery, its drivers and its confidence there.
+        // `hist` is the imported rows the pass-2 baselines read. #31: read beside it, in the same call, the
+        // active device's same-brand export rows that seed the Charge baselines (see [chargeBaselinesByDay]).
         val baselineImports = baselineImports(
             repo, ownerSource, importedDeviceId, computedId, nowSeconds, tzOffsetSeconds, maxDays,
         )
@@ -747,13 +738,6 @@ object IntelligenceEngine {
         val resolvedScoreOwnerByDay = LinkedHashMap<String, String>()
         // Boundary/cache witness assembled from the already-computed day result. The independent O(1)
         // repository revision below handles step-only inserts even when the HR-keyed day cache is reused.
-        // HRV baseline honours the manual "Recalibrate baseline" epoch (noop.hrvBaselineEpoch): pass the
-        // per-value "yyyy-MM-dd" day keys (parallel to the values) so foldHistory drops every night before
-        // the epoch. baselineEpoch is threaded down from the Context-aware caller (0.0 = no recalibration).
-        // rhr/resp/skin stay on the 2-arg fold , recalibration is HRV-only.
-        val hrvBase1 = Baselines.foldHistory(hist.map { it.avgHrv }, hist.map { it.day }, hrvCfg, baselineEpoch)
-        val rhrBase1 = Baselines.foldHistory(hist.map { it.restingHr?.toDouble() }, hist.map { it.day }, rhrCfg, recoveryEpoch)
-        val baselines1 = ProfileBaselines(hrv = hrvBase1, restingHR = rhrBase1)
 
         // Keep each night's small DayResult (daily metrics + detected sessions), NOT the raw
         // streams: every field except recovery is baseline-independent, so pass 2 only re-scores
@@ -848,11 +832,11 @@ object IntelligenceEngine {
         val dayCacheEligible = true
         // The pass config signature — every input that feeds `analyzeDay` but is NOT in the per-day key, so a
         // change to any of them must invalidate every cached night. Deterministic within-process strings
-        // (compared only to itself in memory, so cross-platform identity isn't required); baselines1 is signed
-        // via its data-class toString (any field change ⇒ a different string).
+        // (compared only to itself in memory, so cross-platform identity isn't required). Pass 1 reads no
+        // baselines (#53), so no baseline is part of it.
         //
         // These are NOT all "stable across an offload storm", as this comment claimed until #1538 went
-        // looking. #1402 already had to fix baselines1 for exactly that wrong assumption, and three more
+        // looking. #1402 had to fix the pass-1 baselines (since removed) for exactly that wrong assumption, and three more
         // fields have the same shape: sleepNeedHours, sleepConsistency and habitualMidsleepSec all come out
         // of computeHabitualSleep(windowEnd = now), which reads the computed "-noop" sleep sessions THE
         // PREVIOUS PASS BANKED — a feedback loop from this pass's own output. Any night whose banked session
@@ -872,7 +856,6 @@ object IntelligenceEngine {
         // [changedConfigField] refuses to name anything when the counts disagree, but it cannot see a
         // REORDER, which would quietly label the wrong field.
         val dayCacheConfigSig = listOf(
-            baselines1.hrv.toString(), baselines1.restingHR.toString(),
             profile.age.toString(), profile.sex.toString(), profile.stepTicksPerStep.toString(),
             maxHROverride?.toString() ?: "nil",
             tzOffsetSeconds.toString(), sleepNeedHours.toString(),
@@ -965,7 +948,7 @@ object IntelligenceEngine {
             // move (the un-coalesced family resolver returns null for non-WHOOP, so a ring is never cached).
             // The per-day key folds the night's HR fingerprint (the SAME witness the whole-pass gate at the
             // top trusts) and, for a 4.0, the window-wide skin anchor (a 5/MG banks centidegrees directly,
-            // no anchor). Pass-global inputs (profile/baselines1/toggles) already dropped the whole cache
+            // no anchor). Pass-global inputs (profile/toggles) already dropped the whole cache
             // above on change. A miss falls straight through to the identical full path.
             var dayCacheKey: String? = null
             // UN-coalesced registered WHOOP family (null for a ring/import/unknown → never cached; a ring's
@@ -1221,7 +1204,6 @@ object IntelligenceEngine {
                 skinTempWornToleranceSec = skinWornToleranceSec,   // #1467
                 spo2 = spo2,                   // #93
                 profile = profile,
-                baselines = baselines1,
                 maxHROverride = maxHROverride,
                 tzOffsetSeconds = tzOffsetSeconds,
                 wristOff = wristOff,
@@ -2416,8 +2398,8 @@ object IntelligenceEngine {
      * Recompute ONLY the recovery composite for an already-analyzed day against a (possibly
      * freshly-seeded) baseline. Inputs are the baseline-independent values already on [daily]
      * (avgHrv / restingHr / efficiency == sleepPerf), so pass 2 avoids re-running the expensive
-     * sleep / strain / workout / RSA pipeline. Mirrors the recovery gate in
-     * AnalyticsEngine.analyzeDay exactly (null on missing HRV/RHR or an unusable HRV baseline).
+     * sleep / strain / workout / RSA pipeline. null on missing HRV/RHR or an unusable HRV baseline; pass 1
+     * ([AnalyticsEngine.analyzeDay]) never scores Charge (#53), so this is the only place it is scored.
      */
     private fun recomputeRecovery(daily: DailyMetric, baselines: ProfileBaselines): Double? {
         val hrvVal = daily.avgHrv ?: return null
@@ -2436,6 +2418,7 @@ object IntelligenceEngine {
             respBaseline = baselines.resp,
             sleepPerf = restQuality,
             skinTempDev = daily.skinTempDevC,
+            hrvPriorWeek = baselines.hrvPriorWeek,
         )
     }
 
@@ -2530,6 +2513,7 @@ object IntelligenceEngine {
             return ProfileBaselines(
                 hrv = r.hrv, restingHR = r.restingHR,
                 resp = r.resp.takeIf { it.usable }, skinTemp = r.skin.takeIf { it.usable },
+                hrvPriorWeek = r.hrvPriorWeek,
             )
         }
     }
@@ -2671,9 +2655,9 @@ object IntelligenceEngine {
     }
 
     /**
-     * Score Charge for daily-aggregate (import-only) days that the raw-HR loop never touched (#823). For
-     * each row it folds the TRAILING HRV + RHR history (every earlier row's avgHrv / restingHr) into the
-     * cross-lane [WatchRecovery] engine, which mirrors our Charge shape but reads daily values. Stays null +
+     * Score Charge for daily-aggregate (import-only) days that the raw-HR loop never touched (#823). Each
+     * row is scored by [WatchRecovery.score] against its own trailing 60-day Charge baselines (#53), the
+     * cross-lane engine, which mirrors our Charge shape but reads daily values. Stays null +
      * CALIBRATING until there are enough usable nights, so we never fabricate a number. [strapRecoveryDays]
      * are days a strap / WHOOP import already scored , those are SKIPPED so the strap keeps winning. Pure (no
      * store) so it is unit-tested directly. [rows] need not be ordered (it sorts). Mirrors Swift
@@ -2684,18 +2668,23 @@ object IntelligenceEngine {
         strapRecoveryDays: Set<String> = emptySet(),
     ): List<WatchScoredDay> {
         val sorted = rows.sortedBy { it.day }
+        val epochDays = sorted.map { Baselines.isoEpochDay(it.day) }
         val out = ArrayList<WatchScoredDay>()
+        var lo = 0
         for ((i, row) in sorted.withIndex()) {
             if (row.day in strapRecoveryDays) continue
-            val prior = sorted.subList(0, i)
-            val hrvHistory = prior.mapNotNull { it.avgHrv }
-            val rhrHistory = prior.mapNotNull { it.restingHr?.toDouble() }
-            val res = WatchRecovery.compute(
-                todayHrv = row.avgHrv,
-                todayRhr = row.restingHr,
-                hrvHistory = hrvHistory,
-                rhrHistory = rhrHistory,
-            )
+            // #53: each day reads its own trailing 60-day baseline ([WatchRecovery.score], the funnel the
+            // Apple dashboard's watch pill also reads). Only the rows inside that window are handed over, so a long
+            // history stays linear rather than re-filtering every earlier day for every day.
+            val d = epochDays[i]
+            if (d != null) {
+                while (lo < i) {
+                    val e = epochDays[lo] ?: break
+                    if (d - e <= ChargeBaselines.windowDays) break
+                    lo += 1
+                }
+            }
+            val res = WatchRecovery.score(row.day, sorted.subList(lo, i + 1))
             out.add(WatchScoredDay(row.day, res.recovery, res.confidence))
         }
         return out
@@ -2729,6 +2718,7 @@ object IntelligenceEngine {
             respBaseline = baselines.resp,
             sleepPerf = restQuality,
             skinTempDev = daily.skinTempDevC,
+            hrvPriorWeek = baselines.hrvPriorWeek,
         )
         // Prefix each line with the day key so a multi-night export stays parseable, matching the sleep
         // trace's per-day shape.
@@ -3183,7 +3173,7 @@ object IntelligenceEngine {
      *  budget to say something only this diagnostic needs. The cost is that the two must stay in step,
      *  which [changedConfigField] refuses to guess about when they are not. */
     internal val DAY_CACHE_CONFIG_FIELDS: List<String> = listOf(
-        "hrvBaseline", "rhrBaseline", "age", "sex", "stepTicksPerStep", "maxHROverride",
+        "age", "sex", "stepTicksPerStep", "maxHROverride",
         "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
         "effortMethod", "dayCycleMode",

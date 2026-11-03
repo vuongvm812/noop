@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "HRV 7-day trend": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "HRV-Trend (7 Tage)"}}, "es": {"stringUnit": {"state": "translated", "value": "Tendencia de la VFC (7 días)"}}, "fr": {"stringUnit": {"state": "translated", "value": "Tendance de la VFC (7 jours)"}}, "it": {"stringUnit": {"state": "translated", "value": "Andamento HRV (7 giorni)"}}, "pl": {"stringUnit": {"state": "translated", "value": "Trend HRV (7 dni)"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Tendência da HRV (7 dias)"}}, "ru": {"stringUnit": {"state": "translated", "value": "Тренд ВСР (7 дней)"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "HRV 7 天趋势"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "HRV 7 天趨勢"}}}},
+    "7-day average above your normal range, supporting recovery": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "7-Tage-Schnitt über deinem Normalbereich, stützt die Erholung"}}, "es": {"stringUnit": {"state": "translated", "value": "media de 7 días por encima de tu rango normal, favorece la recuperación"}}, "fr": {"stringUnit": {"state": "translated", "value": "moyenne sur 7 jours au-dessus de votre plage normale, favorise la récupération"}}, "it": {"stringUnit": {"state": "translated", "value": "media di 7 giorni sopra il tuo intervallo normale, favorisce il recupero"}}, "pl": {"stringUnit": {"state": "translated", "value": "średnia z 7 dni powyżej Twojego normalnego zakresu, wspierając powrót do zdrowia"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "média de 7 dias acima do seu intervalo normal, apoiando a recuperação"}}, "ru": {"stringUnit": {"state": "translated", "value": "среднее за 7 дней выше вашей нормы, поддерживает восстановление"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "7 天平均高于你的正常范围，有助于恢复"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "7 天平均高於你的正常範圍，有助於恢復"}}}},
+    "7-day average inside your normal range": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "7-Tage-Schnitt in deinem Normalbereich"}}, "es": {"stringUnit": {"state": "translated", "value": "media de 7 días dentro de tu rango normal"}}, "fr": {"stringUnit": {"state": "translated", "value": "moyenne sur 7 jours dans votre plage normale"}}, "it": {"stringUnit": {"state": "translated", "value": "media di 7 giorni nel tuo intervallo normale"}}, "pl": {"stringUnit": {"state": "translated", "value": "średnia z 7 dni w Twoim normalnym zakresie"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "média de 7 dias dentro do seu intervalo normal"}}, "ru": {"stringUnit": {"state": "translated", "value": "среднее за 7 дней в пределах вашей нормы"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "7 天平均在你的正常范围内"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "7 天平均在你的正常範圍內"}}}},
+    "7-day average below your normal range, a sign of accumulated fatigue": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "7-Tage-Schnitt unter deinem Normalbereich, ein Zeichen angesammelter Ermüdung"}}, "es": {"stringUnit": {"state": "translated", "value": "media de 7 días por debajo de tu rango normal, señal de fatiga acumulada"}}, "fr": {"stringUnit": {"state": "translated", "value": "moyenne sur 7 jours en dessous de votre plage normale, signe de fatigue accumulée"}}, "it": {"stringUnit": {"state": "translated", "value": "media di 7 giorni sotto il tuo intervallo normale, segno di fatica accumulata"}}, "pl": {"stringUnit": {"state": "translated", "value": "średnia z 7 dni poniżej Twojego normalnego zakresu, oznaka nagromadzonego zmęczenia"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "média de 7 dias abaixo do seu intervalo normal, sinal de fadiga acumulada"}}, "ru": {"stringUnit": {"state": "translated", "value": "среднее за 7 дней ниже вашей нормы, признак накопленной усталости"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "7 天平均低于你的正常范围，是疲劳累积的迹象"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "7 天平均低於你的正常範圍，是疲勞累積的跡象"}}}},
     "Garmin watch stages": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Phasen der Garmin-Uhr"}}, "es": {"stringUnit": {"state": "translated", "value": "Fases del reloj Garmin"}}, "fr": {"stringUnit": {"state": "translated", "value": "Phases de la montre Garmin"}}, "it": {"stringUnit": {"state": "translated", "value": "Fasi dell'orologio Garmin"}}, "pl": {"stringUnit": {"state": "translated", "value": "Fazy z zegarka Garmin"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Fases do relógio Garmin"}}, "ru": {"stringUnit": {"state": "translated", "value": "Фазы сна с часов Garmin"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "Garmin 手表睡眠阶段"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "Garmin 手錶睡眠階段"}}}},
     "Garmin": {"shouldTranslate": false},
     "Today's average": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Heutiger Durchschnitt"}}, "es": {"stringUnit": {"state": "translated", "value": "Media de hoy"}}, "fr": {"stringUnit": {"state": "translated", "value": "Moyenne du jour"}}, "it": {"stringUnit": {"state": "translated", "value": "Media di oggi"}}, "pl": {"stringUnit": {"state": "translated", "value": "Średnia z dziś"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Média de hoje"}}, "ru": {"stringUnit": {"state": "translated", "value": "Среднее за сегодня"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "今日平均"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "今日平均"}}}},
@@ -22868,64 +22872,6 @@
         }
       }
     },
-    "7-night baseline %lld ms, normal %lld to %lld ms%@": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "7-Nacht-Basislinie %1$lld ms, normal %2$lld zu %3$lld ms%4$@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld ms, %2$lld normal a %3$lld ms%4$@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "7 nuits de base %1$lld ms, normale %2$lld à %3$lld ms%4$@"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Linea di base a 7 notti %lld ms, normale da %lld a %lld ms%@"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Linha de base de 7 noites %lld ms, normal %lld a %lld ms%@"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wartość bazowa 7 nocy %lld ms, normalna %lld do %lld ms%@"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Норма за 7 ночей %lld мс, обычный диапазон %lld–%lld мс%@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "7 夜基线 %lld ms，正常范围 %lld 至 %lld ms%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "7 夜基線 %lld ms，正常範圍 %lld 至 %lld ms%@"
-          }
-        }
-      }
-    },
     "7D": {
       "localizations": {
         "de": {
@@ -26091,64 +26037,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Krótkie słowo zanim się połączymy"
-          }
-        }
-      }
-    },
-    "A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Charge ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1).": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ein Read-Only Plews / Altini am kleinsten Wert während der Änderung deiner nächtlichen HRV: Es zeigt an, ob deine 7-Nächte-HRV-Basislinie über, innerhalb oder unter deinem persönlichen normalen Band liegt. Es ändert nichts anderes - der Energiering ist identisch, ob dieser ein- oder ausgeschaltet ist. Dies ist eine grobe / frühe Prüfung, die noch nicht gegen unterschiedliche reale Daten (n = 1) validiert wurde."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Una lectura de sólo lectura Plews/Altini de menor valor de cambio de su HRV nocturna: muestra si su base HRV de 7 noches se encuentra arriba, dentro o debajo de su banda normal personal. No cambia nada más - el anillo de carga es idéntico si esto está encendido o apagado. Esto es una prueba dura / temprana, aún no validada contra datos reales variables (n=1)."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Une lecture en lecture seule Plews/Altini plus petite valeur tout en changeant de votre HRV nocturne: il montre si votre base de 7 nuits HRV est au-dessus, à l'intérieur, ou en dessous de votre bande normale personnelle. Il ne change rien d'autre - l'anneau de charge est identique que ce soit en marche ou en panne. Il s'agit d'un test rugueux / précoce, non encore validé par rapport à des données réelles variables (n=1)."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Una lettura in sola consultazione della tua HRV notturna secondo la variazione minima significativa di Plews/Altini: mostra se la tua linea di base HRV a 7 notti è sopra, dentro o sotto il tuo intervallo normale personale. Non cambia nient'altro - l'anello Carica è identico sia che sia attivo sia che sia disattivato. Si tratta di un test iniziale e approssimativo, non ancora convalidato su dati reali variabili (n=1)."
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uma leitura de menor alteração válida do Plews/Altini de leitura apenas da tua VFC noturna: mostra se a tua linha de base de VFC de 7 noites está acima, dentro ou abaixo do teu intervalo normal pessoal. Não muda mais nada - o anel de carga é idêntico, quer esteja ligado ou desligado. Trata-se de um teste aproximado/inicial, ainda não validado em relação a dados reais variados (n=1)."
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Odczyt tylko do odczytu Plews/Altini dotyczący najmniejszej i wartej uwagi zmiany twojego nocnego HRV: pokazuje, czy twoja 7-dniowa linia bazowa HRV znajduje się powyżej, wewnątrz czy poniżej twojego osobistego normalnego pasma. Nie zmienia to niczego innego - pierścień Energia jest identyczny niezależnie od tego, czy jest on włączony, czy wyłączony. Są to przybliżone/wczesne testy, które nie zostały jeszcze zweryfikowane w oparciu o różne rzeczywiste dane (n=1)."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Показатель ночной ВСР по методу наименьшего значимого изменения Plews/Altini, только для чтения: показывает, находится ли ваша 7-ночная норма ВСР выше, внутри или ниже вашего личного нормального диапазона. Больше он ничего не меняет — кольцо Заряда одинаково при включённой и выключенной настройке. Это черновое, раннее тестирование, ещё не проверенное на разнообразных реальных данных (n=1)."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对你每夜 HRV 的只读 Plews/Altini 最小有意义变化解读：显示你的 7 夜 HRV 基线处于个人正常区间之上、之内还是之下。它不改变其他任何内容，无论开启与否，能量环都完全相同。这属于粗略的早期测试，尚未针对多样的真实数据验证（n=1）。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "對你每夜 HRV 的唯讀 Plews/Altini 最小有意義變化解讀：顯示你的 7 夜 HRV 基線處於個人正常區間之上、之內還是之下。它不改變其他任何內容，無論開啟與否，能量環都完全相同。這屬於粗略的早期測試，尚未針對多樣的真實資料驗證（n=1）。"
           }
         }
       }
@@ -45988,64 +45876,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kalibracja, %1$lld lub %2$lld"
-          }
-        }
-      }
-    },
-    "Calibrating (%lld/%lld nights)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kalibrierung (%1$lld/%2$lld Nächte)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Calibración (noches %1$lld/%2$lld)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Étalonnage (%1$lld/%2$lld nuits)"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Calibrazione (%lld/%lld notti)"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Calibração (%lld/%lld noites)"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kalibracja (%lld/%lld w nocy)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Калибровка (%lld из %lld ночей)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "校准中（%lld/%lld 夜）"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "校準中（%lld/%lld 夜）"
           }
         }
       }
@@ -79893,168 +79723,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "HRV jest poniżej poziomu bazowego, więc spokojnie zacznij dzień"
-          }
-        }
-      }
-    },
-    "HRV readiness (Plews/Altini)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV-Bereitschaft (Plews/Altini)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV preparedness (Plews/Altini)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation à la VFC (Plews/Altini)"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontezza HRV (Plews/Altini)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Готовность по ВСР (Plews/Altini)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV 恢复就绪度 (Plews/Altini 算法模型)"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontidão HRV (Plews/Altini)"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gotowość HRV (Plews/Altini)"
-          }
-        }
-      }
-    },
-    "HRV readiness (experimental)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV-Bereitschaft (experimentell)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV preparedness (experimental)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation à la VFC (expérimental)"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontezza HRV (sperimentale)"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Готовность по ВСР (эксперимент)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV 恢复就绪度评分 (实验性功能)"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontidão HRV (experimental)"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gotowość HRV (eksperymentalna)"
-          }
-        }
-      }
-    },
-    "HRV readiness (experimental): %@": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV-Reife (experimentell): %1$@"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV preparedness (experimental): %1$@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Préparation à la VFC (expérimental): %1$@"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontezza HRV (sperimentale): %@"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prontidão HRV (experimental): %@"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gotowość HRV (eksperymentalna): %@"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Готовность по ВСР (эксперимент): %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV 就绪度（实验性）：%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "HRV 就緒度（實驗性）：%@"
           }
         }
       }

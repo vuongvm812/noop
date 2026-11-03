@@ -41,7 +41,7 @@ public enum BaselineStatus: String, Equatable, Sendable {
 }
 
 /// Immutable snapshot of a personal baseline for one metric after N nights.
-public struct BaselineState: Equatable, Sendable {
+public struct BaselineState: Hashable, Sendable {
     /// Robust EWMA center (the personal "mean").
     public let baseline: Double
     /// EWMA of absolute deviations, floored at cfg.floorSpread. Multiply by 1.253
@@ -202,13 +202,6 @@ public enum Baselines {
     /// Default per-metric configurations (HRV, resting HR, respiration, skin temp, daily
     /// Effort/strain).
     ///
-    /// "strain" backs the RecoveryScorer Activity-Balance / previous-day-Effort term: bounds
-    /// match `StrainScorer.maxStrain`'s 0-100 output scale (the Charge/Effort/Rest redesign's
-    /// rescale of the historical 0-21 axis). floorSpread is wider than the physiological
-    /// metrics above (5.0 vs ~1-2% of range elsewhere) because day-to-day training load is
-    /// EXPECTED to swing hard (a rest day vs a hard day is a normal, large delta) — a tight
-    /// floor would make the z-score hypersensitive to routine training variation. Same
-    /// half-lives as the other metrics for consistency.
     public static let metricCfg: [String: MetricCfg] = [
         "hrv": MetricCfg(minVal: 5.0, maxVal: 250.0, floorSpread: 5.0,
                          halfLifeB: 14.0, halfLifeS: 21.0),
@@ -218,19 +211,6 @@ public enum Baselines {
                           halfLifeB: 14.0, halfLifeS: 21.0),
         "skin_temp": MetricCfg(minVal: 20.0, maxVal: 42.0, floorSpread: 0.3,
                                halfLifeB: 14.0, halfLifeS: 21.0),
-        "strain": MetricCfg(minVal: 0.0, maxVal: 100.0, floorSpread: 5.0,
-                            halfLifeB: 14.0, halfLifeS: 21.0),
-
-        // Readiness HRV baseline, folded in the LOG domain with hard-outlier rejection OFF (RD2 · the
-        // window-fold spine mode — see Baselines.update's `rejectHardOutliers`). ReadinessEngine
-        // z-scores lnRMSSD (RD1: HRV is right-skewed), so these bounds/floor are in LN(ms) units — NOT
-        // the raw-ms "hrv" config above (which the RecoveryScorer folds linearly, untouched).
-        // minVal/maxVal = ln(8)/ln(250), the plausible HRV band in ln. floorSpread 0.08 (ln) sits just
-        // below a real wearer's own ln-HRV night-to-night spread (~0.10, measured on real WHOOP nights),
-        // so personal spread drives the z while an ultra-stable baseline is floored against saturation.
-        "readiness_hrv_ln": MetricCfg(minVal: 2.079, maxVal: 5.521, floorSpread: 0.08,
-                                      halfLifeB: 14.0, halfLifeS: 21.0),
-
         // Daytime/waking-hours configs (DaytimeStress baseline-relative mode, added alongside
         // the day-relative default). Distinct from "resting_hr"/"hrv" above, which each fold ONE
         // NIGHTLY value (sleep). These fold ONE DAYTIME aggregate per day into a cross-day
@@ -258,11 +238,6 @@ public enum Baselines {
     public static var hrvCfg: MetricCfg { metricCfg["hrv"]! }
     public static var restingHRCfg: MetricCfg { metricCfg["resting_hr"]! }
     public static var respCfg: MetricCfg { metricCfg["resp"]! }
-    /// Readiness HRV baseline config — folded in the LOG domain (ln ms) with hard-outlier rejection
-    /// OFF. See the `readiness_hrv_ln` comment above; distinct from the raw-ms `hrvCfg`.
-    public static var readinessHRVLnCfg: MetricCfg { metricCfg["readiness_hrv_ln"]! }
-    /// Baseline config for the RecoveryScorer Activity-Balance / previous-day-Effort term.
-    public static var strainCfg: MetricCfg { metricCfg["strain"]! }
     /// Personal daytime/waking HR baseline config — see the `daytime_hr` comment above.
     public static var daytimeHRCfg: MetricCfg { metricCfg["daytime_hr"]! }
     /// Personal daytime/waking RMSSD baseline config — see the `daytime_rmssd` comment above.
@@ -358,8 +333,7 @@ public enum Baselines {
     /// - `value == nil` or out-of-range: skip-and-hold (carry forward).
     /// - hard outlier (> HARD_OUTLIER_K × spread): seen but not folded.
     /// - otherwise: Winsorized EWMA center + EWMA-abs-dev spread update.
-    public static func update(_ state: BaselineState?, value: Double?, cfg: MetricCfg,
-                              rejectHardOutliers: Bool = true) -> BaselineState {
+    public static func update(_ state: BaselineState?, value: Double?, cfg: MetricCfg) -> BaselineState {
         let lb = lambda(halfLife: cfg.halfLifeB)
         let ls = lambda(halfLife: cfg.halfLifeS)
 
@@ -400,17 +374,7 @@ public enum Baselines {
         // Suspending this during early life is the core anti-anchoring fix — a high seed with a
         // floor-tight spread would otherwise reject the user's real, lower readings as "outliers"
         // (a true 54ms vs an anchored ~90ms baseline is >5× the floor spread).
-        //
-        // `rejectHardOutliers` (default true) can turn this OFF for a TRAILING-WINDOW re-fold — where
-        // the same 30-night window is re-folded every call and a *recent sustained* shift lands at the
-        // window's end (past the young grace period), so rejection would discard a real new normal as a
-        // string of "outliers" (readiness's device-swap / supplement-onset failure mode). With it off,
-        // the Winsorization below STILL damps a single freak night (clamped to ±winsorK·spread rather
-        // than folded raw) — but a sustained shift is followed instead of rejected, because each night
-        // nudges the center and widens the spread until the new level is no longer an outlier. This is
-        // exactly the incremental-fold (reject on, RecoveryScorer) vs window-fold (reject off, Readiness)
-        // distinction; validated on real HRV history (see ReadinessEngine's RD2 note).
-        if rejectHardOutliers && state.nValid >= minNightsSeed && !isYoung {
+        if state.nValid >= minNightsSeed && !isYoung {
             let dev = abs(value - state.baseline)
             if dev > hardOutlierK * state.spread {
                 return BaselineState(baseline: state.baseline, spread: state.spread,
@@ -448,10 +412,9 @@ public enum Baselines {
 
     /// Replay an ordered sequence of nightly values (oldest first) to build state.
     /// `nil` entries are treated as missing nights (skip-and-hold).
-    public static func foldHistory(_ values: [Double?], cfg: MetricCfg,
-                                   rejectHardOutliers: Bool = true) -> BaselineState {
+    public static func foldHistory(_ values: [Double?], cfg: MetricCfg) -> BaselineState {
         var state: BaselineState? = nil
-        for v in values { state = update(state, value: v, cfg: cfg, rejectHardOutliers: rejectHardOutliers) }
+        for v in values { state = update(state, value: v, cfg: cfg) }
         if let s = state { return s }
         let seed = (cfg.minVal + cfg.maxVal) / 2.0
         return BaselineState(baseline: seed, spread: cfg.floorSpread, nValid: 0,
@@ -466,8 +429,7 @@ public enum Baselines {
 
     /// Read the persisted manual-recalibration epoch (epoch SECONDS) for the wider RECOVERY baseline
     /// (resting HR / respiration / skin temp). 0 = no recalibration. Written alongside the HRV epoch by
-    /// `recalibrateRecoveryBaselines`. A fold that wants to honour this passes it through the day-keyed
-    /// `foldHistory(_:dayKeys:cfg:baselineEpoch:)` overload exactly like the HRV path.
+    /// `recalibrateRecoveryBaselines`. The Charge baselines cut at it (`ChargeBaselines.epochs`).
     public static func recoveryBaselineEpoch(_ defaults: UserDefaults = .standard) -> Double {
         defaults.double(forKey: recoveryBaselineEpochKey)
     }
@@ -488,71 +450,10 @@ public enum Baselines {
         defaults.set(now, forKey: recoveryBaselineEpochKey)
     }
 
-    /// Replay an ordered sequence of nightly values (oldest first) to build state, honouring a
-    /// manual recalibration `baselineEpoch` (epoch SECONDS; 0 = no recalibration).
-    ///
-    /// `dayKeys` runs parallel to `values` ("yyyy-MM-dd", same order/length). Any night whose day
-    /// STARTS before `baselineEpoch` is ignored entirely (NOT a skip-and-hold — it is dropped, so the
-    /// baseline re-seeds from the first on-or-after-epoch night). This lets the user reset a baseline
-    /// that anchored too high: tap Recalibrate, and the Charge baseline re-learns from tonight onward.
-    ///
-    /// When `baselineEpoch <= 0` (the default / no recalibration) this is byte-identical to the plain
-    /// `foldHistory(_:cfg:)`. When `baselineEpoch` is nil it is read from UserDefaults via
-    /// `hrvBaselineEpoch()` so callers that already use the HRV config get recalibration for free.
-    /// Diagnostic companion to the epoch-aware `foldHistory` (#731): how many nights that fold DROPS
-    /// because they predate the recalibration epoch, plus the epoch itself as a `yyyy-MM-dd` day key
-    /// (nil when no recalibration is set).
-    ///
-    /// Exists because a "Charge is stuck" report is otherwise unexplainable from a strap log. A user who
-    /// taps "Recalibrate baseline" discards every earlier night and must re-earn `minNightsSeed` nights;
-    /// tapping it again resets that progress to zero. A reporter did exactly that for two weeks — 15 valid
-    /// HRV nights on file, but `nValid=3` and no Charge — and nothing in the log said the epoch was why.
-    /// Mirrors the fold's drop rule EXACTLY (same UTC day-start parse, same strict `<` comparison), so the
-    /// number reported is the number actually dropped.
-    public static func epochDropDiagnostic(dayKeys: [String],
-                                           baselineEpoch: Double? = nil) -> (dropped: Int, epochDay: String?) {
-        let epoch = baselineEpoch ?? hrvBaselineEpoch()
-        guard epoch > 0 else { return (0, nil) }
-        let fmt = DateFormatter()
-        fmt.calendar = Calendar(identifier: .gregorian)
-        fmt.timeZone = TimeZone(secondsFromGMT: 0)
-        fmt.dateFormat = "yyyy-MM-dd"
-        let dropped = dayKeys.reduce(into: 0) { acc, key in
-            if let d = fmt.date(from: key), d.timeIntervalSince1970 < epoch { acc += 1 }
-        }
-        return (dropped, fmt.string(from: Date(timeIntervalSince1970: epoch)))
-    }
-
-    public static func foldHistory(_ values: [Double?], dayKeys: [String], cfg: MetricCfg,
-                                   baselineEpoch: Double? = nil) -> BaselineState {
-        let epoch = baselineEpoch ?? hrvBaselineEpoch()
-        guard epoch > 0 else { return foldHistory(values, cfg: cfg) }
-
-        // Pre-build the day-start epoch (UTC) for each "yyyy-MM-dd" key once.
-        let fmt = DateFormatter()
-        fmt.calendar = Calendar(identifier: .gregorian)
-        fmt.timeZone = TimeZone(secondsFromGMT: 0)
-        fmt.dateFormat = "yyyy-MM-dd"
-
-        var state: BaselineState? = nil
-        for (i, v) in values.enumerated() {
-            // Drop (not skip-and-hold) any night dated before the recalibration epoch.
-            if i < dayKeys.count, let d = fmt.date(from: dayKeys[i]),
-               d.timeIntervalSince1970 < epoch {
-                continue
-            }
-            state = update(state, value: v, cfg: cfg)
-        }
-        if let s = state { return s }
-        let seed = (cfg.minVal + cfg.maxVal) / 2.0
-        return BaselineState(baseline: seed, spread: cfg.floorSpread, nValid: 0,
-                             nightsSinceUpdate: 0, status: .calibrating)
-    }
-
     // MARK: - Device-era boundary (#459)
 
     /// The recalibration epoch (seconds, UTC start-of-day) at the LATEST device-era boundary in a
-    /// source-tagged nightly history, for feeding `foldHistory`'s `baselineEpoch` so a baseline can't
+    /// source-tagged nightly history, for a Charge baseline's era cut (`ChargeBaselines.epochs`) so it can't
     /// mix two brands' incompatible HRV scales (#459: an Oura→WHOOP switch has Oura RMSSD ~120–155 ms
     /// vs WHOOP ~72–112 ms with no overlap nights, so a straddling 30-night window reads the first
     /// WHOOP nights as "suppressed" against an Oura-inflated mean — a device artifact, not physiology).
@@ -568,7 +469,7 @@ public enum Baselines {
     /// The epoch is the start of the first day of the LATEST contiguous single-brand era: walk
     /// newest→oldest while the brand matches the newest night's brand, and return that run's first day's
     /// start (a lone off-brand day inside the current era truncates it — fail-safe: it drops MORE history,
-    /// never mixes scales). Returns 0.0 (no recalibration → `foldHistory` is byte-identical) when the
+    /// never mixes scales). Returns 0.0 (no cut) when the
     /// whole history is ONE brand — so a single-device user, and a WHOOP user whose imported + computed +
     /// strap ids all bucket to "whoop", is completely unaffected.
     ///

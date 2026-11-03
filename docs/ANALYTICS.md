@@ -167,9 +167,11 @@ z     = (value − mean) / σ                (resting HR, respiration)
 
 `BaselineState.spread` stores `σ / 1.253`, so every reader recovers σ as `1.253 · spread`. For "lower is better" drivers (RHR, resp) the z is inverted by swapping value and mean. The sleep term is centered directly: `(sleepPerf − 0.85) / 0.12` — kept absolute on purpose: Rest is already a 0–100 quality score against sleep need, and a personal z would rate a chronically short sleeper's short night as neutral. Every term's z is clamped to **±3** before weighting (`termZClamp`), so a Rest of 0 or one artefact HRV night cannot outweigh the rest.
 
-Each baseline starts at its era epoch (`ChargeBaselines.epochs`, the one helper the engine, the "What shaped it" rows, the calibration countdown and the readiness word all use): a manual Recalibrate, plus a Garmin switch for HRV / resting HR and any brand switch for respiration (#459). Imported vendor nights and same-brand wearable exports only seed a baseline while the own nights in the window number fewer than 14.
+Each baseline starts at its era epoch (`ChargeBaselines.epochs`): a manual Recalibrate, plus a Garmin switch for HRV / resting HR and any brand switch for respiration (#459). Imported vendor nights and same-brand wearable exports only seed a baseline while the own nights in the window number fewer than 14. The engine, the "What shaped it" rows, the calibration countdown and the readiness word all resolve the displayed day through the same `ChargeBaselines.resolveDay`, so none of them can describe a different baseline than the ring. The Apple Watch and import-only wearable Charge (`WatchRecovery.score`) resolves the same trailing baselines over that source's own rows, and the watch confidence pill reads it through the same call.
 
-Missing terms are dropped and weights renormalized. The weighted-mean z is squashed:
+Missing terms are dropped and weights renormalized. On top of the weighted-mean z sits the **HRV 7-day trend** (`RecoveryScorer.hrvTrend`, the Plews / Altini smallest worthwhile change): the mean lnRMSSD of tonight and the valid nights of the six calendar days before it (at least 3 nights), against the HRV baseline's normal band `ln baseline ± 0.5 σ`. Inside the band it adds nothing; outside it adds `wHRVTrend · excess / σ` (`wHRVTrend = 0.15`, the excess clamped to ±3), so one bad night barely moves Charge but a week sitting below the band does. The breakdown shows it as its own "HRV 7-day trend" row, worth exactly the points it moved.
+
+The composite z is squashed:
 
 ```
 score = 100 / (1 + exp(−logisticK · (z − logisticZ0)))

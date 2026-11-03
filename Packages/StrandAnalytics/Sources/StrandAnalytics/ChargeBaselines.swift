@@ -365,6 +365,22 @@ public enum ChargeBaselines {
         public let restingHR: BaselineState
         public let resp: BaselineState
         public let skin: BaselineState
+
+        /// The valid HRV nights (ms) of the six calendar days before `scoredDay`, era cut included: the
+        /// rest of the 7-day window the Charge HRV trend modifier reads (`RecoveryScorer.hrvTrend`).
+        public var hrvPriorWeek: [Double] {
+            guard let d = Baselines.isoEpochDay(scoredDay) else { return [] }
+            let cfg = Metric.hrv.cfg
+            var out: [Double] = []
+            for (i, key) in hrvHistory.dayKeys.enumerated() {
+                guard let v = hrvHistory.values[i], cfg.minVal <= v, v <= cfg.maxVal,
+                      let k = Baselines.isoEpochDay(key), k < d,
+                      d - k < RecoveryScorer.hrvTrendWindowDays,
+                      !ChargeBaselines.beforeEpoch(key, epochs.hrv) else { continue }
+                out.append(v)
+            }
+            return out
+        }
     }
 
     /// Resolve the four baselines for `scoredDay`: window ending the day before, epochs from `epochs`.
@@ -416,12 +432,6 @@ public enum ChargeBaselines {
                                               recoveryRecalibration: recoveryRecalibration)
         }
 
-        /// The era epochs for `scoredDay`, for readers that need only the cut (the readiness word).
-        public func epochs(scoredDay: String) -> Epochs {
-            ChargeBaselines.epochs(sourceDays: sourceDays, scoredDay: scoredDay,
-                                   hrvRecalibration: hrvRecalibration,
-                                   recoveryRecalibration: recoveryRecalibration)
-        }
     }
 
     // MARK: - Diagnostics

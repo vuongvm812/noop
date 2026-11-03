@@ -29,8 +29,9 @@ import WhoopProtocol
 // Each metric is standardized to a z-score against the personal trailing baseline (#53:
 // `ChargeBaselines`; HRV in the log domain), and each term's z is clamped to ±`termZClamp` before
 // weighting so one artefact night or a zero Rest cannot dominate. Missing terms are dropped and the
-// weights renormalized. The composite z is squashed through a logistic anchored so that
-// Z = 0 → ~58% (WHOOP's published population-average recovery).
+// weights renormalized. A 7-day rolling lnRMSSD outside the smallest-worthwhile-change band adds a
+// small trend modifier (`hrvTrend`, weight wHRVTrend) on top. The composite z is squashed through a
+// logistic anchored so that Z = 0 → ~58% (WHOOP's published population-average recovery).
 //
 // Cold-start: if the HRV baseline (dominant driver) is not yet usable
 // (< MIN_NIGHTS_SEED valid nights), recovery() returns nil. Callers may use
@@ -58,6 +59,51 @@ public enum RecoveryScorer {
     public static let termZClamp: Double = 3.0
 
     static func clampZ(_ z: Double) -> Double { max(-termZClamp, min(termZClamp, z)) }
+
+    // MARK: - HRV trend modifier (#53, the Plews/Altini smallest worthwhile change)
+
+    /// Weight of the HRV trend modifier, ADDED to the composite z (not renormalised with the terms), so a
+    /// 7-day trend inside the normal band leaves Charge exactly where the nightly terms put it.
+    public static let wHRVTrend: Double = 0.15
+    /// Calendar days in the rolling HRV window, tonight included.
+    public static let hrvTrendWindowDays: Int = 7
+    /// Fewest valid nights (tonight included) the window must hold before the trend is read.
+    public static let hrvTrendMinNights: Int = 3
+    /// Smallest-worthwhile-change half-width: the normal band is the baseline ± hrvTrendSwcK·σ (ln).
+    public static let hrvTrendSwcK: Double = 0.5
+
+    /// Where the 7-day rolling lnRMSSD sits against the HRV baseline's normal band.
+    public struct HRVTrend: Equatable, Sendable {
+        /// The 7-day rolling HRV (ms) = exp(mean ln HRV over the window, tonight included).
+        public let rollingMs: Double
+        /// The normal band's edges (ms) = exp(baseline ln mean ± hrvTrendSwcK·σ).
+        public let normalLowMs: Double
+        public let normalHighMs: Double
+        /// The modifier's z: how far the rolling mean sits OUTSIDE the band, in σ (0 inside it),
+        /// clamped to ±termZClamp.
+        public let z: Double
+    }
+
+    /// The HRV trend for tonight: the mean lnRMSSD of tonight and the valid nights of the six calendar
+    /// days before it (`priorWeek`, ms) against the log-domain HRV baseline. Outside the
+    /// smallest-worthwhile-change band (Plews 2012/2013, Buchheit 2014) the excess beyond the band edge,
+    /// in σ, is the modifier; inside it the modifier is 0. nil when the baseline is not in the log domain
+    /// or the window holds fewer than `hrvTrendMinNights` nights. A single night barely moves a 7-day
+    /// mean, which is why the trend modifies Charge rather than replacing the nightly HRV term.
+    /// Kotlin twin: `RecoveryScorer.hrvTrend`.
+    public static func hrvTrend(hrv: Double, priorWeek: [Double], baseline: DriverBaseline) -> HRVTrend? {
+        guard baseline.logDomain, priorWeek.count + 1 >= hrvTrendMinNights else { return nil }
+        var sum = log(max(hrv, 1.0))
+        for v in priorWeek { sum += log(max(v, 1.0)) }
+        let roll = sum / Double(priorWeek.count + 1)
+        let mu = log(max(baseline.mean, 1.0))
+        let sigma = max(1.253 * baseline.spread, 1e-9)
+        let half = hrvTrendSwcK * sigma
+        let d = roll - mu
+        let excess = d > half ? d - half : (d < -half ? d + half : 0.0)
+        return HRVTrend(rollingMs: exp(roll), normalLowMs: exp(mu - half), normalHighMs: exp(mu + half),
+                        z: clampZ(excess / sigma))
+    }
 
     /// Logistic spread: ±2 z-units ≈ full Red–Green band (15%–95%).
     public static let logisticK: Double = 1.6
@@ -274,6 +320,8 @@ public enum RecoveryScorer {
     ///     no-skin-temp score is identical to before.
     ///   - hrvBaselineUsable: whether the HRV baseline has enough nights
     ///     (BaselineState.usable). When false, returns nil (cold-start).
+    ///   - hrvPriorWeek: the valid HRV nights (ms) of the six calendar days before tonight, for the
+    ///     7-day trend modifier (`hrvTrend`). Empty leaves the modifier out.
     public static func recovery(hrv: Double,
                                 rhr: Double,
                                 resp: Double?,
@@ -282,7 +330,8 @@ public enum RecoveryScorer {
                                 respBaseline: DriverBaseline?,
                                 sleepPerf: Double?,
                                 skinTempDev: Double? = nil,
-                                hrvBaselineUsable: Bool = true) -> Double? {
+                                hrvBaselineUsable: Bool = true,
+                                hrvPriorWeek: [Double] = []) -> Double? {
         // Cold-start gate: HRV is the dominant driver; if its baseline isn't
         // usable, refuse to score (more honest than a fabricated value).
         if !hrvBaselineUsable { return nil }
@@ -324,7 +373,11 @@ public enum RecoveryScorer {
         let totalWeight = terms.reduce(0) { $0 + $1.w }
         guard totalWeight > 0 else { return nil }
 
-        let z = terms.reduce(0) { $0 + clampZ($1.z) * $1.w } / totalWeight
+        var z = terms.reduce(0) { $0 + clampZ($1.z) * $1.w } / totalWeight
+        // The 7-day HRV trend modifies the composite only when it leaves the normal band.
+        if let trend = hrvTrend(hrv: hrv, priorWeek: hrvPriorWeek, baseline: hrvB) {
+            z += wHRVTrend * trend.z
+        }
         return logisticScore(compositeZ: z)
     }
 
@@ -346,7 +399,8 @@ public enum RecoveryScorer {
                                 rhrBaseline: BaselineState?,
                                 respBaseline: BaselineState?,
                                 sleepPerf: Double?,
-                                skinTempDev: Double? = nil) -> Double? {
+                                skinTempDev: Double? = nil,
+                                hrvPriorWeek: [Double] = []) -> Double? {
         recovery(hrv: hrv,
                  rhr: rhr,
                  resp: resp,
@@ -361,6 +415,7 @@ public enum RecoveryScorer {
                  respBaseline: respBaseline.flatMap { $0.usable ? $0 : nil }.map(DriverBaseline.init),
                  sleepPerf: sleepPerf,
                  skinTempDev: skinTempDev,
-                 hrvBaselineUsable: hrvBaseline.usable)
+                 hrvBaselineUsable: hrvBaseline.usable,
+                 hrvPriorWeek: hrvPriorWeek)
     }
 }

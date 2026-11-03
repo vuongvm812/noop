@@ -161,8 +161,8 @@ final class VendorRespRateTests: XCTestCase {
         let epoch = Baselines.deviceEraEpoch(sources)
         XCTAssertGreaterThan(epoch, 0, "a brand switch must open a new era")
 
-        let scoped = Baselines.foldHistory(values, dayKeys: dayKeys, cfg: cfg, baselineEpoch: epoch)
-        let pooled = Baselines.foldHistory(values, dayKeys: dayKeys, cfg: cfg, baselineEpoch: 0)
+        let scoped = ChargeBaselines.state(values: values, dayKeys: dayKeys, metric: .resp, anchorDay: dayKeys.last!, baselineEpoch: epoch)
+        let pooled = ChargeBaselines.state(values: values, dayKeys: dayKeys, metric: .resp, anchorDay: dayKeys.last!, baselineEpoch: 0)
         XCTAssertEqual(scoped.baseline, 14.6, accuracy: 0.05,
                        "the era-scoped baseline sits on the ring's own nights")
         XCTAssertGreaterThan(pooled.baseline, scoped.baseline + 0.2,

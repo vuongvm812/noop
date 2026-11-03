@@ -195,9 +195,10 @@ class RecoveryDriversTest {
             respBaseline = baseline(16.0, 2.0),
             sleepPerf = 0.9, skinTempDev = 0.3,
         )
-        // All five present terms produce one row each (order is biggest-mover-first, asserted below).
+        // All five present terms produce one row each (order is biggest-mover-first, asserted below). No
+        // prior week is passed, so the HRV 7-day trend (#53) is not read and has no row.
         assertEquals(
-            ChargeDriverLabel.entries.toSet(),
+            ChargeDriverLabel.entries.toSet() - ChargeDriverLabel.HRV_7_DAY_TREND,
             drivers.map { it.label }.toSet(),
         )
         // Rows are sorted biggest-mover-first, matching the Swift twin.

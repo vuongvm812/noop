@@ -34,6 +34,9 @@ import kotlin.math.pow
  *   already relative to its reference (skin temperature) or uses a fixed centre (sleep quality).
  * @property unit semantic measurement unit shared by [value] and [baseline].
  * @property verdict semantic interpretation for presentation by the UI layer.
+ * @property rangeLow the lower edge of the normal band the value was read against, in [unit], or null
+ *   for a row read against a single baseline. Set (with [rangeHigh]) only on the HRV 7-day trend row.
+ * @property rangeHigh the upper edge of that normal band, or null.
  */
 enum class ChargeDriverLabel {
     HEART_RATE_VARIABILITY,
@@ -41,6 +44,7 @@ enum class ChargeDriverLabel {
     SLEEP_QUALITY,
     RESPIRATORY_RATE,
     SKIN_TEMPERATURE,
+    HRV_7_DAY_TREND,
 }
 
 enum class ChargeDriverUnit {
@@ -70,6 +74,9 @@ enum class ChargeDriverVerdict {
     NEAR_BASELINE,
     WARMER_THAN_BASELINE_LIMITING,
     COOLER_THAN_BASELINE_LIMITING,
+    HRV_TREND_ABOVE_RANGE_SUPPORTING,
+    HRV_TREND_BELOW_RANGE_FATIGUE,
+    HRV_TREND_INSIDE_RANGE,
 }
 
 data class ChargeDriver(
@@ -79,6 +86,8 @@ data class ChargeDriver(
     val baseline: Double?,
     val unit: ChargeDriverUnit,
     val verdict: ChargeDriverVerdict,
+    val rangeLow: Double? = null,
+    val rangeHigh: Double? = null,
 )
 
 object RecoveryDrivers {
@@ -105,6 +114,9 @@ object RecoveryDrivers {
      *   Sleep row.
      * @param skinTempDev tonight's skin-temperature deviation from the personal baseline (raw +/- C);
      *   null drops the Skin temp row. Surfaced as a RELATIVE deviation, never an absolute temperature.
+     * @param hrvPriorWeek the valid HRV nights (ms) of the six calendar days before tonight. The HRV 7-day
+     *   trend modifier (#53) adds one more row whenever it was read; its points are the score minus the
+     *   score without the modifier (0 inside the normal band).
      */
     fun chargeDrivers(
         hrv: Double,
@@ -115,6 +127,7 @@ object RecoveryDrivers {
         respBaseline: BaselineState?,
         sleepPerf: Double?,
         skinTempDev: Double? = null,
+        hrvPriorWeek: List<Double> = emptyList(),
     ): List<ChargeDriver> {
         // No score => no real contributions to attribute (cold-start). recovery(...) enforces the usable
         // gate; mirror it so a nil headline never yields fabricated driver rows.
@@ -130,6 +143,7 @@ object RecoveryDrivers {
             hrv = hrv, rhr = rhr, resp = resp,
             hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
             respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+            hrvPriorWeek = hrvPriorWeek,
         ) ?: return emptyList()
 
         // Marginal-vs-neutral attribution: a term's deltaPoints is the full score minus the score
@@ -154,7 +168,7 @@ object RecoveryDrivers {
             RecoveryScorer.parasympatheticSaturation(hrvZ = hrvZFull, rhrZ = rhrZFull).active
 
         // One row per present term, appended in the SAME order the iOS twin uses (HRV, resting HR, Sleep,
-        // respiration, skin temp), then sorted biggest-mover-first so the row that explains the most sits on
+        // respiration, skin temp, HRV trend), then sorted biggest-mover-first so the row that explains the most sits on
         // top. The semantic cases retain the same distinctions as the Swift canonical.
         val drivers = ArrayList<ChargeDriver>()
 
@@ -164,6 +178,7 @@ object RecoveryDrivers {
                 hrv = hrvBaseline.baseline, rhr = rhr, resp = resp,
                 hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
                 respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+                hrvPriorWeek = hrvPriorWeek,
             ),
         )
         drivers.add(
@@ -188,6 +203,7 @@ object RecoveryDrivers {
                     hrv = hrv, rhr = rhrB.baseline, resp = resp,
                     hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
                     respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+                    hrvPriorWeek = hrvPriorWeek,
                 ),
             )
             drivers.add(
@@ -211,7 +227,7 @@ object RecoveryDrivers {
                             hrv = hrv, rhr = rhr, resp = resp,
                             hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
                             respBaseline = respB, sleepPerf = RecoveryScorer.sleepPerfCenter,
-                            skinTempDev = skinTempDev,
+                            skinTempDev = skinTempDev, hrvPriorWeek = hrvPriorWeek,
                         ),
                     ),
                     value = sleepPerf * 100.0,
@@ -228,6 +244,7 @@ object RecoveryDrivers {
                     hrv = hrv, rhr = rhr, resp = respB.baseline,
                     hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
                     respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+                    hrvPriorWeek = hrvPriorWeek,
                 ),
             )
             drivers.add(
@@ -251,6 +268,7 @@ object RecoveryDrivers {
                     hrv = hrv, rhr = rhr, resp = resp,
                     hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
                     respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = 0.0,
+                    hrvPriorWeek = hrvPriorWeek,
                 ),
             )
             drivers.add(
@@ -265,8 +283,40 @@ object RecoveryDrivers {
             )
         }
 
+        // HRV 7-day trend (#53; a modifier, neutral inside the normal band). Present whenever the trend was
+        // read (enough nights in the window). Neutral = no modifier, so the points are exactly what the
+        // trend added to or took from tonight's Charge; 0 inside the band.
+        RecoveryScorer.hrvTrend(hrv, hrvPriorWeek, RecoveryScorer.DriverBaseline(hrvBaseline))?.let { trend ->
+            val trendPoints = points(
+                RecoveryScorer.recovery(
+                    hrv = hrv, rhr = rhr, resp = resp,
+                    hrvBaseline = hrvBaseline, rhrBaseline = rhrB,
+                    respBaseline = respB, sleepPerf = sleepPerf, skinTempDev = skinTempDev,
+                ),
+            )
+            drivers.add(
+                ChargeDriver(
+                    label = ChargeDriverLabel.HRV_7_DAY_TREND,
+                    deltaPoints = trendPoints,
+                    value = trend.rollingMs,
+                    baseline = null,
+                    unit = ChargeDriverUnit.MILLISECONDS,
+                    verdict = hrvTrendVerdict(trend),
+                    rangeLow = trend.normalLowMs,
+                    rangeHigh = trend.normalHighMs,
+                ),
+            )
+        }
+
         // Biggest mover first; a stable sort preserves the iOS append order on ties.
         return drivers.sortedByDescending { abs(it.deltaPoints) }
+    }
+
+    /** Where the 7-day HRV trend sits against the normal band. Swift twin: `RecoveryScorer.hrvTrendVerdict`. */
+    internal fun hrvTrendVerdict(trend: RecoveryScorer.HRVTrend): ChargeDriverVerdict = when {
+        trend.z > 0 -> ChargeDriverVerdict.HRV_TREND_ABOVE_RANGE_SUPPORTING
+        trend.z < 0 -> ChargeDriverVerdict.HRV_TREND_BELOW_RANGE_FATIGUE
+        else -> ChargeDriverVerdict.HRV_TREND_INSIDE_RANGE
     }
 
     /**

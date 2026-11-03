@@ -1654,7 +1654,7 @@ struct LiquidTodayView: View {
         cachedDisplayDay = day
         await reloadRRUnitPolicy()
         cachedReadiness = ReadinessEngine.evaluate(days: repo.days, today: day?.day,
-                                                   epochs: repo.chargeEpochs(for: day?.day))
+                                                   baselines: day.flatMap { repo.chargeBaselines(for: $0.day) })
         // Prior-day vitals carry, resolved ONCE here (never in body). Bound to today's own key so it can't
         // echo today's still-forming row; only on today (a past day's own row is the whole story).
         let tkey = cachedDisplayDay?.day ?? selectedDayKey
@@ -1931,7 +1931,7 @@ struct LiquidTodayView: View {
     /// before the first load() populates the cache.
     private var readiness: ReadinessEngine.Readiness {
         cachedReadiness ?? ReadinessEngine.evaluate(days: repo.days, today: cachedDisplayDay?.day,
-                                                    epochs: repo.chargeEpochs(for: cachedDisplayDay?.day))
+                                                    baselines: cachedDisplayDay.flatMap { repo.chargeBaselines(for: $0.day) })
     }
 
     /// One card-level provenance label. Identical winners collapse to one name; mixed scores show at most

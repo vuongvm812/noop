@@ -757,10 +757,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">Démarrer une séance de respiration</string>
     <string name="l10n_stress_screen_stress_bad33342">Stress</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">Vos dernières heures %1$s sont restées dans la bande haute. Quelques minutes of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">%1$s ms de base de 7 nuits, %2$s normal à %3$s ms%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">Écrivez également le journal du bracelet dans le journal système (logcat) pour le développement sur adb. Arrêt par défaut.</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android exécute cela via WorkManager (Doze peut le retarder).</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">Étalonnage (%1$s/%2$s nuits)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">Annuler</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">Auto-exportation quotidienne</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">Enregistrement des débogages</string>
@@ -775,9 +773,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">Ceci supprime tous les fichiers de journal du bracelet et de capture brute programmés que NOOP a enregistrés. Cette action est irréversible.</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">En haut : ce mode de test est désactivé, donc le rapport n\'a pas de capture pour lui. Pour useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">Interpolation du sous-logement HR-from-PPG (v26)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">Préparation à la VFC (expérimental)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">Préparation à la VFC (expérimental): %1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">Préparation à la VFC (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Recalibrer</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Recalibrer la ligne de base de la Charge</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Recalibrer votre ligne de base de Charge ?</string>
@@ -2494,6 +2489,11 @@
     <string name="today_driver_near_baseline">proche de la référence</string>
     <string name="today_driver_warmer_limiting">plus chaude que la référence, limite la récupération</string>
     <string name="today_driver_cooler_limiting">plus froide que la référence, limite la récupération</string>
+    <string name="today_driver_hrv_trend">Tendance de la VFC (7 jours)</string>
+    <string name="today_driver_range_ms">plage normale %1$d-%2$d ms</string>
+    <string name="today_driver_hrv_trend_above">moyenne sur 7 jours au-dessus de votre plage normale, favorise la récupération</string>
+    <string name="today_driver_hrv_trend_below">moyenne sur 7 jours en dessous de votre plage normale, signe de fatigue accumulée</string>
+    <string name="today_driver_hrv_trend_inside">moyenne sur 7 jours dans votre plage normale</string>
     <string name="today_driver_a11y">%1$s, %2$s, %3$s, %4$s points, %5$s</string>
     <string name="scoring_guide_daily_scores">Vos scores quotidiens</string>
     <string name="scoring_guide_three_scores">Les trois scores</string>

@@ -31,24 +31,23 @@ class DayCacheConfigFieldTest {
     fun `the moved field is named`() {
         val before = fullSig()
         val after = fullSig { it[0] = "moved" }
-        assertEquals("hrvBaseline", IntelligenceEngine.changedConfigField(before, after))
+        assertEquals("age", IntelligenceEngine.changedConfigField(before, after))
     }
 
-    /** The field log's leading suspicion was a rolling baseline, which is index 0 and 1. Naming them
-     *  apart is the whole point: one is HRV drifting, the other resting heart rate. */
+    /** Neighbouring fields are told apart, and the last index still resolves. */
     @Test
-    fun `the two baselines are told apart`() {
-        assertEquals("rhrBaseline",
+    fun `neighbouring fields are told apart`() {
+        assertEquals("sex",
             IntelligenceEngine.changedConfigField(fullSig(), fullSig { it[1] = "moved" }))
         assertEquals("dayCycleMode",
-            IntelligenceEngine.changedConfigField(fullSig(), fullSig { it[15] = "moved" }))
+            IntelligenceEngine.changedConfigField(fullSig(), fullSig { it[13] = "moved" }))
     }
 
     /** Several at once happens on a settings change that touches more than one knob. */
     @Test
     fun `several movers are all named`() {
-        val after = fullSig { it[0] = "a"; it[14] = "b" }
-        assertEquals("hrvBaseline+effortMethod",
+        val after = fullSig { it[0] = "a"; it[12] = "b" }
+        assertEquals("age+effortMethod",
             IntelligenceEngine.changedConfigField(fullSig(), after))
     }
 
@@ -77,7 +76,7 @@ class DayCacheConfigFieldTest {
     fun `the field list matches the Swift twin`() {
         assertEquals(
             listOf(
-                "hrvBaseline", "rhrBaseline", "age", "sex", "stepTicksPerStep", "maxHROverride",
+                "age", "sex", "stepTicksPerStep", "maxHROverride",
                 "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
                 "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
                 "effortMethod", "dayCycleMode",

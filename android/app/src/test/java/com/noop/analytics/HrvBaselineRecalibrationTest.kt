@@ -17,7 +17,7 @@ import kotlin.math.abs
  *     A settled baseline still rejects a wild one-off outlier (the gate is suspended only during early
  *     life, not disabled).
  *
- *  2. Manual recalibration: foldHistory(values, dayKeys, cfg, baselineEpoch) drops every night before
+ *  2. Manual recalibration: the Charge baseline (`ChargeBaselines.state`, #53) drops every night before
  *     the epoch (`noop.hrvBaselineEpoch`, epoch SECONDS) and re-seeds from the first on-or-after night.
  */
 class HrvBaselineRecalibrationTest {
@@ -86,11 +86,11 @@ class HrvBaselineRecalibrationTest {
         val vals: List<Double?> = listOf(90.0, 91.0, 89.0, 90.0, 92.0, 88.0, 54.0, 55.0, 53.0, 54.0, 56.0, 54.0)
         val epoch = LocalDate.parse("2026-06-15").atStartOfDay(ZoneOffset.UTC).toEpochSecond().toDouble()
 
-        val recalibrated = Baselines.foldHistory(vals, days, hrvCfg, epoch)
+        val recalibrated = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), epoch)
         assertEquals(6, recalibrated.nValid) // only the 6 post-epoch nights contribute
         assertEquals(54.0, recalibrated.baseline, 2.0)
 
-        val notRecalibrated = Baselines.foldHistory(vals, days, hrvCfg, 0.0)
+        val notRecalibrated = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), 0.0)
         assertTrue(notRecalibrated.baseline > recalibrated.baseline + 10.0)
     }
 
@@ -98,17 +98,15 @@ class HrvBaselineRecalibrationTest {
     fun recalibrateEpoch_zeroIsNoOp() {
         val days = listOf("2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04")
         val vals: List<Double?> = listOf(60.0, 61.0, 59.0, 62.0)
-        val withZero = Baselines.foldHistory(vals, days, hrvCfg, 0.0)
-        val plain = Baselines.foldHistory(vals, hrvCfg)
-        assertEquals(plain.baseline, withZero.baseline, 1e-9)
-        assertEquals(plain.nValid, withZero.nValid)
+        val withZero = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), 0.0)
+        assertEquals(4, withZero.nValid)
     }
 
     @Test
     fun recalibrateEpoch_afterAllNights_resetsToColdStart() {
         val days = listOf("2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04")
         val vals: List<Double?> = listOf(60.0, 61.0, 59.0, 62.0)
-        val s = Baselines.foldHistory(vals, days, hrvCfg, 4_000_000_000.0) // far-future epoch
+        val s = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), 4_000_000_000.0) // far-future epoch
         assertEquals(0, s.nValid)
         assertEquals(BaselineStatus.CALIBRATING, s.status)
     }
@@ -131,12 +129,12 @@ class HrvBaselineRecalibrationTest {
         val deepVals: List<Double?> = List(21) { 48.0 }
 
         // #201 path: fold with no recalibration epoch → usable, centered on the new deep value.
-        val refolded = Baselines.foldHistory(deepVals, days, hrvCfg, 0.0)
+        val refolded = ChargeBaselines.state(deepVals, days, ChargeBaselines.Metric.HRV, days.last(), 0.0)
         assertTrue("established user keeps a usable baseline after a window switch", refolded.usable)
         assertEquals(48.0, refolded.baseline, 2.0)
 
         // Old behaviour: re-anchoring the epoch to "now" drops every re-scored night → calibrating.
-        val reset = Baselines.foldHistory(deepVals, days, hrvCfg, 4_000_000_000.0)
+        val reset = ChargeBaselines.state(deepVals, days, ChargeBaselines.Metric.HRV, days.last(), 4_000_000_000.0)
         assertTrue("epoch reset drops all nights back to calibrating", !reset.usable)
         assertEquals(BaselineStatus.CALIBRATING, reset.status)
     }
@@ -182,9 +180,10 @@ class HrvBaselineRecalibrationTest {
         )
         val vals: List<Double?> = listOf(90.0, 91.0, 89.0, 90.0, 92.0, 88.0, 54.0, 55.0, 53.0, 54.0, 56.0, 54.0)
 
-        // Bad first week anchors the baseline high before any reset.
-        val before = Baselines.foldHistory(vals, days, hrvCfg, 0.0)
-        assertTrue(before.baseline > 70.0)
+        // Bad first week pulls the baseline well above the real ~54 ms before any reset (the geometric
+        // mean of both weeks, ~70 ms).
+        val before = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), 0.0)
+        assertTrue(before.baseline > 65.0)
 
         // Tap Recalibrate at the start of 2026-06-15; read the epoch back out of the editor double.
         val editor = FakeEditor()
@@ -192,7 +191,7 @@ class HrvBaselineRecalibrationTest {
         Baselines.recalibrateRecoveryBaselines(editor, resetInstant)
         val epoch = editor.longs.getValue(Baselines.hrvBaselineEpochKey).toDouble()
 
-        val after = Baselines.foldHistory(vals, days, hrvCfg, epoch)
+        val after = ChargeBaselines.state(vals, days, ChargeBaselines.Metric.HRV, days.last(), epoch)
         assertEquals(6, after.nValid)            // only the 6 post-reset nights contribute
         assertEquals(54.0, after.baseline, 2.0)  // re-anchored to the real value
         assertTrue(after.baseline < before.baseline - 10.0)
