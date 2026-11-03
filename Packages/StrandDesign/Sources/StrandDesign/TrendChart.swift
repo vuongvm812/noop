@@ -218,6 +218,9 @@ public struct TrendChart: View {
             ? valueRange.lowerBound
             : sorted.map(\.value).reduce(0, +) / Double(sorted.count)
         self.averageValue = avg
+        let times = sorted.map { ChartScrubMath.epochSeconds($0.date) }
+        self.pointTimes = times
+        self.pointCadence = ChartScrubMath.cadence(times)
 
         // The point set handed to the marks: full resolution up to the threshold, else min/max-bucketed
         // to ~the plot pixel width (pixel-identical line, far fewer GPU vertices). Computed once here.
@@ -247,6 +250,11 @@ public struct TrendChart: View {
     /// accessibility stay on the full-resolution `points` so those readouts are unchanged.
     private let displayPoints: [TrendPoint]
 
+    /// `points` as epoch seconds plus their cadence, computed once so the scrub resolves without
+    /// re-deriving them on every pointer event (#58).
+    private let pointTimes: [Int64]
+    private let pointCadence: Int64
+
     private static let sharedDateFormatter: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "EEE d MMM"; return f
     }()
@@ -261,13 +269,15 @@ public struct TrendChart: View {
         value.formatted(.number.precision(.fractionLength(0)))
     }
 
-    /// The point nearest a given chart-local x, using the proxy to map back.
-    private func nearestPoint(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> TrendPoint? {
-        guard !points.isEmpty else { return nil }
-        // Map the cursor x (relative to the plot area) back to a Date.
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return nearestTrendPoint(to: date, in: points)
+    /// What the scrub cursor at chart-local `x` is on: the nearest reading, and the empty slot's date
+    /// when the cursor sits over a missing reading instead (#58).
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> (point: TrendPoint, gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(times: pointTimes, cursor: ChartScrubMath.epochSeconds(date),
+                                               cadence: pointCadence)
+        else { return nil }
+        return (points[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     /// The days the x-axis marks, so the marks and their label format agree about which days are shown.
@@ -351,7 +361,7 @@ public struct TrendChart: View {
                         }
                     }
                 }
-                if showsHover, let selectedPoint = currentSelection {
+                if showsHover, let selectedPoint = currentSelection, holdingBar || largeSelection {
                     RuleMark(x: .value("Date", selectedPoint.date))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                         .foregroundStyle(StrandPalette.textSecondary)
@@ -455,33 +465,46 @@ public struct TrendChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = showsHover ? hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot) } : nil
                 ZStack(alignment: .topLeading) {
-                    if showsHover,
-                       let hx = hoverX,
-                       let p = nearestPoint(toX: hx, proxy: proxy, plot: plot),
-                       let px = proxy.position(forX: p.date),
-                       let py = proxy.position(forY: p.value) {
+                    if let target, let gap = target.gap, let gx = proxy.position(forX: gap) {
+                        // Over a missing reading: the rule marks the empty slot and says so, rather than
+                        // snapping to a neighbour and reporting its value against the wrong day.
+                        let cx = gx + plot.minX
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        if !largeSelection {
+                            PositionedTooltip(
+                                anchor: CGPoint(x: cx, y: plot.midY),
+                                container: geo.size,
+                                tooltip: ChartTooltip(value: ChartScrubMath.noDataText, label: dateFormat(gap))
+                            )
+                        }
+                    } else if let p = target?.point,
+                              let px = proxy.position(forX: p.date),
+                              let py = proxy.position(forY: p.value) {
                         let cx = px + plot.minX
                         let cy = py + plot.minY
                         let color = StrandPalette.sample(stops: gradient.toStops(), at: unit(p.value))
 
-                        // Vertical crosshair at the nearest x.
-                        CrosshairRule(x: cx, height: geo.size.height)
+                        // Bars draw their rule as a RuleMark inside the chart; lines get it here.
+                        if !showsBars {
+                            CrosshairRule(x: cx, height: geo.size.height)
+                            HighlightDot(color: color)
+                                .position(x: cx, y: cy)
+                        }
 
-                        // Highlighted dot on the line.
-                        HighlightDot(color: color)
-                            .position(x: cx, y: cy)
-
-                        // Tooltip near the point, kept in bounds.
-                        PositionedTooltip(
-                            anchor: CGPoint(x: cx, y: cy),
-                            container: geo.size,
-                            tooltip: ChartTooltip(
-                                value: valueFormat(p.value),
-                                label: dateFormat(p.date),
-                                accent: color
+                        // The large read-out above the chart already names the selection.
+                        if !largeSelection {
+                            PositionedTooltip(
+                                anchor: CGPoint(x: cx, y: cy),
+                                container: geo.size,
+                                tooltip: ChartTooltip(
+                                    value: valueFormat(p.value),
+                                    label: dateFormat(p.date),
+                                    accent: color
+                                )
                             )
-                        )
+                        }
                     }
 
                     // "Now" end-cap on the latest point (#458). Positioned with the SAME proxy mapping the
@@ -497,32 +520,14 @@ public struct TrendChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard showsHover, showsBars else { return }
-                        let x = min(max(value.location.x, plot.minX), plot.maxX)
-                        selectedPoint = nearestPoint(toX: x, proxy: proxy, plot: plot)
-                        holdingBar = true
-                        hoverX = largeSelection ? nil : x
-                    }
-                    .onEnded { _ in holdingBar = false; hoverX = nil },
-                    including: showsHover && showsBars ? .all : .none)
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    guard showsHover else { return }
-                    // Update the hover position in a NON-animating transaction. Otherwise entering or
-                    // leaving the chart flips hoverX inside an animated context, the body re-evaluates,
-                    // and SwiftUI Charts re-runs the line's draw-on animation — flickering the curve to a
-                    // flat baseline and back as the cursor crosses the plot edge (#104). The crosshair's
-                    // own fade is the overlay's .animation(value: hoverX) above and is unaffected by this.
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) {
-                        switch phase {
-                        case .active(let location): hoverX = location.x
-                        case .ended: hoverX = nil
-                        }
-                    }
+                .chartScrub($hoverX, enabled: showsHover)
+                .chartScrubHaptic(target.map { $0.gap ?? $0.point.date })
+                .onChangeCompat(of: target.map { $0.gap ?? $0.point.date }) { _ in
+                    // Bars dim every other bar while the cursor is on one, and the large read-out keeps
+                    // the last reading after release.
+                    let onReading = target.flatMap { $0.gap == nil ? $0.point : nil }
+                    holdingBar = onReading != nil
+                    if let onReading { selectedPoint = onReading }
                 }
             }
         }
@@ -540,6 +545,15 @@ public struct TrendChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel.map(Text.init) ?? Text("Trend", bundle: .module))
         .accessibilityValue(Text(a11ySummary))
+        // Audio Graph and the chart explorer: every reading, voiced with the callout's formatters (#58).
+        .accessibilityChartDescriptor(TrendChartAudioGraph(
+            title: accessibilityLabel ?? String(localized: "Trend", bundle: .module),
+            summary: a11ySummary,
+            points: points,
+            valueRange: yDomain ?? valueRange,
+            valueFormat: valueFormat,
+            dateFormat: dateFormat
+        ))
         .accessibilityHidden(!showsHover && accessibilityLabel == nil)
         }
         .onChange(of: points.map(\.date)) { _ in

@@ -1,5 +1,5 @@
 #if !os(watchOS)
-// YearHeatStrip uses .onContinuousHover + .help() tooltips (unavailable on watchOS); the watch
+// YearHeatStrip uses ChartHover helpers + .help() tooltips (unavailable on watchOS); the watch
 // never shows the year heat strip, so the whole view is excluded there. iOS/macOS unchanged.
 import SwiftUI
 
@@ -7,8 +7,8 @@ import SwiftUI
 //
 // A GitHub-style year grid: columns = weeks, rows = weekdays. Each cell is tinted
 // by that day's recovery score via the signature recovery gradient. Empty days
-// (no data) render as a faint inset square. Hover shows a tooltip via SwiftUI's
-// built-in help.
+// (no data) render as a faint inset square. Hover (or a held-then-dragged finger on
+// iOS) rings a cell and shows its date and score, or "No data" (#58).
 
 /// A day's recovery datum for the heat strip.
 public struct RecoveryDay: Identifiable, Sendable {
@@ -64,8 +64,15 @@ public struct YearHeatStrip: View {
     private let gutterWidth: CGFloat = 24
     private let monthLabelHeight: CGFloat = 10
 
-    /// Hovered cell as (weekIndex, row), or nil.
-    @State private var hoverCell: (week: Int, row: Int)? = nil
+    /// The scrub cursor in the grid's local space (pointer hover, click-drag, or a held finger), nil when
+    /// no cursor is shown. A grid needs both coordinates, so this does not use the x-only `.chartScrub`.
+    @State private var scrubPoint: CGPoint? = nil
+
+    /// The cell under the scrub cursor as (weekIndex, row), or nil.
+    private var hoverCell: (week: Int, row: Int)? {
+        guard showsHover, let scrubPoint else { return nil }
+        return cellIndex(at: scrubPoint, weekCount: weeks.count)
+    }
 
     // A fixed Monday-first Gregorian calendar, stored once as a constant rather than a computed
     // property. `buildWeeks()` runs on every render (including each hover, which mutates @State)
@@ -184,14 +191,14 @@ public struct YearHeatStrip: View {
         .onContinuousHover(coordinateSpace: .local) { phase in
             guard showsHover else { return }
             switch phase {
-            case .active(let location):
-                hoverCell = cellIndex(at: location, weekCount: weeks.count)
-            case .ended:
-                hoverCell = nil
+            case .active(let location): setScrub(location)
+            case .ended: setScrub(nil)
             }
         }
-        // ONE collapsed VoiceOver element for the whole calendar. The 365 coloured cells are pure shapes
-        // (hover is dead on touch), and emitting one a11y node PER scored day (the old `cell` did) built
+        .gesture(scrubGesture, including: showsHover ? .all : .none)
+        .chartScrubHaptic(hoverCell.map { $0.week * 7 + $0.row })
+        // ONE collapsed VoiceOver element for the whole calendar. The 365 coloured cells are pure shapes,
+        // and emitting one a11y node PER scored day (the old `cell` did) built
         // an O(days) semantics subtree the accessibility walk re-copied on every scroll — a #707 OOM
         // contributor. `children: .ignore` collapses the grid to this single summary at O(1) node cost.
         .accessibilityElement(children: .ignore)
@@ -208,6 +215,34 @@ public struct YearHeatStrip: View {
         return String(localized: "Recovery calendar, \(scored.count) days, average \(Int(avg.rounded())), low \(Int(lo.rounded())), high \(Int(hi.rounded()))", bundle: .module)
     }
 
+    // MARK: Scrub input
+    //
+    // The two-dimensional twin of `.chartScrub` (ChartScrub.swift), with the same gestures: macOS
+    // click-drag; iOS touch and hold (0.25 s within 8 pt) then drag, so a swipe that moves first still
+    // scrolls the page. Writes are non-animating, as there.
+
+    private func setScrub(_ point: CGPoint?) {
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) { scrubPoint = point }
+    }
+
+    #if os(macOS)
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { setScrub($0.location) }
+    }
+    #else
+    private var scrubGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                if case .second(true, let drag?) = value { setScrub(drag.location) }
+            }
+            .onEnded { _ in setScrub(nil) }
+    }
+    #endif
+
     // MARK: Grid geometry
 
     /// x of the first week column (after the weekday gutter + HStack spacing).
@@ -220,20 +255,19 @@ public struct YearHeatStrip: View {
         return h.week == week && h.row == row
     }
 
-    /// Map a local cursor location to a (week, row) cell, or nil if outside the
-    /// grid or in the inter-cell gaps.
+    /// Map a local cursor location to a (week, row) cell, or nil if outside the grid. A point in the
+    /// spacing between cells belongs to the cell before it, so a dragged cursor never blinks off.
     private func cellIndex(at point: CGPoint, weekCount: Int) -> (week: Int, row: Int)? {
-        let stride = cellSize + spacing
-        let lx = point.x - gridOriginX
-        let ly = point.y - gridOriginY
-        guard lx >= 0, ly >= 0 else { return nil }
+        Self.cellIndex(x: point.x - gridOriginX, y: point.y - gridOriginY,
+                       stride: cellSize + spacing, weekCount: weekCount)
+    }
+
+    /// `cellIndex(at:weekCount:)` over grid-relative coordinates. Pure, so the tests pin it.
+    static func cellIndex(x lx: CGFloat, y ly: CGFloat, stride: CGFloat, weekCount: Int) -> (week: Int, row: Int)? {
+        guard lx >= 0, ly >= 0, stride > 0 else { return nil }
         let week = Int(lx / stride)
         let row = Int(ly / stride)
-        guard week >= 0, week < weekCount, row >= 0, row < 7 else { return nil }
-        // Reject hits in the spacing gutter between cells.
-        let withinX = lx - CGFloat(week) * stride
-        let withinY = ly - CGFloat(row) * stride
-        guard withinX <= cellSize, withinY <= cellSize else { return nil }
+        guard week < weekCount, row < 7 else { return nil }
         return (week, row)
     }
 
@@ -250,9 +284,9 @@ public struct YearHeatStrip: View {
 
     @ViewBuilder
     private func hoverOverlay(weeks: [Week], gridSize: CGSize) -> some View {
-        if showsHover, let h = hoverCell, h.week < weeks.count,
-           let day = weeks[h.week].cells[h.row], let score = day.score {
+        if let h = hoverCell, h.week < weeks.count, let day = weeks[h.week].cells[h.row] {
             let center = cellCenter(week: h.week, row: h.row)
+            let score = day.score
             ZStack(alignment: .topLeading) {
                 // subtle highlight ring on the hovered cell
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
@@ -262,11 +296,14 @@ public struct YearHeatStrip: View {
                 PositionedTooltip(
                     anchor: center,
                     container: gridSize,
-                    tooltip: ChartTooltip(
-                        value: valueFormat(score),
-                        label: "\(DateFormatterCache.day.string(from: day.date)) · \(StrandPalette.recoveryState(score))",
-                        accent: StrandPalette.recoveryColor(score)
-                    )
+                    tooltip: score.map { score in
+                        ChartTooltip(
+                            value: valueFormat(score),
+                            label: "\(DateFormatterCache.day.string(from: day.date)) · \(StrandPalette.recoveryState(score))",
+                            accent: StrandPalette.recoveryColor(score)
+                        )
+                    } ?? ChartTooltip(value: ChartScrubMath.noDataText,
+                                      label: DateFormatterCache.day.string(from: day.date))
                 )
             }
             .animation(StrandMotion.fade, value: h.week)
@@ -326,7 +363,7 @@ private func sampleYear() -> [RecoveryDay] {
 #Preview("YearHeatStrip") {
     VStack(alignment: .leading, spacing: 12) {
         Text("Recovery — past year").strandOverline()
-        Text("Hover a cell: ring + date, score and recovery-state tooltip.")
+        Text("Hover or touch and hold a cell: ring + date, score and recovery-state tooltip.")
             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
         YearHeatStrip(days: sampleYear())
     }

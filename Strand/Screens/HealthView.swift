@@ -408,7 +408,7 @@ struct LiveHRSample: Identifiable, Equatable {
 /// Hover/tooltip (previously missing): reuses the same `CrosshairRule`/`HighlightDot`/`PositionedTooltip`/
 /// `ChartTooltip` components `TrendChart`'s `chartOverlay` uses — no new mechanism. No downsampling here:
 /// the buffer is already capped at 180 samples (#941) and this IS the live, in-progress trace, so every
-/// sample stays significant.
+/// sample stays significant. Scrub: hover or click-drag on the Mac, touch-and-hold then drag on iOS (#58).
 private struct LiveTimeChart: View {
     var samples: [LiveHRSample]
     /// The gradient the line/area is stroked with (the current HR-zone band).
@@ -436,12 +436,14 @@ private struct LiveTimeChart: View {
         StrandPalette.sample(stops: gradient.stops, at: 0.85)
     }
 
-    /// The sample nearest a given chart-local x, matching `TrendChart.nearestPoint`.
-    private func nearestSample(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> LiveHRSample? {
-        guard !samples.isEmpty else { return nil }
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return samples.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+    /// What the cursor at chart-local `x` is on: the nearest sample, and the empty second's time when the
+    /// cursor sits over a dropout in the stream instead (#58), matching `TrendChart.scrubTarget`.
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> (sample: LiveHRSample, gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(dates: samples.map(\.date), cursor: date)
+        else { return nil }
+        return (samples[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     // Map a bpm value onto the unit interval for gradient sampling, same idiom as `TrendChart.unit`.
@@ -495,9 +497,18 @@ private struct LiveTimeChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot) }
                 ZStack(alignment: .topLeading) {
-                    if let hx = hoverX,
-                       let s = nearestSample(toX: hx, proxy: proxy, plot: plot),
+                    if let target, let gap = target.gap, let gx = proxy.position(forX: gap) {
+                        let cx = gx + plot.minX
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        PositionedTooltip(
+                            anchor: CGPoint(x: cx, y: plot.midY),
+                            container: geo.size,
+                            tooltip: ChartTooltip(value: ChartScrubMath.noDataText,
+                                                  label: gap.formatted(.dateTime.hour().minute().second()))
+                        )
+                    } else if let s = target?.sample,
                        let px = proxy.position(forX: s.date),
                        let py = proxy.position(forY: s.bpm) {
                         let cx = px + plot.minX
@@ -518,19 +529,8 @@ private struct LiveTimeChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
-                    // draw-on animation and flickers the curve (mirrors TrendChart #104).
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) {
-                        switch phase {
-                        case .active(let location): hoverX = location.x
-                        case .ended: hoverX = nil
-                        }
-                    }
-                }
+                .chartScrub($hoverX)
+                .chartScrubHaptic(target.map { $0.gap ?? $0.sample.date })
             }
         }
         .clipped()

@@ -139,6 +139,14 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
+import kotlin.math.abs
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.stateDescription
 
 /**
  * Workouts — the activity log, instrument-grade and uniform. Ports the macOS
@@ -852,11 +860,31 @@ private fun CalorieHeatmapSection(recentDays: List<com.noop.data.DailyMetric>) {
                 val topInset = 14.dp    // month row
                 val cols = grid.weeks
                 val cell = ((maxWidth - leftInset - gap * (cols - 1)) / cols).coerceAtLeast(2.dp)
+                // Scrub (#58): a tap selects a day's cell; a hold, or a horizontal drag, then moves
+                // the selection across cells in both directions until the finger lifts.
+                var selectedCell by remember(grid) { mutableStateOf<Pair<Int, Int>?>(null) }
+                val selectedDay = selectedCell?.let { (c, r) -> grid.columns[c][r] }
+                ChartScrubHaptic(selectedCell)
+                val paints = rememberChartScrubPaints()
+                val calloutValue = selectedDay?.let { d -> d.value?.let { "${grouped(it)} kcal" } ?: CHART_SCRUB_NO_DATA }
+                val calloutLabel = selectedDay?.day?.let { heatmapDayLabel(it) }
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val geometry = with(density) {
+                    HeatmapGeometry(leftInset.toPx(), topInset.toPx(), cell.toPx(), gap.toPx(), cols)
+                }
                 Canvas(
                     Modifier
                         .fillMaxWidth()
                         .height(cell * 7 + gap * 6 + topInset)
-                        .semantics { contentDescription = "Active-calorie heatmap, last 13 weeks" },
+                        .heatmapScrub(grid, onRelease = { selectedCell = null }) { pos ->
+                            // A future pad cell has no day to read, so it holds no selection.
+                            selectedCell = heatmapCellAt(geometry, pos.x, pos.y)
+                                ?.takeIf { (c, r) -> grid.columns[c][r].day != null }
+                        }
+                        .semantics {
+                            contentDescription = "Active-calorie heatmap, last 13 weeks"
+                            if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel"
+                        },
                 ) {
                     val gapPx = gap.toPx()
                     val cellPx = cell.toPx()
@@ -911,6 +939,24 @@ private fun CalorieHeatmapSection(recentDays: List<com.noop.data.DailyMetric>) {
                             }
                         }
                     }
+                    val sel = selectedCell
+                    if (sel != null && calloutValue != null) {
+                        val tl = Offset(leftPx + sel.first * (cellPx + gapPx), topPx + sel.second * (cellPx + gapPx))
+                        drawRoundRect(
+                            color = Palette.textPrimary,
+                            topLeft = tl,
+                            size = Size(cellPx, cellPx),
+                            cornerRadius = radius,
+                            style = Stroke(width = 2.dp.toPx()),
+                        )
+                        drawScrubCallout(
+                            anchorX = tl.x + cellPx / 2f,
+                            anchorY = tl.y + cellPx / 2f,
+                            value = calloutValue,
+                            label = calloutLabel,
+                            paints = paints,
+                        )
+                    }
                 }
             }
             Row(
@@ -928,6 +974,80 @@ private fun CalorieHeatmapSection(recentDays: List<com.noop.data.DailyMetric>) {
                 }
                 Text("More", style = NoopType.caption, color = Palette.textTertiary)
             }
+        }
+    }
+}
+
+/** The heatmap's cell layout in pixels: the weekday gutter and month row insets, the square cell
+ *  side and the gap between cells, and the number of week columns. */
+internal data class HeatmapGeometry(
+    val leftPx: Float,
+    val topPx: Float,
+    val cellPx: Float,
+    val gapPx: Float,
+    val cols: Int,
+)
+
+/**
+ * The (column, row) cell nearest to ([x], [y]), clamped onto the grid so a finger drifting into the
+ * gutter or past the edge stays on the closest cell; null when the grid has no columns. Each cell owns
+ * its own square plus the gap that follows it.
+ */
+internal fun heatmapCellAt(g: HeatmapGeometry, x: Float, y: Float): Pair<Int, Int>? {
+    if (g.cols <= 0) return null
+    val pitch = g.cellPx + g.gapPx
+    if (pitch <= 0f) return null
+    val c = kotlin.math.floor((x - g.leftPx) / pitch).toInt().coerceIn(0, g.cols - 1)
+    val r = kotlin.math.floor((y - g.topPx) / pitch).toInt().coerceIn(0, 6)
+    return c to r
+}
+
+/** A heatmap day key ("yyyy-MM-dd") in the screen's own date format, falling back to the raw key. */
+internal fun heatmapDayLabel(day: String): String =
+    runCatching { java.time.LocalDate.parse(day).format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.US)) }
+        .getOrDefault(day)
+
+/**
+ * The heatmap's 2D variant of [chartScrub]: a tap selects the cell under it, and once the touch holds
+ * for 250 ms or moves sideways past the touch slop it tracks the finger in both directions until lift.
+ * A vertical swipe that starts before the hold completes is left to the scrolling parent, as it is on
+ * every other chart.
+ */
+private fun Modifier.heatmapScrub(
+    key: Any?,
+    onRelease: () -> Unit,
+    onScrub: (Offset) -> Unit,
+): Modifier = pointerInput(key) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val slop = viewConfiguration.touchSlop
+        var abandoned = false
+        var tapped = false
+        withTimeoutOrNull(250L) {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change == null || !change.pressed) { tapped = change != null && !change.isConsumed; break }
+                if (change.isConsumed) { abandoned = true; break }
+                val dx = change.position.x - down.position.x
+                val dy = change.position.y - down.position.y
+                if (abs(dx) > slop && abs(dx) > abs(dy)) break
+                if (abs(dy) > slop) { abandoned = true; break }
+            }
+        }
+        if (abandoned) return@awaitEachGesture
+        onScrub(down.position)
+        if (tapped) return@awaitEachGesture
+        try {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Main)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+                onScrub(change.position)
+                change.consume()
+            }
+        } finally {
+            onRelease()
         }
     }
 }
@@ -1908,7 +2028,36 @@ private fun RecoveryTrendChart(
     val xMax = points.last().startTs
     val chartDescription = uiString(R.string.l10n_workouts_screen_hrr_chart_accessibility_516)
 
-    Canvas(modifier = modifier.semantics { contentDescription = chartDescription }) {
+    // Scrub cursor (#58): snaps to the nearest workout by start time. Workouts are irregular, so the
+    // cadence is 0 and the space between two sessions never reads as a gap.
+    var scrubX by remember(points) { mutableStateOf<Float?>(null) }
+    var chartW by remember { mutableStateOf(0f) }
+    val times = remember(points) { points.map { it.startTs } }
+    val selected = scrubX?.let { x ->
+        val cursorTs = if (xMax == xMin || chartW <= 0f) xMin
+            else xMin + ((x / chartW).coerceIn(0f, 1f) * (xMax - xMin)).roundToLong()
+        chartScrubResolve(times, cursorTs, cadence = 0)?.index
+    }
+    ChartScrubHaptic(selected)
+    val paints = rememberChartScrubPaints()
+    val hrrLabels = Triple(
+        uiString(R.string.l10n_workouts_screen_hrr_one_minute_516),
+        uiString(R.string.l10n_workouts_screen_hrr_two_minutes_516),
+        uiString(R.string.l10n_workouts_screen_hrr_five_minutes_516),
+    )
+    val bpmUnit = uiString(R.string.l10n_workouts_screen_hrr_bpm_516)
+    val calloutValue = selected?.let { hrrScrubValue(points[it].result, hrrLabels, bpmUnit) }
+    val calloutLabel = selected?.let { dateLabel(points[it].startTs) }
+
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { chartW = it.width.toFloat() }
+            .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics {
+                contentDescription = chartDescription
+                if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel"
+            },
+    ) {
         val gridColor = Palette.hairline
         repeat(4) { index ->
             val y = size.height * index / 3f
@@ -1942,7 +2091,37 @@ private fun RecoveryTrendChart(
         drawSeries(oneColor) { it.after1Minute }
         drawSeries(twoColor) { it.after2Minutes }
         drawSeries(fiveColor) { it.after5Minutes }
+
+        if (selected != null && calloutValue != null) {
+            val p = points[selected]
+            val sx = x(p.startTs)
+            // Three series share one rule, so each recorded minute gets its own ringed dot and the
+            // shared cursor draws only the rule and callout.
+            listOf(
+                oneColor to p.result.after1Minute,
+                twoColor to p.result.after2Minutes,
+                fiveColor to p.result.after5Minutes,
+            ).forEach { (color, v) ->
+                if (v != null) {
+                    drawCircle(Palette.surfaceBase, radius = 6.dp.toPx(), center = Offset(sx, y(v)))
+                    drawCircle(color, radius = 4.5.dp.toPx(), center = Offset(sx, y(v)))
+                }
+            }
+            drawScrubCursor(sx, null, oneColor, calloutValue, calloutLabel, paints)
+        }
     }
+}
+
+/** The HRR scrub callout's value line: "1 min 25 · 2 min 40 · 5 min – bpm", with a dash for a minute
+ *  window the strap did not record, matching the per-workout readout. */
+internal fun hrrScrubValue(
+    result: HeartRateRecovery.Result,
+    labels: Triple<String, String, String>,
+    bpmUnit: String,
+): String {
+    fun v(x: Int?) = x?.toString() ?: "–"
+    return "${labels.first} ${v(result.after1Minute)} · ${labels.second} ${v(result.after2Minutes)} · " +
+        "${labels.third} ${v(result.after5Minutes)} $bpmUnit"
 }
 
 /**

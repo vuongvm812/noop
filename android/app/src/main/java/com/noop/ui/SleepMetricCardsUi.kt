@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,12 +41,18 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noop.analytics.SleepDebtLedger
 import com.noop.data.SleepSession
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.time.LocalDate
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.TimeZone
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
@@ -231,13 +240,26 @@ private fun DebtDeltaBars(ledger: SleepDebtLedger) {
     val accentColor = Palette.accent
     val deficitColor = Palette.metricRose
     val centreColor = Palette.hairline
+    // #58: scrub a bar to read that night's surplus or deficit and which night it was.
+    var scrubX by remember(ledger) { mutableStateOf<Float?>(null) }
+    var boxW by remember { mutableStateOf(0f) }
+    val fractions = remember(deltas.size) { slotCentreFractions(deltas.size) }
+    val scrubIndex = scrubX?.takeIf { deltas.isNotEmpty() }?.let { chartScrubNearestIndex(fractions, boxW, it) }
+    ChartScrubHaptic(scrubIndex)
+    val scrubNight = scrubIndex?.let { ledger.nights.getOrNull(it) }
+    val scrubValue = scrubNight?.let { debtSigned(it.deltaMin) }
+    val scrubLabel = scrubNight?.let { debtNightLabel(it.day) }
+    val paints = rememberChartScrubPaints()
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
+            .onSizeChanged { boxW = it.width.toFloat() }
+            .chartScrub(ledger, onRelease = { scrubX = null }) { scrubX = it }
             .semantics {
                 contentDescription =
                     uiString(R.string.l10n_sleep_screen_per_night_sleep_balance_ledger_nightcount_f339d0ab, ledger.nightCount, debtSigned(ledger.balanceMin))
+                if (scrubValue != null) stateDescription = "$scrubValue, $scrubLabel"
             }
             .drawBehind {
                 val n = max(deltas.size, 1)
@@ -264,8 +286,46 @@ private fun DebtDeltaBars(ledger: SleepDebtLedger) {
                         cornerRadius = CornerRadius(2f, 2f),
                     )
                 }
+                val i = scrubIndex
+                val night = scrubNight
+                if (i != null && night != null && scrubValue != null) {
+                    val accent = if (night.deltaMin >= 0.0) accentColor else deficitColor
+                    drawScrubCursor(slot * i + slot / 2f, null, accent, scrubValue, scrubLabel, paints)
+                }
             },
     )
+}
+
+/** Centre of each of [count] equal slots as a 0..1 fraction: where a slotted bar chart draws its bars. */
+internal fun slotCentreFractions(count: Int): List<Float> =
+    List(count) { (it + 0.5f) / count }
+
+/**
+ * A debt-ledger night named by the EVENING it belongs to. The ledger's day key is the wake day (sleep
+ * rows are keyed by the day the night ends on), so this steps back one day, the same naming the
+ * night header uses (`clockLabel`, #2199). Falls back to the raw key when it does not parse.
+ */
+internal fun debtNightLabel(day: String): String =
+    runCatching {
+        LocalDate.parse(day).minusDays(1).format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US))
+    }.getOrDefault(day)
+
+/**
+ * A consistency bar's callout: the bed-to-wake window as clock times (value) and the night it belongs
+ * to (label), built the same way the night header builds `clockLabelFor`: the date is the wake day
+ * minus one in [zone], the times are the true onset and wake.
+ */
+internal fun consistencyScrubText(
+    onsetTs: Long,
+    wakeTs: Long,
+    is24h: Boolean,
+    zone: java.time.ZoneId = TimeZone.getDefault().toZoneId(),
+): Pair<String, String> {
+    val timeFmt = DateTimeFormatter.ofPattern(com.noop.analytics.ClockFormat.hourMinutePattern(is24h), Locale.US)
+    val onset = Instant.ofEpochSecond(onsetTs).atZone(zone).format(timeFmt)
+    val wake = Instant.ofEpochSecond(wakeTs).atZone(zone).format(timeFmt)
+    val nightDay = Instant.ofEpochSecond(wakeTs).atZone(zone).toLocalDate().minusDays(1)
+    return "$onset - $wake" to nightDay.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US))
 }
 
 // MARK: - Stages (read-only latest-night host card)
@@ -950,7 +1010,13 @@ internal fun ConsistencyHostCard(m: SleepModel) {
 // MARK: - Sleep Consistency card
 
 /** One night's bed/wake fold for [SleepConsistencyCard], memoized off `sleeps` (#perf). */
-private data class SleepNightTiming(val label: String, val bedHour: Float, val wakeHour: Float)
+private data class SleepNightTiming(
+    val label: String,
+    val bedHour: Float,
+    val wakeHour: Float,
+    val onsetTs: Long,
+    val wakeTs: Long,
+)
 
 /**
  * Sleep-consistency chart: for the trailing 14 sessions, draws each night's bed→wake window
@@ -981,7 +1047,7 @@ internal fun SleepConsistencyCard(
             // Fold an evening bedtime to a negative hour so it sorts ABOVE the next-day wake on the axis.
             val bedNorm = if (bedH > 12f) bedH - 24f else bedH
             val wakeH = wakeCal.get(Calendar.HOUR_OF_DAY) + wakeCal.get(Calendar.MINUTE) / 60f
-            SleepNightTiming(sdf.format(Date(wakeTs * 1000L)), bedNorm, wakeH)
+            SleepNightTiming(sdf.format(Date(wakeTs * 1000L)), bedNorm, wakeH, onsetTs, wakeTs)
         }
     }
     if (timings.size < 3) return
@@ -1031,14 +1097,34 @@ internal fun SleepConsistencyCard(
             val purpleColor = Palette.metricPurple
             val hairlineColor = Palette.hairline
             val labelArgb = Palette.textTertiary.toArgb()
+            // #58: scrub a night's bar to read its bed and wake times and the night it belongs to.
+            // The bars sit in equal slots right of the 52px label gutter, so the hit test does too.
+            val yAxisPx = 52f
+            var scrubX by remember(timings) { mutableStateOf<Float?>(null) }
+            var boxW by remember { mutableStateOf(0f) }
+            val fractions = remember(timings.size) { slotCentreFractions(timings.size) }
+            val scrubIndex = scrubX?.let {
+                chartScrubNearestIndex(fractions, (boxW - yAxisPx).coerceAtLeast(0f), it - yAxisPx)
+            }
+            ChartScrubHaptic(scrubIndex)
+            val is24h = ClockPrefs.uses24Hour(LocalContext.current)
+            val scrubText = scrubIndex?.let { timings.getOrNull(it) }?.let {
+                consistencyScrubText(it.onsetTs, it.wakeTs, is24h)
+            }
+            val paints = rememberChartScrubPaints()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(160.dp)
                     .clip(RoundedCornerShape(Metrics.cornerSm))
-                    .semantics { contentDescription = uiString(R.string.l10n_sleep_screen_sleep_consistency_nightly_bed_and_wake_14526f89) }
+                    .onSizeChanged { boxW = it.width.toFloat() }
+                    .chartScrub(timings, onRelease = { scrubX = null }) { scrubX = it }
+                    .semantics {
+                        contentDescription = uiString(R.string.l10n_sleep_screen_sleep_consistency_nightly_bed_and_wake_14526f89)
+                        scrubText?.let { (v, l) -> stateDescription = "$v, $l" }
+                    }
                     .drawBehind {
-                        val yAxisW = 52f
+                        val yAxisW = yAxisPx
                         val chartW = size.width - yAxisW
                         val chartH = size.height
 
@@ -1092,6 +1178,11 @@ internal fun SleepConsistencyCard(
                                 drawLine(col.copy(alpha = 0.7f), Offset(x, y), Offset(minOf(x + dashLen, size.width), y), strokeWidth = 2f)
                                 x += dashLen + gapLen
                             }
+                        }
+                        val i = scrubIndex
+                        val text = scrubText
+                        if (i != null && text != null) {
+                            drawScrubCursor(yAxisW + step * i + step / 2f, null, accentColor, text.first, text.second, paints)
                         }
                     },
             ) {}

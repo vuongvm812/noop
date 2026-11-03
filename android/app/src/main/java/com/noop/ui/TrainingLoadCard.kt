@@ -12,6 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -101,24 +109,52 @@ private fun TwoLineChart(points: List<TrainingLoadEngine.Point>, modifier: Modif
     val atl = Palette.metricAmber
     // Shared y-scale over BOTH series so the gap between the lines is a faithful TSB.
     val maxY = points.fold(1.0) { acc, p -> max(acc, max(p.chronicLoad, p.acuteLoad)) }
-    Canvas(modifier) {
+    // Scrub cursor (#58): one daily point per index, evenly spaced, so the nearest index is the day.
+    var scrubX by remember(points) { mutableStateOf<Float?>(null) }
+    var chartW by remember { mutableStateOf(0f) }
+    val selected = scrubX?.takeIf { points.size >= 2 }?.let { x ->
+        chartScrubNearestIndex(chartScrubIndexFractions(points.size), chartW, x)
+    }
+    ChartScrubHaptic(selected)
+    val paints = rememberChartScrubPaints()
+    val calloutValue = selected?.let { trainingLoadScrubValue(points[it]) }
+    val calloutLabel = selected?.let { lastChargeDateLabel(points[it].day) }
+    Canvas(
+        modifier
+            .onSizeChanged { chartW = it.width.toFloat() }
+            .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { if (calloutValue != null) stateDescription = "$calloutValue, $calloutLabel" },
+    ) {
         val n = points.size
         if (n < 2) return@Canvas
         val w = size.width
         val h = size.height
+        fun yOf(v: Double): Float = h - (v / maxY).toFloat() * h
         fun path(value: (TrainingLoadEngine.Point) -> Double): Path {
             val p = Path()
             points.forEachIndexed { i, pt ->
                 val x = w * i / (n - 1)
-                val y = h - (value(pt) / maxY).toFloat() * h
+                val y = yOf(value(pt))
                 if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
             }
             return p
         }
         drawPath(path { it.chronicLoad }, color = ctl, style = Stroke(width = 3f))
         drawPath(path { it.acuteLoad }, color = atl, style = Stroke(width = 3f))
+        if (selected != null && calloutValue != null) {
+            val x = w * selected / (n - 1)
+            val pt = points[selected]
+            // The ATL dot comes from the shared cursor; the CTL one is drawn here in its own colour.
+            drawCircle(color = Palette.surfaceBase, radius = 6.dp.toPx(), center = Offset(x, yOf(pt.chronicLoad)))
+            drawCircle(color = ctl, radius = 4.5.dp.toPx(), center = Offset(x, yOf(pt.chronicLoad)))
+            drawScrubCursor(x, yOf(pt.acuteLoad), atl, calloutValue, calloutLabel, paints)
+        }
     }
 }
+
+/** The scrub callout's value line for one day: both loads, under the acronyms the card's stat row uses. */
+internal fun trainingLoadScrubValue(point: TrainingLoadEngine.Point): String =
+    "CTL ${fmt(point.chronicLoad)} · ATL ${fmt(point.acuteLoad)}"
 
 @Composable
 private fun LegendDot(color: Color, label: String) {

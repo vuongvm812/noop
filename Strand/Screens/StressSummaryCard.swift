@@ -28,11 +28,17 @@ struct StressSummaryCard: View {
                 } else if let reading {
                     figures(reading)
                     if reading.points.count >= 2 {
-                        Sparkline(values: reading.points.map(\.level),
+                        // The scrub cursor (#58) is live only on the Stress screen. With the chevron the
+                        // card is a link to that screen, and a scrub would compete with the press that
+                        // opens it.
+                        let points = reading.points
+                        Sparkline(values: points.map(\.level),
                                   gradient: Gradient(colors: [StrandPalette.stressColor.opacity(0.5),
                                                               StrandPalette.stressColor]),
                                   range: 0...reading.scaleMax,
-                                  showsHover: false)
+                                  showsHover: !showsChevron,
+                                  valueFormat: { Self.format($0, source: reading.source) },
+                                  indexLabel: { Self.timeLabel(points[$0].ts) })
                             .frame(height: 36)
                             .accessibilityHidden(true)
                     }

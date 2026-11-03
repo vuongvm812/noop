@@ -6,8 +6,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +37,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -47,12 +44,13 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -72,6 +70,7 @@ import java.time.ZoneId
 import java.util.Locale
 import kotlin.math.exp
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -710,10 +709,9 @@ private fun StressDaytimeSection(
 /**
  * The stress curve as a card for the Today screen, mirroring the home-screen widget.
  *
- * READ-ONLY on purpose. The Stress tab's own timeline is the interactive one, with scrubbing, a
- * crosshair and per-hour tooltips; hosting that here would put two live charts on two screens fighting
- * over the same gestures. This is the same rule the Sleep tab's hosted "Stages" card follows, where the
- * Today host mirrors only the display.
+ * Scrubbable through the shared chart cursor (#58): a tap or a horizontal drag reads the level and clock
+ * time of the nearest point, and an unscored point reads "No data". A vertical swipe still scrolls the
+ * Today page, because `chartScrub` hands it to the scroll parent.
  *
  * Geometry comes from [StressTrace], the same pure helper the widget draws through, so the card and the
  * widget cannot disagree about where an hour sits, where the line breaks or which hours are high. Only
@@ -734,6 +732,17 @@ internal fun StressTodayCard(
     val calm = StressRamp.CALM
     val steady = StressRamp.STEADY
     val tense = StressRamp.TENSE
+    val accent = Palette.stressColor
+    val paints = rememberChartScrubPaints()
+    var scrubX by remember(points) { mutableStateOf<Float?>(null) }
+    var traceWidth by remember { mutableStateOf(0f) }
+    val hit = scrubX?.let { stressTraceScrubHit(points, it, traceWidth) }
+    ChartScrubHaptic(hit?.let { it.index to it.gapAt })
+    val callout = hit?.let { h ->
+        val level = if (h.gapAt == null) points[h.index].level else null
+        (level?.let { StressTrace.formatLevel(it) } ?: CHART_SCRUB_NO_DATA) to
+            pointTimeLabel(h.gapAt ?: points[h.index].ts)
+    }
 
     NoopCard(tint = Palette.stressColor, modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -804,7 +813,10 @@ internal fun StressTodayCard(
                         Canvas(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(Metrics.chartHeight),
+                                .height(Metrics.chartHeight)
+                                .onSizeChanged { traceWidth = it.width.toFloat() }
+                                .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
+                                .semantics { callout?.let { stateDescription = "${it.first}, ${it.second}" } },
                         ) {
                             val w = size.width
                             val h = size.height
@@ -880,6 +892,18 @@ internal fun StressTodayCard(
                                     cornerRadius = CornerRadius(markH / 2f, markH / 2f),
                                 )
                             }
+                            // The shared scrub cursor, placed on the same time axis as the trace.
+                            if (hit != null && callout != null) {
+                                val t0 = points.first().ts
+                                val span = (points.last().ts - t0).toFloat()
+                                val at = hit.gapAt ?: points[hit.index].ts
+                                val cx = if (span <= 0f) 0f else (at - t0) / span * w
+                                val level = if (hit.gapAt == null) points[hit.index].level else null
+                                val cy = level?.let {
+                                    chartH - (it / StressTrace.DOMAIN_MAX).toFloat().coerceIn(0f, 1f) * chartH
+                                }
+                                drawScrubCursor(cx, cy, accent, callout.first, callout.second, paints)
+                            }
                         }
                         // Evenly spread, which is only honest because the ticks now span the same series
                         // the chart does. While they named the last SCORED hour, the right-hand label sat
@@ -917,6 +941,19 @@ internal fun StressTodayCard(
 }
 
 /**
+ * Where a scrub at [x] across a trace [width] pixels wide lands, on the same time axis [StressTrace]
+ * places the points on. An unscored point is still a point in the series, so it resolves to its own
+ * index (and reads "No data" through its null level); only a slot missing from the series is a gap.
+ */
+internal fun stressTraceScrubHit(points: List<StressPoint>, x: Float, width: Float): ChartScrubHit? {
+    if (points.isEmpty()) return null
+    val t0 = points.first().ts
+    val span = points.last().ts - t0
+    val cursor = if (span <= 0L || width <= 0f) t0 else t0 + ((x / width).coerceIn(0f, 1f) * span).roundToLong()
+    return chartScrubResolve(points.map { it.ts }, cursor)
+}
+
+/**
  * A point's clock time, in the device's own short format.
  *
  * NOT [hourLabel]: that renders an hour-of-day and nothing finer, which was correct while every point
@@ -931,8 +968,9 @@ private fun pointTimeLabel(ts: Long): String =
 
 // MARK: - Daytime autonomic-load line (gradient, same scale as the gauge)
 //
-// Interactive Canvas line over the scored waking hours. Tap or drag to scrub across hours
-// and see the stress level at a specific time in a tooltip pill. The Y-axis shows the 0–3
+// Interactive Canvas line over the scored waking hours. Tap, drag, or touch-and-hold then drag to
+// scrub across the timeline through the shared chart cursor (#58): the callout names the level and
+// clock time of the nearest point, or "No data" over an unscored one. The Y-axis shows the 0–3
 // scale with hairline grid lines. Unscored hours break the line (honest gap, no interpolation).
 
 // Width reserved for the Y-axis labels. Matches the start padding on the X-axis ruler row.
@@ -943,21 +981,35 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
     val levels = remember(hours) { hours.map { it.level } }
     if (levels.size < 2) return
 
-    var scrubFrac by remember { mutableStateOf<Float?>(null) }
+    var scrubX by remember(hours) { mutableStateOf<Float?>(null) }
+    var lineWidth by remember { mutableStateOf(0f) }
 
     // Capture Compose colors at composition time — DrawScope lambdas run on the render thread.
     val hairline = Palette.hairline
     val textTertiary = Palette.textTertiary
-    val textPrimary = Palette.textPrimary
     val stressColor = Palette.stressColor
     val yAxisPx = with(LocalDensity.current) { stressYAxisWidth.toPx() }
+    val paints = rememberChartScrubPaints()
+    // The plotted points sit evenly across the plot area right of the y-axis labels.
+    val scrubIdx = scrubX?.let {
+        chartScrubNearestIndex(
+            chartScrubIndexFractions(levels.size),
+            (lineWidth - yAxisPx).coerceAtLeast(1f),
+            it - yAxisPx,
+        )
+    }
+    ChartScrubHaptic(scrubIdx)
+    val callout = scrubIdx?.let { i ->
+        val pt = hours[i]
+        (pt.level?.let { StressTrace.formatLevel(it) } ?: CHART_SCRUB_NO_DATA) to pointTimeLabel(pt.startTs)
+    }
 
     // PERF (#scroll-jank — drawing-bound): this chart is scrubbable, so a finger drag re-records the
     // whole Canvas at ~60fps. Previously every frame rebuilt the gradient line + fill Paths and the
     // axis Paint from scratch, even though only the crosshair moves. Split the chart into two layers:
     //   • a STATIC base — the axis grid/labels and the gradient line+fill — drawn via `drawWithCache`,
     //     which rebuilds the Paths + label Paint ONLY when `levels`/size change (NOT per scrub frame);
-    //   • a thin DYNAMIC overlay Canvas — just the crosshair, dot and tooltip — that reads `scrubFrac`.
+    //   • a thin DYNAMIC overlay Canvas — just the shared scrub cursor — that reads the selection.
     // The geometry (yAxisPx, 8dp top/bot pad, yFor, stepX) is byte-identical to the old single Canvas,
     // and the two layers share the same Box bounds, so the rendered pixels are unchanged. Hoisted Paints.
     val labelPaint = remember(textTertiary) {
@@ -966,15 +1018,6 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
             textSize = 22f
             textAlign = android.graphics.Paint.Align.RIGHT
             color = textTertiary.toArgb()
-        }
-    }
-    val tooltipPaint = remember(textPrimary) {
-        android.graphics.Paint().apply {
-            isAntiAlias = true
-            textSize = 26f
-            color = textPrimary.toArgb()
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            textAlign = android.graphics.Paint.Align.CENTER
         }
     }
 
@@ -986,29 +1029,15 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
             .fillMaxWidth()
             .height(100.dp)
             .clip(RoundedCornerShape(Metrics.cornerSm))
-            .semantics { contentDescription = daytimeLineDescription(hours) }
-            .pointerInput(hours) {
-                // Single gesture handler: first touch shows the crosshair; dragging scrubs
-                // across hours; lifting the finger clears it.
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val chartW = (size.width - yAxisPx).coerceAtLeast(1f)
-                    scrubFrac = ((down.position.x - yAxisPx) / chartW).coerceIn(0f, 1f)
-                    var ptr = down
-                    while (ptr.pressed) {
-                        val event = awaitPointerEvent()
-                        ptr = event.changes.firstOrNull() ?: break
-                        if (ptr.pressed) {
-                            ptr.consume()
-                            scrubFrac = ((ptr.position.x - yAxisPx) / chartW).coerceIn(0f, 1f)
-                        }
-                    }
-                    scrubFrac = null
-                }
-            },
+            .semantics {
+                contentDescription = daytimeLineDescription(hours)
+                callout?.let { stateDescription = "${it.first}, ${it.second}" }
+            }
+            .onSizeChanged { lineWidth = it.width.toFloat() }
+            .chartScrub(hours, onRelease = { scrubX = null }) { scrubX = it },
     ) {
         // STATIC base layer — axis + gradient line/fill. `drawWithCache` rebuilds the cached Paths only
-        // when the chart's size or `levels` change (the cache block reads neither `scrubFrac`), so a
+        // when the chart's size or `levels` change (the cache block reads neither `scrubX`), so a
         // scrub drag never re-walks the run-builder or re-allocates Paths. Same draw order as before.
         Box(
             modifier = Modifier
@@ -1111,13 +1140,14 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
                 },
         )
 
-        // DYNAMIC overlay — crosshair + dot + tooltip pill, drawn only while the finger is down. A thin
+        // DYNAMIC overlay — the shared scrub cursor, drawn only while a point is selected. A thin
         // Canvas that re-records on each scrub frame; the heavy static Paths above are untouched.
         Canvas(modifier = Modifier.matchParentSize()) {
             val w = size.width
             val h = size.height
             if (w <= 0f || h <= 0f) return@Canvas
-            val frac = scrubFrac ?: return@Canvas
+            val idx = scrubIdx ?: return@Canvas
+            val (value, label) = callout ?: return@Canvas
 
             val topPad = 8.dp.toPx()
             val botPad = 8.dp.toPx()
@@ -1125,44 +1155,9 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
             val chartLeft = yAxisPx
             val chartW = (w - chartLeft).coerceAtLeast(1f)
             val stepX = if (levels.size > 1) chartW / (levels.size - 1) else chartW
-
-            val scrubIdx = (frac * (levels.size - 1)).roundToInt().coerceIn(0, levels.size - 1)
-            val scrubX = chartLeft + scrubIdx * stepX
-            val pt = hours[scrubIdx]
-
-            // Dashed vertical crosshair at the selected hour.
-            drawLine(
-                color = textTertiary,
-                start = Offset(scrubX, topPad),
-                end = Offset(scrubX, h - botPad),
-                strokeWidth = 1.5.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f)),
-            )
-
-            val lvl = pt.level
-            if (lvl != null) {
-                val dotY = yFor(lvl, topPad, usable)
-                // Ring dot at the scrubbed point.
-                drawCircle(color = stressColor, radius = 5.dp.toPx(), center = Offset(scrubX, dotY))
-                drawCircle(color = Palette.tipCore, radius = 2.5.dp.toPx(), center = Offset(scrubX, dotY))
-
-                // Tooltip pill: "9 am · 1.4" — avoid String.format; use integer tenths.
-                val tenths = (lvl * 10).roundToInt().coerceIn(0, 30)
-                val label = uiString(R.string.l10n_stress_screen_hourlabel_pt_hour_tenths_10_tenths_cd4c9c16, hourLabel(pt.hour), tenths / 10, tenths % 10)
-                val textW = tooltipPaint.measureText(label)
-                val pillPad = 10f
-                val pillW = textW + pillPad * 2
-                val pillH = 34f
-                val pillX = (scrubX - pillW / 2f).coerceIn(chartLeft, w - pillW)
-                val pillY = (dotY - pillH - 10.dp.toPx()).coerceAtLeast(topPad)
-                drawRoundRect(
-                    color = stressColor.copy(alpha = 0.18f),
-                    topLeft = Offset(pillX, pillY),
-                    size = Size(pillW, pillH),
-                    cornerRadius = CornerRadius(pillH / 2),
-                )
-                drawContext.canvas.nativeCanvas.drawText(label, pillX + pillW / 2f, pillY + pillH * 0.68f, tooltipPaint)
-            }
+            val cursorX = chartLeft + idx * stepX
+            val dotY = hours[idx].level?.let { yFor(it, topPad, usable) }
+            drawScrubCursor(cursorX, dotY, stressColor, value, label, paints)
         }
     }
 }

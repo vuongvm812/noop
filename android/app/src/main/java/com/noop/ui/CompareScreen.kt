@@ -7,8 +7,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,11 +47,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -848,32 +847,43 @@ private fun OverlayChart(series: List<CompareSeries>, modifier: Modifier) {
         )
     }
     var selectedDay by remember(prepared) { mutableStateOf<String?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val context = LocalContext.current
+    val unitSystem = UnitPrefs.system(context)
+    val tempUnit = UnitPrefs.temperature(context)
 
-    fun selectDay(x: Float, width: Float) {
+    fun selectDay(x: Float) {
         selectedDay = nearestCompareDayForX(
             dayIndex = prepared.dayIndex,
             minOrd = prepared.minOrd,
             maxOrd = prepared.maxOrd,
-            width = width,
+            width = chartWidth,
             x = x,
         )
     }
 
+    // A light tick each time the cursor snaps to a different day.
+    ChartScrubHaptic(selectedDay)
+
+    // TalkBack reads the selected day and every series' value on it, the same text the tooltip shows.
+    val selectionDescription = selectedDay?.let { day ->
+        compareSelectionDescription(
+            dayLabel = prettyCompareDay(day),
+            rows = prepared.perSeries.map { preparedSeries ->
+                val source = preparedSeries.source
+                source.metric.title to preparedSeries.pointsByDay[day]?.value?.let {
+                    source.metric.format(it, unitSystem, tempUnit)
+                }
+            },
+        )
+    }
+
+    // The shared chart scrub (#58): a tap selects a day, a horizontal drag or a touch-and-hold scrubs,
+    // and a vertical swipe stays with the page scroll. A scrub clears when the finger lifts.
     val selectionModifier = Modifier
-        .pointerInput(prepared.dayIndex) {
-            detectTapGestures(onTap = { offset -> selectDay(offset.x, size.width.toFloat()) })
-        }
-        .pointerInput(prepared.dayIndex) {
-            detectHorizontalDragGestures(
-                onDragStart = { start -> selectDay(start.x, size.width.toFloat()) },
-                onHorizontalDrag = { change, _ ->
-                    selectDay(change.position.x, size.width.toFloat())
-                    change.consume()
-                },
-                onDragEnd = { selectedDay = null },
-                onDragCancel = { selectedDay = null },
-            )
-        }
+        .onSizeChanged { chartWidth = it.width.toFloat() }
+        .chartScrub(prepared.dayIndex, onRelease = { selectedDay = null }) { x -> selectDay(x) }
+        .semantics { selectionDescription?.let { stateDescription = it } }
 
     // Build the per-series Paths in drawWithCache — rebuilt only when the prepared pairs or the canvas
     // size change (NOT on unrelated recompositions), instead of allocating a fresh Path every frame.
@@ -1045,6 +1055,14 @@ private data class OverlayPreparedSeries(
 ) {
     val pointsByDay: Map<String, OverlayPreparedPoint> = points.associateBy { it.day }
 }
+
+/**
+ * The overlay selection as one spoken line: the day, then each series' title and formatted value, with
+ * "No data" for a series that has no reading on that day.
+ */
+internal fun compareSelectionDescription(dayLabel: String, rows: List<Pair<String, String?>>): String =
+    (listOf(dayLabel) + rows.map { (title, value) -> "$title ${value ?: CHART_SCRUB_NO_DATA}" })
+        .joinToString(", ")
 
 /**
  * Maps a chart x-coordinate to the nearest day that has at least one value. The union may be sparse

@@ -2,9 +2,6 @@ package com.noop.ui
 
 import com.noop.analytics.StagePercentages
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
@@ -34,8 +31,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -43,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalDensity
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.abs
@@ -123,6 +126,19 @@ internal fun hypnogramSummary(stages: List<Pair<String, Float>>): String {
         }
     }
     return if (parts.isEmpty()) "Sleep stages, no data" else "Sleep stages, " + parts.joinToString(", ")
+}
+
+/**
+ * Per-reading TalkBack access on a chart's ONE collapsed node (#58), keeping the single-node design
+ * above: the selected reading's callout text as the node's state, and Next/Previous point actions that
+ * move the selection, so a screen-reader user can step through the readings a finger would scrub.
+ */
+private fun SemanticsPropertyReceiver.chartScrubSemantics(spoken: String?, onStep: (forward: Boolean) -> Unit) {
+    if (spoken != null) stateDescription = spoken
+    customActions = listOf(
+        CustomAccessibilityAction("Next point") { onStep(true); true },
+        CustomAccessibilityAction("Previous point") { onStep(false); true },
+    )
 }
 
 // MARK: - Shared geometry helpers
@@ -256,12 +272,20 @@ private fun DrawScope.drawBaseline(color: Color = Palette.hairline) {
 /**
  * Tiny inline line, no axes — for use inside tiles and list rows. Draws a single
  * smooth-capped stroke spanning the full width. Empty/flat data renders a baseline.
+ *
+ * Scrubbable (#58) by a horizontal drag or a touch-and-hold, never by a plain tap: sparklines sit in
+ * tiles that are themselves tappable, and a tap belongs to the tile. The cursor clears on release, since
+ * nothing else in a tile could dismiss it. The callout floats ABOVE the strip, which is too short to hold
+ * it. [formatValue] and [selectionLabels] (index-aligned with [values]) name the reading, as on LineChart.
  */
 @Composable
 fun Sparkline(
     values: List<Double>,
     modifier: Modifier = Modifier,
     color: Color = Palette.accent,
+    selectionEnabled: Boolean = true,
+    formatValue: ((Double) -> String)? = null,
+    selectionLabels: List<String>? = null,
 ) {
     // PERF (#scroll-jank): the point mapping + Path were rebuilt inside the Canvas draw lambda EVERY
     // frame. drawWithCache tessellates the Path ONCE (keyed on the values + size — the cache block
@@ -271,27 +295,60 @@ fun Sparkline(
     // summary instead of walking the canvas. clearAndSetSemantics drops any child nodes (there are none
     // here) and contributes exactly this contentDescription. Changes no drawing.
     val axSummary = seriesSummary(values, "Trend")
+    val cleanValues = remember(values) { values.filter { it.isFinite() } }
+    val cleanLabels = remember(values, selectionLabels) {
+        if (selectionLabels == null || selectionLabels.size != values.size) null
+        else values.indices.filter { values[it].isFinite() }.map { selectionLabels[it] }
+    }
+    val fractions = remember(cleanValues) { chartScrubIndexFractions(cleanValues.size) }
+    var selectedIndex by remember(cleanValues) { mutableIntStateOf(-1) }
+    var chartWidth by remember { mutableIntStateOf(0) }
+    ChartScrubHaptic(selectedIndex.takeIf { it >= 0 })
+    val paints = rememberChartScrubPaints()
+    val staticSpark = remember(values, color, Palette.hairline) {
+        Modifier.drawWithCache {
+            val strokePx = 2f
+            val pad = strokePx
+            val pts = pointsFor(values, size.width, size.height, pad, pad)
+            if (pts.isEmpty()) {
+                onDrawBehind { drawBaseline() }
+            } else {
+                val path = Path().apply {
+                    moveTo(pts.first().x, pts.first().y)
+                    for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
+                }
+                val stroke = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                onDrawBehind {
+                    drawPath(path = path, color = color, style = stroke)
+                }
+            }
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(Metrics.sparklineHeight)
             .clearAndSetSemantics { contentDescription = axSummary }
-            .drawWithCache {
-                val strokePx = 2f
-                val pad = strokePx
-                val pts = pointsFor(values, size.width, size.height, pad, pad)
-                if (pts.isEmpty()) {
-                    onDrawBehind { drawBaseline() }
-                } else {
-                    val path = Path().apply {
-                        moveTo(pts.first().x, pts.first().y)
-                        for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
-                    }
-                    val stroke = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                    onDrawBehind {
-                        drawPath(path = path, color = color, style = stroke)
-                    }
-                }
+            .onSizeChanged { chartWidth = it.width }
+            .chartScrub(
+                cleanValues,
+                enabled = selectionEnabled && cleanValues.size >= 2,
+                selectOnTap = false,
+                onRelease = { selectedIndex = -1 },
+            ) { x -> selectedIndex = chartScrubNearestIndex(fractions, chartWidth.toFloat(), x) }
+            .then(staticSpark)
+            .drawWithContent {
+                drawContent()
+                val i = selectedIndex
+                if (i < 0) return@drawWithContent
+                val pts = pointsFor(values, size.width, size.height, 2f, 2f)
+                if (i !in pts.indices) return@drawWithContent
+                val (value, label) = lineChartSelectionParts(
+                    value = cleanValues[i],
+                    formatValue = formatValue,
+                    pointLabel = cleanLabels?.getOrNull(i),
+                )
+                drawScrubCursor(pts[i].x, pts[i].y, color, value, label, paints, overflowAbove = true)
             },
     )
 }
@@ -350,10 +407,10 @@ fun LineChart(
     modifier: Modifier,
     color: Color = Palette.accent,
     fill: Boolean = true,
-    // Default OFF so the long-standing static LineCharts across the app (Today HR, Stress, Apple
-    // Health, Trends Explore, the Health HR section) stay static; the screens that want the new
-    // tap/swipe-to-inspect interaction opt in explicitly (Sleep, Trends, the Vital Signs detail).
-    selectionEnabled: Boolean = false,
+    // Default ON (#58): every chart can be scrubbed to read a reading's value and date. A caller passes
+    // false only where the chart is decorative or something else owns its touches.
+    selectionEnabled: Boolean = true,
+    // False keeps selection to a tap: drags and holds pass through to whatever encloses the chart.
     dragSelectionEnabled: Boolean = true,
     // Selection-label formatter (#463): the tap/drag pinpoint read-out draws the RAW plotted value by
     // default; screens whose surrounding chrome converts values for display (Trends' Effort chart on
@@ -369,7 +426,7 @@ fun LineChart(
     // Optional color for each point and the line leading from it to the next point.
     // The workout HR chart uses this to show when its bucket means reached each HR zone.
     pointColors: List<Color>? = null,
-    // Override only the selection readout size; the established 30 px default stays unchanged.
+    // Override only the size of the scrub callout's VALUE line; null keeps the shared callout size.
     selectionLabelTextSize: TextUnit? = null,
     // Optional sequential line-segment ids, index-aligned with [values]. Adjacent unequal ids break the
     // stroke/fill without dropping either reading; used by VO₂max when its estimator changes.
@@ -424,60 +481,64 @@ fun LineChart(
         else values.indices.filter { values[it].isFinite() }.map { segmentIds[it] }
     }
     var selectedIndex by remember(cleanValues) { mutableIntStateOf(-1) }
+    // Epoch seconds of the empty slot under the cursor, or null when it sits on a reading (#58).
+    var selectedGapAt by remember(cleanValues, cleanTimestamps) { mutableStateOf<Long?>(null) }
     // Hoisted, not recomputed per gesture event: the drag handler fires every frame and this allocates a
     // list the length of the series. Keyed on both inputs so the gesture handlers can be keyed on IT:
     // keying them on `cleanValues` alone would let a timestamp change leave them hit-testing against
     // stale positions, highlighting one day while labelling another.
     val xFracs = remember(cleanValues, cleanTimestamps) { xFractions(cleanValues.size, cleanTimestamps) }
-    val interactiveModifier = if (selectionEnabled) {
-        Modifier
-            .pointerInput(cleanValues, xFracs) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        if (cleanValues.size >= 2 && size.width > 0) {
-                            selectedIndex = nearestIndexForX(
-                                fractions = xFracs,
-                                width = size.width.toFloat(),
-                                x = offset.x,
-                            )
-                        }
-                    },
-                )
-            }
-            .then(
-                if (dragSelectionEnabled) {
-                    Modifier.pointerInput(cleanValues, xFracs) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { start ->
-                                if (cleanValues.size < 2 || size.width <= 0f) return@detectHorizontalDragGestures
-                                selectedIndex = nearestIndexForX(
-                                    fractions = xFracs,
-                                    width = size.width.toFloat(),
-                                    x = start.x,
-                                )
-                            },
-                            onHorizontalDrag = { change, _ ->
-                                if (cleanValues.size < 2 || size.width <= 0f) return@detectHorizontalDragGestures
-                                selectedIndex = nearestIndexForX(
-                                    fractions = xFracs,
-                                    width = size.width.toFloat(),
-                                    x = change.position.x,
-                                )
-                                change.consume()
-                            },
-                        )
-                    }
-                } else {
-                    Modifier
-                },
-            )
-    } else {
-        Modifier
+    // The time axis the scrub resolves gaps against: only when the points are actually positioned by
+    // time (ascending, positive span), which is exactly when `xFractions` used the timestamps. A
+    // non-finite value was filtered out of cleanTimestamps with its reading, so its slot is a gap here.
+    val timeAxis = remember(cleanTimestamps) {
+        cleanTimestamps?.takeIf { t ->
+            t.size >= 2 && t.last() > t.first() && t.zipWithNext().none { (a, b) -> b < a }
+        }
+    }
+    val cadence = remember(timeAxis) { timeAxis?.let(::chartScrubCadence) ?: 0L }
+    var chartWidth by remember { mutableIntStateOf(0) }
+    val selectAt: (Float) -> Unit = select@{ x ->
+        val width = chartWidth.toFloat()
+        if (cleanValues.size < 2 || width <= 0f) return@select
+        val axis = timeAxis
+        if (axis != null) {
+            val hit = chartScrubResolve(axis, chartScrubTimeAtX(axis, width, x), cadence) ?: return@select
+            selectedIndex = hit.index
+            selectedGapAt = hit.gapAt
+        } else {
+            selectedIndex = chartScrubNearestIndex(xFracs, width, x)
+            selectedGapAt = null
+        }
+    }
+    val interactiveModifier = when {
+        !selectionEnabled -> Modifier
+        dragSelectionEnabled -> Modifier.chartScrub(cleanValues, xFracs, timeAxis) { x -> selectAt(x) }
+        else -> Modifier.pointerInput(cleanValues, xFracs, timeAxis) {
+            detectTapGestures(onTap = { offset -> selectAt(offset.x) })
+        }
+    }
+    ChartScrubHaptic(selectedGapAt?.let { "gap$it" } ?: selectedIndex.takeIf { it >= 0 })
+    val selectionParts = if (selectedIndex in cleanValues.indices) {
+        lineChartSelectionParts(
+            value = cleanValues[selectedIndex],
+            formatValue = formatValue,
+            epochSec = cleanTimestamps?.getOrNull(selectedIndex),
+            pointLabel = cleanSelectionLabels?.getOrNull(selectedIndex),
+        )
+    } else null
+    val gapLabel = selectedGapAt?.let { gap -> timeAxis?.let { chartScrubGapLabel(gap, it) } }
+    val spoken = when {
+        !selectionEnabled -> null
+        gapLabel != null -> chartScrubSpoken(CHART_SCRUB_NO_DATA, gapLabel)
+        selectionParts != null -> chartScrubSpoken(selectionParts.first, selectionParts.second)
+        else -> null
     }
 
     // ONE collapsed semantics node for the whole chart (line + fill + selection marker subtree) so the
     // accessibility delegate reads a single trend summary rather than descending into the canvas. The
-    // summary uses the same finite-filtered values the line draws. Changes no drawing or interaction.
+    // summary uses the same finite-filtered values the line draws. With selection on, the node also
+    // carries the selected reading as its state and Next/Previous point actions (#58), still one node.
     val axSummary = seriesSummary(cleanValues, "Trend")
     Box(
         modifier = modifier
@@ -487,7 +548,16 @@ fun LineChart(
             // past the edges. Compose Canvas does NOT clip by default — macOS parity for
             // TrendChart.swift's `.chartPlotStyle { $0.clipped() }` + `.clipped()`.
             .clipToBounds()
-            .clearAndSetSemantics { contentDescription = axSummary }
+            .clearAndSetSemantics {
+                contentDescription = axSummary
+                if (selectionEnabled && cleanValues.size >= 2) {
+                    chartScrubSemantics(spoken) { forward ->
+                        selectedIndex = chartScrubStep(selectedIndex, cleanValues.size, forward)
+                        selectedGapAt = null
+                    }
+                }
+            }
+            .onSizeChanged { chartWidth = it.width }
             .then(interactiveModifier),
     ) {
         // PERF (#scroll-jank): the fill Path, the line Path AND the verticalGradient Brush were all
@@ -498,26 +568,27 @@ fun LineChart(
         // The pre-laid Paint for the value label is remembered, not allocated per draw. Pixel-identical:
         // same pointsFor geometry, same strokePx/pads, same gradient stops, same marker + label drawing.
         val density = LocalDensity.current
-        val selectionTextPx = selectionLabelTextSize?.let { with(density) { it.toPx() } } ?: 30f
+        val sharedPaints = rememberChartScrubPaints()
+        val selectionTextPx = selectionLabelTextSize?.let { with(density) { it.toPx() } }
         // Workout zone fills keep their color near the baseline. Light cards need a little more
         // opacity than dark cards for the blue and gray zones to remain distinct on white.
         val zoneFillTopAlpha = if (Palette.isLight) 0.62f else 0.52f
         val zoneFillMiddleAlpha = if (Palette.isLight) 0.40f else 0.32f
         val zoneFillBottomAlpha = if (Palette.isLight) 0.20f else 0.15f
-        val markerPaint = remember(color, selectionTextPx) {
-            android.graphics.Paint().apply {
-                isAntiAlias = true
-                textSize = selectionTextPx
-                this.color = color.copy(alpha = StrandAlpha.chartLabel).toArgb()
-                typeface = android.graphics.Typeface.create(
-                    android.graphics.Typeface.DEFAULT,
-                    android.graphics.Typeface.BOLD,
-                )
-            }
+        val scrubPaints = remember(sharedPaints, selectionTextPx) {
+            if (selectionTextPx == null) sharedPaints
+            else ChartScrubPaints(
+                value = android.graphics.Paint(sharedPaints.value).apply { textSize = selectionTextPx },
+                label = sharedPaints.label,
+            )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
+        // Remembered on everything it captures: a scrub step recomposes this chart (the callout text, the
+        // TalkBack state), and a fresh drawWithCache lambda would re-tessellate the whole series each time.
+        val staticChart = remember(
+            cleanValues, cleanTimestamps, cleanPointColors, cleanSegmentIds, color, fill, yDomain,
+            showsPoints, baselineValue, Palette.isLight, Palette.hairline, Palette.hairlineStrong,
+        ) {
+            Modifier
                 .drawWithCache {
                     val strokePx = 2.5f
                     val topPad = strokePx + 4f
@@ -628,36 +699,33 @@ fun LineChart(
                         }
                     }
                 }
-                // Tap-to-pinpoint marker — a thin per-frame overlay so a drag rebuilds only this, not
-                // the chart. Recomputes the single selected point from the same pointsFor geometry.
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(staticChart)
+                // Scrub cursor (#58) — a thin per-frame overlay so a drag rebuilds only this, not the
+                // chart. Recomputes the single selected point from the same pointsFor geometry; a gap
+                // draws the rule at the empty slot's time with a "No data" callout and no dot.
                 .drawWithContent {
                     drawContent()
                     if (selectionEnabled && selectedIndex >= 0) {
-                        val strokePx = 2.5f
-                        val topPad = strokePx + 4f
-                        val bottomPad = strokePx + 4f
-                        val pts = pointsFor(cleanValues, size.width, size.height, topPad, bottomPad, yDomain, cleanTimestamps)
-                        if (selectedIndex in pts.indices) {
-                            val p = pts[selectedIndex]
-                            val selectedColor = cleanPointColors?.getOrNull(selectedIndex) ?: color
-                            drawLine(
-                                color = selectedColor.copy(alpha = StrandAlpha.chartMarker),
-                                start = Offset(p.x, 0f),
-                                end = Offset(p.x, size.height),
-                                strokeWidth = 1.5f,
-                                cap = StrokeCap.Round,
-                            )
-                            drawCircle(color = selectedColor, radius = 5f, center = p)
-                            drawCircle(color = Palette.surfaceBase.copy(alpha = StrandAlpha.chartShadow), radius = 9f, center = p)
-                            drawCircle(color = selectedColor, radius = 4.5f, center = p)
-                            drawContext.canvas.nativeCanvas.apply {
-                                val label = lineChartSelectionLabel(
-                                    value = cleanValues[selectedIndex],
-                                    formatValue = formatValue,
-                                    epochSec = cleanTimestamps?.getOrNull(selectedIndex),
-                                    pointLabel = cleanSelectionLabels?.getOrNull(selectedIndex),
+                        val gap = selectedGapAt
+                        val axis = timeAxis
+                        if (gap != null && axis != null && gapLabel != null) {
+                            val x = ((gap - axis.first()).toDouble() / (axis.last() - axis.first())).toFloat() * size.width
+                            drawScrubCursor(x, null, color, CHART_SCRUB_NO_DATA, gapLabel, scrubPaints)
+                        } else if (selectionParts != null) {
+                            val strokePx = 2.5f
+                            val topPad = strokePx + 4f
+                            val bottomPad = strokePx + 4f
+                            val pts = pointsFor(cleanValues, size.width, size.height, topPad, bottomPad, yDomain, cleanTimestamps)
+                            if (selectedIndex in pts.indices) {
+                                val p = pts[selectedIndex]
+                                val selectedColor = cleanPointColors?.getOrNull(selectedIndex) ?: color
+                                drawScrubCursor(
+                                    p.x, p.y, selectedColor, selectionParts.first, selectionParts.second, scrubPaints,
                                 )
-                                drawText(label, 8f, markerPaint.textSize + 2f, markerPaint)
                             }
                         }
                     }
@@ -742,22 +810,6 @@ internal fun xFractions(count: Int, timestamps: List<Long>?): List<Float> {
     return timestamps.map { ((it - timestamps.first()) / span).toFloat() }
 }
 
-/**
- * The nearest point to a tapped x. Takes the SAME fractions the geometry used: deriving it from a uniform
- * step independently would select the wrong reading the moment spacing stopped being uniform.
- */
-private fun nearestIndexForX(fractions: List<Float>, width: Float, x: Float): Int {
-    if (fractions.size <= 1 || width <= 0f) return 0
-    val clampedX = x.coerceIn(0f, width)
-    var best = 0
-    var bestDist = Float.MAX_VALUE
-    fractions.forEachIndexed { i, f ->
-        val d = kotlin.math.abs(f * width - clampedX)
-        if (d < bestDist) { bestDist = d; best = i }
-    }
-    return best
-}
-
 /** The tap/drag pinpoint label: the caller's display formatter when supplied (#463), else the raw
  *  near-integer-collapsing default. A non-blank [pointLabel] prefixes the formatted value; otherwise
  *  [epochSec] prefixes its local clock time ("14:32 · 87 bpm"). Split out so each choice is
@@ -769,11 +821,71 @@ internal fun lineChartSelectionLabel(
     zone: ZoneId = ZoneId.systemDefault(),
     pointLabel: String? = null,
 ): String {
+    val (base, label) = lineChartSelectionParts(value, formatValue, epochSec, zone, pointLabel)
+    return if (label == null) base else "$label · $base"
+}
+
+/**
+ * The scrub callout's two lines (#58): the formatted value, and the label naming WHEN (the caller's
+ * non-blank [pointLabel], else [epochSec]'s local "HH:mm", else null). Same choices as
+ * [lineChartSelectionLabel], which joins the pair onto one line, so the callout and the old one-line
+ * read-out cannot disagree.
+ */
+internal fun lineChartSelectionParts(
+    value: Double,
+    formatValue: ((Double) -> String)?,
+    epochSec: Long? = null,
+    zone: ZoneId = ZoneId.systemDefault(),
+    pointLabel: String? = null,
+): Pair<String, String?> {
     val base = formatValue?.invoke(value) ?: formatLineValue(value)
-    pointLabel?.takeIf { it.isNotBlank() }?.let { return "$it · $base" }
-    if (epochSec == null) return base
-    val time = Instant.ofEpochSecond(epochSec).atZone(zone).format(chartTickTimeFormat)
-    return "$time · $base"
+    pointLabel?.takeIf { it.isNotBlank() }?.let { return base to it }
+    if (epochSec == null) return base to null
+    return base to Instant.ofEpochSecond(epochSec).atZone(zone).format(chartTickTimeFormat)
+}
+
+/** "d MMM", the style the daily charts' `selectionLabels` use (`shortDayLabel`). */
+private val chartScrubDayFormat = DateTimeFormatter.ofPattern("d MMM", Locale.US)
+
+/**
+ * When a scrub gap at [epochSec] sits, for a series at ascending [times]. A span under two days is
+ * intraday and reads as local "HH:mm"; a longer one reads as "d MMM". Day series encoded as epoch DAYS
+ * (every time a multiple of 86 400, as `dayEpochSeconds` writes them) are UTC midnights, so they are
+ * formatted in UTC: the local zone would name the previous day anywhere west of Greenwich.
+ */
+internal fun chartScrubGapLabel(
+    epochSec: Long,
+    times: List<Long>,
+    zone: ZoneId = ZoneId.systemDefault(),
+): String {
+    val span = if (times.size >= 2) times.last() - times.first() else 0L
+    if (span < 2 * 86_400L) return Instant.ofEpochSecond(epochSec).atZone(zone).format(chartTickTimeFormat)
+    val dayZone = if (times.all { Math.floorMod(it, 86_400L) == 0L }) ZoneOffset.UTC else zone
+    return Instant.ofEpochSecond(epochSec).atZone(dayZone).format(chartScrubDayFormat)
+}
+
+/** What TalkBack says for the selected reading: "16 Jul, 87 bpm", or the bare value with no label. */
+internal fun chartScrubSpoken(value: String, label: String?): String =
+    if (label.isNullOrBlank()) value else "$label, $value"
+
+/** One a11y step through [count] readings from [current] (-1 = none selected): forward from none lands on
+ *  the first, backward from none on the last, and both ends hold. */
+internal fun chartScrubStep(current: Int, count: Int, forward: Boolean): Int {
+    if (count <= 0) return -1
+    if (current !in 0 until count) return if (forward) 0 else count - 1
+    return (if (forward) current + 1 else current - 1).coerceIn(0, count - 1)
+}
+
+/**
+ * The time a scrub cursor at [x] across [width] points at, on a time-proportional x axis spanning [times]
+ * (ascending, positive span). Rounded to the nearest second.
+ */
+internal fun chartScrubTimeAtX(times: List<Long>, width: Float, x: Float): Long {
+    val first = times.first()
+    val span = times.last() - first
+    if (width <= 0f || span <= 0L) return first
+    val f = (x / width).coerceIn(0f, 1f).toDouble()
+    return first + Math.round(f * span)
 }
 
 private fun formatLineValue(value: Double): String {
@@ -805,7 +917,10 @@ fun BarChart(
     values: List<Double>,
     modifier: Modifier,
     color: Color = Palette.accent,
-    selectionEnabled: Boolean = false,
+    // Default ON (#58): a tap, a horizontal drag or a touch-and-hold selects a bar and names it. A dense
+    // bar strip still mean-bins to the pixel width; selection then resolves the finger to the underlying
+    // reading and highlights the bin holding it.
+    selectionEnabled: Boolean = true,
     // Optional per-point display labels index-aligned with [values]; when supplied, a tap shows
     // "<label> · <value>" (e.g. "16 Jul · 87") instead of the bare value — parity with LineChart (#691).
     selectionLabels: List<String>? = null,
@@ -863,39 +978,33 @@ fun BarChart(
     } }
     val numberFormat = remember { java.text.NumberFormat.getIntegerInstance() }
 
+    var chartWidth by remember { mutableIntStateOf(0) }
+    val scrubPaints = rememberChartScrubPaints()
+    ChartScrubHaptic(selectedIndex.takeIf { it >= 0 })
+    // The callout's value line. The large readout keeps its own integer default; the callout uses the
+    // shared line-chart default. Both read the CLEANED value: the raw one only decides whether there is
+    // a reading to name at all (see above).
+    val valueText: (Int) -> String = { i ->
+        if (largeSelectionReadout) formatValue?.invoke(cleanValues[i]) ?: numberFormat.format(cleanValues[i])
+        else lineChartSelectionParts(cleanValues[i], formatValue).first
+    }
+    val spoken = if (selectionEnabled && selectedIndex in cleanValues.indices) {
+        val label = cleanSelectionLabels?.getOrNull(selectedIndex)
+        if (values.getOrNull(selectedIndex)?.isFinite() == true) chartScrubSpoken(valueText(selectedIndex), label)
+        else chartScrubSpoken(CHART_SCRUB_NO_DATA, label)
+    } else null
+
     // ONE collapsed semantics node so the a11y delegate reads a single bar-series summary instead of
-    // walking every bar. Summarises the (zeroed-non-finite) source values the bars are scaled from.
+    // walking every bar. Summarises the (zeroed-non-finite) source values the bars are scaled from. With
+    // selection on it also carries the selected bar as its state and Next/Previous point actions (#58).
     val axSummary = seriesSummary(cleanValues, "Bars")
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .clearAndSetSemantics { contentDescription = axSummary }
-            .then(
-                if (selectionEnabled) {
-                    Modifier.pointerInput(values, cleanSelectionLabels, axisWidth) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            fun select(x: Float) {
-                                if (cleanValues.isNotEmpty() && size.width > axisWidth) selectedIndex = nearestBarIndexForX(
-                                    cleanValues.size, size.width.toFloat() - axisWidth, x - axisWidth,
-                                )
-                            }
-                            select(down.position.x)
-                            holding = true
-                            try {
-                                do {
-                                    val event = awaitPointerEvent()
-                                    val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    select(pointer.position.x)
-                                    pointer.consume()
-                                } while (pointer.pressed)
-                            } finally { holding = false }
-                        }
-                    }
-                } else {
-                    Modifier
-                },
-            )
+    // Remembered on everything it captures: a scrub step recomposes this chart (the TalkBack state), and
+    // a fresh drawWithCache lambda would rebuild every bar's geometry each time.
+    val barDrawing = remember(
+        values, cleanValues, cleanSelectionLabels, color, selectionEnabled, formatValue, baselineValue, axisStep,
+        showValueLabels, largeSelectionReadout, axisWidth, barLabelPaint, axisPaint, scrubPaints,
+        Palette.isLight, Palette.hairline, Palette.hairlineStrong,
+    ) {
             // PERF (#scroll-jank): the per-bar geometry (max, slot, bar width/height, x positions) was
             // recomputed inside the Canvas draw lambda every frame. Hoist the geometry into
             // drawWithCache (keyed on cleanValues + the implicit size) into a list of bar segments; the
@@ -903,22 +1012,18 @@ fun BarChart(
             // bar without rebuilding geometry. When values can exceed the pixel width the source is
             // mean-bucket-downsampled to ~one bar per horizontal pixel first (visually identical: a 0.64×
             // bar at sub-pixel slots was an unreadable smear; the bucket mean preserves the silhouette).
-            .drawWithCache {
+            Modifier.drawWithCache {
                 val w = (size.width - axisWidth).coerceAtLeast(1f)
                 val h = size.height - if (axisWidth > 0) 12.dp.toPx() else 0f
                 // Mean-bucket-downsample so there is at most ~one bar per horizontal pixel. Above that the
                 // 0.64×-slot bars overlap into a solid block anyway, so the bucket mean is pixel-identical
                 // while cutting the bar count (and the per-frame work) to the visible resolution.
-                // Only downsample when selection is OFF: an interactive BarChart maps the user's tapped
-                // selectedIndex against the FULL-resolution cleanValues, so collapsing the drawn bars
-                // would desync the highlight + label. Interactive charts carry small bounded counts
-                // (days), so they never hit this path anyway; the downsample targets dense static bars.
+                // Selection stays at FULL resolution (selectedIndex indexes cleanValues): the drawn
+                // highlight maps it to the bin that holds it via `meanBucketIndexOf`, and the callout
+                // names the reading itself, never a bin mean.
                 val maxBars = w.toInt().coerceAtLeast(1)
-                val clean = if (!selectionEnabled && cleanValues.size > maxBars && maxBars >= 1) {
-                    meanBucketDownsample(cleanValues, maxBars)
-                } else {
-                    cleanValues
-                }
+                val downsampled = cleanValues.size > maxBars
+                val clean = if (downsampled) meanBucketDownsample(cleanValues, maxBars) else cleanValues
                 val rawMax = clean.maxOrNull() ?: 0.0
                 val maxV = axisStep?.takeIf { it.isFinite() && it > 0 }?.let {
                     (kotlin.math.ceil(rawMax / it) * it).coerceAtLeast(it)
@@ -949,7 +1054,11 @@ fun BarChart(
                         val top = h - barHeight
                         bars.add(BarSeg(i, cx, top))
                     }
+                    fun drawnIndexOf(sourceIndex: Int): Int =
+                        if (downsampled) meanBucketIndexOf(sourceIndex, cleanValues.size, clean.size) else sourceIndex
                     onDrawBehind {
+                        val selectedDrawn = if (selectedIndex in cleanValues.indices) drawnIndexOf(selectedIndex) else -1
+                        val selectedFinite = values.getOrNull(selectedIndex)?.isFinite() == true
                         // Under the bars, for the same reason as the line chart's: a reference, not data.
                         if (baselineY != null) drawReferenceRule(baselineY, Palette.hairlineStrong)
                         if (axisWidth > 0 && axisStep != null) {
@@ -967,8 +1076,8 @@ fun BarChart(
                             val i = seg.index
                             if (clean[i] > 0) drawRoundRect(
                                 color = when {
-                                    holding && i != selectedIndex -> color.copy(alpha = 0.22f)
-                                    selectionEnabled && (i == selectedIndex || largeSelectionReadout) -> color
+                                    holding && i != selectedDrawn -> color.copy(alpha = 0.22f)
+                                    selectionEnabled && (i == selectedDrawn || largeSelectionReadout) -> color
                                     else -> unselectedColor
                                 },
                                 topLeft = Offset(seg.cx - barWidth / 2f, seg.top),
@@ -977,11 +1086,11 @@ fun BarChart(
                                     androidx.compose.ui.geometry.CornerRadius(it, it)
                                 },
                             )
-                            if (selectionEnabled && i == selectedIndex && values.getOrNull(i)?.isFinite() == true) drawLine(
+                            if (selectionEnabled && i == selectedDrawn && selectedFinite) drawLine(
                                 color, Offset(seg.cx, seg.top), Offset(seg.cx, if (largeSelectionReadout) 62.dp.toPx() else 0f),
                                 strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
                             )
-                            if (showValueLabels && values.getOrNull(i)?.isFinite() == true) {
+                            if (showValueLabels && !downsampled && values.getOrNull(i)?.isFinite() == true) {
                                 val label = numberFormat.format(clean[i])
                                 val oldSize = axisPaint.textSize
                                 val measured = axisPaint.measureText(label)
@@ -990,30 +1099,53 @@ fun BarChart(
                                 axisPaint.textSize = oldSize
                             }
                         }
-                        val readoutIndex = if (selectedIndex < 0 && largeSelectionReadout) clean.lastIndex else selectedIndex
+                        val readoutIndex = if (selectedIndex < 0 && largeSelectionReadout) cleanValues.lastIndex else selectedIndex
                         val selectedRaw = values.getOrNull(readoutIndex)
-                        if (selectionEnabled && readoutIndex in clean.indices &&
-                            selectedRaw != null && selectedRaw.isFinite()
-                        ) {
-                            drawContext.canvas.nativeCanvas.apply {
-                                if (largeSelectionReadout) {
-                                    drawText(cleanSelectionLabels?.getOrNull(readoutIndex).orEmpty(), 0f, 22.dp.toPx(), barLabelPaint)
-                                    drawText(formatValue?.invoke(clean[readoutIndex]) ?: numberFormat.format(clean[readoutIndex]), 0f, 50.dp.toPx(), barLabelPaint)
-                                } else drawText(
-                                    lineChartSelectionLabel(
-                                        // The CLEANED value, exactly as before, so no existing caller's
-                                        // label changes. The raw value only decides WHETHER to label.
-                                        value = clean[readoutIndex],
-                                        formatValue = formatValue,
-                                        pointLabel = cleanSelectionLabels?.getOrNull(readoutIndex),
-                                    ),
-                                    8f, 32f, barLabelPaint,
-                                )
+                        if (selectionEnabled && readoutIndex in cleanValues.indices) {
+                            val seg = bars[drawnIndexOf(readoutIndex)]
+                            val label = cleanSelectionLabels?.getOrNull(readoutIndex)
+                            if (largeSelectionReadout) {
+                                if (selectedRaw != null && selectedRaw.isFinite()) drawContext.canvas.nativeCanvas.apply {
+                                    drawText(label.orEmpty(), 0f, 22.dp.toPx(), barLabelPaint)
+                                    drawText(valueText(readoutIndex), 0f, 50.dp.toPx(), barLabelPaint)
+                                }
+                            } else if (selectedRaw != null && selectedRaw.isFinite()) {
+                                // Anchored above the selected bar's top, the reading it names.
+                                drawScrubCallout(seg.cx, seg.top, valueText(readoutIndex), label, scrubPaints)
+                            } else {
+                                // An empty slot names itself rather than answering "0" (#58).
+                                drawScrubCursor(seg.cx, null, color, CHART_SCRUB_NO_DATA, label, scrubPaints)
                             }
                         }
                     }
                 }
-            },
+            }
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clearAndSetSemantics {
+                contentDescription = axSummary
+                if (selectionEnabled && cleanValues.isNotEmpty()) {
+                    chartScrubSemantics(spoken) { forward ->
+                        selectedIndex = chartScrubStep(selectedIndex, cleanValues.size, forward)
+                    }
+                }
+            }
+            .onSizeChanged { chartWidth = it.width }
+            .chartScrub(
+                values, cleanSelectionLabels, axisWidth,
+                enabled = selectionEnabled,
+                // Selection survives release; only the dimming of the other bars follows the finger.
+                onRelease = { holding = false },
+            ) { x ->
+                val width = chartWidth.toFloat()
+                if (cleanValues.isNotEmpty() && width > axisWidth) {
+                    selectedIndex = nearestBarIndexForX(cleanValues.size, width - axisWidth, x - axisWidth)
+                    holding = true
+                }
+            }
+            .then(barDrawing),
     )
 }
 
@@ -1033,6 +1165,21 @@ private fun meanBucketDownsample(values: List<Double>, target: Int): List<Double
         out.add(sum / (hi - lo))
     }
     return out
+}
+
+/**
+ * The [meanBucketDownsample] bucket that holds source [index] when [n] values collapse to [target]
+ * buckets: the last bucket whose first source index is at or before [index]. [index] itself when there
+ * is no collapse. Same bucket bounds as the downsample, so a highlighted bar is the one that averaged
+ * the selected reading.
+ */
+internal fun meanBucketIndexOf(index: Int, n: Int, target: Int): Int {
+    if (target < 1 || n <= target) return index
+    fun lo(b: Int) = (b.toLong() * n / target).toInt()
+    var b = ((index.toLong() * target) / n).toInt().coerceIn(0, target - 1)
+    while (b + 1 < target && lo(b + 1) <= index) b++
+    while (b > 0 && lo(b) > index) b--
+    return b
 }
 
 // MARK: - Hypnogram
@@ -1324,6 +1471,10 @@ fun pannedWindow(base: LongRange, deltaSeconds: Long, bounds: LongRange): LongRa
  *
  * [timeTicks] (epochSec, "HH:mm") are drawn as dotted vertical gridlines under the curve, matching the
  * Today HR chart's axis convention. The matching labels render OUTSIDE this composable by the host.
+ *
+ * Scrub (#58): one finger already pans, so the cursor engages only after a touch-and-hold, then follows
+ * the finger until it lifts and clears. Moving before the hold completes, or a second finger, leaves the
+ * touch to pan/zoom. [formatValue] names the reading (default: the shared numeric format, no unit).
  */
 @Composable
 fun TimelineChart(
@@ -1337,10 +1488,28 @@ fun TimelineChart(
     // Round wall-clock (epochSec, "HH:mm") ticks, each drawn as a dotted gridline under the curve.
     // The matching labels render OUTSIDE this plot-height composable by the host. Empty = no gridlines.
     timeTicks: List<Pair<Long, String>> = emptyList(),
+    formatValue: ((Double) -> String)? = null,
 ) {
     val span = (windowEnd - windowStart).coerceAtLeast(1L)
     val vis = remember(points, windowStart, windowEnd) {
         points.filter { it.ts in windowStart..windowEnd && it.value.isFinite() }
+    }
+    val visTimes = remember(vis) { vis.map { it.ts } }
+    val visCadence = remember(visTimes) { chartScrubCadence(visTimes) }
+    // What the hold-scrub cursor sits on, paired with the `vis` it indexes so a hit taken before the
+    // window (or the read behind it) moved can never name a point of the new list. Cleared on release.
+    var scrubState by remember { mutableStateOf<Pair<List<TimelinePoint>, ChartScrubHit>?>(null) }
+    val scrubHit = scrubState?.takeIf { it.first === vis }?.second
+    val currentVis by rememberUpdatedState(vis)
+    val currentVisTimes by rememberUpdatedState(visTimes)
+    val currentVisCadence by rememberUpdatedState(visCadence)
+    var chartWidth by remember { mutableIntStateOf(0) }
+    ChartScrubHaptic(scrubHit?.let { hit -> hit.gapAt?.let { "gap$it" } ?: hit.index })
+    val scrubPaints = rememberChartScrubPaints()
+    val scrubText: Pair<String, String?>? = scrubHit?.let { hit ->
+        val gap = hit.gapAt
+        if (gap != null) CHART_SCRUB_NO_DATA to chartScrubGapLabel(gap, visTimes)
+        else vis.getOrNull(hit.index)?.let { lineChartSelectionParts(it.value, formatValue, epochSec = it.ts) }
     }
 
     // #2368: rememberUpdatedState so the gesture handler always reads the LATEST window values
@@ -1358,7 +1527,16 @@ fun TimelineChart(
         modifier = modifier
             .fillMaxWidth()
             .clipToBounds()
-            .clearAndSetSemantics { contentDescription = axSummary }
+            .clearAndSetSemantics {
+                contentDescription = axSummary
+                if (vis.size >= 2) {
+                    chartScrubSemantics(scrubText?.let { chartScrubSpoken(it.first, it.second) }) { forward ->
+                        val current = scrubHit?.takeIf { it.gapAt == null }?.index ?: -1
+                        scrubState = vis to ChartScrubHit(chartScrubStep(current, vis.size, forward))
+                    }
+                }
+            }
+            .onSizeChanged { chartWidth = it.width }
             .pointerInput(bounds) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
                     val width = size.width.toFloat().coerceAtLeast(1f)
@@ -1375,6 +1553,23 @@ fun TimelineChart(
                     }
                     onWindowChange(window)
                 }
+            }
+            // AFTER the transform detector in the chain, so this sees each event first on the Main pass.
+            // Once the hold engages it consumes every change, and detectTransformGestures ends its gesture
+            // on the first consumed change, so the window cannot pan under the cursor.
+            // Keyed on nothing that moves with the window: it reads the latest window through the updated
+            // states above, so a pinch does not restart it every frame.
+            .chartScrub(
+                enabled = vis.size >= 2,
+                holdOnly = true,
+                onRelease = { scrubState = null },
+            ) { x ->
+                val width = chartWidth.toFloat().coerceAtLeast(1f)
+                val start = currentWindowStart
+                val windowSpan = (currentWindowEnd - start).coerceAtLeast(1L)
+                val cursor = start + Math.round((x / width).coerceIn(0f, 1f).toDouble() * windowSpan)
+                val points = currentVis
+                scrubState = chartScrubResolve(currentVisTimes, cursor, currentVisCadence)?.let { points to it }
             },
     ) {
         // Dotted round-time gridlines, FIRST so the curve reads over them (matching OverviewHRChart z-order).
@@ -1441,6 +1636,15 @@ fun TimelineChart(
                 color = color,
                 style = Stroke(width = strokePx, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
+            // Hold-scrub cursor, on the same px/py mapping as the line it reads.
+            val hit = scrubHit
+            val text = scrubText
+            if (hit != null && text != null) {
+                val gap = hit.gapAt
+                val p = vis.getOrNull(hit.index)
+                if (gap != null) drawScrubCursor(px(gap), null, color, text.first, text.second, scrubPaints)
+                else if (p != null) drawScrubCursor(px(p.ts), py(p.value), color, text.first, text.second, scrubPaints)
+            }
         }
     }
 }

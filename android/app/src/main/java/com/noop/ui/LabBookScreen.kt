@@ -54,6 +54,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noop.analytics.Correlation
@@ -411,7 +413,12 @@ private fun MarkerDetailSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     val nums = numeric.mapNotNull { it.value }
                     if (nums.size > 1) {
-                        MiniSpark(values = nums, color = Palette.metricCyan, modifier = Modifier.fillMaxWidth().height(64.dp))
+                        MiniSpark(
+                            values = nums,
+                            color = Palette.metricCyan,
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                            callouts = numeric.map { valueLabel(markerKey, it) to labDayFromKey(it.day) },
+                        )
                     }
                     Text(trendSentence(markerKey, numeric, unit), style = NoopType.subhead, color = Palette.textSecondary)
                     latestReferenceText(readings)?.let { ref ->
@@ -814,15 +821,40 @@ internal fun PrimaryActionButton(
     }
 }
 
-/** A tiny inline sparkline for a short numeric series, sized by the modifier (width × height). */
+/**
+ * A tiny inline sparkline for a short numeric series, sized by the modifier (width × height).
+ *
+ * [callouts], one (value, date) pair per point, turns on the shared scrub cursor (#58). Only the detail
+ * sheet's full-width trend passes them; the 64×28 dp spark in a marker row is a glyph inside a tappable
+ * row, too small to hold a callout, and that row's tap already opens the scrubbable detail.
+ */
 @Composable
-internal fun MiniSpark(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
+internal fun MiniSpark(
+    values: List<Double>,
+    color: Color,
+    modifier: Modifier = Modifier,
+    callouts: List<Pair<String, String>>? = null,
+) {
+    val scrubbable = callouts != null && callouts.size == values.size && values.size > 1
+    var scrubX by remember(values) { mutableStateOf<Float?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val pad = 3f
+    val selected = scrubX?.takeIf { scrubbable }?.let { x ->
+        labSparkNearestIndex(values.size, chartWidth, pad, x)
+    }
+    val callout = selected?.let { callouts?.getOrNull(it) }
+    ChartScrubHaptic(selected)
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { chartWidth = it.width.toFloat() }
+            .chartScrub(values, enabled = scrubbable, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { callout?.let { (value, label) -> stateDescription = "$value, $label" } },
+    ) {
         if (values.size < 2) return@Canvas
         val lo = values.min()
         val hi = values.max()
         val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
-        val pad = 3f
         val w = size.width - pad * 2
         val h = size.height - pad * 2
         val pts = values.mapIndexed { i, v ->
@@ -835,5 +867,16 @@ internal fun MiniSpark(values: List<Double>, color: Color, modifier: Modifier = 
             for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
         }
         drawPath(path, color = color, style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        if (selected != null && callout != null) {
+            val pt = pts[selected]
+            drawScrubCursor(pt.x, pt.y, color, callout.first, callout.second, paints)
+        }
     }
 }
+
+/**
+ * The spark point nearest [x] for [count] readings spread evenly across [width] inset by [pad] on both
+ * sides, the placement [MiniSpark] draws them at.
+ */
+internal fun labSparkNearestIndex(count: Int, width: Float, pad: Float, x: Float): Int =
+    chartScrubNearestIndex(chartScrubIndexFractions(count), (width - pad * 2).coerceAtLeast(0f), x - pad)

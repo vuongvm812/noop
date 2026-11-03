@@ -1,5 +1,5 @@
 #if !os(watchOS)
-// Sparkline uses .onContinuousHover + ChartHover helpers (unavailable on watchOS); the watch
+// Sparkline uses .chartScrub + ChartHover helpers (unavailable on watchOS); the watch
 // doesn't draw sparklines, so the whole view is excluded there. iOS/macOS unchanged.
 import SwiftUI
 
@@ -133,15 +133,12 @@ public struct Sparkline: View {
                 }
             }
             .animation(StrandMotion.fade, value: hoverX)
-            .contentShape(Rectangle())
-            .onContinuousHover(coordinateSpace: .local) { phase in
-                guard showsHover else { return }
-                switch phase {
-                case .active(let location): hoverX = location.x
-                case .ended: hoverX = nil
-                }
-            }
-            // The line is pointer-hover only (dead on touch); give VoiceOver a
+            // Hover, click-drag on macOS, touch-and-hold then drag on iOS (#58).
+            .chartScrub($hoverX, enabled: showsHover)
+            .chartScrubHaptic(showsHover ? hoverX.flatMap {
+                ChartHoverMath.nearestIndex(toX: $0, count: values.count, width: geo.size.width)
+            } : nil)
+            // A per-sample readout needs a pointer or a held finger; give VoiceOver a
             // spoken summary of the series so the trend isn't silent on iPhone.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(axSummary))

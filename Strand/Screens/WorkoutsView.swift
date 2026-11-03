@@ -74,6 +74,8 @@ struct WorkoutsView: View {
     /// Daily active-calorie totals (day "yyyy-MM-dd" → kcal) for the 13-week heatmap, loaded alongside the
     /// rows. Empty until loaded / when there's no daily-calorie data (the heatmap then hides itself).
     @State private var dailyKcal: [String: Double] = [:]
+    /// The heatmap's scrub cursor in the Canvas's local space (#58); nil when no cell is being read.
+    @State private var heatmapCursor: CGPoint?
 
     /// Local `yyyy-MM-dd` formatter for the heatmap's day keys + "today" anchor (matches the stored keys).
     private static let dayFormatter: DateFormatter = {
@@ -912,6 +914,7 @@ struct WorkoutsView: View {
                             }
                         }
                         Canvas { ctx, size in drawHeatmap(ctx, size: size, grid: grid, today: todayDayString()) }
+                        .overlay { heatmapScrubLayer(grid: grid) }
                         .aspectRatio(13.0 / 7.6, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(Text("Active-calorie heatmap, last 13 weeks"))
@@ -930,18 +933,114 @@ struct WorkoutsView: View {
         }
     }
 
+    /// The heatmap's cell geometry, shared by the renderer and the scrub hit test so the cell the cursor
+    /// reads is the cell drawn under it. Nil when there is no room to draw a cell.
+    private struct HeatmapLayout {
+        static let gap: CGFloat = 3
+        static let leftInset: CGFloat = 20   // weekday gutter
+        static let topInset: CGFloat = 14    // month row
+        let cell: CGFloat
+
+        init?(size: CGSize, cols: Int) {
+            guard cols > 0 else { return nil }
+            let cell = min((size.width - Self.leftInset - Self.gap * CGFloat(cols - 1)) / CGFloat(cols),
+                           (size.height - Self.topInset - Self.gap * 6) / 7)
+            guard cell > 0 else { return nil }
+            self.cell = cell
+        }
+
+        func rect(col c: Int, row r: Int) -> CGRect {
+            CGRect(x: Self.leftInset + CGFloat(c) * (cell + Self.gap),
+                   y: Self.topInset + CGFloat(r) * (cell + Self.gap),
+                   width: cell, height: cell)
+        }
+
+        /// The (column, row) under `point`, snapped to the nearest cell so the gaps between cells do not
+        /// flicker the readout; nil outside the grid.
+        func cell(at point: CGPoint, cols: Int) -> (col: Int, row: Int)? {
+            let pitch = cell + Self.gap
+            let gridW = CGFloat(cols) * pitch - Self.gap
+            let gridH = 7 * pitch - Self.gap
+            let x = point.x - Self.leftInset, y = point.y - Self.topInset
+            guard x >= 0, y >= 0, x <= gridW, y <= gridH else { return nil }
+            return (min(cols - 1, Int(x / pitch)), min(6, Int(y / pitch)))
+        }
+    }
+
+    /// The heatmap's scrub readout (#58): hover on the Mac (click-drag too), touch-and-hold then drag on
+    /// iOS, the same input split as `.chartScrub` but in two dimensions, since a calendar grid's cell
+    /// depends on both axes. The cell under the cursor gets an outline and a callout with its date and
+    /// burn; a day in the window with no reading says "No data", and padding cells say nothing.
+    private func heatmapScrubLayer(grid: ActivityHeatmap.Grid) -> some View {
+        GeometryReader { geo in
+            let cols = grid.columns.count
+            let layout = HeatmapLayout(size: geo.size, cols: cols)
+            let hit = heatmapCursor.flatMap { p in layout?.cell(at: p, cols: cols) }
+            let cellValue = hit.map { grid.columns[$0.col][$0.row] }
+            ZStack(alignment: .topLeading) {
+                if let layout, let hit, let cellValue, let day = cellValue.day {
+                    let rect = layout.rect(col: hit.col, row: hit.row)
+                    let path = Path(roundedRect: rect, cornerRadius: layout.cell * 0.24)
+                    path.stroke(StrandPalette.textSecondary, lineWidth: 1.5)
+                    let dateText = Self.dayFormatter.date(from: day)
+                        .map { $0.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).year()) } ?? day
+                    PositionedTooltip(
+                        anchor: CGPoint(x: rect.midX, y: rect.minY),
+                        container: geo.size,
+                        tooltip: ChartTooltip(
+                            value: cellValue.value.map { "\(grouped($0)) \(String(localized: "KCAL"))" }
+                                ?? ChartScrubMath.noDataText,
+                            label: dateText,
+                            accent: cellValue.value == nil ? nil : heatColor(cellValue.level)))
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active(let location): setHeatmapCursor(location)
+                case .ended: setHeatmapCursor(nil)
+                }
+            }
+            .gesture(heatmapTouchGesture)
+            .chartScrubHaptic(cellValue?.day)
+        }
+    }
+
+    /// Non-animating cursor write, as `.chartScrub` does, so the callout tracks the pointer without lag.
+    private func setHeatmapCursor(_ point: CGPoint?) {
+        var tx = Transaction()
+        tx.disablesAnimations = true
+        withTransaction(tx) { heatmapCursor = point }
+    }
+
+    #if os(macOS)
+    private var heatmapTouchGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { setHeatmapCursor($0.location) }
+    }
+    #else
+    /// The hold keeps a swipe across the grid scrolling the page rather than starting a scrub.
+    private var heatmapTouchGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
+            .onChanged { value in
+                if case .second(true, let drag?) = value { setHeatmapCursor(drag.location) }
+            }
+            .onEnded { _ in setHeatmapCursor(nil) }
+    }
+    #endif
+
     /// Renders the heatmap into the Canvas: a left gutter of weekday labels (Mon/Wed/Fri/Sun) and a top
     /// row of month labels (drawn where the month changes), then the cells. Labels use the LOCALIZED
     /// calendar symbols so they translate for free and carry no hardcoded literals.
     private func drawHeatmap(_ ctx: GraphicsContext, size: CGSize, grid: ActivityHeatmap.Grid, today: String) {
         let cols = grid.columns.count
-        guard cols > 0 else { return }
-        let gap: CGFloat = 3
-        let leftInset: CGFloat = 20   // weekday gutter
-        let topInset: CGFloat = 14    // month row
-        let cell = min((size.width - leftInset - gap * CGFloat(cols - 1)) / CGFloat(cols),
-                       (size.height - topInset - gap * 6) / 7)
-        guard cell > 0 else { return }
+        guard let layout = HeatmapLayout(size: size, cols: cols) else { return }
+        let gap = HeatmapLayout.gap
+        let leftInset = HeatmapLayout.leftInset
+        let topInset = HeatmapLayout.topInset
+        let cell = layout.cell
         let labelFont = StrandFont.caption
         let labelColor = StrandPalette.textTertiary
 
@@ -979,9 +1078,7 @@ struct WorkoutsView: View {
         for c in 0..<cols {
             let col = grid.columns[c]
             for r in 0..<7 {
-                let rect = CGRect(x: leftInset + CGFloat(c) * (cell + gap),
-                                  y: topInset + CGFloat(r) * (cell + gap),
-                                  width: cell, height: cell)
+                let rect = layout.rect(col: c, row: r)
                 let path = Path(roundedRect: rect, cornerRadius: cell * 0.24)
                 ctx.fill(path, with: .color(heatColor(col[r].level)))
                 if col[r].day == today {
@@ -1877,7 +1974,7 @@ struct WorkoutsView: View {
 /// helper TrendChart/OverviewHRChart use, generalized to a date/value key-path form so it can be called
 /// from here); hover still reads the full-resolution `points`, never the downsampled draw set.
 ///
-/// Hover/tooltip (previously missing): reuses the same `CrosshairRule`/`HighlightDot`/`PositionedTooltip`/
+/// Scrub cursor/tooltip: reuses the same `CrosshairRule`/`HighlightDot`/`PositionedTooltip`/
 /// `ChartTooltip` components `TrendChart`'s `chartOverlay` uses — no new mechanism.
 private struct WorkoutRecoveryTrendChart: View {
     let points: [WorkoutRecoveryTrendPoint]
@@ -1926,15 +2023,17 @@ private struct WorkoutRecoveryTrendChart: View {
     }
 
     /// The full-resolution workout nearest a given chart-local x (not per-interval — one workout can carry
-    /// up to 3 values at the SAME x, so the tooltip names whichever are available together).
+    /// up to 3 values at the SAME x, so the tooltip names whichever are available together). Resolved with
+    /// the shared scrub math (#58) with gap detection off: workouts are discrete events, so the days
+    /// between two of them are not missing readings and the cursor always snaps to a real workout.
     private func nearestPoint(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> WorkoutRecoveryTrendPoint? {
-        guard !points.isEmpty else { return nil }
-        let relX = x - plot.minX
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
         guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return points.min(by: {
-            abs(TimeInterval($0.startTs) - date.timeIntervalSince1970)
-                < abs(TimeInterval($1.startTs) - date.timeIntervalSince1970)
-        })
+        let sorted = points.sorted { $0.startTs < $1.startTs }
+        guard let hit = ChartScrubMath.resolve(times: sorted.map { Int64($0.startTs) },
+                                               cursor: ChartScrubMath.epochSeconds(date), cadence: 0)
+        else { return nil }
+        return sorted[hit.index]
     }
 
     private static let tooltipDateFormatter: DateFormatter = {
@@ -1998,9 +2097,9 @@ private struct WorkoutRecoveryTrendChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = hoverX.flatMap { nearestPoint(toX: $0, proxy: proxy, plot: plot) }
                 ZStack(alignment: .topLeading) {
-                    if let hx = hoverX,
-                       let p = nearestPoint(toX: hx, proxy: proxy, plot: plot),
+                    if let p = target,
                        let px = proxy.position(forX: Date(timeIntervalSince1970: TimeInterval(p.startTs))) {
                         let cx = px + plot.minX
                         CrosshairRule(x: cx, height: geo.size.height)
@@ -2017,19 +2116,8 @@ private struct WorkoutRecoveryTrendChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
-                    // draw-on animation and flickers the curve (mirrors TrendChart #104).
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) {
-                        switch phase {
-                        case .active(let location): hoverX = location.x
-                        case .ended: hoverX = nil
-                        }
-                    }
-                }
+                .chartScrub($hoverX)
+                .chartScrubHaptic(target?.startTs)
             }
         }
         .accessibilityLabel("Heart-rate recovery trend in beats per minute")

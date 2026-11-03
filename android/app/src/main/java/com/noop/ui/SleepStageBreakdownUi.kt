@@ -3,7 +3,6 @@ package com.noop.ui
 import android.text.format.DateFormat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,12 +27,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -251,36 +251,40 @@ internal fun FilledHypnogram(
     // The crosshair tracks the FINGER. Snapping it to the resolved segment would put the line up to
     // half a segment from the touch while the readout named the time where the finger actually was.
     var scrubX by remember(intervals) { mutableStateOf(0f) }
+    var canvasW by remember { mutableStateOf(0f) }
+    // A tick each time the cursor crosses into another stage run (or into an unlabelled gap).
+    ChartScrubHaptic(scrub?.stage)
+    // The readout's stage word: an unlabelled gap reads "No data" rather than an empty string.
+    val scrubStage = scrub?.let { hypnogramScrubStageLabel(it) }
+    val scrubText = scrub?.let { "${scrubStage}, ${clockTimeLabel(it.timestamp, is24h)}" }
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.space6)) {
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Metrics.compactChartHeight)
-                .semantics { contentDescription = axSummary }
+                .semantics {
+                    contentDescription = axSummary
+                    scrubText?.let { stateDescription = it }
+                }
                 .then(
                     // #1855: drag to read the clock time under your finger. Offered only when the
                     // night supplies a clock window, because without one there is no real time to
                     // report and a number would have to be invented.
+                    // #58: the shared scrub gesture, so a tap selects, a horizontal drag or a
+                    // touch-and-hold scrubs, and a vertical swipe still scrolls the page.
                     if (showsAxis) {
-                        Modifier.pointerInput(intervals, originSec, spanSec) {
-                            fun hit(x: Float) = scrubHitAt(
-                                xPx = x,
-                                widthPx = size.width.toFloat(),
-                                intervals = intervals,
-                                originSec = originSec,
-                                spanSec = spanSec,
-                            )
-                            detectHorizontalDragGestures(
-                                onDragStart = { scrubX = it.x; scrub = hit(it.x) },
-                                onDragEnd = { scrub = null },
-                                onDragCancel = { scrub = null },
-                                onHorizontalDrag = { change, _ ->
-                                    scrubX = change.position.x
-                                    scrub = hit(change.position.x)
-                                    change.consume()
-                                },
-                            )
-                        }
+                        Modifier
+                            .onSizeChanged { canvasW = it.width.toFloat() }
+                            .chartScrub(intervals, originSec, spanSec, onRelease = { scrub = null }) { x ->
+                                scrubX = x
+                                scrub = scrubHitAt(
+                                    xPx = x,
+                                    widthPx = canvasW,
+                                    intervals = intervals,
+                                    originSec = originSec,
+                                    spanSec = spanSec,
+                                )
+                            }
                     } else {
                         Modifier
                     },
@@ -385,7 +389,7 @@ internal fun FilledHypnogram(
                 ),
             ) {
                 Text(
-                    hit.stage.uppercase(),
+                    scrubStage.orEmpty(),
                     style = NoopType.footnote,
                     color = Palette.textSecondary,
                     maxLines = 1,
@@ -402,6 +406,11 @@ internal fun FilledHypnogram(
         }
     }
 }
+
+/** The hypnogram readout's stage word: the stage under the cursor in capitals, or "No data" over a
+ *  stretch the stager left unlabelled (#58), so a gap never reads as an empty readout. */
+internal fun hypnogramScrubStageLabel(hit: ScrubHit): String =
+    if (hit.stage.isEmpty()) CHART_SCRUB_NO_DATA else hit.stage.uppercase()
 
 /** A compact colour-coded key for the stepped hypnogram: one dot + label per stage in the chart's ramp, so
  *  the bands are decodable (esp. the Garmin ramp's two pinks, Awake vs REM). Twin of Swift SleepStageLegend.

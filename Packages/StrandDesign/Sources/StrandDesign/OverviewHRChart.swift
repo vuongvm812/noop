@@ -63,8 +63,8 @@ public struct OverviewHRChart: View {
     public var height: CGFloat
     public var showsHover: Bool
     /// iPhone touch scrub (#979 spin-off): when true, touch-and-hold pins the hover crosshair under the
-    /// finger and dragging scrubs it — driving the SAME readout layer the Mac pointer hover uses. Off by
-    /// default so every existing call site keeps its exact touch behaviour; the Deep Timeline opts in.
+    /// finger and dragging scrubs it — driving the SAME readout layer the Mac pointer hover uses. On by
+    /// default so every chart can be read by touch (#58); a caller that must stay inert passes false.
     public var touchScrub: Bool
     public var valueFormat: (Double) -> String
     public var dateFormat: (Date) -> String
@@ -81,6 +81,11 @@ public struct OverviewHRChart: View {
 
     private let averageValue: Double
 
+    /// `points` as epoch seconds plus their cadence, computed once so the scrub resolves without
+    /// re-deriving them on every pointer event (#58).
+    private let pointTimes: [Int64]
+    private let pointCadence: Int64
+
     public init(
         points: [TrendPoint],
         sleep: SleepSpan? = nil,
@@ -92,7 +97,7 @@ public struct OverviewHRChart: View {
         xRange: ClosedRange<Date>? = nil,
         height: CGFloat = 220,
         showsHover: Bool = true,
-        touchScrub: Bool = false,
+        touchScrub: Bool = true,
         workoutTint: Color = StrandPalette.strain033,
         zoomDomain: Binding<ClosedRange<Date>?> = .constant(nil),
         zoomBounds: ClosedRange<Date>? = nil,
@@ -116,6 +121,9 @@ public struct OverviewHRChart: View {
         self.zoomBounds = zoomBounds
         self.valueFormat = valueFormat
         self.dateFormat = dateFormat
+        let times = sorted.map { ChartScrubMath.epochSeconds($0.date) }
+        self.pointTimes = times
+        self.pointCadence = ChartScrubMath.cadence(times)
         self.averageValue = sorted.isEmpty
             ? valueRange.lowerBound
             : sorted.map(\.value).reduce(0, +) / Double(sorted.count)
@@ -134,8 +142,8 @@ public struct OverviewHRChart: View {
     /// against a stable anchor instead of compounding each frame.
     @State private var gestureAnchorDomain: ClosedRange<Date>? = nil
     #if os(iOS)
-    /// True while a touch scrub is engaged (the hold completed). Only used to fire the engage haptic
-    /// exactly once per scrub — the sequenced gesture can report `.second(true, nil)` more than once.
+    /// True while a touch scrub is engaged (the hold completed). Fed to the pan modifier so a held
+    /// scrub never also pans (#1342). The snap tick comes from `chartScrubHaptic`, not from engaging.
     @State private var scrubEngaged = false
     #endif
 
@@ -255,11 +263,15 @@ public struct OverviewHRChart: View {
             .max(by: { $0.value < $1.value })
     }
 
-    private func nearestPoint(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> TrendPoint? {
-        guard !points.isEmpty else { return nil }
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return nearestTrendPoint(to: date, in: points)
+    /// What the scrub cursor at overlay-local `x` is on: the nearest reading, and the empty slot's date
+    /// when the cursor sits over a hole in the series instead (#58), as in `TrendChart`.
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> (point: TrendPoint, gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(times: pointTimes, cursor: ChartScrubMath.epochSeconds(date),
+                                               cadence: pointCadence)
+        else { return nil }
+        return (points[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     // MARK: Mark layers
@@ -361,9 +373,19 @@ public struct OverviewHRChart: View {
     }
 
     @ViewBuilder
-    private func hoverLayer(proxy: ChartProxy, plot: CGRect, container: CGSize) -> some View {
-        if showsHover, let hx = hoverX,
-           let p = nearestPoint(toX: hx, proxy: proxy, plot: plot),
+    private func hoverLayer(target: (point: TrendPoint, gap: Date?)?, proxy: ChartProxy, plot: CGRect,
+                            container: CGSize) -> some View {
+        if let target, let gap = target.gap, let gxRel = proxy.position(forX: gap) {
+            // Over a hole in the series: mark the empty slot and say so, rather than snapping to a
+            // neighbour and reporting its value against the wrong time.
+            let cx = gxRel + plot.minX
+            CrosshairRule(x: cx, height: container.height)
+            PositionedTooltip(
+                anchor: CGPoint(x: cx, y: plot.midY),
+                container: container,
+                tooltip: ChartTooltip(value: ChartScrubMath.noDataText, label: dateFormat(gap))
+            )
+        } else if let p = target?.point,
            let pxRel = proxy.position(forX: p.date),
            let pyRel = proxy.position(forY: p.value) {
             let cx = pxRel + plot.minX
@@ -383,18 +405,15 @@ public struct OverviewHRChart: View {
     /// Touch-and-hold-then-drag scrub (#979 spin-off). The stationary hold (0.25 s within 8 pt) is the
     /// gate that separates scrubbing from the pan drag (min 6 pt) and pinch that own immediate movement.
     /// LongPressGesture reports no location, so the crosshair appears from the drag phase's coordinates —
-    /// in practice the first micro-movement of a held finger, which is immediate; the engage haptic marks
-    /// the mode switch the instant the hold lands. Drives the SAME `hoverX` the Mac pointer hover drives,
+    /// in practice the first micro-movement of a held finger, which is immediate; the first snap's haptic
+    /// marks the mode switch. Drives the SAME `hoverX` the Mac pointer hover drives,
     /// so the readout (crosshair + dot + tooltip) is byte-identical across input methods.
     private var touchScrubGesture: some Gesture {
         LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
             .onChanged { value in
                 guard case .second(true, let drag) = value else { return }
-                if !scrubEngaged {
-                    scrubEngaged = true
-                    StrandHaptic.selection.play()
-                }
+                if !scrubEngaged { scrubEngaged = true }
                 if let drag {
                     // Non-animating transaction, same reason as hover (TrendChart #104 flicker).
                     var tx = Transaction()
@@ -450,9 +469,10 @@ public struct OverviewHRChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = showsHover ? hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot) } : nil
                 ZStack(alignment: .topLeading) {
                     markerLabels(proxy: proxy, plot: plot)
-                    hoverLayer(proxy: proxy, plot: plot, container: geo.size)
+                    hoverLayer(target: target, proxy: proxy, plot: plot, container: geo.size)
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .contentShape(Rectangle())
@@ -469,6 +489,14 @@ public struct OverviewHRChart: View {
                         }
                     }
                 }
+                #if os(macOS)
+                // Click-drag moves the cursor too (#58). Off on the zooming charts, where a drag pans.
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local).onChanged { value in
+                    var tx = Transaction()
+                    tx.disablesAnimations = true
+                    withTransaction(tx) { hoverX = value.location.x }
+                }, including: (showsHover && zoomBounds == nil) ? .all : .subviews)
+                #endif
                 #if os(iOS)
                 // #979 spin-off — touch scrub. onContinuousHover above is pointer-only, so on iPhone the
                 // crosshair readout was unreachable (the collapsed a11y summary was the only datum
@@ -476,9 +504,11 @@ public struct OverviewHRChart: View {
                 // scrubbing, then dragging moves the crosshair; lift clears it. Gating behind the hold is
                 // what keeps zoom/pan untouched: an immediate drag exceeds the hold's max distance and
                 // still pans (ZoomPanModifier), pinch still zooms, double-tap still resets. `.subviews`
-                // masks the gesture entirely on the call sites that don't opt in.
+                // masks the gesture entirely on the call sites that opt out.
+                // Kept instead of `.chartScrub`: same gesture, but it also feeds `scrubEngaged` to the pan (#1342).
                 .gesture(touchScrubGesture, including: (touchScrub && showsHover) ? .all : .subviews)
                 #endif
+                .chartScrubHaptic(target.map { $0.gap ?? $0.point.date })
             }
         }
         .frame(height: height)

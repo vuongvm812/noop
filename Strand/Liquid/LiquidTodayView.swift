@@ -83,6 +83,8 @@ struct LiquidTodayView: View {
     /// every hole up and drew a day of sparse live windows as one continuous line. That bites hardest on a
     /// strap whose history never offloads, where heart rate exists ONLY for the windows it was connected.
     @State private var hrSegments: [String] = []
+    /// Epoch seconds of each [hrValues] bucket, so the card's scrub readout can name the time it points at.
+    @State private var hrTimes: [Int] = []
     @State private var workouts: [WorkoutRow] = [] // newest-first
     /// #today-hosted-cards: the shared SleepModel that backs every SleepModel-derived hosted sleep card
     /// (Stages vs typical today; more to follow). Built ONCE in `load()` from the SAME inputs the Sleep tab
@@ -767,7 +769,7 @@ struct LiquidTodayView: View {
                     // this card, never the whole Today. Shows the current bpm live with a rolling
                     // beat-by-beat trace; falls back to today's banked 5-minute trace when idle.
                     LiquidLiveHR(tint: liquidHeart, fallback: hrValues, fallbackSegments: hrSegments,
-                                 animated: dataLoaded)
+                                 fallbackTimes: hrTimes, animated: dataLoaded)
                 }
             }
             .buttonStyle(LiquidPressStyle())
@@ -857,7 +859,7 @@ struct LiquidTodayView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stress through the day").strandOverline()
                     if hostedStressHours.contains(where: { $0.level != nil }) {
-                        DaytimeLoadLine(hours: hostedStressHours)
+                        DaytimeLoadLine(hours: hostedStressHours, interactive: false)
                     } else {
                         // The honest blank: only waking hours score and an hour needs enough heart
                         // rate, so early morning is empty by construction rather than by failure.
@@ -1885,6 +1887,7 @@ struct LiquidTodayView: View {
         let hrBuckets = await hrA
         hrValues = hrBuckets.map { $0.bpm }
         hrSegments = hrGapSegments(bucketTs: hrBuckets.map { $0.ts }, bucketSeconds: 300)
+        hrTimes = hrBuckets.map { $0.ts }
         workouts = (await wkA).filter { $0.startTs >= from && $0.startTs < to }
 
         let (chargeSource, effortSource, restSource) = await (chargeSourceA, effortSourceA, restSourceA)
@@ -2555,19 +2558,27 @@ private struct LiquidLiveHR: View {
     /// so it passes nil and draws exactly as before; the banked buckets skip the hours nothing was
     /// recorded, and without this the sparkline joined across them as though the day were continuous.
     var fallbackSegments: [String] = []
+    /// Epoch seconds of each [fallback] bucket, for the scrub readout's time label. Ignored unless it
+    /// lines up one-to-one with [fallback].
+    var fallbackTimes: [Int] = []
     var animated: Bool
 
     @EnvironmentObject private var live: LiveState
     @State private var samples: [Double] = []
+    /// Arrival time of each entry in [samples], kept in step with it so the scrub readout names the second.
+    @State private var sampleTimes: [Date] = []
     @State private var beat = false
     @State private var scrubX: CGFloat?
-    #if os(iOS)
-    @State private var scrubEngaged = false
-    #endif
     private let maxSamples = 90   // ~1.5 min of 1 Hz live HR, enough to read the shape
 
     private var isLive: Bool { live.connected && samples.count >= 2 }
     private var series: [Double] { isLive ? samples : fallback }
+    /// The time of each [series] entry, or nil when the two do not line up (the readout then shows bpm only).
+    private var seriesTimes: [Date]? {
+        if isLive { return sampleTimes.count == samples.count ? sampleTimes : nil }
+        guard fallbackTimes.count == fallback.count else { return nil }
+        return fallbackTimes.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
     /// The big number is the LIVE heart rate only. It used to fall back to the last banked 5-minute average, drawn
     /// exactly like a live reading, so with the strap off the wrist the card went on showing one (a tester's 91). The
     /// day's trace and its labelled min / avg / max still show without a live strap.
@@ -2663,13 +2674,17 @@ private struct LiquidLiveHR: View {
                     .padding(.vertical, 24)
             }
         }
-        .onAppear { if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)] } }
+        .onAppear {
+            if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)]; sampleTimes = [Date()] }
+        }
         .onChangeCompat(of: live.heartRate) { hr in
             // No live heart rate (the strap off the wrist, or gone): drop the trace, so the card stops calling an
             // old one "Live" and shows today's average under its own label.
-            guard let hr, hr > 0 else { samples.removeAll(); return }
+            guard let hr, hr > 0 else { samples.removeAll(); sampleTimes.removeAll(); return }
             samples.append(Double(hr))
+            sampleTimes.append(Date())
             if samples.count > maxSamples { samples.removeFirst(samples.count - maxSamples) }
+            if sampleTimes.count > maxSamples { sampleTimes.removeFirst(sampleTimes.count - maxSamples) }
             beat.toggle()
         }
     }
@@ -2684,30 +2699,40 @@ private struct LiquidLiveHR: View {
 
     /// Uses the thread renderer's ten-point inset and equal-distance sample positions, so the
     /// readout points to the value actually drawn under the finger even for a sparse banked trace.
+    /// The renderer spaces samples evenly rather than by time, so the cursor always lands on a drawn
+    /// sample and there is no empty slot to call "No data". A selection tick fires on each snap (#58).
     private var scrubReadout: some View {
         GeometryReader { geometry in
-            if let scrubX, series.count >= 2 {
-                // The renderer's own mapping, not a copy of it: a private inset or span floor here would
-                // agree by inspection and then drift the crosshair off the curve the moment either moved.
-                let plot = LiquidRender.ThreadPlot(size: geometry.size, values: series)
-                let index = plot.nearestIndex(toX: Double(scrubX))
-                let width = geometry.size.width
-                let x = CGFloat(plot.x(index))
-                let y = CGFloat(plot.y(series[index]))
-                Path { path in
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+            // The renderer's own mapping, not a copy of it: a private inset or span floor here would
+            // agree by inspection and then drift the crosshair off the curve the moment either moved.
+            let plot = series.count >= 2 ? LiquidRender.ThreadPlot(size: geometry.size, values: series) : nil
+            let index: Int? = scrubX.flatMap { sx in plot.map { $0.nearestIndex(toX: Double(sx)) } }
+            ZStack {
+                if let plot, let index {
+                    let width = geometry.size.width
+                    let x = CGFloat(plot.x(index))
+                    let y = CGFloat(plot.y(series[index]))
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                    }
+                    .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
+                    Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
+                    (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
+                        + Text(" bpm").font(StrandFont.caption)
+                        + Text(verbatim: seriesTimes.map { " · " + $0[index].formatted(date: .omitted, time: isLive ? .standard : .shortened) } ?? "")
+                            .font(StrandFont.caption)
+                            .foregroundColor(StrandPalette.textSecondary))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .padding(.horizontal, NoopMetrics.space2)
+                        .padding(.vertical, NoopMetrics.space1)
+                        .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
+                        .fixedSize()
+                        .position(x: min(max(x, 72), max(72, width - 72)), y: 15)
                 }
-                .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
-                Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
-                (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
-                    + Text(" bpm").font(StrandFont.caption))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .padding(.horizontal, NoopMetrics.space2)
-                    .padding(.vertical, NoopMetrics.space1)
-                    .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
-                    .position(x: min(max(x, 48), max(48, width - 48)), y: 15)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .chartScrubHaptic(index)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -2718,11 +2743,8 @@ private struct LiquidLiveHR: View {
         LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
             .onChanged { value in
+                // The engage tick comes from the readout's per-snap haptic as the first sample lands.
                 guard case .second(true, let drag) = value else { return }
-                if !scrubEngaged {
-                    scrubEngaged = true
-                    StrandHaptic.selection.play()
-                }
                 if let drag {
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
@@ -2730,7 +2752,6 @@ private struct LiquidLiveHR: View {
                 }
             }
             .onEnded { _ in
-                scrubEngaged = false
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) { scrubX = nil }

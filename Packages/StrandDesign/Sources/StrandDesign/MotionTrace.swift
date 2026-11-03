@@ -8,6 +8,10 @@ import SwiftUI
 // short filled "seismograph" strip so the eye can line a restless burst up against the stage band above
 // it, without competing with the hypnogram for vertical space.
 //
+// Scrubbing (#58): hover, click-drag on macOS, or touch-and-hold then drag on iOS shows a cursor that
+// names the epoch's movement as a share of the night's peak (the trace's own scale) and, when the
+// caller passes the night's `start`, the epoch's clock time.
+//
 // HONESTY (#407): when there is no persisted motion (older rows whose `motionJSON` is NULL) the caller
 // shows an honest empty state instead of this view — a flat fabricated zero line would be a lie. This
 // view itself only renders when given a non-empty series.
@@ -24,12 +28,38 @@ public struct MotionTrace: View {
     /// The trace tint — defaults to the sleep accent so it belongs to the same visual family as the
     /// hypnogram bands without mimicking a stage colour.
     public var tint: Color
+    /// Wall-clock start of the first epoch. When set, the scrub callout names each epoch's clock time;
+    /// when nil it shows the movement value alone.
+    public var start: Date?
 
-    public init(epochs: [Double], height: CGFloat = 44, tint: Color = StrandPalette.textTertiary) {
+    public init(epochs: [Double], height: CGFloat = 44, tint: Color = StrandPalette.textTertiary,
+                start: Date? = nil) {
         self.epochs = epochs
         self.height = height
         self.tint = tint
+        self.start = start
     }
+
+    /// The epoch grid the trace is drawn on: one value per 30 s.
+    static let epochSeconds: TimeInterval = 30
+
+    /// Wall-clock start of epoch `index` on a night that began at `start`.
+    static func epochDate(_ index: Int, from start: Date) -> Date {
+        start.addingTimeInterval(Double(index) * epochSeconds)
+    }
+
+    /// An epoch's movement as a whole percentage of the night's peak, the scale the strip is drawn on.
+    /// Zero for a non-positive peak, clamped to 0...100.
+    static func peakPercent(_ value: Double, peak: Double) -> Int {
+        guard peak > 0 else { return 0 }
+        return Int((max(0, min(value / peak, 1)) * 100).rounded())
+    }
+
+    /// Clock format for the callout: "jmm" follows the device's 12/24-hour setting, as the
+    /// hypnogram's tooltip does (#337).
+    static let clockFormatter: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale.current; f.setLocalizedDateFormatFromTemplate("jmm"); return f
+    }()
 
     /// The peak magnitude used to normalise the fill height. A non-positive peak (all-zero / empty) maps
     /// everything to the baseline so the strip is flat rather than dividing by zero.
@@ -89,6 +119,10 @@ public struct MotionTrace: View {
                     }
                     .stroke(tint.opacity(0.8), lineWidth: 1.5)
                 }
+
+                #if !os(watchOS)
+                MotionTraceScrubLayer(epochs: epochs, peak: peak, start: start, tint: tint, size: geo.size)
+                #endif
             }
             .accessibilityElement()
             .accessibilityLabel(Text("Movement during sleep"))
@@ -122,6 +156,52 @@ public struct MotionTrace: View {
     }
 }
 
+#if !os(watchOS)
+/// The scrub cursor over a `MotionTrace`: a rule and dot on the nearest epoch, with a callout naming its
+/// movement and clock time (#58). Kept apart from `MotionTrace` because the gesture and the hover
+/// toolkit do not exist on watchOS.
+private struct MotionTraceScrubLayer: View {
+    let epochs: [Double]
+    let peak: Double
+    let start: Date?
+    let tint: Color
+    let size: CGSize
+
+    @State private var scrubX: CGFloat? = nil
+
+    var body: some View {
+        let index = scrubX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: epochs.count, width: size.width) }
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            if let index, peak > 0 {
+                let point = epochs.count >= 2
+                    ? MotionTrace.points(in: size, epochs: epochs, peak: peak)[index]
+                    : CGPoint(x: size.width / 2, y: size.height - CGFloat(epochs[0] / peak) * (size.height - 2))
+                let movement = String(localized: "Movement", bundle: .module)
+                CrosshairRule(x: point.x, height: size.height)
+                HighlightDot(color: tint, diameter: 7)
+                    .position(point)
+                PositionedTooltip(
+                    anchor: point,
+                    container: size,
+                    tooltip: ChartTooltip(
+                        value: (Double(MotionTrace.peakPercent(epochs[index], peak: peak)) / 100).formatted(.percent),
+                        label: start.map {
+                            "\(movement) · \(MotionTrace.clockFormatter.string(from: MotionTrace.epochDate(index, from: $0)))"
+                        } ?? movement,
+                        accent: tint
+                    )
+                )
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .animation(StrandMotion.fade, value: scrubX)
+        .chartScrub($scrubX, enabled: !epochs.isEmpty)
+        .chartScrubHaptic(index)
+    }
+}
+#endif
+
 #if DEBUG
 #Preview("MotionTrace") {
     let calm = (0..<60).map { _ in Double.random(in: 0...0.1) }
@@ -132,7 +212,7 @@ public struct MotionTrace: View {
         Text("Calm night").strandOverline()
         MotionTrace(epochs: calm)
         Text("Restless night").strandOverline()
-        MotionTrace(epochs: restless)
+        MotionTrace(epochs: restless, start: Date(timeIntervalSince1970: 1_700_000_000))
     }
     .padding(28)
     .frame(width: 720, height: 280)

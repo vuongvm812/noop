@@ -42,6 +42,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noop.analytics.DoseCurvePoint
@@ -303,10 +305,12 @@ private fun DoseResponseCard(card: DoseCardData) {
             DoseCurveChart(
                 points = r.curve,
                 accent = domain.color,
+                description = curveDescription(card, r),
+                valueText = { doseCurveScrubValue(it, card.outcomeSuffix, card.outcomeName) },
+                doseLabel = { doseCurveDoseLabel(card.behavior, it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(132.dp)
-                    .clearAndSetSemantics { contentDescription = curveDescription(card, r) },
+                    .height(132.dp),
             )
 
             if (r.priorDominated) {
@@ -420,9 +424,35 @@ private fun ConfidencePill(c: ScoreConfidence) {
 // Compose Canvas idiom so it sits in the design system with no extra dependency.
 
 @Composable
-private fun DoseCurveChart(points: List<DoseCurvePoint>, accent: Color, modifier: Modifier = Modifier) {
+private fun DoseCurveChart(
+    points: List<DoseCurvePoint>,
+    accent: Color,
+    description: String,
+    valueText: (Double) -> String,
+    doseLabel: (Int) -> String,
+    modifier: Modifier = Modifier,
+) {
     val zeroColor = Palette.hairlineStrong
-    Canvas(modifier = modifier) {
+    // Scrub cursor (#58): snaps to the nearest dose bin and reads its modelled delta. The bins are
+    // evenly spaced, the same placement `xFor` draws them at.
+    var scrubX by remember(points) { mutableStateOf<Float?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val fractions = remember(points) { chartScrubIndexFractions(points.size) }
+    val selected = scrubX?.let { x ->
+        if (points.isEmpty()) null else chartScrubNearestIndex(fractions, chartWidth, x)
+    }
+    val callout = selected?.let { i -> valueText(points[i].outcomeDelta) to doseLabel(points[i].dose) }
+    ChartScrubHaptic(selected)
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { chartWidth = it.width.toFloat() }
+            .chartScrub(points, onRelease = { scrubX = null }) { scrubX = it }
+            .clearAndSetSemantics {
+                contentDescription = description
+                callout?.let { (value, label) -> stateDescription = "$value, $label" }
+            },
+    ) {
         if (points.isEmpty()) return@Canvas
         val w = size.width
         val h = size.height
@@ -470,6 +500,35 @@ private fun DoseCurveChart(points: List<DoseCurvePoint>, accent: Color, modifier
         points.forEachIndexed { i, pt ->
             drawCircle(accent, radius = 2.5.dp.toPx(), center = Offset(xFor(i), yFor(pt.outcomeDelta)))
         }
+
+        if (selected != null && callout != null) {
+            val pt = points[selected]
+            drawScrubCursor(xFor(selected), yFor(pt.outcomeDelta), accent, callout.first, callout.second, paints)
+        }
+    }
+}
+
+/** The dose curve callout's value line: the signed modelled delta and the outcome it moves, "−3% Charge". */
+internal fun doseCurveScrubValue(delta: Double, suffix: String, outcomeName: String): String =
+    "${signed(delta, suffix)} $outcomeName"
+
+/** A dose bin as the stepper names it: the drink count ("4+" at the top bin) or the caffeine timing slot. */
+internal fun doseChoiceLabel(behavior: DosedBehavior, d: Int): String = when (behavior) {
+    DosedBehavior.ALCOHOL -> if (d >= DoseResponseEngine.maxCurveDose) "$d+" else "$d"
+    DosedBehavior.CAFFEINE -> when (d) {
+        0 -> "AM"
+        1 -> "Noon"
+        2 -> "2pm+"
+        else -> "Eve"
+    }
+}
+
+/** The dose curve callout's label: the stepper's name for the bin, with the unit for drinks ("4+ drinks"). */
+internal fun doseCurveDoseLabel(behavior: DosedBehavior, dose: Int): String {
+    val choice = doseChoiceLabel(behavior, dose)
+    return when (behavior) {
+        DosedBehavior.ALCOHOL -> if (dose == 1) "$choice drink" else "$choice drinks"
+        DosedBehavior.CAFFEINE -> choice
     }
 }
 
@@ -511,15 +570,7 @@ internal data class DoseCardData(
 
     val doseChoices: List<Int> get() = (0..DoseResponseEngine.maxCurveDose).toList()
 
-    fun doseChoiceLabel(d: Int): String = when (behavior) {
-        DosedBehavior.ALCOHOL -> if (d >= DoseResponseEngine.maxCurveDose) "$d+" else "$d"
-        DosedBehavior.CAFFEINE -> when (d) {
-            0 -> "AM"
-            1 -> "Noon"
-            2 -> "2pm+"
-            else -> "Eve"
-        }
-    }
+    fun doseChoiceLabel(d: Int): String = doseChoiceLabel(behavior, d)
 
     fun dosePlusSuffix(d: Int): String =
         if (behavior == DosedBehavior.ALCOHOL) {

@@ -64,6 +64,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +95,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -1497,13 +1500,50 @@ private fun FooterStat(label: String, value: String, modifier: Modifier = Modifi
 private val liveHrAxisFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US).withZone(ZoneId.systemDefault())
 
+/**
+ * What the live chart's scrub cursor at [cursorMs] reads: the nearest sample's index, plus the callout's
+ * value ("72 bpm", or "No data" over a dropout) and its HH:mm:ss label. Null for an empty series.
+ */
+internal data class LiveHrScrubReadout(val hit: ChartScrubHit, val value: String, val label: String)
+
+internal fun liveHrScrubReadout(samples: List<LiveHrSample>, cursorMs: Long): LiveHrScrubReadout? {
+    val hit = chartScrubResolve(samples.map { it.timeMs }, cursorMs) ?: return null
+    val gapAt = hit.gapAt
+    return if (gapAt != null) {
+        LiveHrScrubReadout(hit, CHART_SCRUB_NO_DATA, liveHrAxisFormatter.format(Instant.ofEpochMilli(gapAt)))
+    } else {
+        val s = samples[hit.index]
+        LiveHrScrubReadout(hit, "${s.bpm.roundToInt()} bpm", liveHrAxisFormatter.format(Instant.ofEpochMilli(s.timeMs)))
+    }
+}
+
 @Composable
 private fun LiveHrTimeChart(
     samples: List<LiveHrSample>,
     color: Color,
     modifier: Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth().clipToBounds()) {
+    // Scrub cursor (#58). The gesture is keyed on nothing that changes per sample, so a drag in progress
+    // is not restarted every time a reading arrives; the cursor keeps its x while the trace scrolls under it.
+    var scrubX by remember { mutableStateOf<Float?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val readout = scrubX?.let { x ->
+        if (samples.size < 2 || chartWidth <= 0f) return@let null
+        val tMin = samples.first().timeMs
+        val tSpan = (samples.last().timeMs - tMin).coerceAtLeast(1L)
+        val frac = (x / chartWidth).coerceIn(0f, 1f)
+        liveHrScrubReadout(samples, tMin + (tSpan * frac.toDouble()).roundToLong())
+    }
+    ChartScrubHaptic(readout?.let { samples.getOrNull(it.hit.index)?.timeMs to it.hit.gapAt })
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .onSizeChanged { chartWidth = it.width.toFloat() }
+            .chartScrub(Unit, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { readout?.let { stateDescription = "${it.value}, ${it.label}" } },
+    ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (samples.size < 2 || size.width <= 0f || size.height <= 0f) {
                 drawHrBaseline()
@@ -1596,6 +1636,16 @@ private fun LiveHrTimeChart(
                     val rawX = frac * size.width
                     val x = rawX.coerceIn(0f, (size.width - labelWidth).coerceAtLeast(0f))
                     drawText(label, x, baselineY, paint)
+                }
+            }
+
+            readout?.let { r ->
+                val gapAt = r.hit.gapAt
+                if (gapAt != null) {
+                    drawScrubCursor(xFor(gapAt), null, color, r.value, r.label, paints)
+                } else {
+                    val s = samples[r.hit.index]
+                    drawScrubCursor(xFor(s.timeMs), yFor(s.bpm), color, r.value, r.label, paints)
                 }
             }
         }

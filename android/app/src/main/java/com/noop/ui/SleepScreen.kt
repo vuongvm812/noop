@@ -70,6 +70,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -2135,7 +2137,7 @@ internal fun StageTimeline(
             modifier = Modifier.padding(horizontal = Metrics.stageRowPadH),
             verticalArrangement = Arrangement.spacedBy(Metrics.space2),
         ) {
-            MotionStrip(motionEpochs)
+            MotionStrip(motionEpochs, onsetTs, wakeTs)
         }
         if (onsetTs != null && wakeTs != null) {
             Box(modifier = Modifier.padding(horizontal = Metrics.stageRowPadH)) {
@@ -2300,7 +2302,7 @@ internal fun stageSharePercent(label: String, s: Stages): Int {
  * SleepView motionStrip. Presentation-only.
  */
 @Composable
-private fun MotionStrip(epochs: List<Double>) {
+private fun MotionStrip(epochs: List<Double>, onsetTs: Long? = null, wakeTs: Long? = null) {
     // Emits TWO children, the label and then the trace, so the caller must lay them out vertically
     // (see `StageTimeline`, which uses a Column for exactly this reason).
     //
@@ -2326,7 +2328,32 @@ private fun MotionStrip(epochs: List<Double>) {
         return
     }
     val tint = Palette.restColor
-    Canvas(modifier = Modifier.fillMaxWidth().height(Metrics.motionStripHeight)) {
+    // #58: scrub the strip to read one epoch's movement (as a share of tonight's peak, the strip's own
+    // scale) and, when the night has a clock window, the time it was recorded.
+    var scrubX by remember(epochs) { mutableStateOf<Float?>(null) }
+    var stripW by remember { mutableStateOf(0f) }
+    val fractions = remember(epochs) { chartScrubIndexFractions(epochs.size) }
+    val scrubIndex = scrubX?.let { chartScrubNearestIndex(fractions, stripW, it) }
+    ChartScrubHaptic(scrubIndex)
+    val is24h = ClockPrefs.uses24Hour(LocalContext.current)
+    val scrubValue = scrubIndex?.let { i ->
+        motionScrubPercent(epochs, i)?.let { uiString(R.string.l10n_sleep_screen_percent_2281d326, it) }
+            ?: CHART_SCRUB_NO_DATA
+    }
+    val scrubLabel = scrubIndex?.let { i ->
+        motionScrubTimestamp(onsetTs, wakeTs, epochs.size, i)?.let { clockTimeLabel(it, is24h) }
+    }
+    val paints = rememberChartScrubPaints()
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(Metrics.motionStripHeight)
+            .onSizeChanged { stripW = it.width.toFloat() }
+            .chartScrub(epochs, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics {
+                scrubValue?.let { v -> stateDescription = listOfNotNull(v, scrubLabel).joinToString(", ") }
+            },
+    ) {
         val w = size.width
         val h = size.height
         if (w <= 0f || h <= 0f) return@Canvas
@@ -2362,7 +2389,31 @@ private fun MotionStrip(epochs: List<Double>) {
             for (i in 1 until n) { val p = pointAt(i); lineTo(p.x, p.y) }
         }
         drawPath(crest, color = tint.copy(alpha = 0.8f), style = Stroke(width = 1.5f))
+        val i = scrubIndex
+        if (i != null && scrubValue != null) {
+            val p = pointAt(i)
+            drawScrubCursor(p.x, p.y, tint, scrubValue, scrubLabel, paints)
+        }
     }
+}
+
+/** One movement epoch as a whole percentage of the night's peak, the strip's own relative scale. Null
+ *  for an index outside the series or a night with no positive peak (nothing to be a share of). */
+internal fun motionScrubPercent(epochs: List<Double>, index: Int): Int? {
+    val v = epochs.getOrNull(index) ?: return null
+    val peak = epochs.maxOrNull()?.takeIf { it > 0.0 } ?: return null
+    return ((v / peak).coerceIn(0.0, 1.0) * 100.0).roundToInt()
+}
+
+/**
+ * The clock instant of epoch [index] when the strip's [count] epochs are spread evenly across the
+ * onset-to-wake window, matching where the strip draws them. Null without a valid window, since a
+ * time there would have to be invented.
+ */
+internal fun motionScrubTimestamp(onsetTs: Long?, wakeTs: Long?, count: Int, index: Int): Long? {
+    if (onsetTs == null || wakeTs == null || wakeTs <= onsetTs || count < 1 || index !in 0 until count) return null
+    if (count == 1) return onsetTs
+    return onsetTs + (wakeTs - onsetTs) * index / (count - 1)
 }
 
 

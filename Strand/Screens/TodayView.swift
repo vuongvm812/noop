@@ -2523,7 +2523,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stress through the day").strandOverline()
                     if hostedStressHours.contains(where: { $0.level != nil }) {
-                        DaytimeLoadLine(hours: hostedStressHours)
+                        DaytimeLoadLine(hours: hostedStressHours, interactive: false)
                     } else {
                         // The honest blank: only waking hours score and an hour needs enough heart
                         // rate, so early morning is empty by construction rather than by failure.

@@ -735,8 +735,8 @@ private struct FlowChips: View {
 // MARK: - Overlay chart (custom multi-line Swift Chart, normalized 0–1)
 
 /// Draws each series as its own colored line on a shared 0…1 normalized y-axis.
-/// Hovering reveals a crosshair plus a tooltip listing every series' REAL value on
-/// the nearest day.
+/// Scrubbing (hover or click-drag on the Mac, touch-and-hold then drag on iOS) reveals a
+/// crosshair plus a tooltip listing every series' REAL value on the nearest day.
 private struct OverlayChart: View {
     let series: [CompareSeries]
     /// Effort display scale (#268) — passed through to the hover tooltip's real-value read-outs. The
@@ -996,9 +996,20 @@ private struct OverlayChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot, index: model.dayIndex) }
                 ZStack(alignment: .topLeading) {
-                    if let hx = hoverX,
-                       let snap = nearestEntry(toX: hx, proxy: proxy, plot: plot, index: model.dayIndex),
+                    if let target, let gap = target.gap, let gx = proxy.position(forX: gap) {
+                        // A day no compared series has a reading for: mark the empty day rather than
+                        // snapping to a neighbour and labelling its values with the wrong date (#58).
+                        let cx = gx + plot.minX
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        PositionedTooltip(
+                            anchor: CGPoint(x: cx, y: plot.midY),
+                            container: geo.size,
+                            tooltip: ChartTooltip(value: ChartScrubMath.noDataText,
+                                                  label: MultiTooltip.dateLabelFormatter.string(from: gap))
+                        )
+                    } else if let snap = target?.entry,
                        let px = proxy.position(forX: snap.date) {
                         let cx = px + plot.minX
                         let dayValues = model.valuesByDay[snap.day] ?? [:]
@@ -1031,29 +1042,11 @@ private struct OverlayChart: View {
                     }
                 }
                 .animation(StrandMotion.fade, value: hoverX)
-                .contentShape(Rectangle())
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    switch phase {
-                    case .active(let location): hoverX = location.x
-                    case .ended: hoverX = nil
-                    }
-                }
-                #if os(iOS)
-                // Touch input never fires onContinuousHover (pointer-only), so on iPhone /
-                // iPad-without-pointer the crosshair + value tooltip would be unreachable.
-                // Drive the same hoverX via tap (single touch-down) and drag-to-scrub across
-                // days. minimumDistance:0 keeps the first touch responsive; a clearly vertical
-                // pan is still claimed by the parent ScrollView.
-                .gesture(
-                    SpatialTapGesture(coordinateSpace: .local)
-                        .onEnded { hoverX = $0.location.x }
-                        .exclusively(before:
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                .onChanged { hoverX = $0.location.x }
-                                .onEnded { _ in hoverX = nil }
-                        )
-                )
-                #endif
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                // Hover and click-drag on the Mac; touch-and-hold then drag on iOS, so a vertical swipe
+                // over the chart still scrolls the page instead of starting a scrub (#58).
+                .chartScrub($hoverX)
+                .chartScrubHaptic(target.map { $0.gap ?? $0.entry.date })
             }
         }
         // Persist the model into @State so hover-frame body evals hit the cache
@@ -1063,25 +1056,16 @@ private struct OverlayChart: View {
         .frame(height: height)
     }
 
-    /// Map a cursor x back to the nearest day present in the data: binary search over
-    /// the model's pre-parsed, date-sorted index, then pick the closer neighbour.
-    /// O(log days) per mouse move; ties snap to the earlier day, as the old scan did.
-    private func nearestEntry(toX x: CGFloat, proxy: ChartProxy, plot: CGRect,
-                              index: [(day: String, date: Date)]) -> (day: String, date: Date)? {
-        guard !index.isEmpty else { return nil }
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-
-        // Lower bound: first entry whose date is >= the cursor date.
-        var lo = 0, hi = index.count
-        while lo < hi {
-            let mid = (lo + hi) / 2
-            if index[mid].date < date { lo = mid + 1 } else { hi = mid }
-        }
-        if lo == 0 { return index[0] }
-        if lo == index.count { return index[index.count - 1] }
-        let before = index[lo - 1], after = index[lo]
-        return date.timeIntervalSince(before.date) <= after.date.timeIntervalSince(date) ? before : after
+    /// What the cursor at chart-local `x` is on: the nearest day present in the data (the model's
+    /// pre-parsed, date-sorted index, binary-searched by the shared scrub math), and the empty day's date
+    /// when no series has a reading there (#58). Ties snap to the earlier day.
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect,
+                             index: [(day: String, date: Date)]) -> (entry: (day: String, date: Date), gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(dates: index.map(\.date), cursor: date)
+        else { return nil }
+        return (index[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 }
 
@@ -1101,8 +1085,9 @@ private struct MultiTooltip: View {
     let anchorX: CGFloat
     let container: CGSize
 
-    /// Shared formatter; was rebuilt from scratch on every hover frame.
-    private static let dateLabelFormatter: DateFormatter = {
+    /// Shared formatter; was rebuilt from scratch on every hover frame. Also labels the chart's
+    /// "No data" callout over an empty day, so both read the date the same way.
+    static let dateLabelFormatter: DateFormatter = {
         let f = DateFormatter()
         // Device locale (not en_US_POSIX) so the DISPLAYED weekday/month names translate — the crosshair
         // parser above still uses en_US_POSIX for stable yyyy-MM-dd parsing. Same pattern + device locale

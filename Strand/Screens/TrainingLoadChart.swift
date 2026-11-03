@@ -16,7 +16,7 @@ import StrandDesign
 /// keeps each curve's own peaks/troughs even though the two diverge in shape; hover always reads the
 /// full-resolution `rows`, never the downsampled draw set.
 ///
-/// Also adds the hover/tooltip readout this chart never had, reusing the exact `CrosshairRule` /
+/// Also adds the scrub cursor/tooltip readout this chart never had, reusing the exact `CrosshairRule` /
 /// `HighlightDot` / `PositionedTooltip` / `ChartTooltip` components `TrendChart`'s `chartOverlay` uses —
 /// no new hover mechanism invented.
 struct TrainingLoadChart: View {
@@ -37,14 +37,16 @@ struct TrainingLoadChart: View {
                                         date: { $0.date }, value: { $0.atl })
     }
 
-    /// The full-resolution row nearest a given chart-local x. Deliberately reads `rows` (not
-    /// `ctlRows`/`atlRows`), matching `TrendChart.nearestPoint`: hover always names the real datum, never
-    /// a downsampled stand-in.
-    private func nearestRow(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> TrainingLoadCard.Row? {
-        guard !rows.isEmpty else { return nil }
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return rows.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+    /// What the cursor at chart-local `x` is on: the full-resolution row nearest it, and the empty day's
+    /// date when the cursor sits over a missing row instead (#58). Deliberately reads `rows` (not
+    /// `ctlRows`/`atlRows`), matching `TrendChart.scrubTarget`: the readout always names the real datum,
+    /// never a downsampled stand-in.
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> (row: TrainingLoadCard.Row, gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(dates: rows.map(\.date), cursor: date)
+        else { return nil }
+        return (rows[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     private func fmt(_ v: Double) -> String { String(format: "%.1f", v) }
@@ -78,9 +80,18 @@ struct TrainingLoadChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot) }
                 ZStack(alignment: .topLeading) {
-                    if let hx = hoverX,
-                       let p = nearestRow(toX: hx, proxy: proxy, plot: plot),
+                    if let target, let gap = target.gap, let gx = proxy.position(forX: gap) {
+                        let cx = gx + plot.minX
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        PositionedTooltip(
+                            anchor: CGPoint(x: cx, y: plot.midY),
+                            container: geo.size,
+                            tooltip: ChartTooltip(value: ChartScrubMath.noDataText,
+                                                  label: Self.tooltipDateFormatter.string(from: gap))
+                        )
+                    } else if let p = target?.row,
                        let px = proxy.position(forX: p.date),
                        let pyCTL = proxy.position(forY: p.ctl),
                        let pyATL = proxy.position(forY: p.atl) {
@@ -102,19 +113,8 @@ struct TrainingLoadChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
-                    // draw-on animation and flickers the curve (mirrors TrendChart #104).
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) {
-                        switch phase {
-                        case .active(let location): hoverX = location.x
-                        case .ended: hoverX = nil
-                        }
-                    }
-                }
+                .chartScrub($hoverX)
+                .chartScrubHaptic(target.map { $0.gap ?? $0.row.date })
             }
         }
         .accessibilityLabel(Text("Training load: chronic vs acute"))

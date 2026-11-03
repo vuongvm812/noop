@@ -10,8 +10,8 @@ import WhoopStore
 ///
 /// One view for both places the night is drawn: the Sleep tab (`SleepView`) and the Today-hosted stage
 /// card (`StageDetailView`). Each previously carried an identical private copy, so a change to one
-/// silently missed the other. Pointer hover shows a crosshair and dot on the nearest one-minute bucket
-/// with its clock time and bpm, the same readout the Today HR chart gives on the Mac.
+/// silently missed the other. The scrub cursor (pointer hover or click-drag on the Mac, touch-and-hold then
+/// drag on iOS) shows a crosshair and dot on the nearest one-minute bucket with its clock time and bpm.
 struct SleepHRChart: View {
     /// The night's one-minute sleeping-HR buckets (unfiltered; trimmed to the visible window here).
     let nightHR: [HRBucket]
@@ -138,44 +138,48 @@ struct SleepHRChart: View {
         }
     }
 
-    /// Crosshair, dot and time + bpm bubble on the bucket nearest the pointer. Uses the Canvas's own
-    /// x/y mapping so the dot sits on the drawn line.
+    /// Crosshair, dot and time + bpm bubble on the bucket nearest the cursor. Uses the Canvas's own
+    /// x/y mapping so the dot sits on the drawn line. Over a hole in the night's buckets the rule marks
+    /// the empty minute and the bubble says "No data" rather than reporting a neighbour's bpm (#58).
     private func hoverLayer(buckets: [HRBucket], nightStartTs: TimeInterval, lo: Double, hi: Double) -> some View {
         GeometryReader { geo in
+            let width = max(1, geo.size.width)
+            let times = buckets.map { Int64($0.ts) }
+            let hit: ChartScrubHit? = hoverX.flatMap { hx in
+                let rel = origin + TimeInterval(min(max(hx, 0), width) / width) * span
+                return ChartScrubMath.resolve(times: times, cursor: Int64((nightStartTs + rel).rounded(.down)))
+            }
+            let xFor: (TimeInterval) -> CGFloat = { ts in
+                CGFloat((ts - nightStartTs - origin) / span) * geo.size.width
+            }
             ZStack(alignment: .topLeading) {
-                if let hx = hoverX {
-                    let xs = buckets.map {
-                        CGFloat((TimeInterval($0.ts) - nightStartTs - origin) / span) * geo.size.width
-                    }
-                    if let i = ChartHoverMath.nearestIndex(toX: hx, xs: xs) {
-                        let b = buckets[i]
-                        let pt = CGPoint(x: xs[i],
-                                         y: geo.size.height * (1 - CGFloat((b.bpm - lo) / max(1, hi - lo))))
-                        CrosshairRule(x: pt.x, height: geo.size.height)
-                        HighlightDot(color: StrandPalette.restColor).position(pt)
-                        PositionedTooltip(
-                            anchor: pt,
-                            container: geo.size,
-                            tooltip: ChartTooltip(
-                                value: String(localized: "\(Int(b.bpm.rounded())) bpm"),
-                                label: timeFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(b.ts))),
-                                accent: StrandPalette.restColor))
-                    }
+                if let hit, let gap = hit.gapAt {
+                    let gx = xFor(TimeInterval(gap))
+                    CrosshairRule(x: gx, height: geo.size.height)
+                    PositionedTooltip(
+                        anchor: CGPoint(x: gx, y: geo.size.height / 2),
+                        container: geo.size,
+                        tooltip: ChartTooltip(
+                            value: ChartScrubMath.noDataText,
+                            label: timeFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(gap)))))
+                } else if let hit {
+                    let b = buckets[hit.index]
+                    let pt = CGPoint(x: xFor(TimeInterval(b.ts)),
+                                     y: geo.size.height * (1 - CGFloat((b.bpm - lo) / max(1, hi - lo))))
+                    CrosshairRule(x: pt.x, height: geo.size.height)
+                    HighlightDot(color: StrandPalette.restColor).position(pt)
+                    PositionedTooltip(
+                        anchor: pt,
+                        container: geo.size,
+                        tooltip: ChartTooltip(
+                            value: String(localized: "\(Int(b.bpm.rounded())) bpm"),
+                            label: timeFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(b.ts))),
+                            accent: StrandPalette.restColor))
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-            .contentShape(Rectangle())
-            .onContinuousHover(coordinateSpace: .local) { phase in
-                // Non-animating, as in OverviewHRChart: an animated update makes the readout lag the pointer.
-                var tx = Transaction()
-                tx.disablesAnimations = true
-                withTransaction(tx) {
-                    switch phase {
-                    case .active(let location): hoverX = location.x
-                    case .ended: hoverX = nil
-                    }
-                }
-            }
+            .chartScrub($hoverX)
+            .chartScrubHaptic(hit.map { $0.gapAt ?? Int64(buckets[$0.index].ts) })
         }
     }
 }
