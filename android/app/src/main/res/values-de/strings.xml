@@ -2331,7 +2331,8 @@
     <string name="today_readiness_load_ramping_down">abnehmend (akut:chronisch %1$s) - Raum für mehr Belastung</string>
     <string name="today_readiness_load_sweet_spot">im optimalen Bereich (akut:chronisch %1$s)</string>
     <string name="today_readiness_load_building_fast">schneller Aufbau (akut:chronisch %1$s) - auf Ermüdung achten</string>
-    <string name="today_readiness_load_spiking">Spitze (akut:chronisch %1$s) - höheres Verletzungsrisiko</string>
+    <string name="settings_hrmax_auto_observed">Automatisch · %1$d bpm (beobachtet)</string>
+    <string name="today_readiness_load_spiking">Spitze (akut:chronisch %1$s) - deutlich über deiner üblichen Belastung</string>
     <string name="today_readiness_more_nights">Mit einigen weiteren Datennächten wird deine Bereitschaftseinschätzung genauer.</string>
     <string name="today_readiness_run_down">Erschöpft</string>
     <string name="today_readiness_run_down_summary">Mehrere Signale sind gleichzeitig schwach. Nutze den Tag zur Erholung: leichte Bewegung und heute Nacht richtig schlafen.</string>

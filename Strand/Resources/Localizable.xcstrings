@@ -35314,6 +35314,70 @@
         }
       }
     },
+    "Auto · %lld bpm (observed)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch · %lld bpm (beobachtet)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld bpm (observed)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld ppm (observada)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld bpm (observée)"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld bpm (osservata)"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld bpm (observada)"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Авторасчёт · %lld уд/мин (по данным)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动 · %lld bpm（实测）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動 · %lld bpm（實測）"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto · %lld bpm (zmierzona)"
+          }
+        }
+      }
+    },
     "Auto-detect workouts": {
       "localizations": {
         "de": {
@@ -199004,60 +199068,60 @@
         }
       }
     },
-    "spiking (acute:chronic %@) - higher injury risk": {
+    "spiking (acute:chronic %@) - well above your usual load": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "schnellt hoch (akut:chronisch %@) - höheres Verletzungsrisiko"
+            "value": "schnellt hoch (akut:chronisch %@) - deutlich über deiner üblichen Belastung"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "disparándose (agudo:crónico %@) - mayor riesgo de lesión"
+            "value": "disparándose (agudo:crónico %@) - muy por encima de tu carga habitual"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "en pic (aigu:chronique %@) - risque de blessure accru"
+            "value": "en pic (aigu:chronique %@) - bien au-delà de votre charge habituelle"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "in impennata (acuto:cronico %@) - rischio di infortunio più alto"
+            "value": "in impennata (acuto:cronico %@) - ben oltre il tuo carico abituale"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "pico (agudo:crónico %@) - maior risco de lesões"
+            "value": "pico (agudo:crónico %@) - bem acima da sua carga habitual"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "резкий скачок (остр.:хрон. %@) - повышенный риск травмы"
+            "value": "резкий скачок (остр.:хрон. %@) - намного выше вашей обычной нагрузки"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "急剧上升（急性：慢性 %@）——受伤风险更高"
+            "value": "急剧上升（急性：慢性 %@）——远高于你的常规负荷"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "急劇上升（急性：慢性 %@）——受傷風險更高"
+            "value": "急劇上升（急性：慢性 %@）——遠高於你的常規負荷"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "kolce (ostre:przewlekłe %@) - większe ryzyko kontuzji"
+            "value": "skok (ostre:przewlekłe %@) - znacznie powyżej zwykłego obciążenia"
           }
         }
       }

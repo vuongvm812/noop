@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import com.noop.R
+import com.noop.analytics.EffortLoad
 import com.noop.analytics.TrainingLoadEngine
 import com.noop.data.DailyMetric
 import kotlin.math.max
@@ -39,9 +40,9 @@ import kotlin.math.max
  */
 @Composable
 fun TrainingLoadCard(days: List<DailyMetric>, modifier: Modifier = Modifier) {
-    // Model straight from the training-load engine; the card needs no Readiness synthesis.
-    // DailyMetric.strain is the load.
-    val loads = days.map { TrainingLoadEngine.DailyLoad(it.day, it.strain) }
+    // Model straight from the training-load engine; the card needs no Readiness synthesis. The load is the
+    // day's TRIMP recovered from Effort ([EffortLoad]), not the log-scaled Effort itself.
+    val loads = days.map { TrainingLoadEngine.DailyLoad(it.day, it.strain?.let { s -> EffortLoad.trimpFromEffort(s) }) }
     val result = TrainingLoadEngine.evaluate(loads)
     val latest = result.points.lastOrNull()
 

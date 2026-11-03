@@ -23,9 +23,9 @@ import kotlin.math.sqrt
  * - **Resting-HR drift** — elevated resting HR vs baseline is a classic overtraining / illness
  *   signal (Lamberts et al. 2004).
  * - **Respiratory-rate drift** — a rise in sleeping respiratory rate is an early illness signal.
- * - **Training Stress Balance (ACWR)** — acute (7-day) vs chronic (28-day) strain. The 0.8–1.3
- *   band is the "sweet spot"; >1.5 is associated with higher injury risk (Gabbett 2016).
- * - **Training monotony** — mean/SD of daily strain over a week; high monotony (low variety) is
+ * - **Training Stress Balance (ACWR)** — EWMA acute (7-day) vs chronic (28-day) daily TRIMP over
+ *   calendar days (Williams 2017). Descriptive only; not an injury predictor (Impellizzeri 2020).
+ * - **Training monotony** — mean/SD of daily TRIMP over a week; high monotony (low variety) is
  *   associated with higher strain and illness (Foster 1998).
  *
  * Not medical advice. These are approximations from a consumer strap; they describe trends in
@@ -287,32 +287,34 @@ object ReadinessEngine {
         }
 
         // Training Stress Balance (ACWR) + monotony --------------------------
-        val strainSeries = sorted.mapNotNull { it.strain }
+        // On TRIMP ([EffortLoad]) over CALENDAR days ending YESTERDAY (today is a partial day), EWMA
+        // acute/chronic (Williams 2017). Mirrors Swift.
         var acwr: Double? = null
         var monotony: Double? = null
-        if (strainSeries.size >= minChronic) {
-            val acute = mean(strainSeries.takeLast(acuteWindow))!!
-            val chronic = mean(strainSeries.takeLast(chronicWindow))!!
-            if (chronic > 0) {
-                val ratio = acute / chronic
-                acwr = ratio
-                signals.add(acwrSignal(ratio, acute = acute, chronic = chronic))
-            }
-            // Foster monotony over the last week of strain.
-            val week = strainSeries.takeLast(acuteWindow)
-            val sd = sampleSD(week)
-            val m = mean(week)
-            if (week.size >= 4 && sd != null && sd > 0 && m != null) {
-                val mono = m / sd
-                monotony = mono
-                if (mono >= 2.0) {
-                    signals.add(
-                        Signal(
-                            key = "monotony", labelRes = Copy.TODAY_READINESS_SIGNAL_TRAINING_VARIETY,
-                            detailRes = Copy.TODAY_READINESS_MONOTONY_WATCH, flag = Flag.WATCH,
-                            evidence = Evidence.Monotony(mono),
+        val todayOrdinal = TrainingLoadEngine.dayOrdinal(latest.day)
+        if (todayOrdinal != null) {
+            val loads = EffortLoad.loadsByOrdinal(history.map { it.day to it.strain })
+            val end = todayOrdinal - 1
+            val ac = EffortLoad.acuteChronic(loads, end)
+            if (ac != null) {
+                val ratio = ac.ratio
+                if (ratio != null) {
+                    acwr = ratio
+                    signals.add(acwrSignal(ratio, acute = ac.acute, chronic = ac.chronic))
+                }
+                // Foster monotony over the last calendar week of load.
+                val mono = EffortLoad.monotony(loads, end)
+                if (mono != null) {
+                    monotony = mono
+                    if (mono >= 2.0) {
+                        signals.add(
+                            Signal(
+                                key = "monotony", labelRes = Copy.TODAY_READINESS_SIGNAL_TRAINING_VARIETY,
+                                detailRes = Copy.TODAY_READINESS_MONOTONY_WATCH, flag = Flag.WATCH,
+                                evidence = Evidence.Monotony(mono),
+                            )
                         )
-                    )
+                    }
                 }
             }
         }

@@ -11,9 +11,9 @@ import WhoopStore
 // fitness proxy) and acute load (ATL, the 7-day fatigue proxy); the gap between the two lines IS the
 // TSB / "form" (CTL − ATL), surfaced as the headline number and a footer stat.
 //
-// Descriptive only: CTL/ATL/TSB never feed the Readiness level or any score, and the loads are NOOP's
-// daily Effort/strain — NOT TRIMP. Long-horizon by nature, so the card models the full history rather
-// than the Trends range window (14+ contiguous days are needed before anything is drawn).
+// Descriptive only: CTL/ATL/TSB never feed the Readiness level or any score. The loads are daily TRIMP
+// recovered from Effort (`EffortLoad`), not the log-scaled Effort itself. Long-horizon by nature, so
+// the card models the full history rather than the Trends range window (14+ contiguous days are needed before anything is drawn).
 //
 // Isolated in its own file on purpose: TrendsView already sits near the iOS type-check budget, so this
 // keeps its own inference cost out of that body.
@@ -73,7 +73,7 @@ struct TrainingLoadCard: View {
     /// Model straight from the training-load engine; the card needs no Readiness synthesis.
     /// `DailyMetric.strain` is the load.
     private static func computeResult(days: [DailyMetric]) -> TrainingLoadEngine.Result {
-        let loads = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain) }
+        let loads = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain.flatMap(EffortLoad.trimp(fromEffort:))) }
         return TrainingLoadEngine.evaluate(days: loads)
     }
 

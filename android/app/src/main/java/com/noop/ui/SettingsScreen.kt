@@ -127,6 +127,7 @@ import com.noop.analytics.DayCycleMode
 import com.noop.analytics.HrZoneSet
 import com.noop.analytics.HrZones
 import com.noop.analytics.ProfileWeightSync
+import com.noop.analytics.StrainScorer
 import com.noop.analytics.UserProfile
 import com.noop.analytics.Zones
 import com.noop.R
@@ -347,8 +348,32 @@ class ProfileStore(private val prefs: SharedPreferences) {
     /** The auto (Tanaka) HR-max for the current age. */
     val hrMaxAuto: Int get() = Zones.hrMaxTanaka(age)
 
-    /** Effective HR-max: the manual override if set, else the Tanaka estimate. */
-    val hrMax: Int get() = if (hrMaxOverride > 0) hrMaxOverride else hrMaxAuto
+    /**
+     * #54: the observed HRmax evidence the last scoring pass used ([StrainScorer.observedHRmaxEvidence]).
+     * Derived, not a setting: rewritten by every pass and not part of the backup. Twin of Swift
+     * `ProfileStore.observedHRmaxEvidence`.
+     */
+    var observedHrMaxEvidence: Double?
+        get() = if (prefs.contains(KEY_OBSERVED_HRMAX)) prefs.getFloat(KEY_OBSERVED_HRMAX, 0f).toDouble() else null
+        set(v) {
+            if (v == null) prefs.edit().remove(KEY_OBSERVED_HRMAX).apply()
+            else prefs.edit().putFloat(KEY_OBSERVED_HRMAX, v.toFloat()).apply()
+        }
+
+    /** The HRmax Effort is scored against, through the one resolver the scoring pass uses (#54). */
+    val effortHrMax: Double?
+        get() = StrainScorer.resolveHRmax(
+            hrMaxOverride.takeIf { it > 0 }?.toDouble(), age.toDouble(), observedHrMaxEvidence,
+        ).first
+
+    /** Where [hrMax] came from: "override", "observed", "tanaka" or "default". */
+    val hrMaxSource: String
+        get() = StrainScorer.resolveHRmax(
+            hrMaxOverride.takeIf { it > 0 }?.toDouble(), age.toDouble(), observedHrMaxEvidence,
+        ).second
+
+    /** Display HR-max: [effortHrMax] rounded, else the Tanaka estimate (no age, no evidence). */
+    val hrMax: Int get() = effortHrMax?.let { Math.round(it).toInt() } ?: hrMaxAuto
 
     /**
      * Five personalized inclusive zone starts in BPM, or null for the conventional %HRmax zones.
@@ -452,6 +477,7 @@ class ProfileStore(private val prefs: SharedPreferences) {
         private const val KEY_HEIGHT = "height_cm"
         private const val KEY_WAIST = "waist_cm"
         private const val KEY_HRMAX = "hr_max_override"
+        private const val KEY_OBSERVED_HRMAX = "observed_hrmax_evidence"
         private const val KEY_HR_ZONE_THRESHOLDS = "hr_zone_thresholds"
 
         /** The shared five-boundary invariant (parity with `HRZones.validCustomLowerBounds`). */
@@ -1178,6 +1204,9 @@ fun SettingsScreen(
                         Text(
                             text = if (profile.hrMaxOverride > 0) {
                                 "Manual override"
+                            } else if (profile.hrMaxSource == "observed") {
+                                // #54: an HRmax raised by observed peaks is not the age formula.
+                                uiString(R.string.settings_hrmax_auto_observed, profile.hrMax)
                             } else {
                                 "Auto · ${profile.hrMaxAuto} bpm (Tanaka)"
                             },

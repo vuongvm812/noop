@@ -72,11 +72,13 @@ final class StrainSampleDurationTests: XCTestCase {
 
     // MARK: - the clamp
 
-    /// A dropout gap is capped: one reading before a 3 h hole may carry at most `maxSampleGapMin`, not
-    /// the whole hole — otherwise a single zone-5 sample invents hours of effort.
+    /// A dropout gap is capped: one reading before a 3 h hole may carry at most `sparseGapCapMaxMin`, not
+    /// the whole hole — otherwise a single zone-5 sample invents hours of effort. With no other gap to
+    /// read a cadence from, the cadence-aware cap (#54) sits at its ceiling; a hole inside a dense stream
+    /// is still cut to `maxSampleGapMin` (`EffortLoadTests`).
     func testDropoutGapIsClampedNotCredited() {
         let durations = StrainScorer.sampleDurationsMinutes(series(0, 3 * 3600))
-        XCTAssertEqual(durations, [StrainScorer.maxSampleGapMin, StrainScorer.maxSampleGapMin])
+        XCTAssertEqual(durations, [StrainScorer.sparseGapCapMaxMin, StrainScorer.sparseGapCapMaxMin])
     }
 
     /// No genuine cadence is truncated: the clamp sits at 4x the sparsest real cadence (~30 s).

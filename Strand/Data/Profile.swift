@@ -27,6 +27,15 @@ final class ProfileStore: ObservableObject {
     @Published var waistCm: Double { didSet { d.set(waistCm, forKey: K.waist) } }
     /// 0 = auto-estimate from age.
     @Published var hrMaxOverride: Int { didSet { d.set(hrMaxOverride, forKey: K.hrMax) } }
+    /// #54: the observed HRmax evidence the last scoring pass used (`StrainScorer.observedHRmaxEvidence`).
+    /// Derived, not a setting: rewritten by every pass and not part of the backup.
+    @Published var observedHRmaxEvidence: Double? {
+        didSet {
+            guard oldValue != observedHRmaxEvidence else { return }
+            if let v = observedHRmaxEvidence { d.set(v, forKey: K.observedHRmax) }
+            else { d.removeObject(forKey: K.observedHRmax) }
+        }
+    }
     /// Five personalized inclusive zone starts in BPM; empty = conventional %HRmax zones.
     @Published var hrZoneThresholds: [Int] {
         didSet {
@@ -86,7 +95,7 @@ final class ProfileStore: ObservableObject {
         /// cross-platform `.noopbak` whitelist keeps round-tripping an Int age unchanged.
         static let legacyAge = "profile.age"
         static let sex = "profile.sex", weight = "profile.weightKg"
-        static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride"
+        static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride", observedHRmax = "profile.observedHRmaxEvidence"
         static let hrZoneThresholds = "profile.hrZoneThresholds"
         static let stepScale = "profile.stepTicksPerStep"
         static let waist = "profile.waistCm"
@@ -126,6 +135,7 @@ final class ProfileStore: ObservableObject {
         heightCm = d.object(forKey: K.height) as? Double ?? 178
         waistCm = d.object(forKey: K.waist) as? Double ?? 0
         hrMaxOverride = d.object(forKey: K.hrMax) as? Int ?? 0
+        observedHRmaxEvidence = d.object(forKey: K.observedHRmax) as? Double
         let storedThresholds = d.string(forKey: K.hrZoneThresholds)?
             .split(separator: ",").compactMap { Int($0) } ?? []
         hrZoneThresholds = Self.validZoneThresholds(storedThresholds) ? storedThresholds : []
@@ -198,13 +208,25 @@ final class ProfileStore: ObservableObject {
     /// different, it was always the larger of the two and so always the one displayed. The setting
     /// therefore did nothing until the day stopped being today. Both views now read this, so the live
     /// value and the stored day are scored against one number.
+    ///
+    /// #54: resolved through `StrainScorer.resolveHRmax`, the same funnel the scoring pass uses, with the
+    /// observed evidence that pass scored against.
     var effortHRmax: Double? {
-        if hrMaxOverride > 0 { return Double(hrMaxOverride) }
-        return age > 0 ? StrainScorer.tanakaHRmax(age: Double(age)) : nil
+        StrainScorer.resolveHRmax(override: hrMaxOverride > 0 ? Double(hrMaxOverride) : nil,
+                                  age: Double(age), observedEvidence: observedHRmaxEvidence).value
     }
 
-    /// Tanaka estimate unless overridden.
-    var hrMax: Int { hrMaxOverride > 0 ? hrMaxOverride : Int((208 - 0.7 * Double(age)).rounded()) }
+    /// The display HRmax (zones, live HR, workout splits): `effortHRmax` rounded, falling back to the age
+    /// formula only where the resolver has no value (no age, no evidence), as before.
+    var hrMax: Int {
+        Int((effortHRmax ?? StrainScorer.tanakaHRmax(age: Double(age))).rounded())
+    }
+
+    /// Where `hrMax` came from: "override", "observed", "tanaka" or "default".
+    var hrMaxSource: String {
+        StrainScorer.resolveHRmax(override: hrMaxOverride > 0 ? Double(hrMaxOverride) : nil,
+                                  age: Double(age), observedEvidence: observedHRmaxEvidence).source
+    }
 
     /// Personalized zone starts after enforcing the same five-value invariant as `HRZones`.
     var customHRZoneLowerBounds: [Double]? {

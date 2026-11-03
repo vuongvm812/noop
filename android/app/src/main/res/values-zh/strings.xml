@@ -2238,7 +2238,8 @@
     <string name="today_readiness_load_ramping_down">负荷下降（急性:慢性 %1$s）— 尚有提升空间</string>
     <string name="today_readiness_load_sweet_spot">处于理想区间（急性:慢性 %1$s）</string>
     <string name="today_readiness_load_building_fast">快速上升（急性:慢性 %1$s）— 留意疲劳</string>
-    <string name="today_readiness_load_spiking">负荷激增（急性:慢性 %1$s）— 受伤风险更高</string>
+    <string name="settings_hrmax_auto_observed">自动 · %1$d bpm（实测）</string>
+    <string name="today_readiness_load_spiking">负荷激增（急性:慢性 %1$s）— 远高于你的常规负荷</string>
     <string name="today_readiness_more_nights">再记录几晚可提高解读可靠性。</string>
     <string name="today_readiness_run_down">疲惫</string>
     <string name="today_readiness_run_down_summary">多项信号同时下降。今天应以恢复为主：轻度活动，并在今晚保证充足睡眠。</string>

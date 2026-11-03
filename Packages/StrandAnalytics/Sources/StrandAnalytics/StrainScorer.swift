@@ -245,6 +245,68 @@ public enum StrainScorer {
         return (0.0, "unknown")
     }
 
+    // MARK: - Adaptive HRmax
+
+    /// Calendar days of daily sustained peaks that count as evidence for a raised HRmax.
+    public static let adaptiveHRmaxWindowDays = 90
+    /// Distinct days that must reach a value before it can raise HRmax. One day can be an artefact the
+    /// sustained-peak filter missed; two independent days reaching it cannot plausibly both be.
+    public static let adaptiveHRmaxMinDays = 2
+    /// Daily sustained peaks above this are discarded as evidence rather than clamped to it. No adult
+    /// physiology sustains it, so a value up here is a sensor fault, not a fitter heart.
+    public static let adaptiveHRmaxCeiling: Double = 220.0
+    /// Metric-series key holding each day's `sustainedPeak`, the evidence the rule reads.
+    public static let sustainedPeakMetricKey = "hr_sustained_peak"
+
+    /// The HRmax the daily sustained peaks support: the highest value reached on at least
+    /// `adaptiveHRmaxMinDays` different days, i.e. the second-highest daily peak. nil with fewer usable
+    /// days. The caller passes one peak per day inside the window; non-finite, non-positive and
+    /// over-ceiling values are ignored.
+    ///
+    /// Kotlin twin: `StrainScorer.observedHRmaxEvidence`.
+    public static func observedHRmaxEvidence(dailyPeaks: [Double]) -> Double? {
+        let usable = dailyPeaks.filter { $0.isFinite && $0 > 0 && $0 <= adaptiveHRmaxCeiling }
+            .sorted(by: >)
+        guard usable.count >= adaptiveHRmaxMinDays else { return nil }
+        return usable[adaptiveHRmaxMinDays - 1]
+    }
+
+    /// `observedHRmaxEvidence` over the peaks of the `adaptiveHRmaxWindowDays` calendar days ending on
+    /// `day` (inclusive), keyed by YYYY-MM-DD. Days outside the window, and malformed keys, are ignored.
+    ///
+    /// Kotlin twin: `StrainScorer.observedHRmaxEvidenceEndingOn`.
+    public static func observedHRmaxEvidence(peaksByDay: [String: Double], endingOn day: String) -> Double? {
+        guard let end = TrainingLoadEngine.dayOrdinal(day) else { return nil }
+        let start = end - adaptiveHRmaxWindowDays + 1
+        var peaks: [Double] = []
+        for (key, value) in peaksByDay {
+            guard let ordinal = TrainingLoadEngine.dayOrdinal(key), ordinal >= start, ordinal <= end else { continue }
+            peaks.append(value)
+        }
+        return observedHRmaxEvidence(dailyPeaks: peaks)
+    }
+
+    /// The single HRmax resolver. Day Effort, workout Effort, calories and the display zones all read
+    /// this, so they cannot disagree about the yardstick.
+    ///
+    /// Order: a manual override always wins ("override"); otherwise the observed evidence when it is
+    /// ABOVE the age formula ("observed"); otherwise Tanaka ("tanaka"). Observed evidence can only raise
+    /// HRmax, never lower it below the formula: a wearer who has simply never gone hard has not shown a
+    /// low maximum. With no age the floor is the `defaultMaxHR()` fallback `strain` already substitutes,
+    /// and the value is nil ("default") unless observed evidence exceeds it, so an age-less, evidence-less
+    /// caller behaves exactly as before.
+    ///
+    /// Kotlin twin: `StrainScorer.resolveHRmax`.
+    public static func resolveHRmax(override: Double?, age: Double,
+                                    observedEvidence: Double?) -> (value: Double?, source: String) {
+        if let override, override > 0 { return (override, "override") }
+        let tanaka: Double? = age > 0 ? tanakaHRmax(age: age) : nil
+        let floor = tanaka ?? Double(defaultMaxHR())
+        if let observed = observedEvidence, observed > floor { return (observed, "observed") }
+        if let tanaka { return (tanaka, "tanaka") }
+        return (nil, "default")
+    }
+
     // MARK: - Karvonen %HRR and Edwards zone weight
 
     /// Karvonen %HRR, clamped [0, 100].
@@ -265,11 +327,20 @@ public enum StrainScorer {
 
     // MARK: - TRIMP accumulation
 
-    /// Longest span (minutes) a single reading may be credited with. A wear or connection dropout leaves a
-    /// gap with no data in it; without a ceiling the last reading before the gap would be credited with the
-    /// whole of it, so one sample in zone 5 could invent hours of effort. 2 min is 4x the sparsest real
-    /// cadence we know of (the 5/MG's ~30 s, see `minSparseReadings`), so no genuine cadence is truncated.
+    /// Shortest cap (minutes) on the span a single reading may be credited with. A wear or connection
+    /// dropout leaves a gap with no data in it; without a ceiling the last reading before the gap would be
+    /// credited with the whole of it, so one sample in zone 5 could invent hours of effort. 2 min is 4x the
+    /// 5/MG's ~30 s cadence (see `minSparseReadings`). Sparser sources get a cap that follows their own
+    /// cadence, up to `sparseGapCapMaxMin` (see `gapCapMinutes`).
     public static let maxSampleGapMin: Double = 2.0
+
+    /// Ceiling (minutes) on the cadence-aware cap below. A source logging every 5 min (an Oura ring's
+    /// daytime heart rate) is credited its own cadence, and no reading ever carries more than this.
+    public static let sparseGapCapMaxMin: Double = 5.0
+    /// The cap follows the LOCAL cadence: `sparseGapCadenceFactor` × the median of the surrounding gaps.
+    public static let sparseGapCadenceFactor: Double = 1.5
+    /// Gaps on each side of a reading that its local cadence median is taken over.
+    public static let sparseGapNeighbourGaps: Int = 5
 
     /// The one Effort figure every read-out on Today must show (#1001).
     ///
@@ -306,7 +377,7 @@ public enum StrainScorer {
     }
 
     /// Per-sample durations (minutes): each reading covers the gap to the NEXT one, clamped to
-    /// `maxSampleGapMin`; the last reuses the gap before it.
+    /// `gapCapMinutes` for that gap; the last reuses the gap before it.
     ///
     /// #950: TRIMP used to take ONE duration inferred from the first two timestamps and multiply the whole
     /// zone-weight sum by it. NOOP's HR stream is not uniformly spaced — live Bluetooth arrives ~1 s apart,
@@ -321,15 +392,39 @@ public enum StrainScorer {
     static func sampleDurationsMinutes(_ hr: [HRSample]) -> [Double] {
         if hr.isEmpty { return [] }
         if hr.count == 1 { return [fallbackSampleMin] }
-        var out: [Double] = []
-        out.reserveCapacity(hr.count)
+        var raw: [Double] = []
+        raw.reserveCapacity(hr.count - 1)
         for i in 0..<(hr.count - 1) {
             let deltaS = abs(Double(hr[i + 1].ts - hr[i].ts))
-            let minutes = deltaS > 0 ? deltaS / 60.0 : fallbackSampleMin
-            out.append(min(minutes, maxSampleGapMin))
+            raw.append(deltaS > 0 ? deltaS / 60.0 : fallbackSampleMin)
+        }
+        var out: [Double] = []
+        out.reserveCapacity(hr.count)
+        for i in raw.indices {
+            out.append(min(raw[i], gapCapMinutes(raw, at: i)))
         }
         out.append(out[out.count - 1])   // the final reading has no successor; reuse the gap before it
         return out
+    }
+
+    /// The longest span the reading before gap `i` may be credited with:
+    /// `max(maxSampleGapMin, min(sparseGapCapMaxMin, sparseGapCadenceFactor × local median gap))`.
+    ///
+    /// The fixed 2 min cap was tuned for the densest straps, where it sits far above the cadence. A source
+    /// that genuinely logs every 3–5 min had every reading cut to 2 min, so its Effort counted under half
+    /// of the time it was actually worn. The local median (the `sparseGapNeighbourGaps` gaps either side)
+    /// tracks the cadence around each reading, so a dense workout inside a sparse day keeps the dense cap,
+    /// and an isolated dropout inside a dense stream is still cut to 2 min. For 1 Hz and 30 s streams
+    /// 1.5 × the median is under 2 min, so the cap there is unchanged.
+    ///
+    /// Byte-parity twin of Kotlin `gapCapMinutes`.
+    static func gapCapMinutes(_ gaps: [Double], at i: Int) -> Double {
+        let lo = max(0, i - sparseGapNeighbourGaps)
+        let hi = min(gaps.count - 1, i + sparseGapNeighbourGaps)
+        let window = gaps[lo...hi].sorted()
+        let n = window.count
+        let median = n % 2 == 1 ? window[n / 2] : (window[n / 2 - 1] + window[n / 2]) / 2.0
+        return max(maxSampleGapMin, min(sparseGapCapMaxMin, sparseGapCadenceFactor * median))
     }
 
     static func edwardsTRIMP(_ hr: [HRSample], restingHR: Double, hrReserve: Double,
@@ -352,9 +447,9 @@ public enum StrainScorer {
     ///
     /// Sums to the same duration TRIMP integrates over, so the six buckets and `trimp` describe exactly
     /// the same time. That is CREDITED time, not wall-clock wear: `sampleDurationsMinutes` clamps each
-    /// reading to `maxSampleGapMin`, so a ten-minute dropout contributes two minutes here. Anyone wanting
-    /// a wear-coverage floor (#2438 step 2) needs a different quantity, and summing these will not give
-    /// it to them.
+    /// reading to its gap cap (`gapCapMinutes`), so a ten-minute dropout in a dense stream contributes two
+    /// minutes here. Anyone wanting a wear-coverage floor (#2438 step 2) needs a different quantity, and
+    /// summing these will not give it to them.
     ///
     /// The caller must pass `hrReserve > 0`: `zoneWeight` divides by it, and the refusal path reaches this
     /// line with a reserve that can be zero or negative.

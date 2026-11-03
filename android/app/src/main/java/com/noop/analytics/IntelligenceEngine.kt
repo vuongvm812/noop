@@ -2,6 +2,7 @@ package com.noop.analytics
 
 import java.util.Locale
 import com.noop.data.DailyMetric
+import com.noop.data.HrSample
 import com.noop.data.DeviceBrandCatalog
 import com.noop.data.MetricSeriesRow
 import com.noop.data.OuraRespScale
@@ -79,6 +80,117 @@ object IntelligenceEngine {
      * [analyzeGate], so a plain set is enough.
      */
     private val unscorableGarminWorkouts = HashSet<String>()
+
+    /** #54: receives the observed HRmax evidence each pass scored against, so the caller can mirror it
+     *  into ProfileStore for the display zones. A sink rather than a parameter for the same #1524
+     *  bytecode-budget reason as [stepsHasMotionSink]. Twin of Swift `profile.observedHRmaxEvidence`. */
+    @Volatile
+    var hrmaxEvidenceSink: ((Double?) -> Unit)? = null
+
+    /** #54: daily sustained peaks scored this pass, persisted as [StrainScorer.sustainedPeakMetricKey].
+     *  Object state, guarded by [analyzeGate] like [dayScanCache], to keep [analyzeRecentOnCpu] small. */
+    private val sustainedPeakForRun = HashMap<String, Double>()
+
+    /** #54: ONE adaptive-HRmax evidence value per pass, from the stored daily sustained peaks in the 90
+     *  days ending today. Every day the pass re-scores, and the display zones, use it. A peak this pass
+     *  adds is picked up by the next pass. Twin of the Swift block in `analyzeRecent`. */
+    private suspend fun hrmaxEvidenceForPass(
+        repo: WhoopRepository, computedId: String, todayKey: String, maxHROverride: Double?, age: Double,
+    ): Double? {
+        sustainedPeakForRun.clear()
+        val peaks = HashMap<String, Double>()
+        // A failed read is no evidence, never a failed pass: the resolver then falls back to Tanaka.
+        val rows = runCatching {
+            repo.metricSeries(computedId, StrainScorer.sustainedPeakMetricKey, "0000-01-01", "9999-12-31")
+        }.getOrDefault(emptyList())
+        for (row in rows) peaks[row.day] = maxOf(peaks[row.day] ?: row.value, row.value)
+        val evidence = StrainScorer.observedHRmaxEvidenceEndingOn(peaks, todayKey)
+        passResolvedMaxHr = StrainScorer.resolveHRmax(maxHROverride, age, evidence).first
+        passHrmaxEvidenceSig = evidence?.toString() ?: "nil"
+        hrmaxEvidenceSink?.invoke(evidence)
+        return evidence
+    }
+
+    /** #54: this pass's resolved HRmax, for the step-cycle and manual-workout paths. Set by
+     *  [hrmaxEvidenceForPass]; object state for the same #1524 budget reason as [sustainedPeakForRun]. */
+    private var passResolvedMaxHr: Double? = null
+
+    /** #54: [hrmaxEvidenceForPass]'s evidence as its day-cache signature field ("nil" when absent). */
+    private var passHrmaxEvidenceSig: String = "nil"
+
+    private fun recordSustainedPeak(day: String, dayHr: List<HrSample>) {
+        if (dayHr.isEmpty()) return
+        StrainScorer.sustainedPeak(dayHr)?.let { sustainedPeakForRun[day] = it }
+    }
+
+    /**
+     * Repopulate the per-day maps pass 2 reads from a reused [CachedDayScan], exactly as the scoring loop
+     * would have written them. Lifted out of [analyzeRecentOnCpu] unchanged (#54) for its #1524 budget.
+     */
+    private fun restoreCachedNightMaps(
+        cached: CachedDayScan,
+        day: String,
+        hrvOverCountByDay: MutableMap<String, Boolean>,
+        nightlyHrvByDay: MutableMap<String, Double?>,
+        nightlyRhrByDay: MutableMap<String, Double?>,
+        nightlySkinByDay: MutableMap<String, Double?>,
+        nightlyRespByDay: MutableMap<String, Double?>,
+        spo2CandidateByDay: MutableMap<String, Int>,
+        primarySessionRHRByDay: MutableMap<String, Double>,
+        primarySessionRHRCoverageByDay: MutableMap<String, PrimarySessionRestingHR.Coverage>,
+    ) {
+        cached.hrvOverCount?.let { hrvOverCountByDay[day] = it }
+        nightlyHrvByDay[day] = cached.res.daily.avgHrv
+        nightlyRhrByDay[day] = cached.res.daily.restingHr?.toDouble()
+        nightlySkinByDay[day] = cached.res.nightlySkinTempC
+        nightlyRespByDay[day] = cached.res.daily.respRateBpm
+        cached.spo2Candidate?.let { spo2CandidateByDay[day] = it }
+        cached.primaryRhr?.let { primarySessionRHRByDay[day] = it }
+        cached.primaryRhrCoverage?.let { primarySessionRHRCoverageByDay[day] = it }
+    }
+
+    /**
+     * The per-night instrumentation rows pass 2 persists beside the daily row. Lifted out of
+     * [analyzeRecentOnCpu] unchanged (#54) to keep that method inside its #1524 bytecode budget.
+     */
+    private fun addNightlyShadowRows(
+        restRows: MutableList<MetricSeriesRow>,
+        computedId: String,
+        day: String,
+        spo2CandidateByDay: Map<String, Int>,
+        hrvOverCountByDay: Map<String, Boolean>,
+        primarySessionRHRByDay: Map<String, Double>,
+        primarySessionRHRCoverageByDay: Map<String, PrimarySessionRestingHR.Coverage>,
+    ) {
+        // #103: persist the SpO₂ candidate @82 nightly mean to metricSeries as "spo2_candidate" so the
+        // Blood Oxygen tile can surface it as a "strap estimate (unverified)" fallback when the toggle
+        // is ON. Written under the "-noop" computed device ID, never to `spo2Pct`.
+        spo2CandidateByDay[day]?.let { cand ->
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "spo2_candidate", value = cand.toDouble()))
+        }
+        // #1118: persist the HRV over-count flag (1/0) so the HRV card can mark an over-counted 4.0
+        // night's reading "unverified" until the two-channel de-dup lands. 0 written on a clean night
+        // (not just absent) so a night that flips clean on re-score clears its prior flag.
+        hrvOverCountByDay[day]?.let { oc ->
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "hrv_rr_overcount", value = if (oc) 1.0 else 0.0))
+        }
+        // #1169 shadow metric: the primary-session mean RHR, stored beside the shipped floor
+        // (daily.restingHr) under the "-noop" computed ID. Instrumentation only — never shown, never
+        // scored — for later mean-vs-floor evaluation from exports.
+        primarySessionRHRByDay[day]?.let { v ->
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "rhr_primary_session", value = v))
+        }
+        // #54: the day's sustained HR peak, the evidence the adaptive HRmax reads.
+        sustainedPeakForRun[day]?.let { v ->
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = StrainScorer.sustainedPeakMetricKey, value = v))
+        }
+        // #1169: its coverage inputs beside the mean — valid-sample count + primary-session duration (s)
+        // — so a thin-coverage night can be down-weighted in the later holdout. Raw inputs, not a fraction.
+        primarySessionRHRCoverageByDay[day]?.let { cov ->
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "rhr_primary_session_valid_samples", value = cov.validSamples.toDouble()))
+            restRows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "rhr_primary_session_duration_s", value = cov.durationSec))
+        }
+    }
 
     /** #1121: days this pass skipped for too little raw HR, emitted as ONE line after the loop instead of
      *  one line each — see [skippedSleepDaysLine]. A FIELD, not a local, for a mechanical reason:
@@ -770,6 +882,8 @@ object IntelligenceEngine {
         // west-of-UTC user's evening crosses midnight UTC; bucketing by UTC put it in the next UTC day,
         // which the local read never found (Toronto/UTC-4 report).
         val nowLocalMidnight = midnightLocal(nowSeconds, tzOffsetSeconds)
+        val hrmaxEvidence = hrmaxEvidenceForPass(
+            repo, computedId, AnalyticsEngine.dayString(nowLocalMidnight, tzOffsetSeconds), maxHROverride, profile.age)
 
         // ── Learned habitual midsleep (#547) ──────────────────────────────────
         // Compute the user's habitual midsleep ONCE per run from the trailing sleep history so the
@@ -867,6 +981,7 @@ object IntelligenceEngine {
             // window of days scored by a recipe the user just turned off, with nothing to explain it.
             effortMethod.toString(),
             dayCycleMode.persistedValue,
+            passHrmaxEvidenceSig,
         ).joinToString("|")
         // Drop the whole cache on a config change. Under [analyzeGate] (this whole pass runs holding the
         // lock), so mutating the object-level cache here is race-free.
@@ -990,14 +1105,10 @@ object IntelligenceEngine {
                     // so we repopulate it here from the cached values (only when the universal sink is active,
                     // matching the loop's own guard).
                     if (universalSink != null) readOwnerByDay[day] = OwnerRead(cached.owner, cached.hrRows)
-                    cached.hrvOverCount?.let { hrvOverCountByDay[day] = it }
-                    nightlyHrvByDay[day] = cached.res.daily.avgHrv
-                    nightlyRhrByDay[day] = cached.res.daily.restingHr?.toDouble()
-                    nightlySkinByDay[day] = cached.res.nightlySkinTempC
-                    nightlyRespByDay[day] = cached.res.daily.respRateBpm
-                    cached.spo2Candidate?.let { spo2CandidateByDay[day] = it }
-                    cached.primaryRhr?.let { primarySessionRHRByDay[day] = it }
-                    cached.primaryRhrCoverage?.let { primarySessionRHRCoverageByDay[day] = it }
+                    restoreCachedNightMaps(
+                        cached, day, hrvOverCountByDay, nightlyHrvByDay, nightlyRhrByDay, nightlySkinByDay,
+                        nightlyRespByDay, spo2CandidateByDay, primarySessionRHRByDay, primarySessionRHRCoverageByDay,
+                    )
                     scoredNights.add(cached.res)
                     resolvedScoreOwnerByDay[day] = cached.owner
                     for (line in cached.diagLines) diag(line)
@@ -1205,6 +1316,7 @@ object IntelligenceEngine {
                 spo2 = spo2,                   // #93
                 profile = profile,
                 maxHROverride = maxHROverride,
+                hrmaxEvidence = hrmaxEvidence,
                 tzOffsetSeconds = tzOffsetSeconds,
                 wristOff = wristOff,
                 sleepNeedHours = sleepNeedHours,
@@ -1469,6 +1581,7 @@ object IntelligenceEngine {
             // #1174's definition is unchanged. The windowing + delegation lives in the byte-identical,
             // tested AnalyticsEngine.
             val (primaryRhr, primaryRhrCoverage) = AnalyticsEngine.primarySessionRestingHRWithCoverage(res.sleepSessions, hr)
+            recordSustainedPeak(res.daily.day, dayHr)
             primaryRhr?.let { primarySessionRHRByDay[res.daily.day] = it }
             primaryRhrCoverage?.let { primarySessionRHRCoverageByDay[res.daily.day] = it }
             scoredNights.add(res)
@@ -1626,7 +1739,7 @@ object IntelligenceEngine {
             scoredNights, editedRows, resolvedScoreOwnerByDay, candidatePriorities, repo,
             tzOffsetSeconds, habitualMidsleepSec, windowStart, nowSeconds, profile.stepTicksPerStep,
             stepsTraceSink, dayCycleMode,
-            profile, maxHROverride, effortMethod,
+            profile, passResolvedMaxHr, effortMethod,
         )
 
         for (res in scoredNights) {
@@ -1660,30 +1773,10 @@ object IntelligenceEngine {
             RestScorer.restFromDaily(daily)?.let { rest ->
                 restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "sleep_performance", value = rest))
             }
-            // #103: persist the SpO₂ candidate @82 nightly mean to metricSeries as "spo2_candidate" so the
-            // Blood Oxygen tile can surface it as a "strap estimate (unverified)" fallback when the toggle
-            // is ON. Written under the "-noop" computed device ID, never to `spo2Pct`.
-            spo2CandidateByDay[daily.day]?.let { cand ->
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "spo2_candidate", value = cand.toDouble()))
-            }
-            // #1118: persist the HRV over-count flag (1/0) so the HRV card can mark an over-counted 4.0
-            // night's reading "unverified" until the two-channel de-dup lands. 0 written on a clean night
-            // (not just absent) so a night that flips clean on re-score clears its prior flag.
-            hrvOverCountByDay[daily.day]?.let { oc ->
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "hrv_rr_overcount", value = if (oc) 1.0 else 0.0))
-            }
-            // #1169 shadow metric: the primary-session mean RHR, stored beside the shipped floor
-            // (daily.restingHr) under the "-noop" computed ID. Instrumentation only — never shown, never
-            // scored — for later mean-vs-floor evaluation from exports.
-            primarySessionRHRByDay[daily.day]?.let { v ->
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "rhr_primary_session", value = v))
-            }
-            // #1169: its coverage inputs beside the mean — valid-sample count + primary-session duration (s)
-            // — so a thin-coverage night can be down-weighted in the later holdout. Raw inputs, not a fraction.
-            primarySessionRHRCoverageByDay[daily.day]?.let { cov ->
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "rhr_primary_session_valid_samples", value = cov.validSamples.toDouble()))
-                restRows.add(MetricSeriesRow(deviceId = computedId, day = daily.day, key = "rhr_primary_session_duration_s", value = cov.durationSec))
-            }
+            addNightlyShadowRows(
+                restRows, computedId, daily.day, spo2CandidateByDay, hrvOverCountByDay,
+                primarySessionRHRByDay, primarySessionRHRCoverageByDay,
+            )
 
             out.add(
                 Computed(
@@ -2050,7 +2143,7 @@ object IntelligenceEngine {
         // so out[0] is today and the tail is the oldest day in the window. Taking the last match would have
         // scored today's workout against a resting HR up to `maxDays` old.
         val measuredResting = out.firstOrNull { it.rhr != null }?.rhr?.toDouble()
-        rescoreWorkouts(repo, profile, importedDeviceId, candidatePriorities, maxHROverride, nowSeconds,
+        rescoreWorkouts(repo, profile, importedDeviceId, candidatePriorities, passResolvedMaxHr, nowSeconds,
             measuredResting, effortMethod)
 
         return out to healDropped.size
@@ -3176,7 +3269,7 @@ object IntelligenceEngine {
         "age", "sex", "stepTicksPerStep", "maxHROverride",
         "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
-        "effortMethod", "dayCycleMode",
+        "effortMethod", "dayCycleMode", "hrmaxEvidence",
     )
 
     /** Which config field(s) changed between two signatures, for the `configDropped` tally.

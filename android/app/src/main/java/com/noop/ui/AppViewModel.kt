@@ -1326,6 +1326,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                         profileStore.stepsHasBankedMotion = hasMotion
                     }
+                    IntelligenceEngine.hrmaxEvidenceSink = { profileStore.observedHrMaxEvidence = it }
                     IntelligenceEngine.analyzeRecent(
                         repo = repository,
                         profile = currentProfile(),
@@ -1453,6 +1454,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // #1816: clear the motion sink after the pass completes (success or failure) so a stale
                 // callback is never left behind. The next pass sets its own before calling analyzeRecent.
                 IntelligenceEngine.stepsHasMotionSink = null
+                IntelligenceEngine.hrmaxEvidenceSink = null
                 // Opt-in writeback: push the freshly computed nights into Health Connect so other
                 // apps see them. Idempotent (clientRecordId per metric+day), so re-running every
                 // cycle just upserts. Never let an HC hiccup (perm revoked mid-flight, provider
@@ -2094,6 +2096,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                 profileStore.stepsHasBankedMotion = hasMotion
             }
+            IntelligenceEngine.hrmaxEvidenceSink = { profileStore.observedHrMaxEvidence = it }
             IntelligenceEngine.analyzeRecent(
                 repo = repository,
                 profile = currentProfile(),
@@ -2134,6 +2137,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
         IntelligenceEngine.stepsHasMotionSink = null
+        IntelligenceEngine.hrmaxEvidenceSink = null
     }
     fun loadWorkouts() {
         viewModelScope.launch {

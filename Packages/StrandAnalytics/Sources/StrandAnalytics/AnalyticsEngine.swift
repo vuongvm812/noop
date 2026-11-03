@@ -341,6 +341,7 @@ public enum AnalyticsEngine {
     /// and low enough to keep a partially-drained night. Twin of the Kotlin constant.
     public static let vendorRespMinSpanS = 3_600
 
+    /// Score one local calendar day. Kotlin twin: `AnalyticsEngine.analyzeDay`.
     public static func analyzeDay(day: String,
                                   // Optional sink for the Effort funnel line. Nil (the default) builds
                                   // nothing at all — see StrainScorer.strain. A parameter rather than a
@@ -415,6 +416,10 @@ public enum AnalyticsEngine {
                                   spo2: [SpO2Sample] = [],
                                   profile: UserProfile,
                                   maxHROverride: Double? = nil,
+                                  // Observed HRmax evidence for this day's 90-day window
+                                  // (`StrainScorer.observedHRmaxEvidence`, the day's own peak included).
+                                  // nil keeps the override-else-Tanaka behaviour.
+                                  hrmaxEvidence: Double? = nil,
                                   // Wall-clock UTC offset (seconds) for the sleep detector's daytime
                                   // false-sleep guard (#90). Default 0 keeps pure-function callers/tests
                                   // on UTC; IntelligenceEngine passes the device's real offset.
@@ -908,7 +913,11 @@ public enum AnalyticsEngine {
         // today's Effort same-day instead of being cut off at the night window's ≈ noon bound, and
         // the prior evening's HR (the night window's −30h tail) no longer bleeds in. Falls back to the
         // night `hr` for pure-function callers/tests.
-        let effMaxHR: Double? = maxHROverride ?? (profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil)
+        // One resolver for the day's Effort, its workouts and its calories (#54): override, else observed
+        // evidence above the formula, else Tanaka.
+        let hrmaxResolved = StrainScorer.resolveHRmax(override: maxHROverride, age: profile.age,
+                                                      observedEvidence: hrmaxEvidence)
+        let effMaxHR: Double? = hrmaxResolved.value
         let restForStrain = restingHRDaily.map(Double.init) ?? StrainScorer.defaultRestingHR
         // The Effort ring's own funnel. A nil sink builds nothing at all, so a caller that does not want
         // diagnostics pays nothing; IntelligenceEngine passes its per-day recorder, the same one the
@@ -930,7 +939,7 @@ public enum AnalyticsEngine {
                 // this line in direct contradiction with the `effort score` line above it, which prints
                 // that substituted number, about the same day.
                 day: day, hrmax: effMaxHR ?? Double(StrainScorer.defaultMaxHR()),
-                hrmaxSource: maxHROverride != nil ? "override" : (profile.age > 0 ? "tanaka" : "default"),
+                hrmaxSource: hrmaxResolved.source,
                 tanaka: profile.age > 0 ? StrainScorer.tanakaHRmax(age: profile.age) : nil,
                 observedPeak: hrForPeak.max(by: { $0.bpm < $1.bpm }).map { Double($0.bpm) },
                 restingHR: restForStrain)

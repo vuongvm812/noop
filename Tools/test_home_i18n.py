@@ -318,7 +318,8 @@ class HomeLocalizationTest(unittest.TestCase):
             "today_readiness_load_ramping_down": "ramping down (acute:chronic %1$s) - room to build",
             "today_readiness_load_sweet_spot": "in the sweet spot (acute:chronic %1$s)",
             "today_readiness_load_building_fast": "building fast (acute:chronic %1$s) - watch fatigue",
-            "today_readiness_load_spiking": "spiking (acute:chronic %1$s) - higher injury risk",
+            # #54: ACWR is descriptive (Impellizzeri 2020), so the copy no longer claims injury risk.
+            "today_readiness_load_spiking": "spiking (acute:chronic %1$s) - well above your usual load",
             "today_readiness_more_nights": "A few more nights of data and your readiness read will sharpen.",
             "today_readiness_run_down_summary": "Several signals are down at once. Treat today as recovery - easy movement, real sleep tonight.",
             "today_readiness_strained_summary": "One of your signals is flagging. You can train, but keep it controlled and bank the recovery.",

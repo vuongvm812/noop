@@ -961,6 +961,42 @@
       "identity_sha256": "93c6e82d00630668b8a2ac30c6a5bfa09f78dea1b54225b896621eb717e57671",
       "issue": "vuongvm812/noop#53",
       "reason": "The readiness word now z-scores against the displayed day's Charge baselines (ChargeBaselines.Resolved) on both platforms instead of its own 30-row EWMA window, so its private window length and minimum-night constants are deleted."
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::hrmaxEvidenceForPass/5#1",
+      "identity_sha256": "3bc7090d3188c4e64483366a896063aa0b7028a6e439d74dbad4b9865ae3dcf5",
+      "platform": "kotlin",
+      "rationale": "hrmaxEvidenceForPass reads the stored daily sustained peaks and resolves the one adaptive-HRmax evidence value (and the resolved HRmax) a scoring pass uses (vuongvm812/noop#54). The Swift engine does the same inline in analyzeRecent (the storedPeaks / hrmaxEvidence block) in Strand/Data, the app target the ledger does not scan. The shared logic it calls, StrainScorer.observedHRmaxEvidence and resolveHRmax, is paired and oracle-checked by EffortLoadTests / EffortLoadOracleTest.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::recordSustainedPeak/2#1",
+      "identity_sha256": "db39460f85f71d28ec3e29301253f030d50d0ebba1126d96e8b58dedb79f684f",
+      "platform": "kotlin",
+      "rationale": "recordSustainedPeak keeps each freshly scored day's StrainScorer.sustainedPeak for persistence as hr_sustained_peak (vuongvm812/noop#54); the Swift engine carries the same value on DayScan.sustainedPeak in Strand/Data/IntelligenceEngine.swift, outside the ledger's scope. A separate function only to keep analyzeRecentOnCpu inside its #1524 bytecode budget.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::addNightlyShadowRows/7#1",
+      "identity_sha256": "359932da42dfe4c9311527207a71eed7f2d34e782fc4f93ccdf2ae80151d098b",
+      "platform": "kotlin",
+      "rationale": "addNightlyShadowRows builds the per-night instrumentation metricSeries rows (spo2_candidate, hrv_rr_overcount, rhr_primary_session and its coverage, and hr_sustained_peak, vuongvm812/noop#54) that pass 2 persists beside the daily row. The Swift engine appends the same MetricPoints inline in pass 2 of analyzeRecent in Strand/Data/IntelligenceEngine.swift, outside the ledger's scope. Lifted out of analyzeRecentOnCpu unchanged only to keep that method inside its #1524 bytecode budget.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::restoreCachedNightMaps/10#1",
+      "identity_sha256": "add8954842746a984c8a7d28bfed8a08f9237f3c3ad2c427f748fb7d1a21df22",
+      "platform": "kotlin",
+      "rationale": "restoreCachedNightMaps repopulates the per-day maps pass 2 reads when the day-scan cache reuses a night. The Swift engine reuses the cached DayScan value directly in analyzeRecent in Strand/Data/IntelligenceEngine.swift, outside the ledger's scope. Lifted out of analyzeRecentOnCpu unchanged (vuongvm812/noop#54) only to keep that method inside its #1524 bytecode budget.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift"
     }
   ]
 }

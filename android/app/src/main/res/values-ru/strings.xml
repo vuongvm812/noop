@@ -2272,7 +2272,8 @@
     <string name="today_readiness_load_ramping_down">снижается (острая:хроническая %1$s) — есть запас для роста</string>
     <string name="today_readiness_load_sweet_spot">в оптимальной зоне (острая:хроническая %1$s)</string>
     <string name="today_readiness_load_building_fast">быстро растёт (острая:хроническая %1$s) — следите за усталостью</string>
-    <string name="today_readiness_load_spiking">резкий скачок (острая:хроническая %1$s) — выше риск травмы</string>
+    <string name="settings_hrmax_auto_observed">Авторасчёт · %1$d уд/мин (по данным)</string>
+    <string name="today_readiness_load_spiking">резкий скачок (острая:хроническая %1$s) — намного выше вашей обычной нагрузки</string>
     <string name="today_readiness_more_nights">Ещё несколько ночей данных — и оценка готовности станет точнее.</string>
     <string name="today_readiness_run_down">Истощён</string>
     <string name="today_readiness_run_down_summary">Сразу несколько показателей снижены. Считайте сегодняшний день восстановительным — лёгкая активность и полноценный сон этой ночью.</string>

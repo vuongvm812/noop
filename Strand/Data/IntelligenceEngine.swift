@@ -108,7 +108,7 @@ final class IntelligenceEngine: ObservableObject {
         "age", "sex", "stepTicksPerStep", "maxHROverride",
         "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
-        "effortMethod", "dayCycleMode",
+        "effortMethod", "dayCycleMode", "hrmaxEvidence",
     ]
 
     /// Which config field(s) moved between two signatures, for the `configDropped` tally.
@@ -253,6 +253,10 @@ final class IntelligenceEngine: ObservableObject {
         /// written as "rhr_primary_session_valid_samples" / "rhr_primary_session_duration_s" in pass 2. nil
         /// in lockstep with `primarySessionRHR`.
         let primarySessionRHRCoverage: PrimarySessionRestingHR.Coverage?
+        /// #54: the calendar day's `StrainScorer.sustainedPeak`, persisted to metricSeries as
+        /// `hr_sustained_peak` in pass 2. It is the evidence the adaptive HRmax reads, and it does not
+        /// depend on HRmax, so a cached scan's value stays valid.
+        let sustainedPeak: Double?
     }
 
     /// Exact pre-upgrade R-R-derived cells retained only while an unlabelled WHOOP 5 window is withheld.
@@ -1020,6 +1024,17 @@ final class IntelligenceEngine: ObservableObject {
         // only the executor the reads resume on changes. Diagnostic (#691) lines are computed inside (pure
         // inputs) and returned so they can be replayed through `diagnosticSink` here, in the SAME order.
         let computedId = deviceId + "-noop"
+        // #54: adaptive HRmax. ONE evidence value per pass, read from the stored daily sustained peaks in
+        // the 90 days ending today, so every day this pass re-scores, and the display zones (through
+        // `ProfileStore.observedHRmaxEvidence`), use the same yardstick. A peak this pass adds is picked
+        // up by the next pass; the evidence then moves the cache signature and the window re-scores.
+        let storedPeaks = (try? await store.metricSeries(
+            deviceId: computedId, key: StrainScorer.sustainedPeakMetricKey,
+            from: "0000-01-01", to: "9999-12-31")) ?? []
+        let hrmaxEvidence = StrainScorer.observedHRmaxEvidence(
+            peaksByDay: Dictionary(storedPeaks.map { ($0.day, $0.value) }, uniquingKeysWith: { max($0, $1) }),
+            endingOn: AnalyticsEngine.dayString(nowLocalMidnight, offsetSec: tzOffset))
+        profile.observedHRmaxEvidence = hrmaxEvidence
         // Bind `deviceId` (a MainActor instance `let`) to a local Sendable `String` so the @Sendable
         // detached closure captures the VALUE, never `self` (which would be an isolation violation).
         let ownerFallbackId = deviceId
@@ -1098,7 +1113,9 @@ final class IntelligenceEngine: ObservableObject {
         // the construction stays a plain value list. Add or reorder here and add or reorder there:
         // `changedConfigField` refuses to name anything when the counts disagree, but it cannot see a
         // REORDER, which would quietly label the wrong field.
-        let dayCacheConfigSig = [
+        // Hoisted and typed: one more `?? "nil"` element in the literal below exceeds the type-checker budget.
+        let hrmaxEvidenceSig: String = hrmaxEvidence.map { String($0.bitPattern) } ?? "nil"
+        let dayCacheConfigSig: String = [
             String(up.age.bitPattern), up.sex, String(up.stepTicksPerStep.bitPattern),
             maxHR.map { String($0.bitPattern) } ?? "nil",
             "\(tzOffset)",
@@ -1112,6 +1129,8 @@ final class IntelligenceEngine: ObservableObject {
             // window of days scored by a recipe the user just turned off, with nothing to explain it.
             "\(effortMethodGlobal)",
             dayCycleMode.rawValue,
+            // #54: the adaptive-HRmax evidence moves every day's Effort the way an override does.
+            hrmaxEvidenceSig,
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
@@ -1546,6 +1565,7 @@ final class IntelligenceEngine: ObservableObject {
                                                      skinTempWornToleranceSec: skinWornToleranceSec,   // #1467
                                                      spo2: spo2,                   // #93
                                                      profile: up, maxHROverride: maxHR,
+                                                     hrmaxEvidence: hrmaxEvidence,
                                                      tzOffsetSeconds: tzOffset, wristOff: wristOff,
                                                      sleepNeedHours: sleepNeedHours,
                                                      sleepConsistency: sleepConsistency,
@@ -1853,7 +1873,8 @@ final class IntelligenceEngine: ObservableObject {
                                    spo2Candidate: spo2CandidateMean,
                                    hrvOverCounted: hrvOverCounted,
                                    primarySessionRHR: primarySessionRHR,
-                                   primarySessionRHRCoverage: primarySessionRHRCoverage)
+                                   primarySessionRHRCoverage: primarySessionRHRCoverage,
+                                   sustainedPeak: dayHr.isEmpty ? nil : StrainScorer.sustainedPeak(dayHr))
                 // #1005: cache this freshly-scored scan under its per-day key (only when the day was
                 // cache-eligible this pass, i.e. a registered WHOOP owner with no trace active). Reused
                 // days `continue`d above and never reach here, so the cache only ever holds fresh scans.
@@ -1945,6 +1966,8 @@ final class IntelligenceEngine: ObservableObject {
         var primarySessionRHRByDay: [String: Double] = [:]
         // #1169: its coverage inputs (valid-sample count + primary-session duration), same lifetime as the mean.
         var primarySessionRHRCoverageByDay: [String: PrimarySessionRestingHR.Coverage] = [:]
+        // #54: daily sustained peak (adaptive-HRmax evidence), carried from pass 1 for persistence.
+        var sustainedPeakByDay: [String: Double] = [:]
 
         // Garmin child 9: a day a Garmin watch owns scores from the watch's OWN resting HR, overnight HRV and
         // respiration, each decided against NOOP's sparse-HR estimate by the one fusion resolver
@@ -1983,6 +2006,9 @@ final class IntelligenceEngine: ObservableObject {
             // #1118: carry the HRV over-count flag into pass 2 for metricSeries persistence.
             if let oc = scan.hrvOverCounted {
                 hrvOverCountByDay[res.daily.day] = oc
+            }
+            if let v = scan.sustainedPeak {
+                sustainedPeakByDay[res.daily.day] = v
             }
             // #1169: carry the primary-session mean RHR shadow metric into pass 2 for persistence.
             if let v = scan.primarySessionRHR {
@@ -2172,7 +2198,9 @@ final class IntelligenceEngine: ObservableObject {
             mode: dayCycleMode,
             cache: dayCycleCache,
             profile: up,
-            maxHROverride: maxHR,
+            // #54: the pass's resolved HRmax, so step-cycle workouts share the day's yardstick.
+            maxHROverride: StrainScorer.resolveHRmax(override: maxHR, age: up.age,
+                                                     observedEvidence: hrmaxEvidence).value,
             effortMethod: effortMethodGlobal,
             trace: stepsTraceActive ? { self.diagnosticSink?($0, .steps) } : nil)
         // #299: `editsByStart` is now built PER DAY inside the scoring loop (scoped to the day each edit
@@ -2349,6 +2377,9 @@ final class IntelligenceEngine: ObservableObject {
             // scored — so the mean-vs-floor comparison the issue needs can be evaluated from exports later.
             if let v = primarySessionRHRByDay[daily.day] {
                 restPoints.append(MetricPoint(day: daily.day, key: "rhr_primary_session", value: v))
+            }
+            if let v = sustainedPeakByDay[daily.day] {
+                restPoints.append(MetricPoint(day: daily.day, key: StrainScorer.sustainedPeakMetricKey, value: v))
             }
             // #1169: its coverage inputs beside the mean — valid-sample count + primary-session duration (s)
             // — so a thin-coverage night can be down-weighted in the later holdout. Raw inputs, not a fraction.

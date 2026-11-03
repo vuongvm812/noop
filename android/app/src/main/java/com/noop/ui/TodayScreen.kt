@@ -1028,9 +1028,8 @@ fun TodayScreen(
             // install resolves to "my-whoop" ⇒ one id ⇒ byte-identical read.
             val todayHr = runCatching { viewModel.repo.hrSamplesUnion(viewModel.activeStrapId, start, now) }
                 .getOrDefault(emptyList())
-            // effMaxHR resolution matches AnalyticsEngine: manual HR-max override first, else Tanaka from age.
-            val effMaxHR = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble()
-                ?: if (profileStore.age > 0) StrainScorer.tanakaHRmax(profileStore.age.toDouble()) else null
+            // effMaxHR through the same resolver AnalyticsEngine uses (#54): override, observed, Tanaka.
+            val effMaxHR = profileStore.effortHrMax
             val restingHr = displayMetric?.restingHr?.toDouble() ?: StrainScorer.defaultRestingHR
             StrainScorer.strain(
                 hr = todayHr,

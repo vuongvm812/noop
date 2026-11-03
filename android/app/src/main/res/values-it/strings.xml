@@ -2383,7 +2383,8 @@
     <string name="today_readiness_load_ramping_down">in calo (acuto:cronico %1$s) - c\'è margine per crescere</string>
     <string name="today_readiness_load_sweet_spot">nella zona ottimale (acuto:cronico %1$s)</string>
     <string name="today_readiness_load_building_fast">in rapida crescita (acuto:cronico %1$s) - attenzione alla fatica</string>
-    <string name="today_readiness_load_spiking">in picco (acuto:cronico %1$s) - rischio di infortunio più alto</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d bpm (osservata)</string>
+    <string name="today_readiness_load_spiking">in picco (acuto:cronico %1$s) - ben oltre il tuo carico abituale</string>
     <string name="today_readiness_more_nights">Con qualche altra notte di dati, la tua lettura di prontezza si affinerà.</string>
     <string name="today_readiness_run_down">A terra</string>
     <string name="today_readiness_run_down_summary">Diversi segnali sono scesi insieme. Tratta oggi come un giorno di recupero: movimento leggero, sonno vero stanotte.</string>

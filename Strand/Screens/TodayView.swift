@@ -1865,7 +1865,7 @@ struct TodayView: View {
             let ratio = readinessNumber(chronic > 0 ? acute / chronic : 0, decimals: 2)
             switch signal.flag {
             case .good: return String(localized: "in the sweet spot (acute:chronic \(ratio))")
-            case .bad: return String(localized: "spiking (acute:chronic \(ratio)) - higher injury risk")
+            case .bad: return String(localized: "spiking (acute:chronic \(ratio)) - well above your usual load")
             case .watch: return acute < chronic
                 ? String(localized: "ramping down (acute:chronic \(ratio)) - room to build")
                 : String(localized: "building fast (acute:chronic \(ratio)) - watch fatigue")

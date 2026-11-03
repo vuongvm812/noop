@@ -16,9 +16,10 @@ import WhoopStore
 /// - **Resting-HR drift** — elevated resting HR vs baseline is a classic overtraining / illness
 ///   signal (Lamberts et al. 2004).
 /// - **Respiratory-rate drift** — a rise in sleeping respiratory rate is an early illness signal.
-/// - **Training Stress Balance (ACWR)** — acute (7-day) vs chronic (28-day) strain. The 0.8–1.3
-///   band is the "sweet spot"; >1.5 is associated with higher injury risk (Gabbett 2016).
-/// - **Training monotony** — mean/SD of daily strain over a week; high monotony (low variety) is
+/// - **Training Stress Balance (ACWR)** — EWMA acute (7-day) vs chronic (28-day) daily TRIMP over
+///   calendar days (Williams 2017). Descriptive only: the 0.8–1.3 band reads as "in line with your
+///   recent load", and the ratio is not an injury predictor (Impellizzeri 2020).
+/// - **Training monotony** — mean/SD of daily TRIMP over a week; high monotony (low variety) is
 ///   associated with higher strain and illness (Foster 1998).
 ///
 /// Not medical advice. These are approximations from a consumer strap; they describe trends in
@@ -215,27 +216,28 @@ public enum ReadinessEngine {
         }
 
         // Training Stress Balance (ACWR) + monotony --------------------------
-        let strainSeries = sorted.compactMap { $0.strain }
+        // On TRIMP, not the log-scaled Effort (`EffortLoad`), over CALENDAR days ending YESTERDAY: today's
+        // row is a partial day still accruing, so counting it would read every morning as ramping down.
+        // EWMA acute/chronic (Williams 2017) instead of coupled rolling means.
         var acwr: Double? = nil
         var monotony: Double? = nil
-        if strainSeries.count >= minChronic {
-            let acute = mean(Array(strainSeries.suffix(acuteWindow)))!
-            let chronic = mean(Array(strainSeries.suffix(chronicWindow)))!
-            if chronic > 0 {
-                let ratio = acute / chronic
-                acwr = ratio
-                signals.append(acwrSignal(ratio, acute: acute, chronic: chronic))
-            }
-            // Foster monotony over the last week of strain.
-            let week = Array(strainSeries.suffix(acuteWindow))
-            if week.count >= 4, let sd = sampleSD(week), sd > 0, let m = mean(week) {
-                let mono = m / sd
-                monotony = mono
-                if mono >= 2.0 {
-                    signals.append(Signal(key: "monotony", label: "Training variety",
-                        evidence: "monotony \(String(format: "%.1f", mono))",
-                        evidenceData: .monotony(mono),
-                        detail: "low - similar strain every day raises strain/illness risk", flag: .watch))
+        if let todayOrdinal = TrainingLoadEngine.dayOrdinal(latest.day) {
+            let loads = EffortLoad.loadsByOrdinal(history.map { ($0.day, $0.strain) })
+            let end = todayOrdinal - 1
+            if let ac = EffortLoad.acuteChronic(loads: loads, endOrdinal: end) {
+                if let ratio = ac.ratio {
+                    acwr = ratio
+                    signals.append(acwrSignal(ratio, acute: ac.acute, chronic: ac.chronic))
+                }
+                // Foster monotony over the last calendar week of load.
+                if let mono = EffortLoad.monotony(loads: loads, endOrdinal: end) {
+                    monotony = mono
+                    if mono >= 2.0 {
+                        signals.append(Signal(key: "monotony", label: "Training variety",
+                            evidence: "monotony \(String(format: "%.1f", mono))",
+                            evidenceData: .monotony(mono),
+                            detail: "low - similar strain every day raises strain/illness risk", flag: .watch))
+                    }
                 }
             }
         }
@@ -305,7 +307,7 @@ public enum ReadinessEngine {
             return Signal(key: "acwr", label: "Training load",
                 evidence: evidence,
                 evidenceData: .trainingLoad(acute: acute, chronic: chronic),
-                detail: "spiking (acute:chronic \(pct)) - higher injury risk", flag: .bad)
+                detail: "spiking (acute:chronic \(pct)) - well above your usual load", flag: .bad)
         }
     }
 

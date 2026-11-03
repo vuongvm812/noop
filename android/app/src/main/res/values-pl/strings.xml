@@ -2316,7 +2316,8 @@
     <string name="today_readiness_load_ramping_down">spadek (ostra:przewlekła %1$s) — jest przestrzeń na wzrost</string>
     <string name="today_readiness_load_sweet_spot">w optymalnym zakresie (ostra:przewlekła %1$s)</string>
     <string name="today_readiness_load_building_fast">szybki wzrost (ostra:przewlekła %1$s) — obserwuj zmęczenie</string>
-    <string name="today_readiness_load_spiking">skok (ostra:przewlekła %1$s) — większe ryzyko urazu</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d bpm (zmierzona)</string>
+    <string name="today_readiness_load_spiking">skok (ostra:przewlekła %1$s) — znacznie powyżej zwykłego obciążenia</string>
     <string name="today_readiness_more_nights">Kilka kolejnych nocy zwiększy wiarygodność odczytu.</string>
     <string name="today_readiness_run_down">Wyczerpanie</string>
     <string name="today_readiness_run_down_summary">Kilka sygnałów jest jednocześnie obniżonych. Potraktuj dziś jako regenerację: lekki ruch i porządny sen.</string>

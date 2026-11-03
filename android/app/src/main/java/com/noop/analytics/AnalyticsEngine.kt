@@ -384,6 +384,9 @@ object AnalyticsEngine {
         spo2: List<Spo2Sample> = emptyList(),
         profile: UserProfile,
         maxHROverride: Double? = null,
+        // Observed HRmax evidence for this day's 90-day window ([StrainScorer.observedHRmaxEvidence]).
+        // Null keeps the override-else-Tanaka behaviour.
+        hrmaxEvidence: Double? = null,
         // Wall-clock UTC offset (seconds) for the sleep detector's daytime false-sleep guard (#90).
         // Default 0 keeps pure-function callers/tests on UTC; IntelligenceEngine passes the device's
         // real offset.
@@ -844,8 +847,9 @@ object AnalyticsEngine {
         // covers the WHOLE day — an afternoon/evening workout lands in today's Effort same-day instead
         // of being cut off at the night window's ≈ noon bound, and the prior evening's HR no longer
         // bleeds in. Falls back to the night hr for pure-function callers/tests.
-        val effMaxHR: Double? = maxHROverride
-            ?: if (profile.age > 0) StrainScorer.tanakaHRmax(profile.age) else null
+        // One resolver for the day's Effort, its workouts and its calories (#54).
+        val hrmaxResolved = StrainScorer.resolveHRmax(maxHROverride, profile.age, hrmaxEvidence)
+        val effMaxHR: Double? = hrmaxResolved.first
         val restForStrain = restingHRDaily?.toDouble() ?: StrainScorer.defaultRestingHR
         val strain = StrainScorer.strain(
             hr = dayHr ?: hr,
@@ -875,8 +879,7 @@ object AnalyticsEngine {
                     // null there would put this line in direct contradiction with the `effort score`
                     // line above it, which prints that substituted number, about the same day.
                     hrmax = effMaxHR ?: StrainScorer.defaultMaxHR().toDouble(),
-                    hrmaxSource = if (maxHROverride != null) "override"
-                    else if (profile.age > 0) "tanaka" else "default",
+                    hrmaxSource = hrmaxResolved.second,
                     tanaka = if (profile.age > 0) StrainScorer.tanakaHRmax(profile.age) else null,
                     observedPeak = hrForPeak.maxOfOrNull { it.bpm }?.toDouble(),
                     restingHR = restForStrain,

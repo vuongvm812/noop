@@ -2318,7 +2318,8 @@
     <string name="today_readiness_load_ramping_down">disminuyendo (aguda:crónica %1$s) - margen para aumentar</string>
     <string name="today_readiness_load_sweet_spot">en el rango óptimo (aguda:crónica %1$s)</string>
     <string name="today_readiness_load_building_fast">aumento rápido (aguda:crónica %1$s) - vigila la fatiga</string>
-    <string name="today_readiness_load_spiking">pico (aguda:crónica %1$s) - mayor riesgo de lesión</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d ppm (observada)</string>
+    <string name="today_readiness_load_spiking">pico (aguda:crónica %1$s) - muy por encima de tu carga habitual</string>
     <string name="today_readiness_more_nights">Con unas noches más de datos, tu lectura de disposición será más precisa.</string>
     <string name="today_readiness_run_down">Agotado</string>
     <string name="today_readiness_run_down_summary">Varias señales están bajas a la vez. Dedica hoy a recuperarte: movimiento suave y sueño reparador esta noche.</string>

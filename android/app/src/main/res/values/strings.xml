@@ -2439,7 +2439,8 @@
     <string name="today_readiness_load_ramping_down">ramping down (acute:chronic %1$s) - room to build</string>
     <string name="today_readiness_load_sweet_spot">in the sweet spot (acute:chronic %1$s)</string>
     <string name="today_readiness_load_building_fast">building fast (acute:chronic %1$s) - watch fatigue</string>
-    <string name="today_readiness_load_spiking">spiking (acute:chronic %1$s) - higher injury risk</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d bpm (observed)</string>
+    <string name="today_readiness_load_spiking">spiking (acute:chronic %1$s) - well above your usual load</string>
     <string name="today_readiness_more_nights">A few more nights of data and your readiness read will sharpen.</string>
     <string name="today_readiness_run_down">Run down</string>
     <string name="today_readiness_run_down_summary">Several signals are down at once. Treat today as recovery - easy movement, real sleep tonight.</string>

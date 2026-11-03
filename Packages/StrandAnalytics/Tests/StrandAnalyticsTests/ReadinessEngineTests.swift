@@ -36,7 +36,8 @@ final class ReadinessEngineTests: XCTestCase {
         XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.flag, .good)
         XCTAssertEqual(r.signals.first { $0.key == "hrv" }?.evidence, "72 vs 60 ms")
         XCTAssertEqual(r.signals.first { $0.key == "rhr" }?.evidence, "46 vs 52 bpm")
-        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence, "7d 10.0 / 28d 10.0")
+        // Load evidence is TRIMP recovered from Effort 10 (#54), not the Effort itself.
+        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence, "7d 1.4 / 28d 1.4")
     }
 
     func testRundownWhenTwoRecoverySignalsDown() {

@@ -2317,7 +2317,8 @@
     <string name="today_readiness_load_ramping_down">en baisse (aiguë:chronique %1$s) - marge pour progresser</string>
     <string name="today_readiness_load_sweet_spot">dans la zone optimale (aiguë:chronique %1$s)</string>
     <string name="today_readiness_load_building_fast">hausse rapide (aiguë:chronique %1$s) - surveillez la fatigue</string>
-    <string name="today_readiness_load_spiking">pic (aiguë:chronique %1$s) - risque de blessure accru</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d bpm (observée)</string>
+    <string name="today_readiness_load_spiking">pic (aiguë:chronique %1$s) - bien au-delà de votre charge habituelle</string>
     <string name="today_readiness_more_nights">Quelques nuits de données supplémentaires affineront votre lecture de préparation.</string>
     <string name="today_readiness_run_down">Épuisé</string>
     <string name="today_readiness_run_down_summary">Plusieurs signaux sont faibles à la fois. Consacrez cette journée à la récupération : mouvement doux et vrai sommeil cette nuit.</string>
