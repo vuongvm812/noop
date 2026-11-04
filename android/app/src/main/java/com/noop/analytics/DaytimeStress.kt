@@ -18,7 +18,7 @@ import kotlin.math.sqrt
  * The daily Stress score (StressScreen / StressView) maps "resting HR up + HRV down vs a
  * personal baseline" onto a 0–3 logistic. This helper applies that SAME math at the
  * per-hour grain so the Stress screen can show *when* in the day stress ran high — not a
- * new score. For each waking hour it computes:
+ * new score. For each hour of the day it computes:
  *
  *   • mean HR over the hour                    (HR up   = stress, like daily RHR)
  *   • RMSSD over the hour's clean R-R          (HRV down = stress, like daily avgHRV)
@@ -29,6 +29,14 @@ import kotlin.math.sqrt
  * score. The day is its own baseline: a desk day with one tense afternoon reads that
  * afternoon as elevated *relative to that person's own calm hours*, no cloud, no history
  * needed beyond the day itself.
+ *
+ * NIGHT HOURS (#94). Hours outside the waking window are scored too, against the SAME waking-hour
+ * calm reference, and carry [HourPoint.asleep] so a chart can shade them. They are drawn, never
+ * counted: every day summary (dayMean, peak, sustainedHigh, highStressMinutes, activityMaskedHours)
+ * stays on the waking hours, so a calm night cannot dilute the day's average or bury a tense evening
+ * in the sustained-high run. A night hour is left unscored while the day has no reference to score it
+ * against (before the first waking hour on a day-relative read): with no anchor, rawScore returns 0
+ * and the hour would print a fabricated 1.5.
  *
  * "Sustained high stress" is an honest, conservative flag: the most recent
  * [sustainedHours] covered hours must ALL sit in the HIGH band (≥ [highBandFloor]). It
@@ -65,7 +73,11 @@ object DaytimeStress {
     const val highBandFloor: Double = 2.0
     /** Consecutive most-recent covered hours that must all be HIGH to flag sustained stress. */
     const val sustainedHours: Int = 3
-    /** First/last local hour-of-day treated as "waking" for the timeline (06:00–22:00). */
+    /**
+     * First/last local hour-of-day treated as "waking" (06:00–22:00). Waking hours build the calm
+     * reference and the day summaries; the rest of the day is the night window, scored and marked
+     * [HourPoint.asleep] but never counted. A clock window, not a detected sleep session.
+     */
     const val wakingStartHour: Int = 6
     const val wakingEndHour: Int = 22
 
@@ -207,6 +219,12 @@ object DaytimeStress {
          * reference and the coverage totals. See the motion-gate constants above.
          */
         val maskedForActivity: Boolean = false,
+        /**
+         * True when the hour falls in the night window (outside wakingStartHour until wakingEndHour).
+         * Scored against the waking reference and drawn shaded, but left out of every day summary
+         * (#94). Swift twin: `HourPoint.asleep`.
+         */
+        val asleep: Boolean = false,
     ) {
         /** True when the hour was scored (had enough HR to place on the curve). */
         val hasData: Boolean get() = level != null
@@ -214,15 +232,18 @@ object DaytimeStress {
 
     /** The full daytime read: the hourly timeline plus the sustained-high summary. */
     data class Result(
-        /** Waking-hour timeline, earliest → latest. Hours with no signal carry level == null. */
+        /**
+         * The day's hourly timeline, earliest → latest, night hours included and marked
+         * [HourPoint.asleep]. Hours with no signal carry level == null.
+         */
         val hours: List<HourPoint>,
-        /** True when the most recent [sustainedHours] SCORED hours all sit in the HIGH band. */
+        /** True when the most recent [sustainedHours] SCORED waking hours all sit in the HIGH band. */
         val sustainedHigh: Boolean,
         /** Count of trailing high hours backing [sustainedHigh] (0 when not sustained). */
         val sustainedRun: Int,
-        /** Mean stress across the SCORED hours, or null when none were scorable. */
+        /** Mean stress across the SCORED waking hours, or null when none were scorable. */
         val dayMean: Double?,
-        /** Peak scored hour (highest level), or null. */
+        /** Peak scored waking hour (highest level), or null. */
         val peak: HourPoint?,
         /**
          * Count of waking hours left unscored because they were AMBULATORY (the motion gate fired),
@@ -260,7 +281,7 @@ object DaytimeStress {
          */
         val timeline: List<HourPoint> = hours,
     ) {
-        /** The scored hours only (level non-null), in time order. */
+        /** The scored hours only (level non-null), in time order, night hours included. */
         val scored: List<HourPoint> get() = hours.filter { it.level != null }
 
         companion object {
@@ -442,7 +463,7 @@ object DaytimeStress {
                 // tense hours — without any cross-day history. Falls back to the plain mean when
                 // there are too few scored hours for a quartile.
                 //
-                // Built from the WAKING hours only — the same hours scored in step 4. Sleep is the
+                // Built from the WAKING hours only — the same hours the day summaries count. Sleep is the
                 // calmest, lowest-HR / highest-HRV stretch of the day, and the analysis window
                 // always begins at local midnight, so the current day routinely carries several
                 // hours of it. Letting those night hours into the reference drags the "calm" anchor
@@ -492,7 +513,7 @@ object DaytimeStress {
             }
         }
 
-        // 4) Score each waking-hour bucket on the shared 0–3 curve.
+        // 4) Score every bucket on the shared 0–3 curve, night hours marked asleep (#94).
         //
         // Written against a supplied bucket grid so the SAME expression scores the on-the-hour pass
         // and the half-step display pass. One copy, so the two can never drift into scoring the same
@@ -503,7 +524,7 @@ object DaytimeStress {
                 (activeFrac[bucket] ?: 0.0) >= activityMaskFraction
             val out = ArrayList<HourPoint>(gridAggs.size)
             for (a in gridAggs) {
-                if (!isWakingHour(a.bucket)) continue
+                val asleep = !isWakingHour(a.bucket)
                 val hourOfDay = (floorDiv(a.bucket, bucketSeconds) % 24).toInt()
                 // The wall-clock bucket start (undo the local shift applied above).
                 val wallStart = a.bucket - tzOffsetSeconds
@@ -519,17 +540,23 @@ object DaytimeStress {
                 val masked = a.meanHr != null && (ambulatory(a.bucket) || shadow)
                 // Score only when HR cleared the count gate AND the hour was not motion-masked (HR is
                 // the always-available anchor; RMSSD enriches it when beats allow).
-                val level: Double? = if (a.meanHr != null && !masked) {
+                // A night hour also needs a reference: before the day's first waking hour a
+                // day-relative read has none, and scoring against nothing would print 1.5 for an hour
+                // nobody measured against. A waking hour with HR always has one (it feeds the reference
+                // itself), so this leaves waking scores byte-identical.
+                val level: Double? = if (a.meanHr != null && !masked && (!asleep || refHr != null)) {
                     squash(rawScore(a.meanHr, refHr, sdHr, a.rmssd, refRmssd, sdRmssd))
                 } else {
                     null
                 }
-                out.add(HourPoint(hourOfDay, wallStart, level, a.meanHr, a.rmssd, masked))
+                out.add(HourPoint(hourOfDay, wallStart, level, a.meanHr, a.rmssd, masked, asleep))
             }
             return out
         }
         val points = scoreGrid(aggs, activeFracByBucket)
-        val activityMaskedHours = points.count { it.maskedForActivity }
+        // Every summary below reads the WAKING hours only. Night hours are drawn, never counted (#94).
+        val waking = points.filter { !it.asleep }
+        val activityMaskedHours = waking.count { it.maskedForActivity }
 
         // 4b) The half-step DISPLAY timeline: the same hour-long window re-read every
         //     [timelineStepSeconds], scored against the SAME references, and merged with the
@@ -544,7 +571,7 @@ object DaytimeStress {
             points
         }
 
-        val scored = points.mapNotNull { p -> p.level?.let { p to it } }
+        val scored = waking.mapNotNull { p -> p.level?.let { p to it } }
         if (scored.isEmpty()) {
             // No scorable waking hour — still return the (unscored) timeline so the UI can
             // show "not enough data" rather than nothing. hrOnlyFallback is a MODE property
@@ -600,7 +627,7 @@ object DaytimeStress {
         floorDiv(localTs - phase, bucketSeconds) * bucketSeconds + phase
 
     /**
-     * Whether a LOCAL hour-of-day falls inside the waking window the timeline scores (06:00-22:00).
+     * Whether a LOCAL hour-of-day falls inside the waking window (06:00-22:00).
      *
      * Split out from [isWakingHour] so a caller holding a wall-clock hour rather than a bucket can ask
      * the same question of the same constants. The stress widget needs exactly that: to say whether an
@@ -612,9 +639,9 @@ object DaytimeStress {
         hourOfDay >= wakingStartHour && hourOfDay < wakingEndHour
 
     /**
-     * Whether a local hour-bucket start falls inside the waking window the timeline scores
-     * (06:00–22:00). The single source of truth for "waking" — used both to build the calm
-     * reference and to pick the hours to score, so the two can never drift apart.
+     * Whether a local hour-bucket start falls inside the waking window (06:00–22:00). The single
+     * source of truth for "waking": it builds the calm reference, marks night hours asleep, and picks
+     * the hours the day summaries count, so the three can never drift apart.
      */
     internal fun isWakingHour(bucket: Long): Boolean =
         isWakingHourOfDay((floorDiv(bucket, bucketSeconds) % 24).toInt())

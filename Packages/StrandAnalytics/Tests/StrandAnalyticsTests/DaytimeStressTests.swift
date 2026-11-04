@@ -141,12 +141,87 @@ final class DaytimeStressTests: XCTestCase {
         XCTAssertGreaterThan(tense, calm)
     }
 
-    func testNonWakingHoursAreExcluded() {
-        // A 3 am hour (outside 06:00–22:00) is never placed on the waking timeline.
+    func testNightHoursAreScoredAndMarkedAsleep() {
+        // #94: a 3 am hour (outside 06:00–22:00) is now placed on the timeline, scored against the
+        // waking reference, and marked asleep so the chart can shade it.
         let hr = hourHR(3, bpm: 80) + hourHR(9, bpm: 60)
         let r = DaytimeStress.analyze(hr: hr, rr: [])
-        XCTAssertFalse(r.hours.contains { $0.hour == 3 })
-        XCTAssertTrue(r.hours.contains { $0.hour == 9 })
+        let night = r.hours.first { $0.hour == 3 }
+        let day = r.hours.first { $0.hour == 9 }
+        XCTAssertEqual(night?.asleep, true)
+        XCTAssertNotNil(night?.level, "a night hour with a waking reference must be scored")
+        XCTAssertEqual(day?.asleep, false)
+        XCTAssertNotNil(day?.level)
+    }
+
+    func testNightHoursAreDrawnNotCounted() {
+        // A tense night (high HR) must not move any day summary: dayMean, peak, the sustained run, the
+        // high-stress minutes and the masked-hour count all stay on the waking hours.
+        let waking: [HRSample] = zip(8...12, [60, 62, 61, 70, 64]).flatMap { hourHR($0.0, bpm: $0.1) }
+        let night: [HRSample] = zip([0, 1, 2, 22, 23], [110, 112, 115, 118, 120])
+            .flatMap { hourHR($0.0, bpm: $0.1) }
+        let dayOnly = DaytimeStress.analyze(hr: waking, rr: [])
+        let both = DaytimeStress.analyze(hr: night + waking, rr: [])
+        XCTAssertEqual(both.dayMean, dayOnly.dayMean)
+        XCTAssertEqual(both.peak, dayOnly.peak)
+        XCTAssertEqual(both.sustainedHigh, dayOnly.sustainedHigh)
+        XCTAssertEqual(both.sustainedRun, dayOnly.sustainedRun)
+        XCTAssertEqual(both.highStressMinutes, dayOnly.highStressMinutes)
+        XCTAssertEqual(both.activityMaskedHours, dayOnly.activityMaskedHours)
+        // ...while the night hours themselves are there, scored HIGH and marked.
+        let asleep = both.hours.filter(\.asleep)
+        XCTAssertEqual(asleep.map(\.hour), [0, 1, 2, 22, 23])
+        XCTAssertTrue(asleep.allSatisfy { ($0.level ?? 0) >= DaytimeStress.highBandFloor })
+        XCTAssertEqual(both.hours.filter { !$0.asleep }, dayOnly.hours)
+    }
+
+    func testANightWithNoWakingReferenceIsNotScored() {
+        // 2 am on a day-relative read: no waking hour exists yet, so there is nothing to score the
+        // night against. Scoring anyway would print 1.5 for every hour; it stays an honest gap.
+        let hr = hourHR(0, bpm: 55) + hourHR(1, bpm: 52)
+        let r = DaytimeStress.analyze(hr: hr, rr: [])
+        XCTAssertEqual(r.hours.map(\.hour), [0, 1])
+        XCTAssertTrue(r.hours.allSatisfy { $0.asleep && $0.level == nil })
+        XCTAssertNil(r.dayMean)
+        // A personal baseline IS a reference, so the same night scores under `.baselineRelative`.
+        let base = Baselines.foldHistory(Array(repeating: 60.0, count: 20), cfg: Baselines.daytimeHRCfg)
+        let personal = DaytimeStress.analyze(hr: hr, rr: [], mode: .baselineRelative(hr: base, rmssd: nil))
+        XCTAssertTrue(personal.hours.allSatisfy { $0.asleep && $0.level != nil })
+        XCTAssertNil(personal.dayMean, "night hours never feed the day mean")
+    }
+
+    func testNightAndDayMatchTheKotlinTwinValueForValue() {
+        // Oracle for #94. The Kotlin `DaytimeStressTest` asserts these same literals for this same
+        // scenario: a sleep stretch, a worn morning and a late evening, with R-R jitter.
+        var hr: [HRSample] = []
+        var rr: [RRInterval] = []
+        for (h, bpm) in zip([0, 1, 2, 3, 4, 5], [50, 51, 52, 51, 50, 53]) {
+            hr += hourHR(h, bpm: bpm); rr += hourRRVariable(h, rrMs: 1_100, jitter: 40)
+        }
+        for (h, bpm) in zip([6, 7, 8, 9, 10], [62, 64, 63, 72, 65]) {
+            hr += hourHR(h, bpm: bpm); rr += hourRRVariable(h, rrMs: 900, jitter: 20)
+        }
+        for (h, bpm) in zip([22, 23], [58, 74]) {
+            hr += hourHR(h, bpm: bpm); rr += hourRRVariable(h, rrMs: 950, jitter: 25)
+        }
+        let res = DaytimeStress.analyze(hr: hr, rr: rr, includeTimeline: true)
+        func render(_ points: [DaytimeStress.HourPoint]) -> String {
+            points.map { "\($0.startTs)\($0.asleep ? "z" : ""):"
+                + ($0.level.map { String(format: "%.6f", $0) } ?? "nil") }
+                .joined(separator: " ")
+        }
+        // Night hours score far below the waking calm reference (HR 50 vs ~63), and a late spike at 23:00
+        // reads HIGH, yet none of it reaches the summaries: the mean, peak and minutes are the morning's.
+        XCTAssertEqual(render(res.hours),
+                       "0z:0.074664 3600z:0.098208 7200z:0.128849 10800z:0.098208 14400z:0.074664 18000z:0.168494 "
+                       + "21600:1.289768 25200:1.710232 28800:1.500000 32400:2.780594 36000:1.912363 79200z:0.588309 82800z:2.871151")
+        XCTAssertEqual(render(res.timeline),
+                       "-1800z:0.074664 0z:0.074664 1800z:0.098208 3600z:0.098208 5400z:0.128849 7200z:0.128849 9000z:0.098208 10800z:0.098208 12600z:0.074664 14400z:0.074664 16200z:0.168494 18000z:0.168494 19800z:1.289768 "
+                       + "21600:1.289768 23400:1.710232 25200:1.710232 27000:1.500000 28800:1.500000 30600:2.780594 32400:2.780594 34200:1.912363 36000:1.912363 77400:0.588309 79200z:0.588309 81000z:2.871151 82800z:2.871151")
+        XCTAssertEqual(res.dayMean.map { String(format: "%.6f", $0) }, "1.838592")
+        XCTAssertEqual(res.peak?.startTs, 32400)
+        XCTAssertEqual(res.highStressMinutes, 60)
+        XCTAssertEqual(res.sustainedRun, 0)
     }
 
     func testSustainedHighFlagsAfterThreeConsecutiveHighHours() {
