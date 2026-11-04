@@ -67,8 +67,15 @@ struct LiquidTodayView: View {
     @State private var spo2CandidateByDay: [String: Double] = [:]
     @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
     @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
-    @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
-    @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
+    @State private var importedKcalDay: [DayCalories.ImportedDay] = []  // #51: the day's Apple Health energy rows
+    /// #57: the hand-logged weight diary and the Apple Health weigh-ins the Weight tile resolves between
+    /// through `WeightLog.resolve` (profile weight is the renderer's fallback, #204).
+    @State private var weightLog: [WeightLog.Entry] = []
+    @State private var weightHealth: [WeightLog.Entry] = []
+    @State private var showWeightLog = false
+    /// #57: today's stress for the Key Metrics Stress tile, from the same `StressTodayLoader` the Stress
+    /// screen's summary card reads.
+    @State private var stressReading: StressToday.Reading?
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
     /// Line identity for [hrValues], from the bucket timestamps this used to discard (#2082).
     ///
@@ -76,6 +83,8 @@ struct LiquidTodayView: View {
     /// every hole up and drew a day of sparse live windows as one continuous line. That bites hardest on a
     /// strap whose history never offloads, where heart rate exists ONLY for the windows it was connected.
     @State private var hrSegments: [String] = []
+    /// Epoch seconds of each [hrValues] bucket, so the card's scrub readout can name the time it points at.
+    @State private var hrTimes: [Int] = []
     @State private var workouts: [WorkoutRow] = [] // newest-first
     /// #today-hosted-cards: the shared SleepModel that backs every SleepModel-derived hosted sleep card
     /// (Stages vs typical today; more to follow). Built ONCE in `load()` from the SAME inputs the Sleep tab
@@ -374,13 +383,6 @@ struct LiquidTodayView: View {
                         case .keyMetrics: keyMetricsSection
                         case .workouts: lastWorkoutsSection
                         case .heartRate: heartRateSection
-                        // #42: today's stress, tapping through to the Stress screen. Today only, since the
-                        // card reads today's samples. Twin of Android TodayScreen's STRESS arm.
-                        case .stress:
-                            if selectedDayOffset == 0 {
-                                NavigationLink(value: TabRoute.stress) { StressSummaryCard(showsChevron: true) }
-                                    .buttonStyle(LiquidPressStyle())
-                            }
                         case .recoveryVitals: recoveryVitalsSection
                         case .yourCards: yourCardsSection
                         case .menstrualCycle:
@@ -476,7 +478,15 @@ struct LiquidTodayView: View {
         // classic TodayView's reloadHydration() uses.
         .task(id: "\(repo.refreshSeq)-\(selectedDayOffset)-\(repo.hydrationSeq)-\(hydrationEnabled)-\(dayCycleModeRaw)") {
             DashboardCardPrefs.migrateLegacyStepsAverage()
+            KeyMetricPrefs.runMigrations()   // #57: Stress card → tile, VO₂max joins
             await load()
+        }
+        // #57: the Weight tile re-reads on a diary write (weightLogSeq), the Stress tile on a refresh.
+        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)") {
+            await reloadKeyMetricExtras()
+        }
+        .sheet(isPresented: $showWeightLog) {
+            WeightLogSheet(unitSystem: unitSystem, onClose: { showWeightLog = false })
         }
         .sheet(item: $guideSection) { section in
             NavigationStack { ScoringGuideView(initialSection: section, onClose: { guideSection = nil }) }
@@ -759,7 +769,7 @@ struct LiquidTodayView: View {
                     // this card, never the whole Today. Shows the current bpm live with a rolling
                     // beat-by-beat trace; falls back to today's banked 5-minute trace when idle.
                     LiquidLiveHR(tint: liquidHeart, fallback: hrValues, fallbackSegments: hrSegments,
-                                 animated: dataLoaded)
+                                 fallbackTimes: hrTimes, animated: dataLoaded)
                 }
             }
             .buttonStyle(LiquidPressStyle())
@@ -842,14 +852,13 @@ struct LiquidTodayView: View {
             // the stress curve there is no read behind these and nothing to gate.
             HostedTrendCard(card: card, days: repo.days, effortScale: effortScale)
         case .stressToday:
-            // READ-ONLY, like `stages`: the Stress tab keeps the interactive timeline and this mirrors
-            // only the display. `DaytimeLoadLine` is the tab's OWN line, so the host cannot drift into
-            // a second drawing of the same day.
+            // `DaytimeLoadLine` is the Stress tab's OWN line, so the host cannot drift into a second
+            // drawing of the same day. It reads by hover or touch-and-hold, so a tap still opens the tab.
             NoopCard(tint: StressRamp.calm) {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stress through the day").strandOverline()
                     if hostedStressHours.contains(where: { $0.level != nil }) {
-                        DaytimeLoadLine(hours: hostedStressHours)
+                        DaytimeLoadLine(hours: hostedStressHours, tapThrough: true)
                     } else {
                         // The honest blank: only waking hours score and an hour needs enough heart
                         // rate, so early morning is empty by construction rather than by failure.
@@ -1084,8 +1093,9 @@ struct LiquidTodayView: View {
         case .calories:
             // #616: show the resolved imported-first value and route to the matching detail source, like
             // the Steps card — was a "–" placeholder wired to the imported-only detail.
-            cardLink(.metricSourced(key: caloriesDetailKey, source: caloriesDetailSource), title: card.title, sub: card.subtitle,
-                     value: intText(caloriesCount), tint: StrandPalette.metricAmber, frac: fracOver(caloriesCount, 800))
+            cardLink(.metricSourced(key: MetricCatalog.todayCaloriesMetric.key, source: MetricCatalog.todayCaloriesMetric.source),
+                     title: card.title, sub: card.subtitle, value: intText(caloriesCount), tint: StrandPalette.metricAmber,
+                     frac: fracOver(caloriesCount, DayCalories.tileScaleKcal))
         case .sleep:
             cardLink(.sleep, title: card.title, sub: card.subtitle,
                      value: sleepText, tint: StrandPalette.restColor, frac: fracOver(displayDay?.totalSleepMin, 480))
@@ -1333,9 +1343,21 @@ struct LiquidTodayView: View {
     }
 
     /// A metric's spark values inside the chosen window, oldest → newest.
-    private func windowedSpark(_ key: String) -> [Double] {
+    private func windowedSpark(_ key: String) -> [(day: String, value: Double)] {
         let cutoff = sparkWindowCutoffKey
-        return (kSparks[key] ?? []).filter { $0.0 >= cutoff }.map { $0.1 }
+        return (kSparks[key] ?? []).filter { $0.0 >= cutoff }.map { (day: $0.0, value: $0.1) }
+    }
+
+    /// A detailed tile's sparkline sample as the scrub readout's value line (#58), in the same form as the
+    /// tile's own number for that metric.
+    private func sparkValueText(_ key: String, _ v: Double, unit: String) -> String {
+        switch key {
+        case HeroRingMetric.effort: return effortText(v)
+        case "resp_rate": return Self.tileDisplayValue(String(format: "%.1f", locale: AppLanguage.activeLocale, v), unit: unit)
+        case "weight": return UnitFormatter.massFromKilograms(v, system: unitSystem)
+        case "skin_temp": return TodayView.skinTempCardValue(v, fahrenheit: temperatureUnit == .fahrenheit)
+        default: return Self.tileDisplayValue(intText(v), unit: unit)
+        }
     }
 
     /// The Key-Metrics header's trailing label for the chosen detailed-graph window (Android twin).
@@ -1438,13 +1460,40 @@ struct LiquidTodayView: View {
             ktile(String(localized: "Steps"), icon: keyMetricIcon(metric), stepsText, "", StrandPalette.chargeColor,
                   fracOver(stepCount, 10000), key: stepsDetailKey, detailMetric: stepsDetailMetric)
         case .weight:
-            let (val, cap) = weightTile(weightKg)
-            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap)
+            // #57: the newest of the hand-logged diary and Apple Health on or before the selected day, through
+            // the one `WeightLog.resolve` (the classic TodayView reads the same). Tapping opens the diary sheet.
+            let resolved = WeightLog.resolve(logged: weightLog, health: weightHealth, onOrBefore: selectedDayKey)
+            let (val, cap) = weightTile(resolved?.entry.kg)
+            let cutoff = sparkWindowCutoffKey
+            ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap,
+                  spark: WeightLog.dailySeries(logged: weightLog, health: weightHealth)
+                    .filter { $0.day >= cutoff && $0.day <= selectedDayKey }
+                    .map { (value: $0.kg, label: SleepModel.shortDayLabel($0.day)) },
+                  action: { showWeightLog = true })
+        case .stress:
+            // #57: the latest level from `StressTodayLoader` → `StressToday.resolve`, the reading the Stress
+            // screen's summary card prints, on that reading's own scale. Today only: the loader reads today.
+            let reading = selectedDayOffset == 0 ? stressReading : nil
+            let level = StressToday.tileLevel(reading)
+            ktile(String(localized: "Stress"), icon: keyMetricIcon(metric),
+                  level.flatMap { lv in reading.map { StressSummaryCard.format(lv, source: $0.source) } } ?? "—",
+                  reading.map { StressSummaryCard.scaleSuffix($0.scaleMax) } ?? "",
+                  StrandPalette.stressColor,
+                  level.flatMap { lv in reading.map { lv / $0.scaleMax } },
+                  caption: reading.map { StressSummaryCard.sourceLabel($0.source) },
+                  spark: reading.map { $0.points.map { (value: $0.level, label: StressSummaryCard.timeLabel($0.ts)) } } ?? [],
+                  sparkFormat: reading.map { r in { StressSummaryCard.format($0, source: r.source) } },
+                  route: .stress)
+        case .vo2max:
+            // #57: the same latest VO₂max the "Your Cards" VO₂max card shows, opening the same detail.
+            ktile(String(localized: "VO₂ Max"), icon: keyMetricIcon(metric), intText(vo2max), "", StrandPalette.chargeColor, nil,
+                  route: .metric("vo2max_est"))
         case .calories:
-            // #616: imported-first value (imported ?: activeKcalEst) + route the tap to the matching
-            // detail source, so the number, its sparkline and the chart it opens all agree.
+            // #51: the day's TOTAL energy (`DayCalories`), the same figure its sparkline and the
+            // Calories detail it opens chart.
             ktile(String(localized: "Calories"), icon: keyMetricIcon(metric), intText(caloriesCount), "kcal", StrandPalette.metricAmber,
-                  fracOver(caloriesCount, 800), key: "energy_kcal", detailMetric: caloriesDetailMetric)
+                  fracOver(caloriesCount, DayCalories.tileScaleKcal), key: "energy_kcal",
+                  detailMetric: MetricCatalog.todayCaloriesMetric)
         case .skinTemp:
             // Added 2026-08-24 (queue 11c follow-up): first Key Metrics appearance for Skin Temp — was
             // already a "Your Cards" tile (`DashboardCard.skinTemp`), never a Key Metrics one. Same
@@ -1474,11 +1523,16 @@ struct LiquidTodayView: View {
         case .weight: return "scalemass.fill"
         case .calories: return "flame.fill"
         case .skinTemp: return "thermometer.medium"
+        case .stress: return "gauge.with.dots.needle.50percent"
+        case .vo2max: return "lungs.fill"
         }
     }
 
     private func ktile(_ label: String, icon: String, _ value: String, _ unit: String, _ tint: Color, _ frac: Double?,
-                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil) -> some View {
+                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil,
+                       spark sparkOverride: [(value: Double, label: String)]? = nil,
+                       sparkFormat: ((Double) -> String)? = nil, action: (() -> Void)? = nil,
+                       route: TabRoute? = nil) -> some View {
         let displayValue = Self.tileDisplayValue(value, unit: unit)
         let tile = VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -1515,10 +1569,22 @@ struct LiquidTodayView: View {
             // windowed series keeps a clear placeholder of the same height so every tile in a detailed row
             // stays equal-height with its bars aligned.
             if keyMetricsDetailed {
-                let spark = key.map { windowedSpark($0) } ?? []
+                // #57: a tile whose trend is not a `kSparks` series (the weight diary, today's stress) passes
+                // its own points, each with the date or time its scrub readout names (#58).
+                let sparkPoints = sparkOverride ?? key.map { k in
+                    windowedSpark(k).map { (value: $0.value, label: SleepModel.shortDayLabel($0.day)) }
+                } ?? []
+                let spark = sparkPoints.map(\.value)
+                let format: (Double) -> String = sparkFormat
+                    ?? key.map { k in { sparkValueText(k, $0, unit: unit) } }
+                    ?? { Self.tileDisplayValue(intText($0), unit: unit) }
                 if spark.count >= 2 {
+                    // The tile is a navigation link: the scrub reads by hover or touch-and-hold (#58).
                     Sparkline(values: spark,
-                              gradient: Gradient(colors: [tint.opacity(0.5), tint]))
+                              gradient: Gradient(colors: [tint.opacity(0.5), tint]),
+                              scrubTapThrough: true,
+                              valueFormat: format,
+                              indexLabel: { sparkPoints[$0].label })
                         .frame(height: 22)
                         .padding(.top, 6)
                         .accessibilityHidden(true)
@@ -1535,7 +1601,15 @@ struct LiquidTodayView: View {
         // #430 parity: tap -> the metric's trend detail (the same Explore dossier its MetricRow pushes,
         // closure-based NavigationLink per #38). A metric with no catalog entry stays inert.
         return Group {
-            if let metric = detailMetric ?? key.flatMap({ key in
+            // #57: a tile with an action (Weight → diary sheet) or a route (Stress, VO₂max) goes there
+            // instead of the catalog detail.
+            if let action {
+                Button(action: action) { tile.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+            } else if let route {
+                NavigationLink(value: route) { tile }
+                    .buttonStyle(.plain)
+            } else if let metric = detailMetric ?? key.flatMap({ key in
                 MetricCatalog.all.first(where: { $0.key == key })
             }) {
                 NavigationLink { MetricDetailView(metric: metric) } label: { tile }
@@ -1651,7 +1725,8 @@ struct LiquidTodayView: View {
         let day = resolveDisplayDay()
         cachedDisplayDay = day
         await reloadRRUnitPolicy()
-        cachedReadiness = ReadinessEngine.evaluate(days: repo.days, today: day?.day)
+        cachedReadiness = ReadinessEngine.evaluate(days: repo.days, today: day?.day,
+                                                   baselines: day.flatMap { repo.chargeBaselines(for: $0.day) })
         // Prior-day vitals carry, resolved ONCE here (never in body). Bound to today's own key so it can't
         // echo today's still-forming row; only on today (a past day's own row is the whole story).
         let tkey = cachedDisplayDay?.day ?? selectedDayKey
@@ -1665,8 +1740,7 @@ struct LiquidTodayView: View {
         // classic Today reads, so the two screens agree on when a wearer is genuinely mid-calibration
         // rather than simply lacking a scored night.
         let calNights = (selectedDayOffset == 0)
-            ? RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                               dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+            ? RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: tkey)?.hrv,
                                                hasRecovery: day?.recovery != nil)
             : nil
         let priorScored = TodayView.lastScoredRecoveryDay(
@@ -1776,23 +1850,20 @@ struct LiquidTodayView: View {
         // Window all read the same signal. Rest reuses the already-loaded sleep_performance series.
         let sparkCutoff = Repository.localDayKey(cal.date(byAdding: .day, value: -29, to: dayStart) ?? dayStart)
         let sparkRows = daysSnapshot.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
-        // #616: imported-first calorie spark (the day's imported Apple active energy ?: NOOP's on-device
-        // estimate) over the window, so a Health-Connect / Apple-only calorie user gets a trend too —
-        // matching the imported-first VALUE. Union of imported days + strap-row days. Mirrors Android's
-        // caloriesSpark (windowed caloriesByDay).
+        // #51: the calorie spark over the window, resolved per day by `DayCalories` like the tile's value:
+        // the phone's total (active + basal) where it has one, else the stored total. Mirrors Android's
+        // caloriesSpark.
         let appleRowsForSpark = await appleA
         // Queue 11a: SpO₂ candidate fallback — day-keyed for the tile's value lookup, windowed for its
         // detailed-mode sparkline below (same shape as `restByDay`/`kSparks["spo2"]` above).
         let spo2CandSeries = await spo2CandA
         spo2CandidateByDay = Dictionary(spo2CandSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        var winImportedKcal: [String: Double] = [:]
-        for r in appleRowsForSpark where r.day >= sparkCutoff && r.day <= selectedDayKey {
-            if let k = r.activeKcal { winImportedKcal[r.day] = max(winImportedKcal[r.day] ?? 0, k) }
-        }
-        var winOnDeviceKcal: [String: Double] = [:]
-        for r in sparkRows { if let k = r.activeKcalEst { winOnDeviceKcal[r.day] = k } }
-        let energyKcalSpark: [(String, Double)] = Set(winImportedKcal.keys).union(winOnDeviceKcal.keys).sorted()
-            .compactMap { day in (winImportedKcal[day] ?? winOnDeviceKcal[day]).map { (day, $0) } }
+        let winImportedKcal = appleRowsForSpark.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
+            .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
+        var winStoredKcal: [String: Double] = [:]
+        for r in sparkRows { if let k = r.activeKcalEst { winStoredKcal[r.day] = k } }
+        let energyKcalSpark: [(String, Double)] = DayCalories.byDay(imported: winImportedKcal, stored: winStoredKcal)
+            .map { ($0.day, $0.kcal) }
         kSparks = [
             "recovery": sparkRows.compactMap { r in r.recovery.map { (r.day, $0) } },
             "strain": sparkRows.compactMap { r in r.strain.map { (r.day, $0) } },
@@ -1805,9 +1876,7 @@ struct LiquidTodayView: View {
             "skin_temp": sparkRows.compactMap { r in r.skinTempDevC.map { (r.day, $0) } },
             "resp_rate": sparkRows.compactMap { r in r.respRateBpm.map { (r.day, $0) } },
             "steps": sparkRows.compactMap { r in r.steps.map { (r.day, Double($0)) } },
-            // #616: the Calories tile drew no trend line — this dict had no matching entry, so windowedSpark
-            // returned []. Bank the imported-first calorie series (built above) so the sparkline matches the
-            // tile's imported-first number and a Health-Connect / Apple-only user gets a trend.
+            // #616: without this entry windowedSpark returned [] and the Calories tile drew no trend line.
             "energy_kcal": energyKcalSpark,
             "steps_est": stepsSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
                 .map { ($0.day, $0.value) },
@@ -1830,23 +1899,19 @@ struct LiquidTodayView: View {
         // measured strap count and the motion estimate. Health Connect is Android-only, so apple-health is
         // the sole import source on iOS. Mirrors Android `stepsForDay` (#377).
         importedStepsDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.steps }.max()
-        // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
-        // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
-        importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
+        // #51: the selected day's Apple Health energy rows, which `caloriesCount` resolves.
+        importedKcalDay = (await appleA).filter { $0.day == selectedDayKey }
+            .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
 
-        // Weight for the SELECTED day: prefers a real Apple-Health reading (today's daily, else the
-        // "weight" series' newest point so a sparse-but-recent value still renders). Falls back to the
-        // user's profile weight in the renderer (weightTile).
-        let appleRows = await appleA
-        let weightSeries = await weightA
-        weightKg = appleRows.filter { $0.day == selectedDayKey }.compactMap { $0.weightKg }.max()
-            ?? weightSeries.last(where: { $0.day <= selectedDayKey })?.value
+        // Weight for the selected day is resolved in the renderer from the diary + Apple Health (#57,
+        // `reloadKeyMetricExtras`), so it no longer reads the selected day's Apple row here.
 
         // Awaited ONCE: the timestamps and the means have to come from the same read, or the segments
         // would describe a different series than the one drawn.
         let hrBuckets = await hrA
         hrValues = hrBuckets.map { $0.bpm }
         hrSegments = hrGapSegments(bucketTs: hrBuckets.map { $0.ts }, bucketSeconds: 300)
+        hrTimes = hrBuckets.map { $0.ts }
         workouts = (await wkA).filter { $0.startTs >= from && $0.startTs < to }
 
         let (chargeSource, effortSource, restSource) = await (chargeSourceA, effortSourceA, restSourceA)
@@ -1888,7 +1953,9 @@ struct LiquidTodayView: View {
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,
                 habitualMidsleepSec: hostedHabitual,
-                motionByStart: hostedMotion))
+                motionByStart: hostedMotion,
+                computedSleep: repo.computedSleep,
+                age: profile.age > 0 ? profile.age : nil))
         } else {
             hostedSleepModel = nil
         }
@@ -1933,7 +2000,8 @@ struct LiquidTodayView: View {
     /// pass (readinessWord + synthLine + readiness.summary). The fallback runs only in the brief window
     /// before the first load() populates the cache.
     private var readiness: ReadinessEngine.Readiness {
-        cachedReadiness ?? ReadinessEngine.evaluate(days: repo.days, today: cachedDisplayDay?.day)
+        cachedReadiness ?? ReadinessEngine.evaluate(days: repo.days, today: cachedDisplayDay?.day,
+                                                    baselines: cachedDisplayDay.flatMap { repo.chargeBaselines(for: $0.day) })
     }
 
     /// One card-level provenance label. Identical winners collapse to one name; mixed scores show at most
@@ -2028,20 +2096,12 @@ struct LiquidTodayView: View {
     private var stepsDetailKey: String { stepsDetailMetric?.key ?? "steps_est" }
     private var stepsDetailSource: String { stepsDetailMetric?.source ?? "my-whoop" }
 
-    // #616: calories resolved IMPORTED-FIRST (the day's imported Apple active energy — the figure these
-    // surfaces already showed — else NOOP's on-device HR estimate `activeKcalEst`) — one number across the
-    // tile, card and the detail it taps to. Mirrors the steps precedence above.
+    // #51: the day's TOTAL energy, resolved by `DayCalories` (the phone's total, else the stored total) —
+    // one number across the tile, the card and the detail it taps to.
     private var caloriesCount: Double? {
-        importedActiveKcalDay ?? displayDay?.activeKcalEst
+        let stored = displayDay.flatMap { d in d.activeKcalEst.map { [d.day: $0] } } ?? [:]
+        return DayCalories.byDay(imported: importedKcalDay, stored: stored).first?.kcal
     }
-
-    private var caloriesDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedActiveKcalDay != nil,
-                                          hasOnDeviceKcal: displayDay?.activeKcalEst != nil)
-    }
-
-    private var caloriesDetailKey: String { caloriesDetailMetric?.key ?? "energy_kcal" }
-    private var caloriesDetailSource: String { caloriesDetailMetric?.source ?? "my-whoop" }
 
     private var liveHour: Double {
         let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
@@ -2128,11 +2188,27 @@ struct LiquidTodayView: View {
         return UnitFormatter.effortDisplay(s, scale: effortScale)
     }
 
+    /// #57: load the Stress tile's reading (today only, and only when the tile is shown) and the weight
+    /// diary plus Apple Health weigh-ins the Weight tile resolves between. Twin of the classic TodayView's.
+    private func reloadKeyMetricExtras() async {
+        let enabled = Set(enabledKeyMetrics)
+        if enabled.contains(.stress), selectedDayOffset == 0 {
+            stressReading = await StressTodayLoader.load(repo: repo)
+        } else {
+            stressReading = nil
+        }
+        if enabled.contains(.weight) {
+            weightLog = await repo.weightLogEntries()
+            weightHealth = await repo.series(key: "weight", source: "apple-health", fullHistory: true)
+                .map { WeightLog.Entry(day: $0.day, kg: $0.value) }
+        }
+    }
+
     /// The Weight tile's display string + an honest caption ("from profile" only on the fallback).
     /// Always formatted through the shared `UnitFormatter` so the Imperial/Metric toggle reaches this
     /// tile. Mirrors the classic TodayView's `weightTile`.
-    private func weightTile(_ appleWeightKg: Double?) -> (value: String, caption: String) {
-        if let kg = appleWeightKg {
+    private func weightTile(_ resolvedKg: Double?) -> (value: String, caption: String) {
+        if let kg = resolvedKg {
             return (UnitFormatter.massFromKilograms(kg, system: unitSystem), String(localized: "latest"))
         }
         return (UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), String(localized: "from profile"))
@@ -2506,19 +2582,27 @@ private struct LiquidLiveHR: View {
     /// so it passes nil and draws exactly as before; the banked buckets skip the hours nothing was
     /// recorded, and without this the sparkline joined across them as though the day were continuous.
     var fallbackSegments: [String] = []
+    /// Epoch seconds of each [fallback] bucket, for the scrub readout's time label. Ignored unless it
+    /// lines up one-to-one with [fallback].
+    var fallbackTimes: [Int] = []
     var animated: Bool
 
     @EnvironmentObject private var live: LiveState
     @State private var samples: [Double] = []
+    /// Arrival time of each entry in [samples], kept in step with it so the scrub readout names the second.
+    @State private var sampleTimes: [Date] = []
     @State private var beat = false
     @State private var scrubX: CGFloat?
-    #if os(iOS)
-    @State private var scrubEngaged = false
-    #endif
     private let maxSamples = 90   // ~1.5 min of 1 Hz live HR, enough to read the shape
 
     private var isLive: Bool { live.connected && samples.count >= 2 }
     private var series: [Double] { isLive ? samples : fallback }
+    /// The time of each [series] entry, or nil when the two do not line up (the readout then shows bpm only).
+    private var seriesTimes: [Date]? {
+        if isLive { return sampleTimes.count == samples.count ? sampleTimes : nil }
+        guard fallbackTimes.count == fallback.count else { return nil }
+        return fallbackTimes.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
     /// The big number is the LIVE heart rate only. It used to fall back to the last banked 5-minute average, drawn
     /// exactly like a live reading, so with the strap off the wrist the card went on showing one (a tester's 91). The
     /// day's trace and its labelled min / avg / max still show without a live strap.
@@ -2582,21 +2666,9 @@ private struct LiquidLiveHR: View {
                 }
                 .frame(height: 92)
                 .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.space2, style: .continuous))
-                .contentShape(Rectangle())
                 .overlay { scrubReadout }
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        switch phase {
-                        case .active(let location): scrubX = location.x
-                        case .ended: scrubX = nil
-                        }
-                    }
-                }
-                #if os(iOS)
-                .gesture(touchScrubGesture)
-                #endif
+                // The card is a navigation link: hover or touch-and-hold reads, a tap still opens (#58).
+                .chartScrub($scrubX, tapThrough: true)
                 HStack {
                     stat(String(localized: "Min"), series.min())
                     Spacer()
@@ -2614,13 +2686,17 @@ private struct LiquidLiveHR: View {
                     .padding(.vertical, 24)
             }
         }
-        .onAppear { if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)] } }
+        .onAppear {
+            if samples.isEmpty, let hr = live.heartRate, hr > 0 { samples = [Double(hr)]; sampleTimes = [Date()] }
+        }
         .onChangeCompat(of: live.heartRate) { hr in
             // No live heart rate (the strap off the wrist, or gone): drop the trace, so the card stops calling an
             // old one "Live" and shows today's average under its own label.
-            guard let hr, hr > 0 else { samples.removeAll(); return }
+            guard let hr, hr > 0 else { samples.removeAll(); sampleTimes.removeAll(); return }
             samples.append(Double(hr))
+            sampleTimes.append(Date())
             if samples.count > maxSamples { samples.removeFirst(samples.count - maxSamples) }
+            if sampleTimes.count > maxSamples { sampleTimes.removeFirst(sampleTimes.count - maxSamples) }
             beat.toggle()
         }
     }
@@ -2635,59 +2711,44 @@ private struct LiquidLiveHR: View {
 
     /// Uses the thread renderer's ten-point inset and equal-distance sample positions, so the
     /// readout points to the value actually drawn under the finger even for a sparse banked trace.
+    /// The renderer spaces samples evenly rather than by time, so the cursor always lands on a drawn
+    /// sample and there is no empty slot to call "No data". A selection tick fires on each snap (#58).
     private var scrubReadout: some View {
         GeometryReader { geometry in
-            if let scrubX, series.count >= 2 {
-                // The renderer's own mapping, not a copy of it: a private inset or span floor here would
-                // agree by inspection and then drift the crosshair off the curve the moment either moved.
-                let plot = LiquidRender.ThreadPlot(size: geometry.size, values: series)
-                let index = plot.nearestIndex(toX: Double(scrubX))
-                let width = geometry.size.width
-                let x = CGFloat(plot.x(index))
-                let y = CGFloat(plot.y(series[index]))
-                Path { path in
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+            // The renderer's own mapping, not a copy of it: a private inset or span floor here would
+            // agree by inspection and then drift the crosshair off the curve the moment either moved.
+            let plot = series.count >= 2 ? LiquidRender.ThreadPlot(size: geometry.size, values: series) : nil
+            let index: Int? = scrubX.flatMap { sx in plot.map { $0.nearestIndex(toX: Double(sx)) } }
+            ZStack {
+                if let plot, let index {
+                    let width = geometry.size.width
+                    let x = CGFloat(plot.x(index))
+                    let y = CGFloat(plot.y(series[index]))
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: geometry.size.height))
+                    }
+                    .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
+                    Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
+                    (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
+                        + Text(" bpm").font(StrandFont.caption)
+                        + Text(verbatim: seriesTimes.map { " · " + $0[index].formatted(date: .omitted, time: isLive ? .standard : .shortened) } ?? "")
+                            .font(StrandFont.caption)
+                            .foregroundColor(StrandPalette.textSecondary))
+                        .foregroundStyle(StrandPalette.textPrimary)
+                        .padding(.horizontal, NoopMetrics.space2)
+                        .padding(.vertical, NoopMetrics.space1)
+                        .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
+                        .fixedSize()
+                        .position(x: min(max(x, 72), max(72, width - 72)), y: 15)
                 }
-                .stroke(tint, lineWidth: NoopMetrics.hairlineWidth)
-                Circle().fill(tint).frame(width: 8, height: 8).position(x: x, y: y)
-                (Text("\(Int(series[index].rounded()))").font(StrandFont.captionNumber)
-                    + Text(" bpm").font(StrandFont.caption))
-                    .foregroundStyle(StrandPalette.textPrimary)
-                    .padding(.horizontal, NoopMetrics.space2)
-                    .padding(.vertical, NoopMetrics.space1)
-                    .background(StrandPalette.surfaceBase.opacity(0.9), in: Capsule())
-                    .position(x: min(max(x, 48), max(48, width - 48)), y: 15)
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .chartScrubHaptic(index)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
-
-    #if os(iOS)
-    private var touchScrubGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-            .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
-                if !scrubEngaged {
-                    scrubEngaged = true
-                    StrandHaptic.selection.play()
-                }
-                if let drag {
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) { scrubX = drag.location.x }
-                }
-            }
-            .onEnded { _ in
-                scrubEngaged = false
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { scrubX = nil }
-            }
-    }
-    #endif
 }
 
 /// Static technical grid behind the live trace. Canvas draws only when layout/style changes, so the

@@ -59,8 +59,7 @@ struct CoupledView: View {
     /// Recovery cold-start: nights banked so far while the HRV baseline still seeds, nil once recovery
     /// exists. The SAME pure helper Today's ring reads, so the two screens can't disagree.
     private var calibrationNights: Int? {
-        RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                         dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+        RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: todayKey)?.hrv,
                                          hasRecovery: day?.recovery != nil)
     }
 
@@ -101,8 +100,7 @@ struct CoupledView: View {
     /// Never a local hours-vs-need approximation (keeps the coupled read in agreement with Today's Rest).
     private var sleepPerformance: Double? {
         guard let d = day else { return nil }
-        if let p = repo.importedSleep[d.day]?.performancePct { return p }
-        return AnalyticsEngine.Rest.composite(daily: d)
+        return repo.restScore(d)
     }
 
     /// On-device readiness, computed EXACTLY as Today does (ReadinessEngine.evaluate over the same rows,
@@ -111,7 +109,7 @@ struct CoupledView: View {
     /// scored day today's own key wins, so Coupled's pill can't diverge from Today's onto yesterday (#787).
     private var readinessLevel: ReadinessEngine.Level {
         let anchor = (isCarryingRecovery ? carriedRecoveryDay?.day : day?.day) ?? Repository.logicalDayKey(Date())
-        return ReadinessEngine.evaluate(days: repo.days, today: anchor).level
+        return ReadinessEngine.evaluate(days: repo.days, today: anchor, baselines: repo.chargeBaselines(for: anchor)).level
     }
 
     var body: some View {
@@ -469,19 +467,13 @@ struct CoupledView: View {
         return String(localized: "Sleep performance \(Int(p.rounded())) percent")
     }
 
-    /// The night's need (minutes) for the slept-vs-needed read: the imported per-day figure when the
-    /// export carried one, else the shared ≥ 7.5h personal-mean floor (matches SleepView.sleepNeedMin).
+    /// The night's need (minutes) for the slept-vs-needed read: the imported per-day figure, else the need
+    /// the engine scored that night's Rest against (#55), else the cold-start default — the same order as
+    /// the Sleep tab's "hours vs needed" tile.
     private var sleepNeedForDay: Double {
-        if let need = day.flatMap({ repo.importedSleep[$0.day]?.needMin }), need > 0 { return need }
-        return sleepNeedMin
-    }
-
-    /// The personal sleep need (minutes): the recent-mean total sleep, never below a 7.5h floor. Byte-for-byte
-    /// the same rule as SleepView.sleepNeedMin so the two screens agree.
-    private var sleepNeedMin: Double {
-        let banked = repo.days.compactMap { $0.totalSleepMin }.filter { $0 > 0 }
-        let mean = banked.isEmpty ? nil : banked.reduce(0, +) / Double(banked.count)
-        return Swift.max(450, mean ?? 450)   // 450 min = 7.5h
+        guard let d = day else { return AnalyticsEngine.Rest.defaultNeedHours * 60.0 }
+        if let need = repo.importedSleep[d.day]?.needMin ?? repo.computedSleep[d.day]?.needMin, need > 0 { return need }
+        return AnalyticsEngine.Rest.defaultNeedHours * 60.0
     }
 
     /// Last night's bed → wake span, e.g. "23:41 – 07:23", from the day's bridged MAIN-night span
@@ -528,14 +520,14 @@ struct CoupledView: View {
     }
 
     /// The ordered Charge drivers for the displayed ring PLUS the confidence tier from the SAME HRV
-    /// baseline — the exact TodayView derivation (pure engine scoring against `repo.chargeBaselines`, the
+    /// baseline — the exact TodayView derivation (pure engine scoring against `repo.chargeBaselines(for:)`, the
     /// personal baselines resolved with the engine's own rule, #2525). nil for a calibrating / cold-start
     /// night, which gates the sheet through to the countdown instead. PERF: mirrors
     /// TodayView.chargeBreakdown() — the baselines are resolved once per refresh, so a body evaluation of
     /// the open sheet folds nothing.
     private func chargeBreakdown() -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
         guard let row = breakdownRow else { return nil }
-        guard let baselines = repo.chargeBaselines else { return nil }
+        guard let baselines = repo.chargeBaselines(for: row.day) else { return nil }
         return ChargeBreakdownWiring.breakdown(baselines: baselines, row: row, sleepPerfPercent: sleepPerformance)
     }
 

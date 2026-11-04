@@ -4,6 +4,7 @@ import com.noop.analytics.RestScorer
 import com.noop.data.DailyMetric
 import com.noop.data.SleepSession
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -95,20 +96,25 @@ class SleepImportedFiguresTest {
         assertNotEquals(100.0, m.performance.latest, 1e-6)
     }
 
+    /** #55: consistency is the Sleep Regularity Index the engine persisted for each night; an imported
+     *  WHOOP figure wins for its own day, the computed one fills the rest, and with neither there is no
+     *  value (no local re-derivation that could disagree with Rest's consistency term). */
     @Test
-    fun importedConsistencyUsedOnlyWhenItCoversTheLatestNight() {
+    fun consistencyResolvesImportedThenComputedPerDay() {
         val days = listOf(day("2026-06-01", 420.0), day("2026-06-02", 410.0))
-        // Covers the latest night → verbatim series wins.
         val covered = buildSleepModel(days, null,
             ImportedSleepSeries(consistency = mapOf("2026-06-01" to 70.0, "2026-06-02" to 74.0)),
+            computed = ImportedSleepSeries(consistency = mapOf("2026-06-02" to 81.0)),
             todayKey = pinnedToday)!!
         assertEquals(74.0, covered.consistency.latest!!, 1e-9)
-        // Ends before the latest night → the APPROXIMATE duration-spread proxy, never a
-        // months-old import-era value presented as "latest".
-        val stale = buildSleepModel(days, null,
+        val filled = buildSleepModel(days, null,
             ImportedSleepSeries(consistency = mapOf("2026-06-01" to 70.0)),
+            computed = ImportedSleepSeries(consistency = mapOf("2026-06-02" to 81.0)),
             todayKey = pinnedToday)!!
-        assertNotEquals(70.0, stale.consistency.latest)
+        assertEquals(81.0, filled.consistency.latest!!, 1e-9)
+        assertEquals(listOf(70.0, 81.0), filled.consistency.series)
+        val none = buildSleepModel(days, null, todayKey = pinnedToday)!!
+        assertNull(none.consistency.latest)
     }
 
     @Test
@@ -134,9 +140,9 @@ class SleepImportedFiguresTest {
             deviceId = "my-whoop", startTs = 1780351200L, endTs = 1780387200L, efficiency = 90.0,
         )
         val m = buildSleepModel(days, session = session, todayKey = pinnedToday)!!
-        // hours-vs-needed (DESCRIPTIVE) still uses the mean need = max(450, mean[420,410]=415) = 450,
-        // and reads ASLEEP 410, not the 600-min in-bed window.
-        assertEquals(410.0 / 450.0 * 100.0, m.hoursVsNeeded.latest!!, 1e-9)
+        // hours-vs-needed reads ASLEEP 410, not the 600-min in-bed window, against the night's need: no
+        // imported or engine-persisted need here, so the cold-start 8 h (480 min) (#55).
+        assertEquals(410.0 / 480.0 * 100.0, m.hoursVsNeeded.latest!!, 1e-9)
         // Debt tile reads ASLEEP too, but against the NORMATIVE need now (#242): only 2 nights < the
         // 7-night minimum, so personalizedNeedHours cold-starts to the 8 h population target = 480, and
         // The carried target is 0.55 × (480 + 33 − 410) = 56.65, surfaced at the shared

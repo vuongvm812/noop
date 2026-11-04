@@ -183,6 +183,8 @@ final class AppModel: ObservableObject {
     @Published var cyclePhase: CyclePhaseEngine.Result?
     /// The nightly fused-index curve (oldest→newest) feeding the cycle card's sparkline.
     @Published var cycleCurve: [Double] = []
+    /// The night (yyyy-MM-dd) of each `cycleCurve` value, for the sparkline's scrub readout (#58).
+    @Published var cycleCurveDays: [String] = []
     /// Body-clock phase estimate (circadian). nil until a usable activity profile exists.
     @Published var circadianPhase: CircadianEngine.PhaseEstimate?
 
@@ -2029,6 +2031,14 @@ final class AppModel: ObservableObject {
         return (c.hour ?? 0) * 3600 + (c.minute ?? 0) * 60 + (c.second ?? 0)
     }
 
+    /// The illness builder's view of one cached day; `midpoints` are `IllnessInputs.sleepMidpoints` by
+    /// wake day, the body-clock jump's input.
+    nonisolated static func illnessNight(_ d: DailyMetric, midpoints: [String: Double]) -> IllnessInputs.Night {
+        IllnessInputs.Night(day: d.day, restingHR: d.restingHr.map(Double.init), hrv: d.avgHrv,
+                            respiration: d.respRateBpm, skinTemp: d.skinTempDevC, strain: d.strain,
+                            sleepMidpointUtcMin: midpoints[d.day])
+    }
+
     private func evaluateIllness(_ days: [DailyMetric]) {
         guard behavior.illnessWatch, days.count >= 14,
               let latestDay = days.last?.day, latestDay == repo.today?.day else {
@@ -2036,19 +2046,19 @@ final class AppModel: ObservableObject {
         }
         Task { [weak self] in
             guard let self else { return }
-            // Confounder tags from the recent journal (within the last ~2 days). Read once, off the
-            // engine's hot path , the engine only needs presence flags, not the rows.
-            let recentDays = Set(days.suffix(2).map(\.day))
+            // Sleep timing for the body-clock jump: the main block per wake day, keyed the way the
+            // daily rows are (local end day). The window covers the builder's baseline plus slack.
+            let sessions = await self.repo.allSleepSessions(days: 40)
+            let midpoints = IllnessInputs.sleepMidpoints(sessions.map {
+                IllnessInputs.SleepBlock(day: Repository.localEndDayKey($0), start: $0.effectiveStartTs, end: $0.endTs)
+            })
+            // Confounder answers from the recent nights' journal days. Read once, off the engine's hot
+            // path; IllnessInputs matches them on canonical catalog keys, never on substrings.
+            let nights = days.map { Self.illnessNight($0, midpoints: midpoints) }
+            let recentDays = IllnessInputs.recentDays(nights)
             let journal = await self.repo.journalEntries(days: 7)
-            var ctxAlcohol = false, ctxHardWorkout = false, ctxAlreadyUnwell = false
-            for e in journal where e.answeredYes && recentDays.contains(e.day) {
-                let q = e.question.lowercased()
-                if q.contains("alcohol") || q.contains("drink") { ctxAlcohol = true }
-                if q.contains("workout") || q.contains("train") || q.contains("exercise") { ctxHardWorkout = true }
-                if q.contains("sick") || q.contains("ill") || q.contains("unwell") { ctxAlreadyUnwell = true }
-            }
-            self.applyIllnessSignal(days, alcohol: ctxAlcohol, hardOrLateWorkout: ctxHardWorkout,
-                                    alreadyUnwell: ctxAlreadyUnwell)
+            let yes = journal.filter { $0.answeredYes && recentDays.contains($0.day) }.map(\.question)
+            self.applyIllnessSignal(days, nights: nights, yesQuestions: yes)
         }
     }
 
@@ -2065,70 +2075,28 @@ final class AppModel: ObservableObject {
 
     /// Run the `IllnessSignalEngine` from the day history + the journal-derived confounder context, then
     /// publish the result + the semantic `healthAlert` banner payload.
-    private func applyIllnessSignal(_ days: [DailyMetric], alcohol: Bool,
-                                    hardOrLateWorkout: Bool, alreadyUnwell: Bool) {
+    private func applyIllnessSignal(_ days: [DailyMetric], nights: [IllnessInputs.Night],
+                                    yesQuestions: [String]) {
         // A newer day can arrive while the journal read is in flight. Never publish the older
         // task's alert over that day's result.
         guard days.last?.day == repo.days.last?.day, days.last?.day == repo.today?.day else { return }
         let previous = healthAlert
-        let recent = Array(days.suffix(2))
         let latest = days[days.count - 1]
-        let base = Array(days.suffix(31).dropLast(3))    // ~28 days ending 3 days ago
+        let base = Array(days.suffix(31).dropLast(3))    // label baseline: ~28 days ending 3 days ago
         func mean(_ vals: [Double]) -> Double? { vals.isEmpty ? nil : vals.reduce(0, +) / Double(vals.count) }
-        func rm(_ kp: (DailyMetric) -> Double?) -> Double? { mean(recent.compactMap(kp)) }
 
-        // Build each signal's illness-ward z against the personal baseline (Baselines.deviation). The
-        // baseline is folded over the full pre-recent history; a trusted baseline (≥14 nights) is the
-        // engine's gate for actually raising. Skin-temp is already a stored DEVIATION (°C), so it's
-        // z-scored against a zero-centred personal spread; the others z-score the raw column.
-        func signal(_ kp: (DailyMetric) -> Double?, cfgKey: String, illnessUp: Bool) -> (IllnessSignalEngine.SignalReading, Bool)? {
-            guard let cfg = Baselines.metricCfg[cfgKey], let recentMean = rm(kp),
-                  let latestValue = kp(latest) else { return nil }
-            let state = Baselines.foldHistory(base.map(kp), cfg: cfg)
-            guard state.usable else { return (IllnessSignalEngine.SignalReading(zIllnessward: 0, present: false), false) }
-            let dev = Baselines.deviation(recentMean, state: state)
-            let latestDev = Baselines.deviation(latestValue, state: state)
-            // Keep the two-night smoothing, but only count a signal while the newest night
-            // independently clears the same illness-ward threshold (#2533).
-            let z = illnessUp ? min(dev.z, latestDev.z) : min(-dev.z, -latestDev.z)
-            return (IllnessSignalEngine.SignalReading(zIllnessward: z), state.trusted)
-        }
+        // One shared builder (and its Kotlin twin) turns the history into illness-ward z-scores:
+        // personal floored baselines with a gap, two-night persistence, and a skin-temp baseline of
+        // the newest night's kind (the column holds absolute °C for imported nights).
+        let built = IllnessInputs.build(nights)
+        let inputs = built.inputs
 
-        let rhr = signal({ $0.restingHr.map(Double.init) }, cfgKey: "resting_hr", illnessUp: true)
-        let hrv = signal({ $0.avgHrv }, cfgKey: "hrv", illnessUp: false)
-        let resp = signal({ $0.respRateBpm }, cfgKey: "resp", illnessUp: true)
-        // Skin-temp deviation: a stored °C delta. Build a small zero-centred state from its own recent
-        // spread so a +0.6 °C reads as a meaningful z without needing a separate baseline column.
-        var skin: (IllnessSignalEngine.SignalReading, Bool)? = nil
-        if let recentSkin = rm({ $0.skinTempDevC }), let latestSkin = latest.skinTempDevC {
-            let z = min(recentSkin, latestSkin) / 0.3 // ~0.3 °C ≈ one personal spread
-            skin = (IllnessSignalEngine.SignalReading(zIllnessward: z), true)
-        }
+        // PARALLEL Mahalanobis distance on the SAME illness-ward z-vector. This NEVER gates the alert:
+        // the IllnessSignalEngine remains the sole fire gate. It only feeds the Heads-Up card's "how
+        // strong" band once the engine has raised. correlation: nil = identity.
+        illnessDistance = IllnessDistance.evaluate(features: built.distanceFeatures, correlation: nil)
 
-        let inputs = IllnessSignalEngine.Inputs(
-            restingHR: rhr?.0, skinTemp: skin?.0, hrv: hrv?.0, respiration: resp?.0)
-
-        // PARALLEL Mahalanobis distance on the SAME illness-ward z-vector (RHR up, HRV negated, skin-temp
-        // up, respiration up). This NEVER gates the alert: the IllnessSignalEngine above remains the sole
-        // fire gate. We compute it here only so the Heads-Up card can show a "how strong" confidence band
-        // when the engine has already raised. nil where a reading is absent / not present (dropped from the
-        // distance). correlation: nil = identity, validated to agree ~100% with the z-sum detector.
-        func zIfPresent(_ r: (IllnessSignalEngine.SignalReading, Bool)?) -> Double? {
-            guard let reading = r?.0, reading.present else { return nil }
-            return reading.zIllnessward
-        }
-        let distanceFeatures = IllnessDistance.FeatureVector(
-            restingHR: zIfPresent(rhr),
-            rmssd: zIfPresent(hrv),       // hrv.zIllnessward is already the NEGATED HRV z
-            skinTemp: zIfPresent(skin),
-            respiration: zIfPresent(resp))
-        illnessDistance = IllnessDistance.evaluate(features: distanceFeatures, correlation: nil)
-
-        // baselineTrusted: require the HRV/RHR baselines to be trusted before the engine may raise.
-        let trusted = (rhr?.1 ?? false) || (hrv?.1 ?? false)
-        let context = IllnessSignalEngine.Context(
-            alcohol: alcohol, hardOrLateWorkout: hardOrLateWorkout,
-            alreadyUnwell: alreadyUnwell, baselineTrusted: trusted)
+        let context = IllnessInputs.context(yesQuestions: yesQuestions, built: built)
 
         // Caller-rendered phrases for the signals that fire (the engine surfaces only the firing ones).
         var labels: [String: String] = [:]
@@ -2300,7 +2268,7 @@ final class AppModel: ObservableObject {
     /// night is z-scored against the personal baseline, then `CyclePhaseEngine.classify` reads the run.
     /// Gated behind the opt-in flag; clears the published result the moment it's turned off.
     private func computeCyclePhase() async {
-        guard cycleAwarenessEnabled else { cyclePhase = nil; cycleCurve = []; return }
+        guard cycleAwarenessEnabled else { cyclePhase = nil; cycleCurve = []; cycleCurveDays = []; return }
         let days = repo.days
         guard let tempCfg = Baselines.metricCfg["skin_temp"],
               let rhrCfg = Baselines.metricCfg["resting_hr"],
@@ -2316,12 +2284,16 @@ final class AppModel: ObservableObject {
 
         var nights: [CyclePhaseEngine.Night] = []
         var curve: [Double] = []
+        var curveDays: [String] = []
         for d in sorted {
             let tempZ = d.skinTempDevC.map { skinState.usable ? Baselines.deviation($0, state: skinState).z : $0 / 0.3 }
             let rhrZ = (rhrState.usable ? d.restingHr.map { Baselines.deviation(Double($0), state: rhrState).z } : nil)
             let hrvZ = (hrvState.usable ? d.avgHrv.map { Baselines.deviation($0, state: hrvState).z } : nil)
             nights.append(CyclePhaseEngine.Night(day: d.day, tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ))
-            if let fused = CyclePhaseEngine.fusedIndex(tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ) { curve.append(fused) }
+            if let fused = CyclePhaseEngine.fusedIndex(tempZ: tempZ, rhrZ: rhrZ, hrvZ: hrvZ) {
+                curve.append(fused)
+                curveDays.append(d.day)
+            }
         }
         // Optional user-entered cycle-day-1 anchors live under the isolated `noop-cycle` source.
         // The pure engine cross-validates them against the temperature shift rather than trusting a
@@ -2331,6 +2303,7 @@ final class AppModel: ObservableObject {
                                                baselineUsable: skinState.usable,
                                                loggedPeriodStarts: loggedPeriodStarts)
         cycleCurve = curve
+        cycleCurveDays = curveDays
     }
 
     /// Body-clock phase estimate. Builds a coarse per-hour activity profile from the last ~14 days of

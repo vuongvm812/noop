@@ -67,4 +67,15 @@ class StressTodayTest {
         assertNull(r?.latest)
         assertTrue(r?.points?.isEmpty() == true)
     }
+
+    /** #57: the Key Metrics tile prints the latest level, else today's average. Swift twin:
+     *  `StressTodayTests.testTileLevelPrefersLatestThenAverage`. */
+    @Test
+    fun tileLevelMatchesTheSwiftOracle() {
+        val withLatest = StressToday.resolve("my-whoop", emptyList(), null, null, listOf(p(5, 2.5)), 1.1)
+        val averageOnly = StressToday.resolve("garmin-ab12", emptyList(), 31.0, null, emptyList(), null)
+        assertEquals(2.5, StressToday.tileLevel(withLatest)!!, 0.0)
+        assertEquals(31.0, StressToday.tileLevel(averageOnly)!!, 0.0)
+        assertNull(StressToday.tileLevel(null))
+    }
 }

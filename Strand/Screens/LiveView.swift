@@ -990,6 +990,8 @@ private struct LivePhysiology: View {
     private var activeConnection: Bool { activeIsWhoop && live.connected && live.bonded }
     /// Oura ring actively streaming live HR — trusted stream without a WHOOP bond (see LiveView.ringStreaming).
     private var ringStreaming: Bool { live.connected && live.streamingLiveHR }
+    /// The R-R strip's scrub cursor x (#58).
+    @State private var rrScrubX: CGFloat? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space4) {
@@ -1036,10 +1038,14 @@ private struct LivePhysiology: View {
     /// number can look frozen; a moving trace can't). Empty state shows a calm caption.
     private var rrTrace: some View {
         let values = Array(live.rrRecent.suffix(18)).map(Double.init)
+        let times = Array(live.rrRecentTimes.suffix(18))
         return VStack(alignment: .leading, spacing: 8) {
             if values.count >= 2 {
-                // The liquid HR thread, tinted cyan for R-R — matches the Today live-HR trace.
+                // The liquid HR thread, tinted cyan for R-R — matches the Today live-HR trace. Hover, or
+                // touch-and-hold then drag, reads one interval and when it arrived (#58).
                 LiquidThread(bpm: values, tint: StrandPalette.metricCyan, height: 44, animated: true)
+                    .overlay { rrScrubReadout(values: values, times: times.count == values.count ? times : nil) }
+                    .chartScrub($rrScrubX)
                     .accessibilityHidden(true)
             } else {
                 // Empty: a muted static tube so the strip reads as "waiting", not broken.
@@ -1054,6 +1060,35 @@ private struct LivePhysiology: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
+    }
+
+    /// The R-R strip's readout: a rule and dot on the interval nearest the cursor, with its value and
+    /// arrival time. Placed by the thread renderer's own mapping, so it sits on the drawn sample.
+    private func rrScrubReadout(values: [Double], times: [Date]?) -> some View {
+        GeometryReader { geometry in
+            let plot = LiquidRender.ThreadPlot(size: geometry.size, values: values)
+            let index = rrScrubX.map { plot.nearestIndex(toX: Double($0)) }
+            ZStack {
+                if let index {
+                    let anchor = CGPoint(x: plot.x(index), y: plot.y(values[index]))
+                    CrosshairRule(x: anchor.x, height: geometry.size.height)
+                    HighlightDot(color: StrandPalette.metricCyan, diameter: 7)
+                        .position(anchor)
+                    PositionedTooltip(
+                        anchor: anchor,
+                        container: geometry.size,
+                        tooltip: ChartTooltip(
+                            value: "\(Int(values[index])) ms",
+                            label: times.map { $0[index].formatted(date: .omitted, time: .standard) },
+                            accent: StrandPalette.metricCyan
+                        )
+                    )
+                }
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .chartScrubHaptic(index)
+        }
+        .allowsHitTesting(false)
     }
 
     /// One R-R / Frame / Event proof tile. When `offline` is true the value is dimmed to textTertiary

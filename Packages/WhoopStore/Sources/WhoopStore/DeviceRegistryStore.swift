@@ -159,6 +159,8 @@ public struct DeviceRegistryStore: Sendable {
         // The synced-file ledger goes with them: once a device's samples are deleted, its record of
         // "already ingested" would otherwise stop a later sync from restoring files still on the watch.
         "deviceMetricSample", "garminSyncedFile",
+        // v50-garmin-activity-peak-total-energy: the watch's per-activity-type day counters.
+        "garminActivityPeak",
         // v28-raw-imu (#423): the opt-in 5/MG raw-IMU offload capture is deviceId-keyed too — "delete all
         // of this device's data" must clear it, or the raw inertial samples survive deletion (same defect).
         // v31-deep-capture-channels: the banked 5/MG v18 auxiliary fields are deviceId-keyed per-second

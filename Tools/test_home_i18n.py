@@ -34,6 +34,7 @@ ANDROID_HOME_FILES = {
     "android/app/src/main/java/com/noop/ui/JournalReminder.kt",
     "android/app/src/main/java/com/noop/ui/SupplementsToday.kt",
     "android/app/src/main/java/com/noop/ui/StressSummaryCard.kt",
+    "android/app/src/main/java/com/noop/ui/WeightLogSheet.kt",
     "android/app/src/main/java/com/noop/ui/CycleTrackerDialog.kt",
     "android/app/src/main/java/com/noop/ui/KeyMetricPrefs.kt",
     "android/app/src/main/java/com/noop/ui/DashboardCards.kt",
@@ -56,6 +57,7 @@ APPLE_HOME_FILES = {
     "Strand/Screens/JournalReminderCard.swift",
     "Strand/Screens/SupplementsTodayCard.swift",
     "Strand/Screens/StressSummaryCard.swift",
+    "Strand/Screens/WeightLogSheet.swift",
     "Strand/Screens/SkinTempCardsView.swift",
     "Strand/Screens/HealthAlertBanner.swift",
 }
@@ -97,6 +99,8 @@ ANDROID_INDIRECT_NON_UI_LITERALS = {
     # Stable KeyMetric raw values + preferences.
     "charge", "effort", "rest", "restingHr", "bloodOxygen", "respiratory", "steps",
     "weight", "calories", "today.keyMetrics", "today.keyMetricsDetailed",
+    # #57: the Stress / VO₂max tile keys and the one-time layout migration flag.
+    "vo2max", "today.keyMetrics.migratedStressVo2",
     "today.keyMetricsWindowDays", ",",
     # Stable DashboardCard raw values + preference; units remain measurement metadata.
     "stress", "fitnessAge", "vo2max", "vitality", "skinTemp", "sleep", "hydration", "coupled",
@@ -300,7 +304,7 @@ class HomeLocalizationTest(unittest.TestCase):
             "today_card_blood_oxygen": "Blood Oxygen", "today_card_blood_oxygen_subtitle": "Blood oxygen",
             "today_card_skin_temp": "Skin Temp", "today_card_skin_temp_subtitle": "Skin temperature",
             "today_card_sleep": "Sleep", "today_card_sleep_subtitle": "Last night",
-            "today_card_calories": "Calories", "today_card_calories_subtitle": "Active energy",
+            "today_card_calories": "Calories",
             "today_card_hydration": "Hydration", "today_card_hydration_subtitle": "Today's fluid",
             "today_card_coupled": "Coupled view",
             "today_card_coupled_subtitle": "Recovery, strain and sleep in one glance",
@@ -318,7 +322,8 @@ class HomeLocalizationTest(unittest.TestCase):
             "today_readiness_load_ramping_down": "ramping down (acute:chronic %1$s) - room to build",
             "today_readiness_load_sweet_spot": "in the sweet spot (acute:chronic %1$s)",
             "today_readiness_load_building_fast": "building fast (acute:chronic %1$s) - watch fatigue",
-            "today_readiness_load_spiking": "spiking (acute:chronic %1$s) - higher injury risk",
+            # #54: ACWR is descriptive (Impellizzeri 2020), so the copy no longer claims injury risk.
+            "today_readiness_load_spiking": "spiking (acute:chronic %1$s) - well above your usual load",
             "today_readiness_more_nights": "A few more nights of data and your readiness read will sharpen.",
             "today_readiness_run_down_summary": "Several signals are down at once. Treat today as recovery - easy movement, real sleep tonight.",
             "today_readiness_strained_summary": "One of your signals is flagging. You can train, but keep it controlled and bank the recovery.",
@@ -427,7 +432,7 @@ class HomeLocalizationTest(unittest.TestCase):
         )[0]
         verdicts = set(re.findall(r'(?:return|\?|:)\s*"([^"]+)"', verdict_block))
         # Pin the unique-key set size so syntax changes cannot silently evade extraction.
-        self.assertEqual(18, len(verdicts), "Verdict extraction changed; review the catalog contract")
+        self.assertEqual(21, len(verdicts), "Verdict extraction changed; review the catalog contract")
 
         catalog = audit.load_catalog(ROOT / "Strand/Resources/Localizable.xcstrings")
         missing = []

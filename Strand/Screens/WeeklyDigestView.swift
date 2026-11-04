@@ -29,6 +29,8 @@ enum WeeklyDigestSource {
     /// it to the pure engine.
     static func digest(from days: [DailyMetric],
                        anchorDay: String,
+                       importedSleep: [String: ImportedSleepFigures] = [:],
+                       computedSleep: [String: ImportedSleepFigures] = [:],
                        effortDisplayFactor: Double = UnitPrefs.currentEffortDisplayFactor()) -> WeeklyDigest {
         var charge: [String: Double] = [:]
         var effort: [String: Double] = [:]
@@ -38,8 +40,10 @@ enum WeeklyDigestSource {
         for d in days {
             if let v = d.recovery { charge[d.day] = v }
             if let v = d.strain   { effort[d.day] = v }
-            // Rest = the sleep-performance composite, recomputed on the persisted day.
-            if let r = restScore(for: d) { rest[d.day] = r }
+            // Rest = the one resolver every surface reads (import, then the engine's score, #55).
+            if let r = Repository.restScore(d, imported: importedSleep[d.day], computed: computedSleep[d.day]) {
+                rest[d.day] = r
+            }
             if let v = d.restingHr { rhr[d.day] = Double(v) }
             if let v = d.avgHrv    { hrv[d.day] = v }
         }
@@ -47,14 +51,6 @@ enum WeeklyDigestSource {
             byMetric: [.charge: charge, .effort: effort, .rest: rest, .rhr: rhr, .hrv: hrv],
             anchorDay: anchorDay,
             effortDisplayFactor: effortDisplayFactor)
-    }
-
-    /// The 0–100 Rest composite for a persisted day, via AnalyticsEngine's display-path
-    /// helper (duration-vs-need / efficiency / restorative / consistency). Returns nil
-    /// for a day with no in-bed sleep / missing efficiency, so non-sleep days are simply
-    /// absent from the Rest series.
-    private static func restScore(for d: DailyMetric) -> Double? {
-        AnalyticsEngine.Rest.composite(daily: d)
     }
 }
 
@@ -66,7 +62,8 @@ struct WeeklyDigestCard: View {
     @EnvironmentObject var repo: Repository
 
     var body: some View {
-        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()))
+        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
         if digest.isEmpty {
             EmptyView()
         } else {
@@ -98,7 +95,8 @@ struct WeeklyDigestView: View {
                     ? "A weekly digest needs a few days of history. Wear your strap or import your WHOOP export in Data Sources."
                     : "Loading your history…")
             } else {
-                let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()))
+                let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
                 if digest.isEmpty {
                     DataPendingNote(
                         title: "No readings this week yet",

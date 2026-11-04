@@ -7,14 +7,13 @@ import WhoopStore
 
 // MARK: - Training Load card (CTL / ATL / TSB)
 //
-// The first UI surface for the long-horizon training-load model (TrainingLoadEngine, added with the
-// paired `ReadinessEngine.evaluateWithTrainingLoad`). It overlays chronic load (CTL, the 42-day
+// The UI surface for the long-horizon training-load model (TrainingLoadEngine). It overlays chronic load (CTL, the 42-day
 // fitness proxy) and acute load (ATL, the 7-day fatigue proxy); the gap between the two lines IS the
 // TSB / "form" (CTL − ATL), surfaced as the headline number and a footer stat.
 //
-// Descriptive only: CTL/ATL/TSB never feed the Readiness level or any score, and the loads are NOOP's
-// daily Effort/strain — NOT TRIMP. Long-horizon by nature, so the card models the full history rather
-// than the Trends range window (14+ contiguous days are needed before anything is drawn).
+// Descriptive only: CTL/ATL/TSB never feed the Readiness level or any score. The loads are daily TRIMP
+// recovered from Effort (`EffortLoad`), not the log-scaled Effort itself. Long-horizon by nature, so
+// the card models the full history rather than the Trends range window (14+ contiguous days are needed before anything is drawn).
 //
 // Isolated in its own file on purpose: TrendsView already sits near the iOS type-check budget, so this
 // keeps its own inference cost out of that body.
@@ -71,10 +70,10 @@ struct TrainingLoadCard: View {
         return "\(days.count)|" + tail.map { "\($0.day):\($0.strain ?? -1)" }.joined(separator: ",")
     }
 
-    /// Model straight from the training-load engine — NOT the paired `evaluateWithTrainingLoad`, which
-    /// would also run the full Readiness synthesis this card never uses. `DailyMetric.strain` is the load.
+    /// Model straight from the training-load engine; the card needs no Readiness synthesis.
+    /// `DailyMetric.strain` is the load.
     private static func computeResult(days: [DailyMetric]) -> TrainingLoadEngine.Result {
-        let loads = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain) }
+        let loads = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain.flatMap(EffortLoad.trimp(fromEffort:))) }
         return TrainingLoadEngine.evaluate(days: loads)
     }
 

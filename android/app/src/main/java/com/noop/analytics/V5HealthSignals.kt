@@ -9,11 +9,9 @@ import kotlin.math.sqrt
  * analytics pass. It owns NO I/O and NO state: the caller (AppViewModel) hands it the already-loaded
  * `recentDays` list + a few prefs/profile flags and gets back a [Snapshot] of engine RESULTS to publish.
  *
- * Why a lightweight z here (not the full [Baselines] EWMA): the cards only need a deviation-against-your-
- * own-recent-range read ("further from your baseline than usual"), and the cached daily columns already
- * carry RHR / HRV / skin-temp-deviation / respiration. A rolling mean+SD over the trailing window is the
- * honest, transparent statistic the spec asks for (an observation about your own number) and keeps this
- * pass cheap + DB-free. The engines themselves (CyclePhaseEngine / CircadianEngine / IllnessSignalEngine)
+ * The cycle classifier reads a lightweight per-night z (rolling mean+SD over the trailing window). The
+ * illness heads-up does NOT: it goes through [IllnessInputs], the oracle-pinned twin of the Swift builder,
+ * so both platforms fire on the same personal-baseline maths (#56). The engines themselves (CyclePhaseEngine / CircadianEngine / IllnessSignalEngine)
  * are the byte-for-byte cross-platform maths; this file is only the Android-side input plumbing.
  *
  * NON-CLINICAL: every output is an approximation about the user's own series — never a diagnosis. Cycle
@@ -28,6 +26,16 @@ object V5HealthSignals {
 
     /** Minimum trailing nights before a z-score is trusted (mirrors Baselines.minNightsTrust intent). */
     private const val MIN_BASELINE_NIGHTS = 14
+
+    /**
+     * What the illness heads-up reads beyond the nightly vitals: [journalYesQuestions] answered YES on the
+     * recent nights' days (matched on canonical catalog keys by [IllnessInputs.context]) and
+     * [sleepMidpoints] by wake day ([IllnessInputs.sleepMidpoints]), the body-clock jump's input.
+     */
+    data class IllnessConfounders(
+        val journalYesQuestions: List<String> = emptyList(),
+        val sleepMidpoints: Map<String, Double> = emptyMap(),
+    )
 
     /** The published engine results for the Health hub's skin-temp suite, all already decided. */
     data class Snapshot(
@@ -49,13 +57,13 @@ object V5HealthSignals {
      * Run the three engines over [days] (oldest→newest). [cycleOptedIn] gates whether the cycle classifier
      * is run at all (it returns a cheap LEARNING result when off, so the caller can publish unconditionally
      * and the UI's opt-in card still shows). [loggedPeriodStarts] are optional "yyyy-MM-dd" period-start
-     * days. [journalContext] supplies the same-day confounder flags for illness suppression.
+     * days. [confounders] carries the illness heads-up's journal answers and sleep timing.
      */
     fun evaluate(
         days: List<DailyMetric>,
         cycleOptedIn: Boolean,
         loggedPeriodStarts: List<String> = emptyList(),
-        journalContext: IllnessSignalEngine.Context = IllnessSignalEngine.Context(),
+        confounders: IllnessConfounders = IllnessConfounders(),
         habitualWakeHour: Double = 7.0,
         activityBins: List<CircadianEngine.ActivityBin> = emptyList(),
         daysObserved: Int = 0,
@@ -66,12 +74,6 @@ object V5HealthSignals {
         // newest night and mirror iOS's illness gate: a trusted RHR OR HRV baseline may raise. Keep the
         // cycle classifier's existing availability gate separate so this illness fix cannot change it.
         val cycleBaselineUsable = days.count { hasAnyVital(it) } >= MIN_BASELINE_NIGHTS
-        val baselineWindow = days.dropLast(1).takeLast(BASELINE_WINDOW).filter { hasAnyVital(it) }
-        val rhrBaselineTrusted =
-            baselineWindow.count { it.restingHr != null } >= MIN_BASELINE_NIGHTS
-        val hrvBaselineTrusted =
-            baselineWindow.count { it.avgHrv != null } >= MIN_BASELINE_NIGHTS
-        val baselineTrusted = rhrBaselineTrusted || hrvBaselineTrusted
 
         // ── Per-night z-scores against each signal's trailing rolling baseline ──
         val nights = ArrayList<CyclePhaseEngine.Night>(days.size)
@@ -105,43 +107,27 @@ object V5HealthSignals {
         }
 
         // ── Illness heads-up (confounder-suppressed) ──
-        val latest = nights.lastOrNull()
+        // #56: one shared builder (twin of Swift IllnessInputs) — personal floored EWMA baselines with
+        // a gap, two-night persistence, and a skin-temp baseline of the newest night's kind. The
+        // journal context's confounder flags are kept; trust and the hard-workout flag come from the
+        // builder so both platforms gate on the same baseline.
+        val built = IllnessInputs.build(days.map { illnessNight(it, confounders.sleepMidpoints) })
+        val baselineTrusted = built.baselineTrusted
         val firedLabels = HashMap<String, String>()
-        latest?.rhrZ?.let { if (it >= IllnessSignalEngine.signalZThreshold) firedLabels["restingHR"] = "RHR up" }
-        latest?.tempZ?.let { if (it >= IllnessSignalEngine.signalZThreshold) firedLabels["skinTemp"] = "skin temp up" }
-        latest?.hrvZ?.let { if (-it >= IllnessSignalEngine.signalZThreshold) firedLabels["hrv"] = "HRV down" }
-        val respZ = days.lastOrNull()?.let { d ->
-            zAgainst(d.respRateBpm, days.subList(maxOf(0, days.size - 1 - BASELINE_WINDOW), maxOf(0, days.size - 1))) { it.respRateBpm }
-        }
-        respZ?.let { if (it >= IllnessSignalEngine.signalZThreshold) firedLabels["respiration"] = "respiration up" }
+        built.restingHR?.reading?.let { if (it.present && it.zIllnessward >= IllnessSignalEngine.signalZThreshold) firedLabels["restingHR"] = "RHR up" }
+        built.skinTemp?.reading?.let { if (it.present && it.zIllnessward >= IllnessSignalEngine.signalZThreshold) firedLabels["skinTemp"] = "skin temp up" }
+        built.hrv?.reading?.let { if (it.present && it.zIllnessward >= IllnessSignalEngine.signalZThreshold) firedLabels["hrv"] = "HRV down" }
+        built.respiration?.reading?.let { if (it.present && it.zIllnessward >= IllnessSignalEngine.signalZThreshold) firedLabels["respiration"] = "respiration up" }
 
-        val illnessInputs = IllnessSignalEngine.Inputs(
-            restingHR = latest?.rhrZ?.let { IllnessSignalEngine.SignalReading(it) },
-            skinTemp = latest?.tempZ?.let { IllnessSignalEngine.SignalReading(it) },
-            // HRV must be oriented illness-ward: HRV ↓ is illness-like, so negate the raw z.
-            hrv = latest?.hrvZ?.let { IllnessSignalEngine.SignalReading(-it) },
-            respiration = respZ?.let { IllnessSignalEngine.SignalReading(it) },
-        )
         val illness = IllnessSignalEngine.evaluate(
-            inputs = illnessInputs,
-            context = journalContext.copy(baselineTrusted = baselineTrusted),
+            inputs = built.inputs,
+            context = IllnessInputs.context(confounders.journalYesQuestions, built),
             firedLabels = firedLabels,
         )
 
-        // PARALLEL Mahalanobis distance on the SAME illness-ward z-vector (RHR up, HRV negated, skin-temp
-        // up, respiration up). This NEVER gates the alert: the IllnessSignalEngine above remains the sole
-        // fire gate. Computed here only so the Heads-Up card can show a "how strong" confidence band when
-        // the engine has already raised. null where a z is absent (dropped from the distance). correlation
-        // = null (identity), validated to agree ~100% with the z-sum detector. Mirrors iOS exactly.
-        val illnessDistance = IllnessDistance.evaluate(
-            features = IllnessDistance.FeatureVector(
-                restingHR = latest?.rhrZ,
-                rmssd = latest?.hrvZ?.let { -it },   // orient illness-ward: HRV down is illness-like
-                skinTemp = latest?.tempZ,
-                respiration = respZ,
-            ),
-            correlation = null,
-        )
+        // PARALLEL Mahalanobis distance on the SAME illness-ward z-vector. This NEVER gates the alert:
+        // the IllnessSignalEngine remains the sole fire gate. correlation = null (identity). Mirrors iOS.
+        val illnessDistance = IllnessDistance.evaluate(features = built.distanceFeatures, correlation = null)
 
         // ── Body clock (#852): the caller pools HR by local hour into [activityBins] — the same
         //    activity proxy the Swift twin uses in AppModel.computeCircadianPhase, which has shipped
@@ -166,7 +152,14 @@ object V5HealthSignals {
      *  twin's `guard bins.count >= 6` in AppModel.computeCircadianPhase. */
     internal const val MIN_CIRCADIAN_BINS = 6
 
-    /** Whether a row can contribute to any signal's baseline; empty rows do not enter trust counts. */
+    /** The illness builder's view of one cached day (twin of Swift `AppModel.illnessNight`). */
+    fun illnessNight(d: DailyMetric, midpoints: Map<String, Double>): IllnessInputs.Night = IllnessInputs.Night(
+        day = d.day, restingHR = d.restingHr?.toDouble(), hrv = d.avgHrv,
+        respiration = d.respRateBpm, skinTemp = d.skinTempDevC, strain = d.strain,
+        sleepMidpointUtcMin = midpoints[d.day],
+    )
+
+    /** Whether a row can contribute to the cycle classifier's availability gate. */
     private fun hasAnyVital(d: DailyMetric): Boolean =
         d.restingHr != null || d.avgHrv != null || d.skinTempDevC != null || d.respRateBpm != null
 

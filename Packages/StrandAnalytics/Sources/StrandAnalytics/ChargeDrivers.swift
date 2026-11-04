@@ -110,8 +110,10 @@ extension RecoveryScorer {
     /// OMITTED (no row), exactly as `recovery(...)` drops it. Each row's `deltaPoints` is the
     /// term's marginal contribution to the 0-100 score: `recovery(all terms)` minus
     /// `recovery(this term omitted)`, rounded - real points from the real weighting, never
-    /// invented. Rows are ordered by |deltaPoints| descending (biggest mover first); ties keep
-    /// a stable term order (hrv, rhr, sleepPerf, resp, skinTempDev).
+    /// invented. The HRV 7-day trend modifier (#53) adds one more row whenever it was read; its
+    /// points are the score minus the score without the modifier (0 inside the normal band).
+    /// Rows are ordered by |deltaPoints| descending (biggest mover first); ties keep a stable term
+    /// order (hrv, rhr, sleepPerf, resp, skinTempDev, hrvTrend).
     ///
     /// Returns an EMPTY list when there is no score at all (cold-start: HRV baseline not
     /// usable), since there are no real contributions to attribute. Parameters mirror
@@ -126,7 +128,8 @@ extension RecoveryScorer {
                                      rhrBaseline: BaselineState?,
                                      respBaseline: BaselineState?,
                                      sleepPerf: Double?,
-                                     skinTempDev: Double? = nil) -> [ChargeDriver] {
+                                     skinTempDev: Double? = nil,
+                                     hrvPriorWeek: [Double] = []) -> [ChargeDriver] {
 
         // No score => no real contributions to attribute (cold-start). recovery(...) enforces
         // the usable gate; mirror it so a nil headline never yields fabricated driver rows.
@@ -140,7 +143,7 @@ extension RecoveryScorer {
         guard let full = recovery(hrv: hrv, rhr: rhr, resp: resp,
                                   hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                   respBaseline: respB, sleepPerf: sleepPerf,
-                                  skinTempDev: skinTempDev) else {
+                                  skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek) else {
             return []
         }
 
@@ -166,7 +169,7 @@ extension RecoveryScorer {
         // low, decoupled resting HR)? Detection ONLY: the guard's easing is not applied, so deltaPoints
         // below is the full, unguarded HRV penalty. The verdict merely NAMES the detected pattern so the
         // UI can surface it while real firings accumulate. See the MARK header in RecoveryScorer.swift.
-        let hrvZFull = zScore(hrv, mean: hrvBaseline.baseline, spread: hrvBaseline.spread)
+        let hrvZFull = higherBetterZ(hrv, state: hrvBaseline)
         let rhrZFull: Double? = rhrB.map { zScore($0.baseline, mean: rhr, spread: $0.spread) }
         let hrvSaturationDetected = parasympatheticSaturation(hrvZ: hrvZFull, rhrZ: rhrZFull).active
 
@@ -175,7 +178,7 @@ extension RecoveryScorer {
         let hrvPoints = points(recovery(hrv: hrvBaseline.baseline, rhr: rhr, resp: resp,
                                         hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                         respBaseline: respB, sleepPerf: sleepPerf,
-                                        skinTempDev: skinTempDev))
+                                        skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek))
         drivers.append(ChargeDriver(
             label: "Heart rate variability",
             deltaPoints: hrvPoints,
@@ -191,7 +194,7 @@ extension RecoveryScorer {
             let rhrPoints = points(recovery(hrv: hrv, rhr: b.baseline, resp: resp,
                                             hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                             respBaseline: respB, sleepPerf: sleepPerf,
-                                            skinTempDev: skinTempDev))
+                                            skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek))
             drivers.append(ChargeDriver(
                 label: "Resting heart rate",
                 deltaPoints: rhrPoints,
@@ -207,7 +210,7 @@ extension RecoveryScorer {
                 deltaPoints: points(recovery(hrv: hrv, rhr: rhr, resp: resp,
                                              hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                              respBaseline: respB, sleepPerf: sleepPerfCenter,
-                                             skinTempDev: skinTempDev)),
+                                             skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek)),
                 valueText: "\(Int((sp * 100).rounded()))%",
                 baselineText: "",   // centred on a fixed "good night", not a learned baseline
                 verdict: sleepVerdict(sleepPerf: sp)))
@@ -219,7 +222,7 @@ extension RecoveryScorer {
             let respPoints = points(recovery(hrv: hrv, rhr: rhr, resp: b.baseline,
                                              hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                              respBaseline: respB, sleepPerf: sleepPerf,
-                                             skinTempDev: skinTempDev))
+                                             skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek))
             drivers.append(ChargeDriver(
                 label: "Respiratory rate",
                 deltaPoints: respPoints,
@@ -236,13 +239,29 @@ extension RecoveryScorer {
             let skinTempPoints = points(recovery(hrv: hrv, rhr: rhr, resp: resp,
                                                  hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                                                  respBaseline: respB, sleepPerf: sleepPerf,
-                                                 skinTempDev: 0))
+                                                 skinTempDev: 0, hrvPriorWeek: hrvPriorWeek))
             drivers.append(ChargeDriver(
                 label: "Skin temperature",
                 deltaPoints: skinTempPoints,
                 valueText: skinTempDevText(dev),
                 baselineText: "",   // a deviation already; the reference is the personal baseline (0)
                 verdict: skinTempVerdict(dev, deltaPoints: skinTempPoints)))
+        }
+
+        // ── HRV 7-day trend (#53; a modifier, neutral inside the normal band) ──────
+        // Present whenever the trend was read (enough nights in the window). Neutral = no modifier, so the
+        // points are exactly what the trend added to or took from tonight's Charge; 0 inside the band.
+        if let trend = hrvTrend(hrv: hrv, priorWeek: hrvPriorWeek, baseline: DriverBaseline(hrvBaseline)) {
+            let trendPoints = points(recovery(hrv: hrv, rhr: rhr, resp: resp,
+                                              hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
+                                              respBaseline: respB, sleepPerf: sleepPerf,
+                                              skinTempDev: skinTempDev))
+            drivers.append(ChargeDriver(
+                label: "HRV 7-day trend",
+                deltaPoints: trendPoints,
+                valueText: "\(Int(trend.rollingMs.rounded())) ms",
+                baselineText: "\(Int(trend.normalLowMs.rounded()))-\(Int(trend.normalHighMs.rounded())) ms normal range",
+                verdict: hrvTrendVerdict(trend)))
         }
 
         // Biggest mover first; stable on ties (preserves the append order above).
@@ -259,6 +278,13 @@ extension RecoveryScorer {
     // Every returned literal is also a runtime localization key consumed by ChargeBreakdownFormat.
     // When adding or rewording a verdict, add the identical key to Strand's Localizable.xcstrings;
     // Tools/test_home_i18n.py enforces that complete engine-to-catalog contract.
+
+    /// Where the 7-day HRV trend sits against the normal band. Kotlin twin: `RecoveryDrivers.hrvTrendVerdict`.
+    static func hrvTrendVerdict(_ trend: HRVTrend) -> String {
+        if trend.z > 0 { return "7-day average above your normal range, supporting recovery" }
+        if trend.z < 0 { return "7-day average below your normal range, a sign of accumulated fatigue" }
+        return "7-day average inside your normal range"
+    }
 
     /// Kotlin twin: `RecoveryDrivers.hrvVerdict`.
     static func hrvVerdict(value: Double, baseline: Double, deltaPoints: Int,

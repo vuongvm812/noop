@@ -5,7 +5,7 @@ import WhoopStore
 
 /// #1391: VO₂max is offered even WITHOUT a waist. `fitnessAgeRows` persists `vo2max_est` = the Nes 2011
 /// waist-based estimate when a waist is set, else falls back to the Uth 2004 HR-ratio estimate
-/// (15.3·HRmax/RHR, HRmax = Tanaka(age)) — so a user past the age+RHR fitness-age gate gets a VO₂max
+/// (15.3·HRmax/(RHR + 5), HRmax = Tanaka(age)) — so a user past the age+RHR fitness-age gate gets a VO₂max
 /// instead of a blank. Twin of the Android Vo2maxFallbackTest.
 ///
 /// `@MainActor`: `IntelligenceEngine.fitnessAgeRows` is main-actor-isolated, so the whole fixture
@@ -32,8 +32,8 @@ final class Vo2maxFallbackTests: XCTestCase {
     func testNoWaistFallsBackToUthHrRatioEstimate() {
         let vo2 = vo2maxEst(waistCm: 0)   // no waist → Nes value is nil
         XCTAssertNotNil(vo2, "without a waist, VO₂max must still be offered via the Uth fallback")
-        // Uth: 15.3 × Tanaka(40)=180 / RHR 60 = 45.9
-        XCTAssertEqual(vo2!, 15.3 * StrainScorer.tanakaHRmax(age: 40) / 60.0, accuracy: 1e-6)
+        // Uth: 15.3 × Tanaka(40)=180 / (RHR 60 + 5) = 42.369… (the +5 bpm maps a sleeping RHR to the awake one, #51)
+        XCTAssertEqual(vo2!, 15.3 * StrainScorer.tanakaHRmax(age: 40) / (60.0 + Calories.uthAwakeRestingOffsetBpm), accuracy: 1e-6)
     }
 
     func testWaistSetUsesTheNesWaistBasedEstimate() {
@@ -62,5 +62,22 @@ final class Vo2maxFallbackTests: XCTestCase {
         XCTAssertEqual(uth?.key, "vo2max_est")
         XCTAssertEqual(nes?.sourceId, Vo2MaxEstimator.nes.rawValue)
         XCTAssertNil(Vo2MaxEstimator(rawValue: "my-whoop"))
+    }
+
+    /// #51: the watch's own VO₂max wins over the estimate and needs no fitness-age gate; its tag names the
+    /// watch. Kotlin twin: `watchVo2max_winsWithoutTheGateAndIsTaggedGarmin`.
+    func testWatchVo2maxWinsWithoutTheGateAndIsTaggedGarmin() {
+        let gated = IntelligenceEngine.fitnessAgeRows(
+            gateDays: gate(60), age: 40, sex: "male", waistCm: 90, heightCm: 175, weightKg: 80,
+            computedId: "garmin-1-noop", satKey: "2026-08-15", watchVo2max: 54.2)
+        XCTAssertEqual(gated.first { $0.key == "vo2max_est" }?.value, 54.2)
+        XCTAssertNotNil(gated.first { $0.key == "fitness_age" })
+        let ungated = IntelligenceEngine.fitnessAgeRows(
+            gateDays: [], age: 0, sex: "", waistCm: 0, heightCm: 0, weightKg: 0,
+            computedId: "garmin-1-noop", satKey: "2026-08-15", watchVo2max: 54.2)
+        XCTAssertEqual(ungated.map(\.key), ["vo2max_est"])
+        let tag = IntelligenceEngine.vo2MaxProvenance(points: ungated, waistCm: 0, watchVo2max: 54.2).first
+        XCTAssertEqual(tag?.sourceId, Vo2MaxEstimator.garmin.rawValue)
+        XCTAssertEqual(vo2MaxEstimatorDisplayName(.garmin), "Garmin")
     }
 }

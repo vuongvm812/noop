@@ -64,6 +64,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +95,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -779,7 +782,12 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
 private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: ProfileStore) {
     var vitality by remember { mutableStateOf<Double?>(null) }
     var bodyAge by remember { mutableStateOf<Double?>(null) }
+    // #55: the latest persisted Sleep Regularity Index (0–100), the value the stored Vitality used.
+    var regularity by remember { mutableStateOf<Double?>(null) }
     LaunchedEffect(days) {
+        regularity = runCatching {
+            vm.repo.latestMetricComputedUnion(vm.activeStrapId, "sleep_consistency")?.value
+        }.getOrNull()
         // Latest-value reads (LIMIT-1 per source) — the full-series `.lastOrNull()` scan is gone (perf).
         vitality = runCatching {
             vm.repo.latestMetricComputedUnion(vm.activeStrapId, "vitality")?.value
@@ -788,7 +796,7 @@ private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: 
             vm.repo.latestMetricComputedUnion(vm.activeStrapId, "body_age")?.value
         }.getOrNull()
     }
-    val contributions = remember(days, profile.age) {
+    val contributions = remember(days, profile.age, regularity) {
         val last7 = days.takeLast(7)
         val nights = last7.mapNotNull { it.totalSleepMin }.map { it / 60.0 }.filter { it > 0 }
         val hrvs = last7.mapNotNull { it.avgHrv }
@@ -805,7 +813,7 @@ private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: 
         }
         VitalityEngine.contributions(VitalityEngine.Inputs(
             chronoAge = profile.age.toDouble(), restingHR = median(rhrs), sleepHours = mean(nights),
-            sleepConsistency = VitalityEngine.sleepConsistency(nights),
+            sleepConsistency = regularity?.let { it / 100.0 },
             rmssd = median(hrvs), rmssdNorm = VitalityEngine.rmssdNorm(profile.age.toDouble()), steps = mean(steps)))
     }
     val v = vitality; val ba = bodyAge
@@ -1492,13 +1500,50 @@ private fun FooterStat(label: String, value: String, modifier: Modifier = Modifi
 private val liveHrAxisFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US).withZone(ZoneId.systemDefault())
 
+/**
+ * What the live chart's scrub cursor at [cursorMs] reads: the nearest sample's index, plus the callout's
+ * value ("72 bpm", or "No data" over a dropout) and its HH:mm:ss label. Null for an empty series.
+ */
+internal data class LiveHrScrubReadout(val hit: ChartScrubHit, val value: String, val label: String)
+
+internal fun liveHrScrubReadout(samples: List<LiveHrSample>, cursorMs: Long): LiveHrScrubReadout? {
+    val hit = chartScrubResolve(samples.map { it.timeMs }, cursorMs) ?: return null
+    val gapAt = hit.gapAt
+    return if (gapAt != null) {
+        LiveHrScrubReadout(hit, CHART_SCRUB_NO_DATA, liveHrAxisFormatter.format(Instant.ofEpochMilli(gapAt)))
+    } else {
+        val s = samples[hit.index]
+        LiveHrScrubReadout(hit, "${s.bpm.roundToInt()} bpm", liveHrAxisFormatter.format(Instant.ofEpochMilli(s.timeMs)))
+    }
+}
+
 @Composable
 private fun LiveHrTimeChart(
     samples: List<LiveHrSample>,
     color: Color,
     modifier: Modifier,
 ) {
-    Box(modifier = modifier.fillMaxWidth().clipToBounds()) {
+    // Scrub cursor (#58). The gesture is keyed on nothing that changes per sample, so a drag in progress
+    // is not restarted every time a reading arrives; the cursor keeps its x while the trace scrolls under it.
+    var scrubX by remember { mutableStateOf<Float?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val readout = scrubX?.let { x ->
+        if (samples.size < 2 || chartWidth <= 0f) return@let null
+        val tMin = samples.first().timeMs
+        val tSpan = (samples.last().timeMs - tMin).coerceAtLeast(1L)
+        val frac = (x / chartWidth).coerceIn(0f, 1f)
+        liveHrScrubReadout(samples, tMin + (tSpan * frac.toDouble()).roundToLong())
+    }
+    ChartScrubHaptic(readout?.let { samples.getOrNull(it.hit.index)?.timeMs to it.hit.gapAt })
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clipToBounds()
+            .onSizeChanged { chartWidth = it.width.toFloat() }
+            .chartScrub(Unit, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { readout?.let { stateDescription = "${it.value}, ${it.label}" } },
+    ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (samples.size < 2 || size.width <= 0f || size.height <= 0f) {
                 drawHrBaseline()
@@ -1591,6 +1636,16 @@ private fun LiveHrTimeChart(
                     val rawX = frac * size.width
                     val x = rawX.coerceIn(0f, (size.width - labelWidth).coerceAtLeast(0f))
                     drawText(label, x, baselineY, paint)
+                }
+            }
+
+            readout?.let { r ->
+                val gapAt = r.hit.gapAt
+                if (gapAt != null) {
+                    drawScrubCursor(xFor(gapAt), null, color, r.value, r.label, paints)
+                } else {
+                    val s = samples[r.hit.index]
+                    drawScrubCursor(xFor(s.timeMs), yFor(s.bpm), color, r.value, r.label, paints)
                 }
             }
         }
@@ -1699,6 +1754,8 @@ private fun VitalTile(
             if (vital.sparkline.size > 1) {
                 TileSparkline(
                     values = vital.sparkline,
+                    days = vital.sparklineDays,
+                    format = { v -> "${vital.format(v)} ${vital.unit}" },
                     color = vital.metricColor,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1722,11 +1779,80 @@ private fun VitalTile(
  * A compact metric-tinted sparkline for a tile trail: a soft gradient fill under a coloured line,
  * capped with a glowing end-cap (a halo + white core) at the latest point so it reads as "now".
  * Built locally with Canvas + Palette colours (there is no shared tile-spark composable), mirroring
- * the Bevel chart end-cap used on the macOS sparkline and the Today HR chart. Decorative — the tile
- * already carries a combined contentDescription, so the spark is not separately announced.
+ * the Bevel chart end-cap used on the macOS sparkline and the Today HR chart.
+ *
+ * Scrub cursor (#58): a drag or a hold reads the night under the finger ("58 bpm" over "3 Nov"). A plain
+ * tap is left alone so the tile's click still opens the vital's detail. The callout floats above the
+ * strip, which is too short to hold it. The reading is added to the tile's merged node as a
+ * stateDescription.
  */
 @Composable
-private fun TileSparkline(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
+private fun TileSparkline(
+    values: List<Double>,
+    days: List<String>,
+    format: (Double) -> String,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    var scrubX by remember(values) { mutableStateOf<Float?>(null) }
+    var width by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val index = scrubX?.let { tileSparkIndexAt(values.size, width, it) }
+    val readout = index?.let { tileSparkReadout(values, days, it, format) }
+    ChartScrubHaptic(index)
+    Box(
+        modifier = modifier
+            .onSizeChanged { width = it.width.toFloat() }
+            .chartScrub(values, selectOnTap = false, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { readout?.let { stateDescription = listOfNotNull(it.first, it.second).joinToString(", ") } },
+    ) {
+        TileSparklineTrace(values, color, Modifier.fillMaxSize())
+        if (index != null && readout != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val n = values.size
+                val x = if (n > 1) size.width * index / (n - 1) else 0f
+                drawScrubCursor(
+                    x = x,
+                    y = tileSparkY(values, values[index], size.height),
+                    accent = color,
+                    value = readout.first,
+                    label = readout.second,
+                    paints = paints,
+                    overflowAbove = true,
+                )
+            }
+        }
+    }
+}
+
+/** Index of the tile-spark point nearest [x] on a strip [width] px wide (points span the full width). */
+internal fun tileSparkIndexAt(count: Int, width: Float, x: Float): Int? =
+    if (count < 2 || width <= 0f) null
+    else chartScrubNearestIndex(chartScrubIndexFractions(count), width, x)
+
+/** The tile-spark callout for point [index]: the formatted value, and its night as "d MMM" when known. */
+internal fun tileSparkReadout(
+    values: List<Double>,
+    days: List<String>,
+    index: Int,
+    format: (Double) -> String,
+): Pair<String, String?>? {
+    val v = values.getOrNull(index) ?: return null
+    return format(v) to days.getOrNull(index)?.let(::lastChargeDateLabel)
+}
+
+/** The y [TileSparklineTrace] draws [v] at, so the cursor dot sits on the line. */
+private fun tileSparkY(values: List<Double>, v: Double, height: Float): Float {
+    val pad = 4f
+    val usableH = (height - pad * 2).coerceAtLeast(1f)
+    val lo = values.min()
+    val span = (values.max() - lo).takeIf { it > 0.0 } ?: 1.0
+    val norm = ((v - lo) / span).toFloat().coerceIn(0f, 1f)
+    return pad + (1f - norm) * usableH
+}
+
+@Composable
+private fun TileSparklineTrace(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.clipToBounds()) {
         if (values.size < 2 || size.width <= 0f || size.height <= 0f) return@Canvas
         val strokePx = 2f
@@ -1809,7 +1935,7 @@ internal data class VitalDetailModel(
 // so its detail must route to buildSeriesVitalDetail (which reads metricSeriesComputedUnion), NOT the
 // DailyMetric-backed buildVitalDetail. #1404 added the vo2max_est CASE to the series builder but omitted it
 // here, so isSeriesBacked was false and the tap-through fell to the DailyMetric builder → empty trend.
-private val SERIES_BACKED_VITAL_KEYS = setOf("fitness_age", "vitality", "steps_est", "active_kcal", "rest", "vo2max_est")
+private val SERIES_BACKED_VITAL_KEYS = setOf("fitness_age", "vitality", "steps_est", "energy_kcal", "rest", "vo2max_est")
 
 /**
  * #1617: which empty-state copy a vital with fewer than two readings should show.
@@ -2218,8 +2344,8 @@ fun VitalDetailScreen(vm: AppViewModel, key: String) {
                     color = detail.color,
                     fill = true,
                     selectionEnabled = true, // the Vital Signs detail chart is meant to be tappable
-                    // #1600: name the DAY on the scrub readout. `lineChartSelectionLabel` prints
-                    // "label · value" when given one and the bare value otherwise, so a chart that opts
+                    // #1600: name the DAY on the scrub readout. `lineChartSelectionParts` puts the label
+                    // under the value when given one and leaves it out otherwise, so a chart that opts
                     // into selection without labels answers "96" — a number with nothing to say which day
                     // it belongs to, against a Trends chart that reads "16 Jul · 92" beside it.
                     //
@@ -2635,33 +2761,34 @@ internal suspend fun buildSeriesVitalDetail(vm: AppViewModel, key: String): Vita
             format = { java.text.NumberFormat.getIntegerInstance().format(it.roundToInt()) },
         )
     }
-    "active_kcal" -> {
-        // #616: calories, like steps (#377), come from TWO disjoint stores — the on-device HR estimate
-        // (DailyMetric.activeKcalEst, exposed by resolvedSeries("active_kcal")) and imported Apple/Health-
-        // Connect active energy (AppleDaily.activeKcal, where Health Connect writes it — NOT an active_kcal
-        // metricSeries row). Reading imports ALONE opened an empty / HealthConnect-only detail for a WHOOP
-        // 5.0 user whose calories are on-device, and disagreed with the Key-Metrics tile. Resolve per day
-        // IMPORTED-FIRST (the phone's activeKcal, else NOOP's on-device estimate) — matching the tile + card
-        // so the chart + Readings agree, while keeping every imported day in the union.
-        val real = vm.repo.resolvedSeries("active_kcal", "my-whoop", "0000-00-00", "9999-99-99",
-            strapDeviceId = vm.activeStrapId)
-            .points.associateBy({ it.day }, { VitalReading(it.day, it.value, it.source) })
-        val imported = LinkedHashMap<String, VitalReading>()
-        for (r in vm.repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +
-            vm.repo.appleDaily("health-connect", "0000-01-01", "9999-12-31")) {
-            val k = r.activeKcal
-            if (k != null && k > 0) imported.putIfAbsent(r.day, VitalReading(r.day, k, r.deviceId))
-        }
+    "energy_kcal" -> {
+        // #616 / #51: the Today Calories detail. Calories come from TWO stores, the phone's import
+        // (AppleDaily active + basal energy) and the stored total (DailyMetric.activeKcalEst, NOOP's
+        // estimate or a brand's watch total); [caloriesReadings] resolves each day through
+        // [com.noop.analytics.DayCalories], the same resolver the tile and card read, so all three agree.
         VitalDetailModel(
             key = key,
-            title = uiString(R.string.l10n_health_screen_active_energy_2d3288f9),
+            title = uiString(R.string.l10n_today_screen_calories_3e62ecfe),
             unit = "kcal",
             color = Palette.metricAmber,
-            readings = mergeReadings(imported, real),   // imported wins its day, else on-device estimate
+            readings = caloriesReadings(vm.repo, vm.activeStrapId),
             format = { it.roundToInt().toString() },
         )
     }
     else -> null
+}
+
+/**
+ * #616 / #51: the Calories readings every Today calorie surface reads (tile, card, detail): the stored
+ * total ("energy_kcal", which resolves `DailyMetric.activeKcalEst`) and the phone's Apple Health / Health
+ * Connect rows, resolved per day by [caloriesReadingsFrom].
+ */
+internal suspend fun caloriesReadings(repo: com.noop.data.WhoopRepository, strapId: String): List<VitalReading> {
+    val stored = repo.resolvedSeries("energy_kcal", "my-whoop", "0000-00-00", "9999-99-99", strapDeviceId = strapId)
+        .points.map { VitalReading(it.day, it.value, it.source) }
+    val phone = repo.appleDaily("apple-health", "0000-01-01", "9999-12-31") +
+        repo.appleDaily("health-connect", "0000-01-01", "9999-12-31")
+    return caloriesReadingsFrom(stored, phone)
 }
 
 // MARK: - Empty state

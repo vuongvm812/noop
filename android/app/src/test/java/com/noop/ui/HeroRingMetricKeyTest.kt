@@ -26,7 +26,7 @@ class HeroRingMetricKeyTest {
     /** The keys `VitalDetailScreen`'s `when` accepts, as of this test. */
     private val supportedDetailKeys = setOf(
         "recovery", "strain", "resp", "spo2", "rhr", "hrv", "skin", "rest",
-        "fitness_age", "vitality", "vo2max_est", "steps_est", "active_kcal",
+        "fitness_age", "vitality", "vo2max_est", "steps_est", "energy_kcal",
     )
 
     @Test fun chargeOpensTheRecoveryDetail() {

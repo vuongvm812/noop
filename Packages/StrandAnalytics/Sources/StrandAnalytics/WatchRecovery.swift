@@ -1,4 +1,5 @@
 import Foundation
+import WhoopStore
 
 // WatchRecovery.swift — recovery/Charge from Apple Watch DAILY aggregates.
 //
@@ -11,8 +12,9 @@ import Foundation
 // We do NOT invent a new formula. Recovery is HRV-and-RHR-vs-personal-baseline, and
 // because every term is relative to the person's OWN baseline, the metric scale cancels
 // out: SDNN-vs-SDNN-baseline behaves like RMSSD-vs-RMSSD-baseline. So we build SDNN and
-// RHR baselines through the existing `Baselines` machinery and feed them straight into
-// the SAME `RecoveryScorer.recovery(...)` the strap uses. Watch recovery and strap
+// RHR baselines with the strap's Charge baselines (`ChargeBaselines`, trailing 60 days,
+// HRV in the log domain; #53) and feed them straight into the SAME
+// `RecoveryScorer.recovery(...)` the strap uses. Watch recovery and strap
 // recovery therefore land on the same 0-100 scale and read against the same bands.
 //
 // What we drop vs the strap path: the respiration, sleep-performance and skin-temp terms
@@ -49,62 +51,59 @@ public enum WatchRecovery {
     /// on dense data, but the watch's sparse SDNN deserves a longer warm-up before we trust it.
     public static let minBaselineNights = 7
 
-    /// Compute recovery/Charge from the watch's daily SDNN + resting HR vs the person's own baseline.
+    /// Charge for one day of a daily-aggregate source (Apple Watch SDNN, or an import-only wearable's
+    /// nightly HRV) against that source's own trailing baselines (#53).
+    ///
+    /// The baselines are the Charge ones: `ChargeBaselines.resolveDay` over this source's rows, so HRV is
+    /// lnRMSSD-style (log domain), every baseline is the mean and sample SD of the valid nights in the
+    /// 60 days before `day`, and today's value never sees itself. One funnel: the engine's watch and
+    /// import Charge fold and the dashboard's watch confidence pill both call this, so the pill can never
+    /// read a different baseline from the one the number was scored on.
     ///
     /// - Parameters:
-    ///   - todaySDNN: today's HRV SDNN reading (ms), or nil if the watch logged none.
-    ///   - todayRHR:  today's resting HR (bpm), or nil to drop the RHR term. The term is also
-    ///     dropped when `rhrHistory` has not yet produced a usable RHR baseline.
-    ///   - sdnnHistory: ordered nightly SDNN values (oldest → newest), the baseline input.
-    ///   - rhrHistory:  ordered nightly resting-HR values (oldest → newest).
-    /// - Returns: a `Result` with recovery in [0,100] and a confidence tier, or nil recovery +
-    ///   `.calibrating` when today's SDNN is missing, the baseline isn't usable, or history is thin.
-    public static func compute(todaySDNN: Double?, todayRHR: Int?,
-                               sdnnHistory: [Double], rhrHistory: [Double]) -> Result {
-        // Build both baselines through the production model (Winsorized EWMA + cold-start gating),
-        // exactly as the strap path does. SDNN feeds the HRV config; resting HR feeds the RHR config.
-        let hrvBase = Baselines.foldHistory(sdnnHistory.map { Optional($0) }, cfg: Baselines.hrvCfg)
-        let rhrBase = Baselines.foldHistory(rhrHistory.map { Optional($0) }, cfg: Baselines.restingHRCfg)
+    ///   - day: the scored `yyyy-MM-dd` day.
+    ///   - rows: this source's daily rows, any order; the row for `day` carries today's values.
+    /// - Returns: recovery in [0,100] with its confidence, or nil recovery + `.calibrating` when today's
+    ///   HRV is missing, the HRV baseline isn't usable, or it holds fewer than `minBaselineNights` valid
+    ///   nights. Never a fabricated value. Kotlin twin: `WatchRecovery.score`.
+    public static func score(day: String, rows: [DailyMetric]) -> Result {
+        let calibrating = Result(recovery: nil, confidence: .calibrating)
+        let prior = rows.filter { $0.day < day }
+        guard let resolved = ChargeBaselines.resolveDay(scoredDay: day, imported: .init(),
+                                                        own: ChargeBaselines.Nights(rows: prior), seed: .init(),
+                                                        sourceDays: [], hrvRecalibration: 0,
+                                                        recoveryRecalibration: 0) else { return calibrating }
+        let today = rows.last { $0.day == day }
+        let hrvBase = resolved.hrv
+        let rhrBase = resolved.restingHR
+        let todayHrv = today?.avgHrv
+        let todayRHR = today?.restingHr
 
         // Confidence is the SAME helper the strap Charge uses, so the calibrating → building → solid
-        // arc matches. It reads .calibrating whenever recovery would be nil (no usable HRV baseline),
-        // and below it we ALSO nil-out recovery, so the two stay consistent.
-        let conf = ScoreConfidence.charge(recovery: todaySDNN, hrvBaseline: hrvBase)
+        // arc matches. It reads .calibrating whenever recovery would be nil (no usable HRV baseline).
+        let conf = ScoreConfidence.charge(recovery: todayHrv, hrvBaseline: hrvBase)
 
-        // Honesty gate: no number unless we have today's SDNN, a usable baseline, AND at least a
-        // week of nights. Any miss → nil recovery + calibrating, never a fabricated value.
-        // The week is counted in nights the baseline ACCEPTED (`nValid`), not in raw history entries:
-        // a physiologically implausible reading is skip-and-held by `Baselines.update` and contributes
-        // nothing to the baseline, so counting it would let rejected values buy a score a week early.
-        guard let sdnn = todaySDNN,
-              hrvBase.usable,
-              hrvBase.nValid >= minBaselineNights else {
-            return Result(recovery: nil, confidence: .calibrating)
+        // Honesty gate: no number unless we have today's HRV, a usable baseline, AND at least a week of
+        // valid nights in it. A physiologically implausible reading never enters the baseline, so it
+        // cannot buy a score early.
+        guard let hrv = todayHrv, hrvBase.usable, hrvBase.nValid >= minBaselineNights else {
+            return calibrating
         }
 
-        // Reuse the canonical Charge engine. Drop the resp / sleep / skin-temp terms (the watch
-        // daily aggregate doesn't carry them here) — RecoveryScorer renormalises to HRV + RHR.
-        // RHR is optional: the term needs BOTH today's reading AND a usable personal RHR baseline.
-        // An empty or all-implausible RHR history folds to `foldHistory`'s synthetic midpoint (the
-        // config's min/max mean, e.g. 75 bpm), which is nobody's resting HR — scoring against it would
-        // move Charge on a fabricated baseline. Same `usable ? state : nil` gate the strap Charge
-        // surfaces already apply (TodayView / CoupledView); without a usable RHR baseline we fall back
-        // to the documented HRV-only path, exactly as when today's reading is missing.
+        // Reuse the canonical Charge scorer. Resp / sleep / skin-temp are not supplied by a daily
+        // aggregate, so RecoveryScorer renormalises to HRV + RHR. The RHR term needs BOTH today's reading
+        // AND a usable personal RHR baseline; without either it is dropped (the documented HRV-only path).
         let recovery = RecoveryScorer.recovery(
-            hrv: sdnn,
-            rhr: todayRHR.map(Double.init) ?? rhrBase.baseline,   // missing RHR → at-baseline (z≈0, neutral term)
+            hrv: hrv,
+            rhr: todayRHR.map(Double.init) ?? rhrBase.baseline,
             resp: nil,
             hrvBaseline: hrvBase,
             rhrBaseline: (todayRHR != nil && rhrBase.usable) ? rhrBase : nil,
             respBaseline: nil,
-            sleepPerf: nil
+            sleepPerf: nil,
+            hrvPriorWeek: resolved.hrvPriorWeek
         )
-
-        // RecoveryScorer only returns nil on a cold-start HRV baseline, which we already gated above;
-        // but stay honest if it ever does — never coerce a nil into a number.
-        guard let recovery else {
-            return Result(recovery: nil, confidence: .calibrating)
-        }
+        guard let recovery else { return calibrating }
         return Result(recovery: recovery, confidence: conf)
     }
 }

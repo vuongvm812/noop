@@ -36,7 +36,8 @@ final class ReadinessEngineTests: XCTestCase {
         XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.flag, .good)
         XCTAssertEqual(r.signals.first { $0.key == "hrv" }?.evidence, "72 vs 60 ms")
         XCTAssertEqual(r.signals.first { $0.key == "rhr" }?.evidence, "46 vs 52 bpm")
-        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence, "7d 10.0 / 28d 10.0")
+        // Load evidence is TRIMP recovered from Effort 10 (#54), not the Effort itself.
+        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence, "7d 1.4 / 28d 1.4")
     }
 
     func testRundownWhenTwoRecoverySignalsDown() {
@@ -75,12 +76,5 @@ final class ReadinessEngineTests: XCTestCase {
         XCTAssertNotEqual(ReadinessEngine.evaluate(days: days, today: "2024-03-29").level, .insufficient)
         // The legacy no-`today` path is unchanged — still falls back to the most recent row.
         XCTAssertNotEqual(ReadinessEngine.evaluate(days: days).level, .insufficient)
-    }
-
-    func testStatsHelpers() {
-        XCTAssertEqual(ReadinessEngine.mean([2, 4, 6]), 4)
-        XCTAssertEqual(ReadinessEngine.sampleSD([2, 4, 6])!, 2.0, accuracy: 0.0001)
-        XCTAssertNil(ReadinessEngine.sampleSD([5]))
-        XCTAssertNil(ReadinessEngine.mean([]))
     }
 }

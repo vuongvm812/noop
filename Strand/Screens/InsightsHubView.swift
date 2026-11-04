@@ -275,7 +275,9 @@ private struct DoseResponseCardView: View {
 
                 // The prior-shrunk curve (dose on x, modelled outcome Δ on y).
                 DoseCurveChart(points: r.curve, accent: domain.color,
-                               unitLabel: card.unitLabel, outcomeName: card.outcomeName)
+                               unitLabel: card.unitLabel, outcomeName: card.outcomeName,
+                               deltaText: { signed($0, suffix: card.outcomeSuffix) },
+                               binText: { card.timingProxy ? card.doseChoiceLabel($0) : card.stepLabel($0) })
                     .frame(height: 132)
                     .accessibilityLabel(curveAccessibilityLabel(r))
 
@@ -414,12 +416,19 @@ private struct DoseResponseCardView: View {
 // A compact line+area chart of the prior-shrunk curve: dose on x (0…max), the modelled
 // outcome DELTA on y. Drawn with the house Path idiom (no extra dependency) so it sits
 // in the design system. Zero-line is marked; the line is tinted to the domain colour.
+// The scrub cursor (#58) snaps to a dose bin and reads that bin's modelled outcome delta.
 
 private struct DoseCurveChart: View {
     let points: [DoseCurvePoint]
     let accent: Color
     let unitLabel: String
     let outcomeName: String
+    /// The card's own signed-delta formatting, so the readout matches the "Per extra" tile.
+    let deltaText: (Double) -> String
+    /// The card's own label for a dose bin ("2 drinks", or a caffeine timing bucket).
+    let binText: (Int) -> String
+
+    @State private var scrubX: CGFloat? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -473,7 +482,19 @@ private struct DoseCurveChart: View {
                         .frame(width: 5, height: 5)
                         .position(x: xFor(i), y: yFor(points[i].outcomeDelta))
                 }
+
+                if let sx = scrubX, let i = ChartHoverMath.nearestIndex(toX: sx, count: points.count, width: w) {
+                    let pt = CGPoint(x: xFor(i), y: yFor(points[i].outcomeDelta))
+                    CrosshairRule(x: pt.x, height: h)
+                    HighlightDot(color: accent).position(pt)
+                    PositionedTooltip(anchor: pt, container: geo.size,
+                                      tooltip: ChartTooltip(value: deltaText(points[i].outcomeDelta),
+                                                            label: binText(points[i].dose), accent: accent))
+                }
             }
+            .frame(width: w, height: h, alignment: .topLeading)
+            .chartScrub($scrubX)
+            .chartScrubHaptic(scrubX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: points.count, width: w) })
         }
         .accessibilityElement()
     }
@@ -624,14 +645,15 @@ final class InsightsHubViewModel: ObservableObject {
         rankFor(currentOutcome)
     }
 
-    /// Re-rank the mover feed for a (possibly new) outcome selection — cheap, no DB.
+    /// Re-rank the mover feed for a (possibly new) outcome selection — no DB.
     func rankFor(_ outcome: Outcome) {
         currentOutcome = outcome
-        let outcomeDays = outcomeByKey[outcome.key] ?? [:]
-        ranked = EffectRanker.rank(behaviors: behaviours,
-                                   controls: controls,
-                                   outcomeByDay: outcomeDays,
-                                   outcome: outcome.outcomeName)
+        // The false-discovery family is every outcome the feed can show (behaviours × outcomes × lags),
+        // so switching outcomes cannot shop for a significant row.
+        var outcomes: [String: [String: Double]] = [:]
+        for o in Outcome.allCases { outcomes[o.outcomeName] = outcomeByKey[o.key] ?? [:] }
+        ranked = EffectRanker.rankFamily(behaviors: behaviours, controls: controls,
+                                         outcomes: outcomes)[outcome.outcomeName] ?? []
     }
 
     // MARK: Static shaping helpers

@@ -174,11 +174,22 @@ diagnostic into the registry.
    concrete rationale. This records the scope boundary; it does not prove that
    the implementations behave identically or create a governed pair.
 
-These are the only disposition types. An inherited `platform_specific` entry
-may be reclassified as `out_of_scope_twin` when the kind, identity, hash, and
-platform stay identical and the Swift file exists under `Strand/`. Other edits
-to inherited authority remain blocked. Dispositions cannot waive removal/retargeting of
-an existing twin, a shared bug fix, or a final shared feature. The central typed
+These are the only disposition types for one-sided declarations. An inherited
+`platform_specific` entry may be reclassified as `out_of_scope_twin` when the
+kind, identity, hash, and platform stay identical and the Swift file exists under
+`Strand/`. Other edits to inherited authority remain blocked.
+
+A twin pair deleted on BOTH platforms (a retired feature, a formula replaced on
+both sides) is the one removal that can be accepted, through a `retired_pair`
+disposition: the `remove-function-pair`, `remove-property-pair` or
+`remove-constant-pair` kind, the exact pair identity from the derived pair set
+(Swift endpoint, NUL, Kotlin endpoint) with its hash, the `owner/repo#N` issue
+that retired it, and a specific reason. It names no platform, and one issue may
+retire several pairs. The ratchet accepts it only when neither endpoint remains
+in the current inventory, so deleting one side, dropping a twin claim, or
+re-pointing a claim at another declaration still fails closed. Dispositions
+cannot waive a one-sided removal or retargeting of an existing twin, a shared
+bug fix, or a final shared feature. The central typed
 registry is manually reviewed; regeneration cannot populate it. A disposition
 whose debt disappears emits a warning and may be removed later, but it never
 authorizes reintroduction against the current merge base. Debt reductions pass

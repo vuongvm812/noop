@@ -873,7 +873,6 @@
     <string name="l10n_strand_components_previous_day_e2b6b0a1">前一天</string>
     <string name="l10n_stress_screen_band_title_hours_hours_f9779fd3">%1$s %2$s 小时</string>
     <string name="l10n_stress_screen_calm_time_fa546d52">平静时间</string>
-    <string name="l10n_stress_screen_hourlabel_pt_hour_tenths_10_tenths_cd4c9c16">%1$s · %2$s.%3$s</string>
     <string name="l10n_stress_screen_hours_h_7610ac7c">%1$s小时</string>
     <string name="l10n_stress_screen_no_stress_history_yet_ec962e3c">暂无压力历史数据</string>
     <string name="l10n_stress_screen_reading_your_heart_rate_variability_and_c0249246">正在读取您的心率变异性 (HRV) 和静息心率…</string>
@@ -882,10 +881,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">开启一段正念呼吸</string>
     <string name="l10n_stress_screen_stress_bad33342">压力</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">在过去的 %1$s 个小时里，您的压力水平一直处于高位。可以尝试几分钟的正念... of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">7晚基线 %1$s ms，正常波动范围 %2$s 至 %3$s ms%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">同时将手环日志写入系统日志 (logcat)，方便通过 adb 调试。默认关闭。</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android 通过 WorkManager 运行此任务（Doze 机制可能会导致延迟）。</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">校准中 (%1$s/%2$s 晚)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">取消</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">每日自动导出</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">调试日志</string>
@@ -900,9 +897,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">这会删除 NOOP 保存的所有计划手环日志和原始捕获文件。此操作无法撤销。</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">请注意：此测试模式当前处于关闭状态，因此日志中没有包含相关抓取数据。若需... useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">基于 PPG 信号的心率亚延迟插值 (v26 间隙填充算法)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">HRV 恢复就绪度评分 (实验性功能)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">HRV 就绪度 (实验版)：%1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">HRV 恢复就绪度 (Plews/Altini 算法模型)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">重新校准</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">重新校准“充能”基线</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">确认要重新校准您的“充能”基线吗？</string>
@@ -1346,7 +1340,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">重启该手环？</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">暂无可融合的数据</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">您的数据融合视图</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">活动能量消耗</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">血氧饱和度 (SpO₂)</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">血氧饱和度</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">决定您的体能年龄(Fitness Age)</string>
@@ -2202,7 +2195,6 @@
     <string name="today_card_steps">步数</string>
     <string name="today_card_steps_subtitle">今天</string>
     <string name="today_card_calories">卡路里</string>
-    <string name="today_card_calories_subtitle">活动能量</string>
     <string name="today_card_stress">压力</string>
     <string name="today_card_stress_subtitle">自主神经负荷</string>
     <string name="today_card_fitness_age">体能年龄</string>
@@ -2245,7 +2237,8 @@
     <string name="today_readiness_load_ramping_down">负荷下降（急性:慢性 %1$s）— 尚有提升空间</string>
     <string name="today_readiness_load_sweet_spot">处于理想区间（急性:慢性 %1$s）</string>
     <string name="today_readiness_load_building_fast">快速上升（急性:慢性 %1$s）— 留意疲劳</string>
-    <string name="today_readiness_load_spiking">负荷激增（急性:慢性 %1$s）— 受伤风险更高</string>
+    <string name="settings_hrmax_auto_observed">自动 · %1$d bpm（实测）</string>
+    <string name="today_readiness_load_spiking">负荷激增（急性:慢性 %1$s）— 远高于你的常规负荷</string>
     <string name="today_readiness_more_nights">再记录几晚可提高解读可靠性。</string>
     <string name="today_readiness_run_down">疲惫</string>
     <string name="today_readiness_run_down_summary">多项信号同时下降。今天应以恢复为主：轻度活动，并在今晚保证充足睡眠。</string>
@@ -2411,6 +2404,11 @@
     <string name="today_driver_near_baseline">接近基线</string>
     <string name="today_driver_warmer_limiting">高于基线温度，限制恢复</string>
     <string name="today_driver_cooler_limiting">低于基线温度，限制恢复</string>
+    <string name="today_driver_hrv_trend">HRV 7 天趋势</string>
+    <string name="today_driver_range_ms">正常范围 %1$d-%2$d 毫秒</string>
+    <string name="today_driver_hrv_trend_above">7 天平均高于你的正常范围，有助于恢复</string>
+    <string name="today_driver_hrv_trend_below">7 天平均低于你的正常范围，是疲劳累积的迹象</string>
+    <string name="today_driver_hrv_trend_inside">7 天平均在你的正常范围内</string>
     <string name="today_driver_a11y">%1$s，%2$s，%3$s，%4$s 分，%5$s</string>
     <string name="scoring_guide_daily_scores">你的每日评分</string>
     <string name="scoring_guide_three_scores">三项评分</string>
@@ -2922,4 +2920,33 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">尚未</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">已导入 NOOP：%1$d 个文件</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">当“连接”或“来源”测试模式开启时，每条消息的详情会写入设备日志。</string>
+    <string name="workout_watch_reference_title">手表参考</string>
+    <string name="workout_watch_reference_overline">由你的手表提供</string>
+    <string name="workout_watch_reference_aerobic_te">有氧训练效果</string>
+    <string name="workout_watch_reference_anaerobic_te">无氧训练效果</string>
+    <string name="workout_watch_reference_training_load">训练负荷</string>
+    <string name="workout_watch_reference_intensity_minutes">强度分钟数</string>
+    <string name="workout_watch_reference_intensity_split">%1$d 分钟中等 · %2$d 分钟高强度</string>
+    <string name="workout_watch_reference_explanation">这些数值由你的手表为本次训练计算。训练效果范围为 0 到 5，训练负荷基于 EPOC，高强度分钟在强度分钟数中按两倍计算。NOOP 仅作参考展示，不会将其用于 Effort 或 Charge。</string>
+    <string name="l10n_compare_screen_pearson_r">皮尔逊 r</string>
+    <string name="l10n_compare_screen_spearman_rho">斯皮尔曼 ρ</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">相关方法</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">个人资料中的体重会跟随你最近记录的体重。</string>
+    <string name="weight_log_chart_empty">至少记录两天的体重即可查看趋势。</string>
+    <string name="weight_log_field_kg">体重（kg）</string>
+    <string name="weight_log_field_lb">体重（lb）</string>
+    <string name="weight_log_invalid">请输入 %1$s 到 %2$s 之间的体重。</string>
+    <string name="weight_log_history">已记录的体重</string>
+    <string name="weight_log_empty">尚未记录体重。</string>
+    <string name="weight_log_save">保存</string>
+    <string name="weight_log_delete">删除</string>
+    <string name="weight_log_done">完成</string>
+    <string name="weight_log_previous_day">前一天</string>
+    <string name="weight_log_next_day">后一天</string>
+    <string name="chart_scrub_no_data">无数据</string>
+    <string name="chart_scrub_next_point">下一个点</string>
+    <string name="chart_scrub_previous_point">上一个点</string>
+    <string name="chart_scrub_spoken">%1$s，%2$s</string>
 </resources>

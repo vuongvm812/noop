@@ -196,7 +196,7 @@ enum MetricCatalog {
         //    `source` keeps them comparable against the WHOOP/Apple versions rather than colliding.
         d("avg_hr", String(localized: "Average Heart Rate"), "Heart", "bpm", "xiaomi-band", "heart", 0, nil),
         d("max_hr", String(localized: "Max Heart Rate"), "Heart", "bpm", "xiaomi-band", "bolt.heart", 0, nil),
-        d("energy_kcal", String(localized: "Calories"), "Heart", "kcal", "xiaomi-band", "flame", 0, nil),
+        d("active_kcal", String(localized: "Active Energy"), "Effort", "kcal", "xiaomi-band", "flame.fill", 0, nil),
         d("vitality", String(localized: "Vitality"), "Heart", "", "xiaomi-band", "sparkles", 0, true),
         d("rhr", String(localized: "Resting Heart Rate"), "Charge", "bpm", "xiaomi-band", "heart", 0, false),
         d("spo2", String(localized: "Blood Oxygen"), "Charge", "%", "xiaomi-band", "drop", 0, true),
@@ -232,17 +232,10 @@ enum MetricCatalog {
         return metric(key: "steps_est", source: "my-whoop")
     }
 
-    /// #616: the calorie twin of `todayStepsMetric` — route the tapped detail to the source that MATCHES
-    /// the value the tile shows (imported-first, like Android). The imported Apple-Health detail
-    /// (`active_kcal` / apple-health) when the day has an imported value, else NOOP's on-device HR-estimate
-    /// detail (`energy_kcal` / my-whoop, which `exploreSeries` fuses from `activeKcalEst`). Without this the
-    /// Calories card always opened the imported-only detail, so an on-device (WHOOP 5.0) user with no import
-    /// saw an empty/disagreeing chart. Defaults to the on-device detail when no import is present.
-    static func todayCaloriesMetric(hasImportedKcal: Bool, hasOnDeviceKcal: Bool = false) -> MetricDescriptor? {
-        if hasImportedKcal { return metric(key: "active_kcal", source: "apple-health") }
-        if hasOnDeviceKcal { return metric(key: "energy_kcal", source: "my-whoop") }
-        return metric(key: "energy_kcal", source: "my-whoop")
-    }
+    /// The detail the Today Calories tile and card open (#616, #51): the day's TOTAL energy, which
+    /// `Repository.exploreSeries` resolves per day through `DayCalories` exactly as the tile does, so the
+    /// number and the chart it opens cannot disagree whichever store a day came from.
+    static var todayCaloriesMetric: MetricDescriptor { metric(key: "energy_kcal", source: "my-whoop")! }
 
     /// Localized display name for a catalog category, mapped AT THE RENDER SITE only. The
     /// catalog's `category` VALUES stay English identifiers on purpose (`inCategory` and the

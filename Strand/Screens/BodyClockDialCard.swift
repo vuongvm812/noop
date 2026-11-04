@@ -26,6 +26,15 @@ struct BodyClockDialCard: View {
     // competed with the background image; a single legible one plus a dashed, lighter reference does not.
     private var hue: Color { StrandPalette.restLine }
 
+    /// The scrub cursor on the dial (#58): touch and hold then drag, or hover, to read an arc.
+    @State private var scrub: CGPoint? = nil
+
+    /// The two arcs the scrub can read. Raw values match the Kotlin `BODY_CLOCK_ARC_*` indices.
+    enum Arc: Int, Equatable {
+        case night = 0
+        case ideal = 1
+    }
+
     /// The night's length, taken the long way round the clock when it crosses midnight.
     private var durationHours: Double {
         let d = (actualWakeHour - actualBedHour).truncatingRemainder(dividingBy: 24)
@@ -53,9 +62,13 @@ struct BodyClockDialCard: View {
                     dial
                         .frame(maxWidth: .infinity)
                         .accessibilityElement(children: .ignore)
-                        // Label only. The verdict is the caption Text below, a separate element, so giving
-                        // the dial the same string as its VALUE made VoiceOver announce it twice.
+                        // The label names the dial; the value reads each arc's clock range, which the
+                        // scrub shows by touch. The verdict stays in the caption Text below, a separate
+                        // element, so it is not announced twice.
                         .accessibilityLabel(Text("Body clock dial"))
+                        .accessibilityValue(Text(verbatim: [Arc.night, .ideal].compactMap { arc in
+                            arcRange(arc).map { "\(arcName(arc)) \($0)" }
+                        }.joined(separator: ", ")))
                     legend
                     Text(alignmentText)
                         .font(StrandFont.title2)
@@ -144,15 +157,83 @@ struct BodyClockDialCard: View {
     }
 
     private var dial: some View {
-        Canvas { ctx, size in
-            let g = DialGeometry(size: size)
-            drawTrack(ctx, g)
-            drawTicks(ctx, g)
-            drawHourLabels(ctx, g)
-            drawArcs(ctx, g)
-            drawOnset(ctx, g)
+        GeometryReader { geo in
+            let arc = scrub.flatMap { Self.arcAt($0, size: geo.size) }
+            ZStack {
+                Canvas { ctx, size in
+                    let g = DialGeometry(size: size)
+                    drawTrack(ctx, g)
+                    drawTicks(ctx, g)
+                    drawHourLabels(ctx, g)
+                    drawArcs(ctx, g)
+                    drawOnset(ctx, g)
+                }
+                if let arc, let range = arcRange(arc), let anchor = arcMidpoint(arc, size: geo.size) {
+                    HighlightDot(color: hue, diameter: 6)
+                        .position(anchor)
+                    PositionedTooltip(anchor: anchor, container: geo.size,
+                                      tooltip: ChartTooltip(value: range, label: arcName(arc), accent: hue))
+                }
+            }
+            .chartScrub(location: $scrub)
+            .chartScrubHaptic(arc)
         }
         .frame(height: 200)
+    }
+
+    /// Which arc a cursor at `point` on a dial of `size` reads: the one whose band radius is nearer the
+    /// cursor's distance from the centre (a tie goes to the night arc). The radii are the drawing's own
+    /// `DialGeometry` bands. Nil on an empty canvas. Twin of the Kotlin `bodyClockArcAt`.
+    static func arcAt(_ point: CGPoint, size: CGSize) -> Arc? {
+        guard min(size.width, size.height) > 0 else { return nil }
+        let g = DialGeometry(size: size)
+        let r = hypot(point.x - g.centre.x, point.y - g.centre.y)
+        return abs(r - g.night) <= abs(r - g.reference) ? .night : .ideal
+    }
+
+    /// A fractional clock hour rounded to `stepMinutes`, as minutes after midnight (wrapping past it).
+    static func roundedMinuteOfDay(_ hour: Double, stepMinutes: Int) -> Int {
+        let step = max(1, stepMinutes)
+        let total = Int((hour * 60 / Double(step)).rounded()) * step
+        return ((total % 1440) + 1440) % 1440
+    }
+
+    /// The arc's name: the legend's own words.
+    private func arcName(_ arc: Arc) -> String {
+        arc == .night ? String(localized: "Last night") : String(localized: "Your clock")
+    }
+
+    private func arcHours(_ arc: Arc) -> (from: Double, to: Double)? {
+        switch arc {
+        case .night: return (actualBedHour, actualWakeHour)
+        case .ideal: return ideal.map { ($0.bedHour, $0.wakeHour) }
+        }
+    }
+
+    /// The arc's clock range, "23:10–07:05" in the device's 12/24-hour form. The reference arc is an
+    /// activity fit, so it reads in five-minute steps, as the caption does.
+    private func arcRange(_ arc: Arc) -> String? {
+        guard let hours = arcHours(arc) else { return nil }
+        let step = arc == .ideal ? 5 : 1
+        return "\(clockText(hours.from, step: step))–\(clockText(hours.to, step: step))"
+    }
+
+    private func clockText(_ hour: Double, step: Int) -> String {
+        let minutes = Self.roundedMinuteOfDay(hour, stepMinutes: step)
+        let date = Calendar.current.date(bySettingHour: minutes / 60, minute: minutes % 60, second: 0,
+                                         of: Date()) ?? Date()
+        return AppClock.hourMinuteFormatter().string(from: date)
+    }
+
+    /// The middle of the arc on its own band, where the scrub's dot and callout sit.
+    private func arcMidpoint(_ arc: Arc, size: CGSize) -> CGPoint? {
+        guard let hours = arcHours(arc) else { return nil }
+        let g = DialGeometry(size: size)
+        let radius = arc == .ideal ? g.reference : g.night
+        let a: Double = angle(hours.from + sweep(hours.from, hours.to) / 2).radians
+        let cosA: CGFloat = CGFloat(cos(a))
+        let sinA: CGFloat = CGFloat(sin(a))
+        return CGPoint(x: g.centre.x + cosA * radius, y: g.centre.y + sinA * radius)
     }
 
     /// A full-circle TRACK under the night arc, the same idiom `RecoveryRing` uses: a faint

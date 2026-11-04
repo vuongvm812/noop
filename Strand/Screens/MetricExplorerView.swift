@@ -390,6 +390,7 @@ func vo2MaxEstimatorDisplayName(_ estimator: Vo2MaxEstimator?) -> String {
     switch estimator {
     case .nes: return "Nes 2011"
     case .uth: return "Uth 2004"
+    case .garmin: return "Garmin"
     case nil:  return String(localized: "Unknown")
     }
 }
@@ -1555,6 +1556,8 @@ struct MetricDetailView: View {
     private func statRow(effectiveRange: ExploreRange,
                          windowed: [(day: String, value: Double)]) -> some View {
         let windowValues = windowed.map(\.value)
+        // The scrub readout's date per point (#58), in the same form as the "Latest" caption.
+        let sparkLabels = windowed.map { pt in parseDay(pt.day).map(longDate) ?? pt.day }
         let latestPoint = latest(in: windowed)
         let s = ComparisonEngine.stat(windowValues)
         let cmp = ComparisonEngine.compare(current: windowValues,
@@ -1583,7 +1586,9 @@ struct MetricDetailView: View {
                      caption: statisticCountCaption(count: s.n, effectiveRange: effectiveRange),
                      accent: accent,
                      sparkline: windowValues.count > 1 ? windowValues : nil,
-                     sparkColor: accent)
+                     sparkColor: accent,
+                     sparkFormat: fmt,
+                     sparkLabels: sparkLabels)
                 .frame(maxWidth: .infinity)
 
             LazyVGrid(
@@ -1616,7 +1621,9 @@ struct MetricDetailView: View {
                      caption: statisticCountCaption(count: s.n, effectiveRange: effectiveRange),
                      accent: accent,
                      sparkline: windowValues.count > 1 ? windowValues : nil,
-                     sparkColor: accent)
+                     sparkColor: accent,
+                     sparkFormat: fmt,
+                     sparkLabels: sparkLabels)
             StatTile(label: "Min", value: fmt(s.min),
                      accent: StrandPalette.textPrimary)
             StatTile(label: "Max", value: fmt(s.max),
@@ -1757,7 +1764,7 @@ struct MetricDetailView: View {
         for entry in others {
             let otherWindowed = entry.series.filter { myDays.contains($0.day) }
             let pairs = CorrelationEngine.alignByDay(windowed, otherWindowed)
-            guard pairs.count >= 10, let c = CorrelationEngine.pearson(pairs) else { continue }
+            guard pairs.count >= CorrelationEngine.minPairs, let c = CorrelationEngine.pearson(pairs) else { continue }
             if abs(c.r) >= 0.3 {
                 rows.append(CorrRow(id: entry.metric.id, metric: entry.metric, r: c.r, n: c.n))
             }

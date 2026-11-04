@@ -12,7 +12,7 @@ import com.noop.alarm.WindDownStore
 import com.noop.analytics.AnalyticsEngine
 import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
-import com.noop.analytics.IllnessSignalEngine
+import com.noop.analytics.IllnessInputs
 import com.noop.analytics.IllnessWatch
 import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.IntelligencePersistence
@@ -838,35 +838,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
-     * #2525: the Charge baselines (HRV, resting HR, respiration) resolved with the engine's own rule from the
-     * imported and own daily rows, read apart because the rule needs to know which nights are imported. The
-     * single funnel every Charge readout below the headline reads (the "What shaped it" rows, the
-     * calibration count, the confidence tier), so none of them can fold a different history than the score
-     * was computed against. Anchored on today's local day and the two recalibration epochs, read on each
-     * emission exactly as the engine reads them per pass. The read range starts at this ViewModel's first
-     * window start, so it only ever covers MORE days than the window; [ChargeBaselines.history] trims to the
-     * current one. Mirrors the Swift `Repository.chargeBaselines`.
+     * #2525, #53: the stored rows the Charge baselines are resolved from, in the same buckets the engine
+     * reads (imported, own computed, same-brand export seed), plus each night's measuring source and the two
+     * recalibration epochs. The single funnel every Charge readout below the headline reads: the "What shaped
+     * it" rows, the calibration countdown, the confidence tier and the readiness word call
+     * [ChargeBaselines.Inputs.resolve] for the day they display, so none of them
+     * can read a different baseline (or era) than the day was scored against. Own nights' sources come from
+     * the provenance the engine recorded ([ChargeBaselines.recordedSources]); an unknown one and every
+     * imported day fall back to [deviceId], the id the engine passes as `importedDeviceId`. The read range
+     * reaches [CHARGE_BASELINE_READ_DAYS] before this ViewModel's first local day, so a day browsed back that
+     * far still sees its full window. Mirrors the Swift `Repository.chargeBaselines`.
      */
-    val chargeBaselines: StateFlow<ChargeBaselines.Resolved?> = run {
+    val chargeBaselines: StateFlow<ChargeBaselines.Inputs?> = run {
         val startSec = System.currentTimeMillis() / 1000L
         val startTz = java.util.TimeZone.getDefault().getOffset(startSec * 1000L) / 1000L
-        val from = Baselines.cutoffKey(AnalyticsEngine.dayString(startSec, startTz), ChargeBaselines.windowDays - 1)
+        val from = Baselines.cutoffKey(AnalyticsEngine.dayString(startSec, startTz), CHARGE_BASELINE_READ_DAYS)
         combine(
             repository.importedDailyUnionFlow(deviceId, from, "9999-12-31"),
             repository.computedDailyUnionFlow(deviceId, from, "9999-12-31"),
             // #31: same-brand export nights seed at the lowest precedence, as in the engine.
             repository.baselineSeedDailyUnionFlow(deviceId, from, "9999-12-31"),
-        ) { imported, own, seed ->
-            val nowSec = System.currentTimeMillis() / 1000L
-            val tz = java.util.TimeZone.getDefault().getOffset(nowSec * 1000L) / 1000L
+            repository.computedScoreInputSourcesFlow(
+                deviceId, from, "9999-12-31", ChargeBaselines.sourceKeyPrecedence,
+            ),
+        ) { imported, own, seed, provenance ->
             val prefs = NoopPrefs.of(appContext)
-            ChargeBaselines.resolveWithSeed(
+            chargeBaselineInputs(
                 imported = imported,
                 own = own,
-                anchorDay = AnalyticsEngine.dayString(nowSec, tz),
-                hrvEpoch = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
-                recoveryEpoch = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
                 seed = seed,
+                provenance = provenance,
+                importedSourceId = deviceId,
+                hrvRecalibration = prefs.getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
+                recoveryRecalibration = prefs.getLong(Baselines.recoveryBaselineEpochKey, 0L).toDouble(),
             )
         }
             .flowOn(Dispatchers.Default)
@@ -1139,7 +1143,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             // otherwise the midnight rollover re-fires last night's recap for late-nighters (#567).
                             reportDay = todayRow.day,
                             chargePct = todayRow.recovery.scorePctOrNull(),
-                            restPct = RestScorer.restFromDaily(todayRow).scorePctOrNull(),
+                            // #55: the Rest the night was scored with (one resolver for every surface).
+                            restPct = repo.restScoreFor(activeStrapId, todayRow).scorePctOrNull(),
                         )
                     }
                     // #593: once-a-day optimal-strain-reached nudge. Convert the stored 0-100 Effort to the
@@ -1168,7 +1173,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         days = days,
                         cycleOptedIn = _cycleTrackingEnabled.value,
                         loggedPeriodStarts = loggedPeriodStarts,
-                        journalContext = illnessJournalContext(days),
+                        confounders = V5HealthSignals.IllnessConfounders(
+                            illnessJournalYes(days), illnessSleepMidpoints(),
+                        ),
                         activityBins = lastCircadianBins.first,
                         daysObserved = lastCircadianBins.second,
                     )
@@ -1202,7 +1209,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             recoveryPct = anchorRow?.recovery?.roundToInt(),
                             // Rest = the sleep_performance composite from THIS row's banked stage figures
                             // (pure, honest-null until last night is scored); Effort = the 0–100 strain. (#516)
-                            restPct = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
+                            // #55: resolved via the shared restScoreFor, as every other Rest surface.
+                            restPct = anchorRow?.let { repo.restScoreFor(activeStrapId, it)?.roundToInt() },
                             effortPct = anchorRow?.strain?.roundToInt(),
                             heartRate = live.heartRate,
                             // The ACTIVE device's charge (#2075): a ring reports its own and does not
@@ -1322,6 +1330,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                         profileStore.stepsHasBankedMotion = hasMotion
                     }
+                    IntelligenceEngine.hrmaxEvidenceSink = { profileStore.observedHrMaxEvidence = it }
                     IntelligenceEngine.analyzeRecent(
                         repo = repository,
                         profile = currentProfile(),
@@ -1350,7 +1359,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         stepsMotionCacheSet = { NoopPrefs.setStepsMotionCache(appContext, it) },
                         // Manual "Recalibrate baseline" anchor (Settings → Charge advanced). The analytics
                         // layer is Context-free, so read the epoch (whole seconds, written as a Long by the
-                        // button) here and thread it down — foldHistory drops every HRV night before it.
+                        // button) here and thread it down — the Charge HRV baseline drops every night before it.
                         baselineEpoch = NoopPrefs.of(appContext)
                             .getLong(Baselines.hrvBaselineEpochKey, 0L).toDouble(),
                         recoveryEpoch = NoopPrefs.of(appContext)
@@ -1449,6 +1458,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // #1816: clear the motion sink after the pass completes (success or failure) so a stale
                 // callback is never left behind. The next pass sets its own before calling analyzeRecent.
                 IntelligenceEngine.stepsHasMotionSink = null
+                IntelligenceEngine.hrmaxEvidenceSink = null
                 // Opt-in writeback: push the freshly computed nights into Health Connect so other
                 // apps see them. Idempotent (clientRecordId per metric+day), so re-running every
                 // cycle just upserts. Never let an HC hiccup (perm revoked mid-flight, provider
@@ -2090,6 +2100,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                 profileStore.stepsHasBankedMotion = hasMotion
             }
+            IntelligenceEngine.hrmaxEvidenceSink = { profileStore.observedHrMaxEvidence = it }
             IntelligenceEngine.analyzeRecent(
                 repo = repository,
                 profile = currentProfile(),
@@ -2130,6 +2141,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
         IntelligenceEngine.stepsHasMotionSink = null
+        IntelligenceEngine.hrmaxEvidenceSink = null
     }
     fun loadWorkouts() {
         viewModelScope.launch {
@@ -2169,6 +2181,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 strainMaxHR = profileStore.hrMax.toDouble(),
                 strainSex = profileStore.sex,
                 effortMethod = NoopPrefs.effortMethod(appContext),
+                // #50: newest measured resting HR (recentDays is oldest-first), as Swift reads `days`.
+                strainRestingHR = recentDays.value.lastOrNull { it.restingHr != null }?.restingHr?.toDouble(),
             )
             // #687: collapse the SAME activity tracked live under the strap AND imported from Health
             // Connect / Apple Health into one richer entry — they sit under different sources so without
@@ -2304,6 +2318,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             workoutEnd = to,
             maxHr = profileStore.hrMax.toDouble(),
         )
+    }
+
+    /** What the watch that recorded a workout reported about it (Training Effect, training load, intensity
+     *  minutes), read from `deviceMetricSample` over `[from, to]` under the row's own device id: the watch for
+     *  a synced Garmin activity, `activity-file` for an imported FIT file. null when that device stored none.
+     *  Swift twin: `Repository.workoutWatchReference`. */
+    suspend fun workoutWatchReference(from: Long, to: Long, rowDeviceId: String): com.noop.analytics.WorkoutWatchReference? {
+        if (to <= from || rowDeviceId.isEmpty()) return null
+        val samples = com.noop.analytics.WorkoutWatchReference.kinds.flatMap { kind ->
+            runCatching { repository.deviceMetricSamples(rowDeviceId, kind, from, to) }.getOrDefault(emptyList())
+                .map { com.noop.data.DeviceMetricRow(it.ts, kind, it.value, it.source) }
+        }
+        return com.noop.analytics.WorkoutWatchReference.summarize(samples)
     }
 
     /** Steps over a manual-workout window `[from, to]` from the strap's own `step_motion_counter@57`
@@ -3015,7 +3042,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     days = days,
                     cycleOptedIn = enabled,
                     loggedPeriodStarts = _periodStarts.value,
-                    journalContext = illnessJournalContext(days),
+                    confounders = V5HealthSignals.IllnessConfounders(
+                        illnessJournalYes(days), illnessSleepMidpoints(),
+                    ),
                     activityBins = bins.first,
                     daysObserved = bins.second,
                 )
@@ -3082,26 +3111,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             days = days,
             cycleOptedIn = _cycleTrackingEnabled.value,
             loggedPeriodStarts = starts,
-            journalContext = illnessJournalContext(days),
+            confounders = V5HealthSignals.IllnessConfounders(
+                illnessJournalYes(days), illnessSleepMidpoints(),
+            ),
             activityBins = bins.first,
             daysObserved = bins.second,
         )
     }
 
     /**
-     * Same-day confounder context for [IllnessSignalEngine] from the day's journal — alcohol / hard-or-late
-     * workout / "feeling unwell" suppress an anomaly so a hangover or a late session never reads as illness.
-     * Lightweight: derived from the latest day's exercise count + the cached "unwell" flag we can see here.
-     * (A fuller journal-tag read lands with the Mind pillar; this keeps the v5 pass honest without new I/O.)
+     * The journal questions answered YES on the recent nights' days (imported ∪ native, native winning a
+     * collision), for [IllnessInputs.context] to match on canonical catalog keys — alcohol, stress, sauna
+     * and "feeling sick or ill" all suppress or reframe the heads-up, the same as on Apple. A hard
+     * workout comes from the strain baseline inside [IllnessInputs], not from a session count.
      */
-    private fun illnessJournalContext(days: List<DailyMetric>): IllnessSignalEngine.Context {
-        val latest = days.lastOrNull()
-        val hardOrLate = (latest?.exerciseCount ?: 0) >= 2
-        return IllnessSignalEngine.Context(
-            hardOrLateWorkout = hardOrLate,
-            alreadyUnwell = false,
-        )
+    private suspend fun illnessJournalYes(days: List<DailyMetric>): List<String> {
+        val recent = IllnessInputs.recentDays(days.map { V5HealthSignals.illnessNight(it, emptyMap()) })
+        if (recent.isEmpty()) return emptyList()
+        val from = recent.min()
+        val to = recent.max()
+        return runCatching {
+            mergeJournalEntries(
+                repository.journal("my-whoop", from, to),
+                repository.journal(JOURNAL_DEVICE_ID, from, to),
+            ).filter { it.answeredYes && it.day in recent }.map { it.question }
+        }.getOrDefault(emptyList())
     }
+
+    /**
+     * The main sleep block's UTC midpoint per wake day over the illness builder's window, keyed the way
+     * the daily rows are (local end day), for the body-clock jump confounder. Twin of the Swift read in
+     * `AppModel.evaluateIllness`.
+     */
+    private suspend fun illnessSleepMidpoints(): Map<String, Double> = runCatching {
+        IllnessInputs.sleepMidpoints(
+            repository.allSleepSessionsUnion(deviceId, days = 40).map {
+                IllnessInputs.SleepBlock(WhoopRepository.localEndDay(it), it.effectiveStartTs, it.endTs)
+            },
+        )
+    }.getOrDefault(emptyMap())
 
     /** Build today's fused multi-device record for [FusedRecordScreen] (v5 Local Multi-Device Fusion).
      *  Reads each source's banked row for the logical day and runs the pure FusionResolver per metric;

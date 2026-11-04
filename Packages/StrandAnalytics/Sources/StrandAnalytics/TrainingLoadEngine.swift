@@ -2,10 +2,10 @@ import Foundation
 
 /// Long-horizon training-load model using exponentially weighted daily load.
 ///
-/// Complements `ReadinessEngine`'s existing rolling-mean ACWR and Foster monotony without replacing
-/// either and WITHOUT feeding the Readiness level. It keeps chronic load (CTL), acute load (ATL), and
-/// their difference (TSB / "form") in the SAME units as the supplied daily load. NOOP currently supplies
-/// daily Effort/strain, so these values are not TRIMP and must not be relabelled as such.
+/// Complements `ReadinessEngine`'s EWMA ACWR and Foster monotony without replacing either and WITHOUT
+/// feeding the Readiness level. It keeps chronic load (CTL), acute load (ATL), and their difference
+/// (TSB / "form") in the SAME units as the supplied daily load. NOOP's callers supply daily TRIMP
+/// recovered from Effort (`EffortLoad.trimp(fromEffort:)`), not the log-scaled Effort itself.
 ///
 /// Model:
 ///   alpha = 1 - exp(-1 / tauDays)
@@ -235,7 +235,7 @@ public enum TrainingLoadEngine {
 
     /// Gregorian date -> day ordinal using Howard Hinnant's civil-date transform. Integer-only and
     /// timezone-free so the Swift/Kotlin twins cannot drift around DST or locale boundaries.
-    private static func dayOrdinal(_ value: String) -> Int? {
+    static func dayOrdinal(_ value: String) -> Int? {
         let parts = value.split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3,
               parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,

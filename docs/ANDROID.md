@@ -594,8 +594,9 @@ post-import rescore via `CaptureImporter.analyzeWindowDays(firstDay, today)`:
 
 **Caveats.**
 
-- **Recovery needs ≥7 baseline nights** (`ReadinessEngine`), so a short capture imports sleep / strain
-  / HRV / resting-HR but leaves `recovery` null until enough history accumulates — expected, not a bug.
+- **Charge needs ≥4 valid HRV nights in the 60 days before a day** (the `ChargeBaselines` cold-start
+  gate), so a short capture imports sleep / strain / HRV / resting-HR but leaves `recovery` null until
+  enough history accumulates — expected, not a bug.
 - **WHOOP 4 SpO₂ / skin-temp** historical records carry raw PPG counts (`red`/`ir`) and a raw temp int,
   not calibrated `%`/`°C`; the engine does not derive daily SpO₂ / skin-temp from them, so those daily
   fields stay null on a 4.0 import.

@@ -56,14 +56,15 @@ final class ChargeDriversTests: XCTestCase {
         let positiveRHRBaseline = BaselineState(
             baseline: 60.0, spread: 0.1, nValid: 14,
             nightsSinceUpdate: 0, status: .trusted)
+        // #53: resting HR sits inside the ±3 term clamp so the HRV marginal alone moves (re-searched ties).
         let positiveBelowTie = hrvMarginal(
-            hrv: 33.09890762408082, rhr: 58.541,
+            hrv: 30.017981401673083, rhr: 59.7015,
             hrvBaseline: positiveHRVBaseline, rhrBaseline: positiveRHRBaseline)
         let positiveTie = hrvMarginal(
-            hrv: 33.099135135290354, rhr: 58.541,
+            hrv: 30.017981401673087, rhr: 59.7015,
             hrvBaseline: positiveHRVBaseline, rhrBaseline: positiveRHRBaseline)
         let positiveBeyondTie = hrvMarginal(
-            hrv: 33.09936273466694, rhr: 58.541,
+            hrv: 30.01798140167309, rhr: 59.7015,
             hrvBaseline: positiveHRVBaseline, rhrBaseline: positiveRHRBaseline)
         XCTAssertLessThan(positiveBelowTie.raw, 0.5)
         XCTAssertEqual(positiveBelowTie.points, 0)

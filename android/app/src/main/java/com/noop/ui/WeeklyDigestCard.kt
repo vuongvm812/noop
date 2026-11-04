@@ -76,6 +76,9 @@ fun buildWeeklyDigest(
     days: List<DailyMetric>,
     anchorDay: String = logicalDayKeyNow(),
     effortDisplayFactor: Double = 1.0,
+    // #55: the Rest each day was scored with (imported, else the engine's persisted value). A day missing
+    // here is not scored yet and falls back to the cold-start composite from its totals.
+    restByDay: Map<String, Double> = emptyMap(),
 ): WeeklyDigest {
     val charge = HashMap<String, Double>()
     val effort = HashMap<String, Double>()
@@ -85,8 +88,8 @@ fun buildWeeklyDigest(
     for (d in days) {
         d.recovery?.let { charge[d.day] = it }
         d.strain?.let { effort[d.day] = it }
-        // Rest = the sleep-performance composite recomputed on the persisted day.
-        RestScorer.restFromDaily(d)?.let { rest[d.day] = it }
+        // Rest = the score the day was scored with (#55), else the cold-start composite.
+        (restByDay[d.day] ?: RestScorer.restFromDaily(d))?.let { rest[d.day] = it }
         d.restingHr?.let { rhr[d.day] = it.toDouble() }
         d.avgHrv?.let { hrv[d.day] = it }
     }
@@ -103,6 +106,26 @@ fun buildWeeklyDigest(
     )
 }
 
+/**
+ * #55: per-day Rest as every Rest surface resolves it — the imported WHOOP figure, else the engine's
+ * persisted `sleep_performance` (scored against the night's sleep context). Reloads when [days] changes,
+ * which is when a pass has rewritten the series. Empty until loaded (cold-start fallback per day).
+ */
+@Composable
+internal fun rememberRestByDay(days: List<DailyMetric>): Map<String, Double> {
+    val app = LocalContext.current.applicationContext as com.noop.NoopApplication
+    val state = androidx.compose.runtime.produceState(emptyMap<String, Double>(), days) {
+        value = runCatching {
+            val repo = app.repository
+            val computed = loadComputedSleepSeries(repo, app.activeDeviceId).performance
+            val imported = repo.metricSeries(com.noop.data.WhoopRepository.WHOOP_SOURCE, "sleep_performance",
+                "0000-00-00", "9999-99-99").associate { it.day to it.value }
+            computed + imported
+        }.getOrDefault(emptyMap())
+    }
+    return state.value
+}
+
 // MARK: - Embeddable card
 
 /**
@@ -113,7 +136,8 @@ fun buildWeeklyDigest(
 fun WeeklyDigestCard(vm: AppViewModel, modifier: Modifier = Modifier) {
     val days by vm.recentDays.collectAsStateWithLifecycle()
     val factor = effortDisplayFactor(UnitPrefs.effortScale(LocalContext.current))
-    val digest = buildWeeklyDigest(days, effortDisplayFactor = factor)
+    val restByDay = rememberRestByDay(days)
+    val digest = buildWeeklyDigest(days, effortDisplayFactor = factor, restByDay = restByDay)
     if (digest.isEmpty) return
     NoopCard(modifier = modifier) {
         WeeklyDigestContent(digest = digest, compact = true)
@@ -127,8 +151,9 @@ fun WeeklyDigestCard(vm: AppViewModel, modifier: Modifier = Modifier) {
 fun WeeklyDigestScreen(vm: AppViewModel) {
     val days by vm.recentDays.collectAsStateWithLifecycle()
     val factor = effortDisplayFactor(UnitPrefs.effortScale(LocalContext.current))
+    val restByDay = rememberRestByDay(days)
     ScreenScaffold(title = uiString(R.string.l10n_weekly_digest_card_week_in_review_66d95a07), subtitle = "Your Monday-to-Sunday, read in one glance.") {
-        val digest = buildWeeklyDigest(days, effortDisplayFactor = factor)
+        val digest = buildWeeklyDigest(days, effortDisplayFactor = factor, restByDay = restByDay)
         if (digest.isEmpty) {
             DataPendingNote(
                 title = uiString(R.string.l10n_weekly_digest_card_no_readings_this_week_yet_0745a2df),

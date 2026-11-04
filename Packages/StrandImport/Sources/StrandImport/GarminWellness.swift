@@ -18,11 +18,17 @@ import Foundation
 //                           (/1000 s), 5 activity_type, 11 local_timestamp, 19 active_calories
 //                           (kcal, cumulative), 24 type+intensity (bits 0-4 type, 5-7 intensity),
 //                           26 timestamp_16, 27 heart_rate, 33/34 moderate/vigorous minutes
-//   103 MONITORING_INFO     0 local_timestamp, 5 resting_metabolic_rate (kcal/day)
+//   103 MONITORING_INFO     0 local_timestamp (the file's UTC offset). Field 5, resting_metabolic_rate, is
+//                           not read: it rides in the same files as the MONITORING totals, and field 1
+//                           `calories` already includes it, so it has no day the watch total lacks (#51).
+//   229 MAX_MET_DATA        0 update_time, 2 vo2_max (/10 mL/kg/min), the watch's own VO2max estimate.
+//                           From the public FIT SDK profile; not yet observed in a watch file here.
 //   211 MONITORING_HR_DATA  0 resting_heart_rate, 1 current_day_resting_heart_rate (preferred)
 //   227 STRESS_LEVEL        0 stress_level_value (sint16, negative = no reading), 1 stress_level_time,
 //                           3 body_energy (Body Battery, sint8)
-//   269 SPO2_DATA           0 reading_spo2 (%), 1 reading_confidence, 2 mode (1 manual, 3 automatic)
+//   269 SPO2_DATA           0 reading_spo2 (%), 2 mode (FIT spo2_measurement_type: 0 off wrist, 1 spot
+//                           check, 2 continuous, 3 periodic). Off-wrist and spot-check readings are
+//                           skipped (#52). 1 reading_confidence is not read: the FIT profile gives it no scale.
 //   21  EVENT               0 event, 1 event_type (0 start, 1 stop). Only event 74 is read: the watch's
 //                           own sleep window. OBSERVED on a Forerunner 165 (fw 29.05, 2026-11-03): the
 //                           sleep file carries one start and one stop, and they match the window the
@@ -51,6 +57,10 @@ import Foundation
 //   398 SKIN_TEMP_OVERNIGHT 0 local_timestamp, 1 average deviation, 2 7-day average deviation,
 //                           4 nightly value (float32), 3 calibrated days (u8)
 //
+// Plausible ranges (#52): SpO2 70-100 %, respiration 4-60 breaths/min (raw 400-6000), HRV values
+// 5-300 ms (raw 640-38400); a value outside is dropped as a sentinel or misread, never stored. The same
+// bounds are `WhoopStore.garminSpo2Min` / `garminSpo2Max` and the rest.
+//
 // Timestamps: only field 253 and compressed-timestamp headers move the file's running timestamp. A
 // message without its own 253 takes the running one. MONITORING may instead carry `timestamp_16`, the
 // low 16 bits of its time, resolved forward from the previous monitoring time (FIT SDK rule), which is
@@ -58,9 +68,12 @@ import Foundation
 //
 // Cumulative counters: MONITORING calories, active calories, distance and cycles are running totals
 // per activity type that reset at local midnight. A day's total is the sum, over activity types, of
-// each type's largest value that day (`dailyActivity`), never the sum of every record. A record stamped
-// exactly at local midnight belongs to the day that just ended: a Forerunner 165 writes its final
-// totals at 00:00:00 before the counters reset.
+// each type's largest value that day (`dailyActivity`), never the sum of every record. Steps sum only
+// the step types (`GarminWellnessParser.stepActivityTypes`): cycling, swimming and fitness equipment
+// count strokes or revolutions in the same field. A record stamped exactly at local midnight belongs
+// to the day that just ended: a Forerunner 165 writes its final totals at 00:00:00 before the counters
+// reset. `calories` (field 1) is the day's TOTAL energy, resting metabolic rate included;
+// `active_calories` (field 19) is the part above it.
 //
 // SECURITY: all reads go through `FitRecordStream`, which bounds-checks every access and stops at the
 // first malformed definition or truncated record. Unknown messages and developer fields are skipped.
@@ -88,6 +101,17 @@ public struct GarminWellnessSamples: Equatable, Sendable {
         public let vigorousMin: Int?
     }
 
+    /// One activity type's largest cumulative MONITORING counters on one local day. `activityType` is
+    /// -1 for records that carry none.
+    public struct DailyTypePeak: Equatable, Sendable {
+        public let day: String
+        public let activityType: Int
+        public let cycles: Int?
+        public let distanceM: Double?
+        public let calories: Int?
+        public let activeCalories: Int?
+    }
+
     /// A local day's activity totals, folded from the cumulative MONITORING counters.
     public struct DailyActivity: Equatable, Sendable {
         public let day: String
@@ -100,8 +124,6 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public struct Spo2: Equatable, Sendable {
         public let ts: Int64
         public let percent: Int
-        public let confidence: Int?
-        public let mode: Int?
     }
 
     /// One raw sleep sample slot (274). Heart rate and movement are nil when the row holds none.
@@ -173,12 +195,13 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public var monitoring: [Monitoring] = []
     /// Folded with `utcOffsetS`, or UTC when the file carries no offset.
     public var dailyActivity: [DailyActivity] = []
-    public var restingMetabolicRate: [TimedInt] = []
     public var restingHeartRate: [TimedInt] = []
     public var stress: [TimedInt] = []
     public var bodyBattery: [TimedInt] = []
     public var spo2: [Spo2] = []
     public var respiration: [TimedDouble] = []
+    /// The watch's own VO2max estimates (MAX_MET_DATA), mL/kg/min, stamped at their update time.
+    public var vo2max: [TimedDouble] = []
     public var sleepLevels: [TimedInt] = []
     /// The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop.
     public var sleepMarks: [TimedInt] = []
@@ -200,7 +223,7 @@ public struct GarminWellnessSamples: Equatable, Sendable {
     public init() {}
 
     public var isEmpty: Bool {
-        monitoring.isEmpty && restingMetabolicRate.isEmpty && restingHeartRate.isEmpty && stress.isEmpty
+        monitoring.isEmpty && restingHeartRate.isEmpty && stress.isEmpty && vo2max.isEmpty
             && bodyBattery.isEmpty && spo2.isEmpty && respiration.isEmpty && sleepLevels.isEmpty
             && sleepRaw.isEmpty && sleepAssessments.isEmpty && hrvSummaries.isEmpty && hrvValues.isEmpty
             && beatIntervalsCandidate.isEmpty && skinTempRawCandidate.isEmpty
@@ -214,13 +237,20 @@ public enum GarminWellnessParser {
     /// the `*Candidate` fields.
     public static var candidateMessages: Set<Int> { [290, 397, 398] }
 
-    /// Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-    /// largest value of each counter, summed over activity types. A record stamped exactly at local
-    /// midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
-    /// the counters reset), so it counts toward the previous day. The counters only rise within a day,
-    /// so the largest value is the day's total even when records arrive out of order.
-    /// Kotlin twin: `GarminWellnessParser.dailyTotals`.
-    public static func dailyTotals(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyActivity] {
+    /// FIT activity types whose MONITORING `cycles` counter is a step count: generic (0), running (1),
+    /// walking (6), sedentary (8), and a record with no type (-1). Cycling (2), swimming (5) and fitness
+    /// equipment (4) count revolutions, strokes or repetitions in the same field; transition (3) and the
+    /// "all" summary type (254) would double-count a sport's own counter (#51).
+    /// Kotlin twin: `GarminWellnessParser.STEP_ACTIVITY_TYPES`.
+    public static let stepActivityTypes: Set<Int> = [-1, 0, 1, 6, 8]
+
+    /// Folds cumulative MONITORING counters into per-(local day, activity type) peaks: each counter's
+    /// largest value. A record stamped exactly at local midnight carries the day that just ended (the
+    /// watch writes its final totals at 00:00:00 before the counters reset), so it counts toward the
+    /// previous day. The counters only rise within a day, so the largest value is the type's day total
+    /// even when records arrive out of order. Sorted by day, then activity type.
+    /// Kotlin twin: `GarminWellnessParser.dailyTypePeaks`.
+    public static func dailyTypePeaks(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyTypePeak] {
         struct Peak { var cycles: Int?; var distance: Double?; var calories: Int?; var active: Int? }
         var byDay: [String: [Int: Peak]] = [:]
         for r in records {
@@ -235,13 +265,25 @@ public enum GarminWellnessParser {
             types[r.activityType ?? -1] = peak
             byDay[day] = types
         }
+        return byDay.keys.sorted().flatMap { day in
+            byDay[day]!.sorted { $0.key < $1.key }.map { type, p in
+                GarminWellnessSamples.DailyTypePeak(day: day, activityType: type, cycles: p.cycles,
+                                                    distanceM: p.distance, calories: p.calories, activeCalories: p.active)
+            }
+        }
+    }
+
+    /// Local-day totals: the sum over activity types of each type's peak (`dailyTypePeaks`). Steps sum
+    /// only `stepActivityTypes`. Kotlin twin: `GarminWellnessParser.dailyTotals`.
+    public static func dailyTotals(_ records: [GarminWellnessSamples.Monitoring], utcOffsetS: Int) -> [GarminWellnessSamples.DailyActivity] {
+        let byDay = Dictionary(grouping: dailyTypePeaks(records, utcOffsetS: utcOffsetS), by: \.day)
         return byDay.keys.sorted().map { day in
             // Sum in activity-type order so the floating-point total is platform-independent.
-            let peaks = byDay[day]!.sorted { $0.key < $1.key }.map(\.value)
-            let steps = peaks.compactMap(\.cycles)
-            let distances = peaks.compactMap(\.distance)
+            let peaks = byDay[day]!
+            let steps = peaks.filter { stepActivityTypes.contains($0.activityType) }.compactMap(\.cycles)
+            let distances = peaks.compactMap(\.distanceM)
             let calories = peaks.compactMap(\.calories)
-            let active = peaks.compactMap(\.active)
+            let active = peaks.compactMap(\.activeCalories)
             return GarminWellnessSamples.DailyActivity(day: day,
                                  steps: steps.isEmpty ? nil : steps.reduce(0, +),
                                  distanceM: distances.isEmpty ? nil : distances.reduce(0, +),
@@ -249,6 +291,10 @@ public enum GarminWellnessParser {
                                  activeCalories: active.isEmpty ? nil : active.reduce(0, +))
         }
     }
+
+    /// The lowest SPO2_DATA mode kept: 0 (off wrist) and 1 (a manual spot check) are not background
+    /// readings (#52). Kotlin twin: `GarminWellnessParser.SPO2_MIN_BACKGROUND_MODE`.
+    static let spo2MinBackgroundMode = 2
 
     /// Rows further apart than this, with no sleep window around them, are two nights. Generous because
     /// the watch writes a row only when the stage changes.
@@ -472,9 +518,9 @@ public enum GarminWellnessParser {
             case 55: monitoring(m)
             case 103:
                 noteOffset(local: m.u(0), fitTs: running)
-                guard m.u(5) != nil else { return }
-                guard let ts = Self.unix(running), let rmr = Self.range(m.u(5), 1, 20_000) else { return drop() }
-                out.restingMetabolicRate.append(.init(ts: ts, value: rmr))
+            case 229:
+                guard let ts = Self.unix(m.u(0) ?? running), let raw = Self.range(m.u(2), 100, 900) else { return drop() }
+                out.vo2max.append(.init(ts: ts, value: Double(raw) / 10))
             case 211:
                 guard let ts = Self.unix(running),
                       let rhr = Self.range(m.u(1), 1, 300) ?? Self.range(m.u(0), 1, 300) else { return drop() }
@@ -484,8 +530,9 @@ public enum GarminWellnessParser {
                 if let v = Self.range(m.s(0), 0, 100) { out.stress.append(.init(ts: ts, value: v)) }
                 if let v = Self.range(m.s(3), 0, 100) { out.bodyBattery.append(.init(ts: ts, value: v)) }
             case 269:
-                guard let ts = Self.unix(running), let pct = Self.range(m.u(0), 1, 100) else { return drop() }
-                out.spo2.append(.init(ts: ts, percent: pct, confidence: m.value(1), mode: m.value(2)))
+                guard let ts = Self.unix(running), let pct = Self.range(m.u(0), 70, 100) else { return drop() }
+                if let mode = m.value(2), mode < GarminWellnessParser.spo2MinBackgroundMode { break }
+                out.spo2.append(.init(ts: ts, percent: pct))
             case 273:
                 noteOffset(local: m.u(2), fitTs: running)
                 rawStart = Self.unix(running)
@@ -498,7 +545,7 @@ public enum GarminWellnessParser {
                 // Awake and unmeasurable rows occupy a raw sample slot of their own.
                 if rawStart != nil, level <= 1 { rawSlot += 1 }
             case 297:
-                guard let ts = Self.unix(running), let raw = m.s(0), raw > 0 else { return drop() }
+                guard let ts = Self.unix(running), let raw = Self.range(m.s(0), 400, 6000) else { return drop() }
                 out.respiration.append(.init(ts: ts, value: Double(raw) / 100))
             case 346: sleepAssessment(m)
             case 370:
@@ -509,7 +556,7 @@ public enum GarminWellnessParser {
                                               baselineBalancedUpperMs: m.scaled(5, 128),
                                               status: Self.range(m.u(6), 0, 4)))
             case 371:
-                guard let ts = Self.unix(running), let v = m.u(0) else { return drop() }
+                guard let ts = Self.unix(running), let v = Self.range(m.u(0), 640, 38_400) else { return drop() }
                 out.hrvValues.append(.init(ts: ts, value: Double(v) / 128))
             case 290: beatIntervalsRow(m)
             case 397:

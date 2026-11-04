@@ -70,4 +70,14 @@ final class WorkoutHrDeviceKeyTests: XCTestCase {
                                           importedIds: ["my-whoop", "whoop-zzz"]),
             ["whoop-aabbcc"])
     }
+
+    /// #50: a Garmin row reads the watch's own trace, stored under the watch id that is also its source.
+    func testGarminReadsTheWatchId_notTheWornStrap() {
+        XCTAssertEqual(
+            Repository.workoutHrDeviceIds(source: "garmin-1234", activeStrapId: "whoop-aabbcc",
+                                          importedIds: ["whoop-aabbcc", "my-whoop"]),
+            ["garmin-1234"])
+        XCTAssertEqual(WorkoutSource.classify("garmin-1234"), .garmin)
+        XCTAssertEqual(WorkoutSource.classify("garmin-import"), .apple)
+    }
 }

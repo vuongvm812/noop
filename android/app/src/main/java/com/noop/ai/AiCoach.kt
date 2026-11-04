@@ -452,7 +452,7 @@ class AiCoach(
         sb.append("respiration ${avg1(last30) { it.respRateBpm }}/min, ")
         sb.append("skin-temp deviation ${avg1(last30) { it.skinTempDevC }}°C, ")
         sb.append("steps ${avgInt(last30) { d -> d.steps?.toDouble() }}/day, ")
-        sb.append("active energy ${avgInt(last30) { it.activeKcalEst }}kcal/day\n")
+        sb.append("total energy ${avgInt(last30) { it.activeKcalEst }}kcal/day\n")
 
         // --- Recent workouts (derived from logged exercise counts + day strain) ---
         val workoutDays = last14.filter { (it.exerciseCount ?: 0) > 0 }

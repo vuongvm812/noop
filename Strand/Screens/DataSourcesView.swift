@@ -575,9 +575,12 @@ struct DataSourcesView: View {
                 // insert is keyed on (deviceId, ts), so re-importing the same file is idempotent (an
                 // identical ts overwrites, never duplicates). Skipped when the file carried no
                 // timestamped HR (a pure GPS track) — nothing to store, so day Effort stays honestly dark.
-                if !activity.hrSamples.isEmpty {
-                    let hr = activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) }
-                    _ = try? await store.insert(Streams(hr: hr), deviceId: ActivityFileImporter.sourceId)
+                // The watch's own Training Effect / training load (a FIT session's reference values) ride in
+                // the same insert, so the workout detail can show them.
+                let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
+                                      deviceMetric: GarminWatchIngest.activityReference(activity))
+                if !streams.isEmpty {
+                    _ = try? await store.insert(streams, deviceId: ActivityFileImporter.sourceId)
                 }
                 // #1058: recompute the day's activity-file step total as the SUM over ALL that day's
                 // sessions (now that each carries its own steps), so a second file for the same day ADDS

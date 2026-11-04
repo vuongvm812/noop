@@ -30,7 +30,7 @@ object FusionDayAdapter {
         MetricSpec("skin_temp", "Skin temperature"),
         MetricSpec("spo2", "Blood O₂"),
         MetricSpec("steps", "Steps"),
-        MetricSpec("active_kcal", "Active energy"),
+        MetricSpec("energy_kcal", "Calories"),
         MetricSpec("sleep_total_min", "Asleep time"),
         MetricSpec("sleep_deep_min", "Deep sleep"),
         MetricSpec("sleep_rem_min", "REM sleep"),

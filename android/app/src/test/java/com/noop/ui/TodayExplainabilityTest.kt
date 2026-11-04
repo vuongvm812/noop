@@ -102,40 +102,35 @@ class TodayExplainabilityTest {
         // old whole-history fold and the carry genuinely used to win.
         // Twin of the Swift `testScoreState_gapLongerThanTheChargeWindow_calibratesRatherThanCarrying`.
         val anchor = "2026-02-11"
-        // 2026-01-01..2026-01-14 are 41..28 days before the anchor: fourteen nights, every one of them
-        // outside the 21-day window (which opens 2026-01-22).
-        val oldNights = (1..14).map { String.format("2026-01-%02d", it) to 70.0 }
+        // 2025-11-01..2025-11-14 are 102..89 days before the anchor: fourteen nights, every one of them
+        // outside the 60-day window (#53; it ends the day before the anchor and opens 2025-12-13).
+        val oldNights = (1..14).map { String.format("2025-11-%02d", it) to 70.0 }
         val lastNight = oldNights.last().first
 
-        // BEFORE #2525: the fold saw every banked night, so nValid was 14, over `minNightsSeed`, the
+        // BEFORE #2525: the baseline saw every banked night, so nValid was 14, over `minNightsSeed`, the
         // count was null and the carry won. That is the "Latest sleep" the test above describes.
-        val unwindowed = recoveryCalibrationNights(
-            oldNights.map { it.second }, oldNights.map { it.first },
-            hasRecovery = false, hrvBaselineEpoch = 0.0,
+        val unbounded = ChargeBaselines.state(
+            oldNights.map { it.second }, oldNights.map { it.first }, ChargeBaselines.Metric.HRV, anchor, 0.0,
         )
+        val unwindowed = recoveryCalibrationNights(unbounded, hasRecovery = false)
         assertNull("fourteen banked nights were trusted, so the tile carried", unwindowed)
         assertEquals(
-            ScoreState.CarriedLastNight("14 Jan", true),
+            ScoreState.CarriedLastNight("14 Nov", true),
             scoreStateForToday(
                 todayRecovery = null, calibratingNights = unwindowed,
                 carriedDay = day(lastNight, recovery = 65.0), today = anchor,
             ),
         )
 
-        // SINCE #2525: the window drops all fourteen, so the fold is empty and the count is 0.
-        val history = ChargeBaselines.history(
-            imported = emptyList(),
-            own = oldNights,
-            anchorDay = anchor,
-            cfg = Baselines.hrvCfg,
-            baselineEpoch = 0.0,
-        )
-        assertEquals(0, history.ownValidNights)
-        assertTrue("nights outside the window must not reach the fold", history.values.isEmpty())
+        // SINCE #2525 (#53: per day, 60-day window): the window drops all fourteen, so the baseline the
+        // anchor day resolves is empty and the count is 0.
+        val ownRows = oldNights.map { DailyMetric(deviceId = "my-whoop-noop", day = it.first, avgHrv = it.second) }
+        val resolved = ChargeBaselines.Inputs(emptyList(), ownRows, emptyList(), emptyList(), 0.0, 0.0)
+            .resolve(anchor)!!
+        assertEquals(0, resolved.hrvHistory.ownValidNights)
+        assertTrue("nights outside the window must not reach the baseline", resolved.hrvHistory.values.isEmpty())
 
-        val n = recoveryCalibrationNights(
-            history.values, history.dayKeys, hasRecovery = false, hrvBaselineEpoch = 0.0,
-        )
+        val n = recoveryCalibrationNights(resolved.hrv, hasRecovery = false)
         assertEquals(0, n)
 
         val state = scoreStateForToday(

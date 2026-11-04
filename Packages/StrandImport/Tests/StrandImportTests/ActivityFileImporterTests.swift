@@ -270,6 +270,49 @@ final class ActivityFileImporterTests: XCTestCase {
         XCTAssertEqual(a.hrSamples.map { $0.ts }, [fitBase, fitBase + 10, fitBase + 20])
     }
 
+    /// The watch's own reference values from the FIT session (#54): total_training_effect(24) and
+    /// total_anaerobic_training_effect(137) as u8 scale 10, training_load_peak(168) as s32 scale 65536.
+    /// Kotlin twin: `ActivityFileImporterTest.fitSessionTrainingEffectAndLoad`, same bytes and literals.
+    func testFitSessionTrainingEffectAndLoad() {
+        func session(aerobic: UInt8, anaerobic: UInt8, load: Int32) -> ActivityFile? {
+            var fit = FitFixture()
+            fit.definition(local: 0, global: 18, fields: [
+                (2, 4, 0x86), (5, 1, 0x00), (7, 4, 0x86), (24, 1, 0x02), (137, 1, 0x02), (168, 4, 0x85),
+            ])
+            fit.dataHeader(local: 0)
+            fit.u32(100_000)                         // start_time
+            fit.u8(1)                                // sport = running
+            fit.u32(1_800_000)                       // total_elapsed_time = 1800 s
+            fit.u8(aerobic)
+            fit.u8(anaerobic)
+            fit.i32(load)
+            return ActivityFileImporter.parse(data: fit.finish(), filename: "run.fit").activity
+        }
+        let a = try! XCTUnwrap(session(aerobic: 32, anaerobic: 11, load: 85 * 65_536 + 32_768))
+        XCTAssertEqual(a.aerobicTrainingEffect, 3.2)
+        XCTAssertEqual(a.anaerobicTrainingEffect, 1.1)
+        XCTAssertEqual(a.trainingLoad, 85.5)
+        let ref = GarminWatchIngest.activityReference(a)
+        XCTAssertEqual(ref.map { "\($0.kind.rawValue) \($0.ts) \($0.value) \($0.source)" }, [
+            "aerobic_training_effect 631165600 3.2 fit18",
+            "anaerobic_training_effect 631165600 1.1 fit18",
+            "training_load 631165600 85.5 fit18",
+        ])
+
+        // Invalid sentinels (0xFF, 0x7FFFFFFF), an out-of-range Training Effect and a negative load read as absent.
+        let none = try! XCTUnwrap(session(aerobic: 0xFF, anaerobic: 51, load: 0x7FFF_FFFF))
+        XCTAssertNil(none.aerobicTrainingEffect)
+        XCTAssertNil(none.anaerobicTrainingEffect)
+        XCTAssertNil(none.trainingLoad)
+        XCTAssertEqual(GarminWatchIngest.activityReference(none), [])
+        XCTAssertNil(try! XCTUnwrap(session(aerobic: 0, anaerobic: 0, load: -1)).trainingLoad)
+        XCTAssertEqual(try! XCTUnwrap(session(aerobic: 0, anaerobic: 50, load: 0)).anaerobicTrainingEffect, 5.0)
+
+        // GPX/TCX carry no Training Effect: nothing to store.
+        let gpx = ActivityFile(kind: .gpx, start: Date(timeIntervalSince1970: 1_000), end: Date(timeIntervalSince1970: 2_000))
+        XCTAssertEqual(GarminWatchIngest.activityReference(gpx), [])
+    }
+
     func testFitDetectionFromMagicBytes() {
         var fit = FitFixture()
         fit.definition(local: 0, global: 20, fields: [(253, 4, 0x86), (3, 1, 0x02)])

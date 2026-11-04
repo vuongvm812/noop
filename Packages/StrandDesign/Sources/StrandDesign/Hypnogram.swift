@@ -1,5 +1,5 @@
 #if !os(watchOS)
-// The watch never draws the hypnogram (uses .onContinuousHover + ChartHover helpers, unavailable
+// The watch never draws the hypnogram (uses .chartScrub + ChartHover helpers, unavailable
 // on watchOS); excluded there, iOS/macOS unchanged.
 import SwiftUI
 
@@ -146,8 +146,9 @@ public struct Hypnogram: View {
         return ivs
     }
 
-    /// Index of the hovered interval, or nil.
-    @State private var hoverIndex: Int? = nil
+    /// The scrub cursor's x in the plot's local space (pointer hover, click-drag, or a held finger), nil
+    /// when no cursor is shown (#58). The band under it is resolved in `body`.
+    @State private var scrubX: CGFloat? = nil
 
     private static let clockFormatter: DateFormatter = {
         // "jmm" respects the device's 12-/24-hour setting (#337) rather than forcing 24-hour.
@@ -230,6 +231,8 @@ public struct Hypnogram: View {
             if showsStageAxis { axis }
             VStack(spacing: 6) {
                 GeometryReader { geo in
+                    let hit = showsHover ? scrubX.flatMap { scrubHit(atX: $0, in: geo.size) } : nil
+                    let hoverIndex = hit.flatMap { $0.inGap ? nil : $0.index }
                     ZStack {
                         // STATIC LAYER: baselines + time-axis hairlines + risers + the stage bands.
                         // These rebuild only when intervals/size/hover change, so flatten them into ONE
@@ -298,7 +301,16 @@ public struct Hypnogram: View {
                         .accessibilityHidden(true)
 
                         // Hover affordance: crosshair, band highlight ring, tooltip.
-                        if showsHover, let idx = hoverIndex, idx < intervals.count {
+                        if let hit, hit.inGap, let sx = scrubX {
+                            // Between two stage runs (a holed night): no stage was recorded here.
+                            let x = min(max(sx, 0), geo.size.width)
+                            CrosshairRule(x: x, height: geo.size.height)
+                            PositionedTooltip(
+                                anchor: CGPoint(x: x, y: geo.size.height / 2),
+                                container: geo.size,
+                                tooltip: ChartTooltip(value: ChartScrubMath.noDataText, label: timeLabel(hit.time))
+                            )
+                        } else if let idx = hoverIndex, idx < intervals.count {
                             let interval = intervals[idx]
                             let rect = bandRect(for: interval, in: geo.size)
                             let color = stageColor(interval.stage)
@@ -322,16 +334,9 @@ public struct Hypnogram: View {
                     }
                     .animation(StrandMotion.fade, value: hoverIndex)
                     .animation(StrandMotion.fade, value: highlightedStage)
-                    .contentShape(Rectangle())
-                    .onContinuousHover(coordinateSpace: .local) { phase in
-                        guard showsHover else { return }
-                        switch phase {
-                        case .active(let location):
-                            hoverIndex = intervalIndex(atX: location.x, in: geo.size)
-                        case .ended:
-                            hoverIndex = nil
-                        }
-                    }
+                    // Hover, click-drag on macOS, touch-and-hold then drag on iOS (#58).
+                    .chartScrub($scrubX, enabled: showsHover)
+                    .chartScrubHaptic(hit.map { $0.inGap ? -1 - $0.index : $0.index })
                     // ONE collapsed VoiceOver element for the whole hypnogram (per-stage totals), instead
                     // of the old O(intervals) per-band layer the accessibility walk re-copied each scroll
                     // frame (#707). The visual bands already live in a `.drawingGroup()` marked
@@ -356,21 +361,39 @@ public struct Hypnogram: View {
         }
     }
 
-    /// The interval whose horizontal span contains a local x, or the nearest.
-    private func intervalIndex(atX x: CGFloat, in size: CGSize) -> Int? {
-        guard !intervals.isEmpty, size.width > 0 else { return nil }
-        let t = origin + Double(x / size.width) * span
-        // First try an exact containment hit.
-        for (i, iv) in intervals.enumerated() where t >= iv.start && t <= iv.end {
-            return i
-        }
-        // Otherwise snap to the nearest interval by centre time.
-        return intervals.enumerated().min(by: { a, b in
-            abs(midTime(a.element) - t) < abs(midTime(b.element) - t)
-        })?.offset
+    /// What the scrub cursor at a local x is on: the interval under it, or the time of an uncovered
+    /// stretch between two intervals (#58).
+    private func scrubHit(atX x: CGFloat, in size: CGSize) -> ScrubHit? {
+        guard size.width > 0 else { return nil }
+        let clamped = min(max(x, 0), size.width)
+        return Self.scrubHit(at: origin + Double(clamped / size.width) * span, in: intervals)
     }
 
-    private func midTime(_ iv: SleepInterval) -> TimeInterval { (iv.start + iv.end) / 2 }
+    /// What a scrub cursor resolved to: the interval under it (or nearest), whether the instant is
+    /// covered by no interval at all, and the instant itself in seconds from the night's start.
+    public struct ScrubHit: Equatable, Sendable {
+        public var index: Int
+        public var inGap: Bool
+        public var time: TimeInterval
+    }
+
+    /// Resolve an instant `t` (seconds from the night's start) against ascending `intervals`. An interval
+    /// containing `t` wins; otherwise the nearest by centre time. The instant is a gap only when it sits
+    /// more than one 30 s epoch from every interval, so the sub-epoch seams between stage runs still read
+    /// as the neighbouring stage. Pure, so the tests pin it without a render.
+    public static func scrubHit(at t: TimeInterval, in intervals: [SleepInterval]) -> ScrubHit? {
+        guard !intervals.isEmpty else { return nil }
+        for (i, iv) in intervals.enumerated() where t >= iv.start && t <= iv.end {
+            return ScrubHit(index: i, inGap: false, time: t)
+        }
+        guard let nearest = intervals.enumerated().min(by: { a, b in
+            abs(midTime(a.element) - t) < abs(midTime(b.element) - t)
+        })?.offset else { return nil }
+        let edgeDistance = intervals.map { t < $0.start ? $0.start - t : t - $0.end }.min() ?? 0
+        return ScrubHit(index: nearest, inGap: edgeDistance > 30, time: t)
+    }
+
+    private static func midTime(_ iv: SleepInterval) -> TimeInterval { (iv.start + iv.end) / 2 }
 
     // MARK: Axis
 
@@ -499,7 +522,7 @@ private func sampleNight() -> [SleepInterval] {
     let start = Calendar.current.date(bySettingHour: 23, minute: 18, second: 0, of: Date())
     return VStack(alignment: .leading, spacing: 12) {
         Text("Last night").strandOverline()
-        Text("Hover a band: stage name, clock start–end and duration.")
+        Text("Hover or touch and hold a band: stage name, clock start–end and duration.")
             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
         Hypnogram(intervals: sampleNight(), height: 200, nightStart: start)
     }

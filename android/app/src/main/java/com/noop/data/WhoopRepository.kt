@@ -392,6 +392,12 @@ enum class DeviceMetricKind(val wire: String) {
     HRV_MS("hrv_ms"),
     /** The watch's own overall sleep score, 0-100, stamped at the time the watch gives it. */
     SLEEP_SCORE("sleep_score"),
+    /** The watch's aerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start. */
+    AEROBIC_TRAINING_EFFECT("aerobic_training_effect"),
+    /** The watch's anaerobic Training Effect for one activity, 0.0-5.0, stamped at the workout start. */
+    ANAEROBIC_TRAINING_EFFECT("anaerobic_training_effect"),
+    /** The watch's EPOC-based training load for one activity (unitless), stamped at the workout start. */
+    TRAINING_LOAD("training_load"),
 }
 
 /**
@@ -968,6 +974,23 @@ class WhoopRepository(
     suspend fun scoreInputSource(deviceId: String, day: String, key: String): String? =
         dao.scoreInputSource(deviceId, day, key)
 
+    /** Provenance rows for [deviceId] over a day range, limited to [keys] (#53). Empty for no keys.
+     *  Swift twin: `WhoopStore.scoreInputSources`. */
+    suspend fun scoreInputSources(
+        deviceId: String, from: String, to: String, keys: List<String>,
+    ): List<ScoreInputProvenanceRow> =
+        if (keys.isEmpty()) emptyList() else dao.scoreInputSources(deviceId, from, to, keys)
+
+    /** The provenance rows over the computed ("-noop") union [computedDailyUnionFlow] reads, active id first,
+     *  limited to [keys]: the dashboard's per-night source for the Charge baselines' era cut (#53). */
+    fun computedScoreInputSourcesFlow(
+        activeStrapId: String, from: String, to: String, keys: List<String>,
+    ): Flow<List<ScoreInputProvenanceRow>> {
+        if (keys.isEmpty()) return kotlinx.coroutines.flow.flowOf(emptyList())
+        val flows = computedSourceIds(activeStrapId).map { dao.scoreInputSourcesFlow(it, from, to, keys) }
+        return if (flows.size == 1) flows[0] else combine(flows) { rows -> rows.toList().flatten() }
+    }
+
     suspend fun upsertMetricSeriesWithProvenance(
         rows: List<MetricSeriesRow>,
         provenance: List<ScoreInputProvenanceRow>,
@@ -1436,6 +1459,7 @@ class WhoopRepository(
      * the lookups so a huge history can't jank first paint. NEVER persisted , the derived value is a
      * read-time projection of the trace (the workout PK upsert would wipe it anyway, and re-deriving on
      * every load keeps display == graph == zones == effort by construction).
+     * Swift twin: `Repository.reconcileWorkoutHrWithTrace`.
      */
     suspend fun fillWorkoutHrFromStrap(
         rows: List<WorkoutRow>,
@@ -1475,6 +1499,10 @@ class WhoopRepository(
         // because this class holds no Context; the two UI callers pass the user's choice. EDWARDS by
         // default so a caller that does not care stays byte-identical.
         effortMethod: com.noop.analytics.StrainScorer.Method = com.noop.analytics.StrainScorer.Method.EDWARDS,
+        // #50: the measured resting HR the engine scores the day and the manual rescore against (#950). The
+        // fill used the default 60, so a backfilled workout's Effort disagreed with the stored one for the
+        // same session. null (no measured day yet) keeps the default.
+        strainRestingHR: Double? = null,
     ): List<WorkoutRow> {
         var budget = cap
         return rows.map { row ->
@@ -1503,9 +1531,13 @@ class WhoopRepository(
             // this row actually needs a strain (keeps the common no-fill path a single aggregate query), and
             // let StrainScorer return null on a still-too-thin window (never a fabricated number).
             val filledStrain = if (needsStrainFill && strainMaxHR != null) {
-                val samples = dao.hrSamples(hrIds[0], row.startTs, row.endTs, 8000)
+                // #50: the 200,000 cap the Today Effort read uses; 8000 dropped everything after ~2h13m of
+                // 1 Hz HR, so a long session scored only its opening.
+                val samples = dao.hrSamples(hrIds[0], row.startTs, row.endTs, 200_000)
                 com.noop.analytics.StrainScorer.strain(
-                    samples, maxHR = strainMaxHR, method = effortMethod, sex = strainSex)
+                    samples, maxHR = strainMaxHR,
+                    restingHR = strainRestingHR ?: com.noop.analytics.StrainScorer.defaultRestingHR,
+                    method = effortMethod, sex = strainSex)
             } else null
             if (strapNative) {
                 // True mean / peak of the very samples the graph + zones + effort use; FILL a null Effort
@@ -1918,6 +1950,21 @@ class WhoopRepository(
 
     suspend fun metricSeries(deviceId: String, key: String, from: String, to: String) =
         dao.metricSeries(deviceId, key, from, to)
+
+    /**
+     * #55: the Rest score a day was scored with, resolved ONE way for every surface: the imported WHOOP
+     * `sleep_performance` for that day, else the engine's persisted computed value (scored against the
+     * night's trailing need / regularity / debt context), else — for a night the engine has not scored
+     * yet — the cold-start composite from the row's totals. [importedFirst] = false skips the import for a
+     * reader explaining NOOP's own recovery (the Charge drivers), which scored against the computed value.
+     */
+    suspend fun restScoreFor(activeStrapId: String, d: DailyMetric, importedFirst: Boolean = true): Double? {
+        if (importedFirst) {
+            metricSeries(WHOOP_SOURCE, "sleep_performance", d.day, d.day).firstOrNull()?.let { return it.value }
+        }
+        metricSeriesComputedUnion(activeStrapId, "sleep_performance", d.day, d.day).lastOrNull()?.let { return it.value }
+        return com.noop.analytics.RestScorer.restFromDaily(d)
+    }
 
     /**
      * Computed ("-noop") [key] series across the active-strap UNION (the active strap's own computed
@@ -2623,8 +2670,13 @@ class WhoopRepository(
          *  fresh id. A single-WHOOP install still resolves to one id, so nothing changes there.
          *  (This fill only sets avgHr/maxHr/strain; calories come from the detector.) */
         fun workoutHrDeviceIds(source: String, rowDeviceId: String, activeStrapId: String): List<String> =
-            if (isDetectedWorkout(source)) listOf(rowDeviceId.removeSuffix("-noop"))
-            else importedSourceIdsFor(activeStrapId)
+            when {
+                isDetectedWorkout(source) -> listOf(rowDeviceId.removeSuffix("-noop"))
+                // #50: a Garmin row's source IS the watch's device id, and the sync stored the activity's
+                // own trace under it. Reading the worn strap instead charted and zoned another device's HR.
+                com.noop.analytics.GarminWorkoutEffort.isWatchSource(source) -> listOf(source)
+                else -> importedSourceIdsFor(activeStrapId)
+            }
 
         /** Default row cap on range reads. Matches the Swift call sites' bounded scans. */
         const val DEFAULT_LIMIT = 100_000
@@ -2953,10 +3005,11 @@ class WhoopRepository(
             else -> null
         }
 
-        /** Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only the two
-         *  daily totals the strap genuinely estimates (steps, calories) , never a derived score. */
+        /** Whether the NOOP-computed strap source may fill an Apple-preferred metric. Only steps, the one
+         *  daily total the strap estimates as the same quantity: its calorie estimate is total energy,
+         *  never the active energy an Apple metric holds (#51), and never a derived score. */
         private fun noopComputedCanFillAppleMetric(key: String): Boolean = when (key) {
-            "steps", "active_kcal" -> true
+            "steps" -> true
             else -> false
         }
 
@@ -2973,8 +3026,8 @@ class WhoopRepository(
          * Without this case the resolver returned no Rest for that day and Today borrowed the latest
          * historical value (#614). Derive it on the fly from the same banked totals via the single
          * source of truth [com.noop.analytics.RestScorer.restFromDaily] (the SAME composite the series
-         * carries), so the day resolves to its own Rest. Consistency is left to the scorer's neutral
-         * default here (the daily row carries no regularity term).
+         * carries), so the day resolves to its own Rest. The row carries no need / regularity context, so
+         * this is the cold-start composite; once the engine pass persists the point, the series wins (#55).
          */
         internal fun dailyColumn(key: String, d: DailyMetric): Double? = when (key) {
             "recovery" -> d.recovery
@@ -2991,7 +3044,8 @@ class WhoopRepository(
             "sleep_light_min", "core_min" -> d.lightMin
             "sleep_performance" -> com.noop.analytics.RestScorer.restFromDaily(d)
             "steps" -> d.steps?.toDouble()
-            "active_kcal", "energy_kcal" -> d.activeKcalEst
+            // Whole-day TOTAL energy (#51); "active_kcal" is the active part only and has no daily column.
+            "energy_kcal" -> d.activeKcalEst
             else -> null
         }
 

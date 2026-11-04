@@ -1,6 +1,7 @@
 package com.noop.analytics
 
 import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -132,14 +133,6 @@ object Baselines {
     /**
      * Default per-metric configurations (HRV, resting HR, respiration, skin temp, daily
      * Effort/strain).
-     *
-     * "strain" backs the RecoveryScorer Activity-Balance / previous-day-Effort term: bounds
-     * match `StrainScorer.maxStrain`'s 0-100 output scale (the Charge/Effort/Rest redesign's
-     * rescale of the historical 0-21 axis). floorSpread is wider than the physiological
-     * metrics above (5.0 vs ~1-2% of range elsewhere) because day-to-day training load is
-     * EXPECTED to swing hard (a rest day vs a hard day is a normal, large delta) — a tight
-     * floor would make the z-score hypersensitive to routine training variation. Same
-     * half-lives as the other metrics for consistency.
      */
     val metricCfg: Map<String, MetricCfg> = mapOf(
         "hrv" to MetricCfg(
@@ -156,22 +149,6 @@ object Baselines {
         ),
         "skin_temp" to MetricCfg(
             minVal = 20.0, maxVal = 42.0, floorSpread = 0.3,
-            halfLifeB = 14.0, halfLifeS = 21.0,
-        ),
-        "strain" to MetricCfg(
-            minVal = 0.0, maxVal = 100.0, floorSpread = 5.0,
-            halfLifeB = 14.0, halfLifeS = 21.0,
-        ),
-        // Readiness HRV baseline, folded in the LOG domain (ln ms) with hard-outlier rejection OFF
-        // (RD2 · the window-fold spine mode — see update's `rejectHardOutliers`). ReadinessEngine
-        // z-scores lnRMSSD (RD1: HRV is right-skewed), so these bounds/floor are in LN(ms) units — NOT
-        // the raw-ms "hrv" config above (which the RecoveryScorer folds linearly, untouched).
-        // minVal/maxVal = ln(8)/ln(250), the plausible HRV band in ln. floorSpread 0.08 (ln) sits just
-        // below a real wearer's own ln-HRV night-to-night spread (~0.10), so personal spread drives the
-        // z while an ultra-stable baseline is floored against saturation. Byte-identical to the Swift
-        // `readiness_hrv_ln` config.
-        "readiness_hrv_ln" to MetricCfg(
-            minVal = 2.079, maxVal = 5.521, floorSpread = 0.08,
             halfLifeB = 14.0, halfLifeS = 21.0,
         ),
 
@@ -208,15 +185,8 @@ object Baselines {
     /** Convenience accessor for the standard resting-HR config. */
     val restingHRCfg: MetricCfg get() = metricCfg.getValue("resting_hr")
 
-    /** Readiness HRV baseline config — folded in the LOG domain (ln ms) with hard-outlier rejection
-     *  OFF. See the `readiness_hrv_ln` comment above; distinct from the raw-ms [hrvCfg]. */
-    val readinessHRVLnCfg: MetricCfg get() = metricCfg.getValue("readiness_hrv_ln")
-
     /** Convenience accessor for the standard respiration config. */
     val respCfg: MetricCfg get() = metricCfg.getValue("resp")
-
-    /** Baseline config for the RecoveryScorer Activity-Balance / previous-day-Effort term. */
-    val strainCfg: MetricCfg get() = metricCfg.getValue("strain")
 
     /** Personal daytime/waking HR baseline config — see the `daytime_hr` comment above. */
     val daytimeHRCfg: MetricCfg get() = metricCfg.getValue("daytime_hr")
@@ -292,7 +262,7 @@ object Baselines {
 
     /** Days from civil epoch (proleptic Gregorian) for an ISO `yyyy-MM-dd`, or null if unparseable. TZ-free
      *  (Howard Hinnant's algorithm), so Kotlin and Swift agree bit-for-bit on the day difference. */
-    internal fun isoEpochDay(iso: String): Int? {
+    fun isoEpochDay(iso: String): Int? {
         val p = iso.split("-")
         if (p.size != 3) return null
         val y = p[0].toIntOrNull() ?: return null
@@ -307,6 +277,25 @@ object Baselines {
         return era * 146097 + doe - 719468
     }
 
+    /** The `yyyy-MM-dd` key for a civil epoch day: the exact inverse of [isoEpochDay] (Howard Hinnant's
+     *  civil_from_days), TZ-free so Kotlin and Swift agree. Swift twin: `Baselines.isoDay(fromEpochDay:)`. */
+    fun isoDayFromEpochDay(z0: Int): String {
+        val z = z0 + 719468
+        val era = (if (z >= 0) z else z - 146096) / 146097
+        val doe = z - era * 146097
+        val yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+        val doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+        val mp = (5 * doy + 2) / 153
+        val d = doy - (153 * mp + 2) / 5 + 1
+        val m = if (mp < 10) mp + 3 else mp - 9
+        val y = yoe + era * 400 + (if (m <= 2) 1 else 0)
+        val ys = y.toString()
+        val ms = m.toString()
+        val ds = d.toString()
+        return "0".repeat(maxOf(0, 4 - ys.length)) + ys + "-" +
+            (if (ms.length < 2) "0" else "") + ms + "-" + (if (ds.length < 2) "0" else "") + ds
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Winsorized EWMA update (production model)
     // ─────────────────────────────────────────────────────────────────────────
@@ -318,17 +307,9 @@ object Baselines {
      * - `value == null` or out-of-range: skip-and-hold (carry forward).
      * - hard outlier (> HARD_OUTLIER_K × spread): seen but not folded.
      * - otherwise: Winsorized EWMA center + EWMA-abs-dev spread update.
-     *
-     * `rejectHardOutliers` (default true) can turn the hard-outlier gate OFF for a TRAILING-WINDOW
-     * re-fold — where the same window is re-folded every call and a *recent sustained* shift lands at
-     * the window's end (past the young grace period), so rejection would discard a real new normal as a
-     * string of "outliers" (Readiness's device-swap / supplement-onset failure mode). With it off the
-     * Winsorization below STILL damps a single freak night (clamped, not folded raw) but a sustained
-     * shift is followed instead of rejected — the incremental-fold (reject on, RecoveryScorer) vs
-     * window-fold (reject off, Readiness) distinction. Byte-identical to the Swift `rejectHardOutliers`.
+     * Swift twin: `Baselines.update(_:value:cfg:)`.
      */
-    fun update(state: BaselineState?, value: Double?, cfg: MetricCfg,
-               rejectHardOutliers: Boolean = true): BaselineState {
+    fun update(state: BaselineState?, value: Double?, cfg: MetricCfg): BaselineState {
         val lb = lambda(cfg.halfLifeB)
         val ls = lambda(cfg.halfLifeS)
 
@@ -377,7 +358,7 @@ object Baselines {
         // Suspending this during early life is the core anti-anchoring fix — a high seed with a
         // floor-tight spread would otherwise reject the user's real, lower readings as "outliers"
         // (a true 54ms vs an anchored ~90ms baseline is >5× the floor spread).
-        if (rejectHardOutliers && state.nValid >= minNightsSeed && !isYoung) {
+        if (state.nValid >= minNightsSeed && !isYoung) {
             val dev = abs(value - state.baseline)
             if (dev > hardOutlierK * state.spread) {
                 return BaselineState(
@@ -422,53 +403,11 @@ object Baselines {
     /**
      * Replay an ordered sequence of nightly values (oldest first) to build state.
      * `null` entries are treated as missing nights (skip-and-hold).
+     * Swift twin: `Baselines.foldHistory(_:cfg:)`.
      */
-    fun foldHistory(values: List<Double?>, cfg: MetricCfg,
-                    rejectHardOutliers: Boolean = true): BaselineState {
+    fun foldHistory(values: List<Double?>, cfg: MetricCfg): BaselineState {
         var state: BaselineState? = null
-        for (v in values) state = update(state, v, cfg, rejectHardOutliers)
-        state?.let { return it }
-        val seed = (cfg.minVal + cfg.maxVal) / 2.0
-        return BaselineState(
-            baseline = seed, spread = cfg.floorSpread, nValid = 0,
-            nightsSinceUpdate = 0, status = BaselineStatus.CALIBRATING,
-        )
-    }
-
-    /**
-     * Replay an ordered sequence of nightly values (oldest first) to build state, honouring a manual
-     * recalibration [baselineEpoch] (epoch SECONDS; 0 = no recalibration).
-     *
-     * [dayKeys] runs parallel to [values] ("yyyy-MM-dd", same order/length). Any night whose day
-     * STARTS (UTC) before [baselineEpoch] is ignored entirely (NOT a skip-and-hold — it is dropped,
-     * so the baseline re-seeds from the first on-or-after-epoch night). This lets the user reset a
-     * baseline that anchored too high: tap "Recalibrate HRV baseline" in Settings (which writes
-     * `now-seconds` to the [hrvBaselineEpochKey] pref) and the Charge baseline re-learns from tonight.
-     *
-     * When [baselineEpoch] <= 0 (the default / no recalibration) this is byte-identical to the plain
-     * [foldHistory]. The caller reads the persisted epoch from SharedPreferences (the analytics layer
-     * is Context-free) — exact same key string as the iOS UserDefaults key. Mirrors the Swift overload.
-     */
-    fun foldHistory(
-        values: List<Double?>,
-        dayKeys: List<String>,
-        cfg: MetricCfg,
-        baselineEpoch: Double,
-    ): BaselineState {
-        if (baselineEpoch <= 0.0) return foldHistory(values, cfg)
-
-        var state: BaselineState? = null
-        for (i in values.indices) {
-            // Drop (not skip-and-hold) any night dated before the recalibration epoch.
-            if (i < dayKeys.size) {
-                val dayStart = runCatching {
-                    java.time.LocalDate.parse(dayKeys[i])
-                        .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond().toDouble()
-                }.getOrNull()
-                if (dayStart != null && dayStart < baselineEpoch) continue
-            }
-            state = update(state, values[i], cfg)
-        }
+        for (v in values) state = update(state, v, cfg)
         state?.let { return it }
         val seed = (cfg.minVal + cfg.maxVal) / 2.0
         return BaselineState(
@@ -483,7 +422,7 @@ object Baselines {
 
     /**
      * The recalibration epoch (seconds, UTC start-of-day) at the LATEST device-era boundary in a
-     * source-tagged nightly history, for feeding [foldHistory]'s `baselineEpoch` so a baseline can't
+     * source-tagged nightly history, for the Charge baselines' era cut ([ChargeBaselines.epochs]) so a baseline can't
      * mix two brands' incompatible HRV scales (#459: an Oura→WHOOP switch has Oura RMSSD ~120–155 ms
      * vs WHOOP ~72–112 ms with no overlap nights, so a straddling 30-night window reads the first
      * WHOOP nights as "suppressed" against an Oura-inflated mean — a device artifact, not physiology).
@@ -499,7 +438,7 @@ object Baselines {
      * The epoch is the start of the first day of the LATEST contiguous single-brand era: walk
      * newest→oldest while the brand matches the newest night's brand, and return that run's first day's
      * start (a lone off-brand day inside the current era truncates it — fail-safe: it drops MORE history,
-     * never mixes scales). Returns 0.0 (no recalibration → [foldHistory] is byte-identical) when the
+     * never mixes scales). Returns 0.0 (no era cut) when the
      * whole history is ONE brand — so a single-device user, and a WHOOP user whose imported + computed +
      * strap ids all bucket to "whoop", is completely unaffected.
      *
@@ -567,11 +506,21 @@ object Baselines {
      * z uses (value − baseline) / sigma(state); see [sigma] for the 1.253 conversion.
      */
     fun deviation(value: Double, state: BaselineState): Deviation {
-        val sigma = sigma(state)
-        val z = (value - state.baseline) / sigma
+        val z = z(value, state)
         val delta = value - state.baseline
         val ratio = if (state.baseline != 0.0) (value / state.baseline - 1.0) else 0.0
         return Deviation(z = z, delta = delta, ratio = ratio, inNormalRange = abs(z) <= 1.0)
+    }
+
+    /**
+     * The z of [value] against [state], in the state's own domain: linear (value − baseline) / σ, or for a
+     * log-domain state (#53) (ln value − ln baseline) / σ, with both arguments floored at 1 before the log.
+     * Swift twin: `Baselines.z(_:state:)`.
+     */
+    fun z(value: Double, state: BaselineState): Double {
+        val sig = sigma(state)
+        if (state.logDomain) return (ln(max(value, 1.0)) - ln(max(state.baseline, 1.0))) / sig
+        return (value - state.baseline) / sig
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -641,7 +590,7 @@ object Baselines {
      * baseline" button — it writes [nowSeconds] (epoch SECONDS, whole) to BOTH the HRV epoch and the
      * recovery epoch, so HRV (the dominant driver, already wired) and the resting-HR / respiration /
      * skin-temp baselines re-anchor together. It does NOT delete any stored day: only the day from
-     * which the baselines re-learn moves. After this the next foldHistory re-seeds from the first
+     * which the baselines re-learn moves. After this the Charge baselines ([ChargeBaselines]) re-seed from the first
      * on-or-after-[nowSeconds] night, so Today honestly shows the calibrating/building state again.
      *
      * The analytics layer is Context-free, so the caller passes in the prefs editor. Epochs are stored

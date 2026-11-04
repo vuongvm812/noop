@@ -1,5 +1,7 @@
 package com.noop.analytics
 
+import com.noop.data.DailyMetric
+
 /**
  * Recovery/Charge from DAILY aggregates (Apple Watch / Health Connect / an Oura/Fitbit/Garmin export).
  * Kotlin twin of the Swift `WatchRecovery`.
@@ -10,8 +12,9 @@ package com.noop.analytics
  *
  * We do NOT invent a new formula. Recovery is HRV-and-RHR-vs-personal-baseline, and because every term is
  * relative to the person's OWN baseline, the metric scale cancels out: SDNN-vs-SDNN-baseline behaves like
- * RMSSD-vs-RMSSD-baseline. So we build HRV and RHR baselines through the existing [Baselines] machinery and
- * feed them straight into the SAME [RecoveryScorer.recovery] the strap uses. Source-only recovery and strap
+ * RMSSD-vs-RMSSD-baseline. So we build HRV and RHR baselines with the strap's Charge baselines
+ * ([ChargeBaselines], trailing 60 days, HRV in the log domain; #53) and feed them straight into the SAME
+ * [RecoveryScorer.recovery] the strap uses. Source-only recovery and strap
  * recovery therefore land on the same 0-100 scale and read against the same bands.
  *
  * What we drop vs the strap path: the respiration, sleep-performance and skin-temp terms are not supplied
@@ -35,46 +38,47 @@ object WatchRecovery {
     const val minBaselineNights = 7
 
     /**
-     * Compute recovery/Charge from a daily HRV + resting HR vs the person's own baseline.
+     * Charge for one day of a daily-aggregate source (Apple Watch / Health Connect SDNN, or an import-only
+     * wearable's nightly HRV) against that source's own trailing baselines (#53).
      *
-     * @param todayHrv today's HRV reading (ms), or null if the source logged none.
-     * @param todayRhr today's resting HR (bpm), or null to drop the RHR term. The term is also dropped when
-     *   [rhrHistory] has not yet produced a usable RHR baseline.
-     * @param hrvHistory ordered nightly HRV values (oldest -> newest), the baseline input.
-     * @param rhrHistory ordered nightly resting-HR values (oldest -> newest).
+     * The baselines are the Charge ones: [ChargeBaselines.resolveDay] over this source's rows, so HRV is
+     * lnRMSSD-style (log domain), every baseline is the mean and sample SD of the valid nights in the 60 days
+     * before [day], and today's value never sees itself. One funnel: the engine's watch and import Charge
+     * fold calls this, as does the Apple dashboard's watch confidence pill (Android has no such pill), so a
+     * confidence readout can never read a different baseline from the one the number was scored on.
+     *
+     * @param day the scored `yyyy-MM-dd` day.
+     * @param rows this source's daily rows, any order; the row for [day] carries today's values.
+     * @return recovery in [0,100] with its confidence, or null recovery + CALIBRATING when today's HRV is
+     *   missing, the HRV baseline isn't usable, or it holds fewer than [minBaselineNights] valid nights.
+     *   Never a fabricated value. Swift twin: `WatchRecovery.score(day:rows:)`.
      */
-    fun compute(
-        todayHrv: Double?,
-        todayRhr: Int?,
-        hrvHistory: List<Double>,
-        rhrHistory: List<Double>,
-    ): Result {
-        // Build both baselines through the production model (Winsorized EWMA + cold-start gating), exactly
-        // as the strap path does. HRV feeds the HRV config; resting HR feeds the RHR config.
-        val hrvBase = Baselines.foldHistory(hrvHistory, Baselines.hrvCfg)
-        val rhrBase = Baselines.foldHistory(rhrHistory, Baselines.restingHRCfg)
+    fun score(day: String, rows: List<DailyMetric>): Result {
+        val calibrating = Result(recovery = null, confidence = ScoreConfidence.CALIBRATING)
+        val prior = rows.filter { it.day < day }
+        val resolved = ChargeBaselines.resolveDay(
+            scoredDay = day, imported = ChargeBaselines.Nights(), own = ChargeBaselines.Nights.fromRows(prior),
+            seed = ChargeBaselines.Nights(), sourceDays = emptyList(), hrvRecalibration = 0.0,
+            recoveryRecalibration = 0.0,
+        ) ?: return calibrating
+        val today = rows.lastOrNull { it.day == day }
+        val hrvBase = resolved.hrv
+        val rhrBase = resolved.restingHR
+        val todayHrv = today?.avgHrv
+        val todayRhr = today?.restingHr
 
         // Confidence is the SAME helper the strap Charge uses, so the calibrating -> building -> solid arc
         // matches. It reads CALIBRATING whenever recovery would be null (no usable HRV baseline).
         val conf = ScoreConfidence.forCharge(todayHrv, hrvBase)
 
         // Honesty gate: no number unless we have today's HRV, a usable baseline, AND at least a week of
-        // nights. Any miss -> null recovery + calibrating, never a fabricated value.
-        // The week is counted in nights the baseline ACCEPTED (nValid), not in raw history entries: a
-        // physiologically implausible reading is skip-and-held by [Baselines.update] and contributes
-        // nothing to the baseline, so counting it would let rejected values buy a score a week early.
-        if (todayHrv == null || !hrvBase.usable || hrvBase.nValid < minBaselineNights) {
-            return Result(recovery = null, confidence = ScoreConfidence.CALIBRATING)
-        }
+        // valid nights in it. A physiologically implausible reading never enters the baseline, so it
+        // cannot buy a score early.
+        if (todayHrv == null || !hrvBase.usable || hrvBase.nValid < minBaselineNights) return calibrating
 
-        // Reuse the canonical Charge engine. Drop the resp / sleep / skin-temp terms (the daily aggregate
-        // doesn't carry them here) -> RecoveryScorer renormalises to HRV + RHR. RHR is optional: the term
-        // needs BOTH today's reading AND a usable personal RHR baseline. An empty or all-implausible RHR
-        // history folds to foldHistory's synthetic midpoint (the config's min/max mean, e.g. 75 bpm), which
-        // is nobody's resting HR — scoring against it would move Charge on a fabricated baseline. Mirrors
-        // the `usable ? state : nil` gate the macOS Charge driver breakdown applies (Swift TodayView /
-        // CoupledView); without a usable RHR baseline we fall back to the HRV-only path, exactly as when
-        // today's reading is missing.
+        // Reuse the canonical Charge scorer. Resp / sleep / skin-temp are not supplied by a daily aggregate,
+        // so RecoveryScorer renormalises to HRV + RHR. The RHR term needs BOTH today's reading AND a usable
+        // personal RHR baseline; without either it is dropped (the documented HRV-only path).
         val recovery = RecoveryScorer.recovery(
             hrv = todayHrv,
             rhr = todayRhr?.toDouble() ?: rhrBase.baseline,
@@ -83,8 +87,8 @@ object WatchRecovery {
             rhrBaseline = if (todayRhr != null && rhrBase.usable) rhrBase else null,
             respBaseline = null,
             sleepPerf = null,
-        ) ?: return Result(recovery = null, confidence = ScoreConfidence.CALIBRATING)
-
+            hrvPriorWeek = resolved.hrvPriorWeek,
+        ) ?: return calibrating
         return Result(recovery = recovery, confidence = conf)
     }
 }

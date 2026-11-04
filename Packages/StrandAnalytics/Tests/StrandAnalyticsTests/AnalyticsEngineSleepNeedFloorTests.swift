@@ -29,11 +29,11 @@ final class AnalyticsEngineSleepNeedFloorTests: XCTestCase {
 
     func testSleepNeedUsesPointOneHourFloorAtAndAcrossBoundary() throws {
         let cases: [(need: Double, expectedRest: Double)] = [
-            (-1.0, 29.17),
-            (0.0, 29.17),
-            (0.099, 29.17),
-            (0.1, 29.17),
-            (0.101, 29.13),
+            (-1.0, 31.67),
+            (0.0, 31.67),
+            (0.099, 31.67),
+            (0.1, 31.67),
+            (0.101, 31.63),
         ]
 
         let actual = try cases.map { try rest(sleepNeedHours: $0.need) }

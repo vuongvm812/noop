@@ -54,6 +54,11 @@ final class IntelligenceEngine: ObservableObject {
     /// re-pass; this mirrors it). Reset by any pass whose heal finds nothing, restoring the budget.
     private var healRearmedThisCycle = false
 
+    /// #50: Garmin watch workouts the Effort pass found too thin to score, keyed by
+    /// `GarminWorkoutEffort.attemptKey`, so each pass does not re-read their HR. Process-lifetime only:
+    /// a relaunch retries them once, which picks up HR a later re-import added.
+    private var unscorableGarminWorkouts = Set<String>()
+
     /// #1005 BATTERY: in-memory per-day reuse for `analyzeRecent`'s pass-1 loop, keyed by day → (per-day
     /// cache key, the scored `DayScan`). On a heavy user (21 nights, ~178 k HR rows/night, a 1.26 GB store)
     /// every `newData` re-score re-read *every* night's raw streams and re-ran `analyzeDay`, even though a
@@ -84,7 +89,7 @@ final class IntelligenceEngine: ObservableObject {
     /// In-memory and per-process exactly like `dayScanCache`; see `StepsMotionCache` for why this one needs
     /// no config signature. Pruned to the calibration window each pass so it cannot grow without bound.
     private var stepsMotionCache: [String: (key: String, motion: Double)] = [:]
-    /// The scoring-config signature the `dayScanCache` entries were produced under (profile / baselines1 /
+    /// The scoring-config signature the `dayScanCache` entries were produced under (profile /
     /// tz / sleep need+consistency / habitual midsleep / stager toggles). Those feed `analyzeDay` but are
     /// pass-global, not in the per-day key, so when the current pass's signature differs every cached scan is
     /// potentially stale and the whole cache is dropped. Empty until the first pass.
@@ -100,10 +105,10 @@ final class IntelligenceEngine: ObservableObject {
     /// `static let` inherits that isolation, and neither a nonisolated function nor a synchronous test
     /// could then touch it. `[String]` is Sendable, so sharing it is safe.
     nonisolated static let dayCacheConfigFields: [String] = [
-        "hrvBaseline", "rhrBaseline", "age", "sex", "stepTicksPerStep", "maxHROverride",
-        "tzOffset", "sleepNeedHours", "sleepConsistency", "habitualMidsleep",
+        "age", "sex", "stepTicksPerStep", "maxHROverride",
+        "tzOffset", "habitualMidsleep",
         "experimentalSleepV2", "motionAwareWake", "deepHrvWindow", "spo2CandidateDisplay",
-        "effortMethod", "dayCycleMode",
+        "effortMethod", "dayCycleMode", "hrmaxEvidence",
     ]
 
     /// Which config field(s) moved between two signatures, for the `configDropped` tally.
@@ -248,6 +253,10 @@ final class IntelligenceEngine: ObservableObject {
         /// written as "rhr_primary_session_valid_samples" / "rhr_primary_session_duration_s" in pass 2. nil
         /// in lockstep with `primarySessionRHR`.
         let primarySessionRHRCoverage: PrimarySessionRestingHR.Coverage?
+        /// #54: the calendar day's `StrainScorer.sustainedPeak`, persisted to metricSeries as
+        /// `hr_sustained_peak` in pass 2. It is the evidence the adaptive HRmax reads, and it does not
+        /// depend on HRmax, so a cached scan's value stays valid.
+        let sustainedPeak: Double?
     }
 
     /// Exact pre-upgrade R-R-derived cells retained only while an unlabelled WHOOP 5 window is withheld.
@@ -574,7 +583,7 @@ final class IntelligenceEngine: ObservableObject {
     /// Mirrors the Android `IntelligenceEngine.fitnessAgeRows`.
     static func fitnessAgeRows(
         gateDays: [DailyMetric], age: Int, sex: String, waistCm: Double, heightCm: Double, weightKg: Double,
-        computedId: String, satKey: String,
+        computedId: String, satKey: String, watchVo2max: Double? = nil,
     ) -> [MetricPoint] {
         let rhrs = gateDays.compactMap { $0.restingHr }.map(Double.init)
         let strains = gateDays.compactMap { $0.strain }.filter { $0 >= 30 }
@@ -584,38 +593,52 @@ final class IntelligenceEngine: ObservableObject {
             hasAge: age > 0, hasSex: !sex.isEmpty,
             rhrDays: rhrs.count, activityDays: gateDays.compactMap { $0.strain }.count,
             hasHeightWeight: heightCm > 0 && weightKg > 0, hasWaist: waist != nil)
-        guard ready.canCompute,
-              let res = FitnessAgeEngine.compute(
+        var rows: [MetricPoint] = []
+        var estimate: Double?
+        if ready.canCompute,
+           let res = FitnessAgeEngine.compute(
                 age: Double(age), sex: sex,
                 restingHR: medianOf(rhrs),
                 paIndex: FitnessAgeEngine.physicalActivityIndexFromStrain(
                     activeDaysPerWeek: strains.count, meanActiveStrain: meanStrain),
-                waistCm: waist) else { return [] }
-        var rows = [MetricPoint(day: satKey, key: "fitness_age", value: res.fitnessAge)]
-        // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (nil
-        // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/RHR — waist-free,
-        // the SAME formula the calorie path already uses), so any user past the age+RHR fitness-age gate gets
-        // a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka estimator (no HR history here →
-        // age-predicted); RHR = the same median the Nes value used. Both persist under "vo2max_est"; the card
-        // labels it "Estimated". Mirrors the Android twin.
-        let vo2 = res.vo2max
-            ?? Calories.vo2maxFor(hrmax: StrainScorer.estimateHRmax([], age: Double(age)).0, restingHR: medianOf(rhrs))
-        if let v = vo2 { rows.append(MetricPoint(day: satKey, key: "vo2max_est", value: v)) }
+                waistCm: waist) {
+            rows.append(MetricPoint(day: satKey, key: "fitness_age", value: res.fitnessAge))
+            // #1391: offer a VO₂max even without a waist. res.vo2max is the Nes 2011 waist-based estimate (nil
+            // when no waist is set). Fall back to the Uth 2004 HR-ratio estimate (15.3·HRmax/(RHR + 5), #51 —
+            // waist-free, the SAME formula the calorie path already uses), so any user past the age+RHR
+            // fitness-age gate gets a (rougher) VO₂max instead of a blank. HRmax via the shared Tanaka
+            // estimator (no HR history here → age-predicted); RHR = the same median the Nes value used.
+            estimate = res.vo2max
+                ?? Calories.vo2maxFor(hrmax: StrainScorer.estimateHRmax([], age: Double(age)).0, restingHR: medianOf(rhrs))
+        }
+        // #51: the watch's own VO₂max (`watchVo2max`, from `GarminScoringInputs.watchVo2max`) wins over
+        // NOOP's estimate, and needs no fitness-age gate: the watch measured it. Persisted under the same
+        // "vo2max_est" key; `vo2MaxProvenance` tags which one it is. Mirrors the Android twin.
+        if let v = watchVo2max ?? estimate { rows.append(MetricPoint(day: satKey, key: "vo2max_est", value: v)) }
         return rows
     }
 
     /// Method metadata for a newly computed VO₂max point. Empty when `points` contains no VO₂max value.
     /// Method selection is captured at compute time; UI readers must never reconstruct it from today's
     /// profile because changing/removing a waist is a legitimate transition between estimators.
+    /// `watchVo2max` is the value `fitnessAgeRows` was given, so the tag names the watch exactly when its
+    /// value was the one written.
     static func vo2MaxProvenance(
-        points: [MetricPoint], waistCm: Double
+        points: [MetricPoint], waistCm: Double, watchVo2max: Double? = nil
     ) -> [ScoreInputProvenanceRow] {
         guard let point = points.first(where: { $0.key == "vo2max_est" }) else { return [] }
         return [ScoreInputProvenanceRow(
             day: point.day,
             key: point.key,
-            sourceId: Vo2MaxEstimator.forWaistCm(waistCm).rawValue
+            sourceId: (watchVo2max != nil ? Vo2MaxEstimator.garmin : Vo2MaxEstimator.forWaistCm(waistCm)).rawValue
         )]
+    }
+
+    /// The active Garmin watch's own VO₂max for the week keyed `satKey`, or nil for any other device (#51).
+    func watchVo2max(store: WhoopStore, satKey: String) async -> Double? {
+        guard FusionSource.isGarminWatchId(deviceId) else { return nil }
+        let points = (try? await store.metricSeries(deviceId: deviceId, key: "vo2max", from: "0000-01-01", to: satKey)) ?? []
+        return GarminScoringInputs.watchVo2max(points.map { (day: $0.day, value: $0.value) }, weekKey: satKey)
     }
 
     /// Manual "refresh Fitness Age" (the button on the not-ready card): recompute the weekly Fitness Age NOW
@@ -633,14 +656,16 @@ final class IntelligenceEngine: ObservableObject {
         let oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * 86_400, offsetSec: tzOffset)
         let gate7 = Array((await repo.dailyMetrics(fromDay: oldestDay, toDay: newestDay))
             .sorted { $0.day < $1.day }.suffix(7))
+        let satKey = Self.saturdayKey(onOrBefore: newestDay)
+        let watchVo2 = await watchVo2max(store: store, satKey: satKey)
         let rows = Self.fitnessAgeRows(
             gateDays: gate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
-            satKey: Self.saturdayKey(onOrBefore: newestDay))
+            satKey: satKey, watchVo2max: watchVo2)
         if !rows.isEmpty {
             try? await store.persistMetricSeriesWithProvenance(
                 points: rows,
-                provenance: Self.vo2MaxProvenance(points: rows, waistCm: profile.waistCm),
+                provenance: Self.vo2MaxProvenance(points: rows, waistCm: profile.waistCm, watchVo2max: watchVo2),
                 deviceId: computedId
             )
         }
@@ -797,11 +822,6 @@ final class IntelligenceEngine: ObservableObject {
             }
         }
         guard let store = await repo.storeHandle() else { note = String(localized: "No on-device store yet."); return }
-        guard let hrvCfg = Baselines.metricCfg["hrv"],
-              let rhrCfg = Baselines.metricCfg["resting_hr"],
-              let respCfg = Baselines.metricCfg["resp"],
-              let skinCfg = Baselines.metricCfg["skin_temp"] else { return }
-
         // #836 (idle-tick gate): re-scoring a 21-day window re-reads ~21×54 h of raw data and re-runs
         // analyzeDay over it. After a big Apple Health import (a reporter's: 2.1 M rows, ~190 k HR/day) that
         // is multi-second, memory-heavy work, and the 15-minute steady-state tick (AppModel) repeats it
@@ -906,28 +926,18 @@ final class IntelligenceEngine: ObservableObject {
         // boundary inside the window is a negligible edge case for an hour-of-day band.)
         let tzOffset = TimeZone.current.secondsFromGMT()
 
-        // ── Pass 1: analyse each offloaded night against the IMPORTED-ONLY baseline. For a BLE-only
-        // user the imported daily rows are empty, so the HRV baseline isn't usable yet and recovery is
-        // null here , but each night's avgHrv/restingHr are computed baseline-INDEPENDENTLY, so we
-        // harvest them to SEED the baseline and re-score in pass 2. foldHistory winsorizes outliers.
+        // ── Pass 1: analyse each offloaded night. `analyzeDay` reads no personal baseline: every field it
+        // produces is baseline-independent, and pass 2 resolves each day's own trailing baselines (#53)
+        // and scores recovery, its drivers and its confidence there.
         //
-        // Read the imported rows DIRECTLY (deviceId is the imported id; computed rows live under the
-        // sibling `-noop` id) over the full history, sorted chronologically , NOT `repo.days`, which is
+        // `hist` is the imported rows the pass-2 baselines read, read DIRECTLY (deviceId is the imported
+        // id; computed rows live under the sibling `-noop` id) over the full history, sorted chronologically , NOT `repo.days`, which is
         // the merged published cache (it pre-loads prior computed `-noop` rows and back-fills nil
         // imported HRV/RHR/resp fields from computed values). Using the merge contaminated this very
         // "imported-only" baseline with computed values and made the fold window depend on whichever
         // refresh last ran (4000 vs 120 days). This mirrors the Android port's `days(importedDeviceId)`.
         let hist = ((try? await store.dailyMetrics(deviceId: deviceId, from: "0000-01-01", to: "9999-12-31")) ?? [])
             .sorted { $0.day < $1.day }
-        // HRV baseline honours the manual "Recalibrate baseline" epoch (noop.hrvBaselineEpoch); the
-        // resting-HR baseline honours the Charge-wide sibling (noop.recoveryBaselineEpoch). Pass the
-        // per-value "yyyy-MM-dd" day keys (parallel to the values) so foldHistory can drop every night
-        // before the epoch. A 0 / absent epoch makes this byte-identical to the plain fold, so scoring is
-        // unchanged until the user taps Recalibrate.
-        let hrvBase1 = Baselines.foldHistory(hist.map { $0.avgHrv }, dayKeys: hist.map { $0.day }, cfg: hrvCfg)
-        let rhrBase1 = Baselines.foldHistory(hist.map { $0.restingHr.map(Double.init) }, dayKeys: hist.map { $0.day },
-                                             cfg: rhrCfg, baselineEpoch: Baselines.recoveryBaselineEpoch())
-        let baselines1 = AnalyticsEngine.ProfileBaselines(hrv: hrvBase1, restingHR: rhrBase1)
 
         // Keep each night's small result (daily metrics + sessions), NOT the raw streams , every field
         // except recovery is baseline-independent, so pass 2 only re-scores the cheap recovery
@@ -985,21 +995,16 @@ final class IntelligenceEngine: ObservableObject {
         // Returns nil under `habitualMinDays` of history → cold-start: every `analyzeDay`/`sleepEditedDaily`
         // call below stays on the overnight-band bonus. The same value threads into both seams so analytics
         // and the Sleep tab resolve to the identical block. (#547)
-        let (habitualMidsleepSec, nightlyHours) = await Self.computeHabitualSleep(
+        let habitualMidsleepSec = await Self.computeHabitualSleep(
             store: store, importedId: deviceId, computedId: deviceId + "-noop",
             historyIds: WearableHistory.readOrder(activeDeviceId: regActiveId),
             windowStart: nowLocalMidnight - maxDays * 86_400 - StreamReadCap.lookbackSeconds,
             windowEnd: now, finishedBefore: nowLocalMidnight, offsetSec: tzOffset)
-        // Wave 0 (SL1/T1): personal sleep REGULARITY + population-anchored NEED, computed ONCE from the
-        // trailing per-night durations and threaded to every analyzeDay below (mirrors the midsleep
-        // learner just above — one personal trait per run, applied to the whole re-scored history so
-        // Rest stops running on a flat neutral-0.5 consistency and a fixed 8 h need). Recent 28-night
-        // window for regularity (a recent-behaviour signal); full history for the need's upper-quartile
-        // "unrestricted nights" estimate. Both degrade honestly on thin history (consistency → nil →
-        // neutral term; need → population default), so cold-start is unchanged.
-        let sleepConsistency = VitalityEngine.sleepConsistency(nightlyHours: Array(nightlyHours.suffix(28)))
-        let sleepNeedHours = AnalyticsEngine.Rest.personalizedNeedHours(nightlyHours: nightlyHours,
-                                                                        age: profile.age)
+        // Sleep need and regularity (#55) are NOT computed here any more. They used to be computed once
+        // from the latest history and applied to every re-scored day (an old night scored against sleep
+        // that happened after it). They are now resolved per day, from the nights before that day, after
+        // pass 1 (`sleepScoringContexts`), and pass 1's Rest runs on the cold-start context: its only
+        // consumers are the pass-1 recovery and drivers, which pass 2 recomputes.
 
         // ── FIX 1 (main-actor jank): run the ENTIRE per-day enumeration OFF the main actor ───────────
         // Every `await store.…` read inside this loop has its continuation RESUME on the main actor
@@ -1014,6 +1019,17 @@ final class IntelligenceEngine: ObservableObject {
         // only the executor the reads resume on changes. Diagnostic (#691) lines are computed inside (pure
         // inputs) and returned so they can be replayed through `diagnosticSink` here, in the SAME order.
         let computedId = deviceId + "-noop"
+        // #54: adaptive HRmax. ONE evidence value per pass, read from the stored daily sustained peaks in
+        // the 90 days ending today, so every day this pass re-scores, and the display zones (through
+        // `ProfileStore.observedHRmaxEvidence`), use the same yardstick. A peak this pass adds is picked
+        // up by the next pass; the evidence then moves the cache signature and the window re-scores.
+        let storedPeaks = (try? await store.metricSeries(
+            deviceId: computedId, key: StrainScorer.sustainedPeakMetricKey,
+            from: "0000-01-01", to: "9999-12-31")) ?? []
+        let hrmaxEvidence = StrainScorer.observedHRmaxEvidence(
+            peaksByDay: Dictionary(storedPeaks.map { ($0.day, $0.value) }, uniquingKeysWith: { max($0, $1) }),
+            endingOn: AnalyticsEngine.dayString(nowLocalMidnight, offsetSec: tzOffset))
+        profile.observedHRmaxEvidence = hrmaxEvidence
         // Bind `deviceId` (a MainActor instance `let`) to a local Sendable `String` so the @Sendable
         // detached closure captures the VALUE, never `self` (which would be an isolation violation).
         let ownerFallbackId = deviceId
@@ -1065,18 +1081,17 @@ final class IntelligenceEngine: ObservableObject {
         // inline in pass 1 and therefore needed per-day recorders to reach the same place.)
         let dayCacheEligible = true
         // The pass config signature — every input that feeds `analyzeDay` but is NOT in the per-day key, so
-        // a change to any of them must invalidate every cached night. baselines1 is signed structurally
-        // (any BaselineState field change ⇒ a different string); Doubles by raw bit-pattern (exact, locale-
-        // free). Only ever compared to itself in memory, so cross-platform string identity isn't required.
+        // a change to any of them must invalidate every cached night. Doubles by raw bit-pattern (exact,
+        // locale-free). Only ever compared to itself in memory, so cross-platform string identity isn't
+        // required. Pass 1 reads no baselines (#53), so no baseline is part of it.
         //
         // These are NOT all "stable across an offload storm", as this comment claimed until #1538 went
-        // looking. #1402 already had to fix `baselines1` for exactly that wrong assumption, and three more
-        // fields have the same shape: `sleepNeedHours`, `sleepConsistency` and `habitualMidsleepSec` all
-        // come out of `computeHabitualSleep(windowEnd: now)`, which reads the computed `-noop` sleep
-        // sessions THE PREVIOUS PASS BANKED — a feedback loop from this pass's own output. Any night whose
-        // banked session moves changes them: `sleepConsistency` is 1−CV over 28 nights and
-        // `habitualMidsleepSec` a circular mean, so both shift with ANY night, while `sleepNeedHours` is a
-        // 75th percentile and usually does not.
+        // looking. #1402 had to fix the pass-1 baselines (since removed) for exactly that wrong assumption,
+        // and three more fields had the same shape; `habitualMidsleepSec` still does: it comes out of
+        // `computeHabitualSleep(windowEnd: now)`, which reads the computed `-noop` sleep sessions THE
+        // PREVIOUS PASS BANKED — a feedback loop from this pass's own output. Any night whose banked
+        // session moves changes it (a circular mean shifts with ANY night). Sleep need and regularity no
+        // longer feed pass 1 at all (#55): they are resolved per day after it, in `sleepScoringContexts`.
         //
         // But that is CORRECT invalidation, not churn to be quantized away — a night going from
         // half-loaded to complete really does change what every day should be scored against, and the
@@ -1092,14 +1107,12 @@ final class IntelligenceEngine: ObservableObject {
         // the construction stays a plain value list. Add or reorder here and add or reorder there:
         // `changedConfigField` refuses to name anything when the counts disagree, but it cannot see a
         // REORDER, which would quietly label the wrong field.
-        let dayCacheConfigSig = [
-            String(describing: baselines1.hrv),
-            String(describing: baselines1.restingHR),
+        // Hoisted and typed: one more `?? "nil"` element in the literal below exceeds the type-checker budget.
+        let hrmaxEvidenceSig: String = hrmaxEvidence.map { String($0.bitPattern) } ?? "nil"
+        let dayCacheConfigSig: String = [
             String(up.age.bitPattern), up.sex, String(up.stepTicksPerStep.bitPattern),
             maxHR.map { String($0.bitPattern) } ?? "nil",
             "\(tzOffset)",
-            String(sleepNeedHours.bitPattern),
-            sleepConsistency.map { String($0.bitPattern) } ?? "nil",
             habitualMidsleepSec.map { "\($0)" } ?? "nil",
             "\(useSleepStagerV2Global)", "\(useMotionAwareWakeGlobal)", "\(deepHrvWindow)",
             "\(spo2CandidateDisplayOn)",
@@ -1108,6 +1121,8 @@ final class IntelligenceEngine: ObservableObject {
             // window of days scored by a recipe the user just turned off, with nothing to explain it.
             "\(effortMethodGlobal)",
             dayCycleMode.rawValue,
+            // #54: the adaptive-HRmax evidence moves every day's Effort the way an override does.
+            hrmaxEvidenceSig,
         ].joined(separator: "|")
         // Drop the whole cache on a config change, then snapshot it into a Sendable `let` for the detached
         // loop (the engine is @MainActor; the loop can't touch `self`). The loop returns the updated cache
@@ -1232,7 +1247,7 @@ final class IntelligenceEngine: ObservableObject {
                 // 4.0, the window-wide skin anchor (a re-anchor from another night shifts that night's skin
                 // conversion without moving its HR). A 5/MG banks skin-temp centidegrees directly — no
                 // per-device raw anchor — so its anchor slot stays nil. Pass-global inputs (profile/
-                // baselines1/toggles) already dropped the whole cache above on change. A miss falls straight
+                // toggles) already dropped the whole cache above on change. A miss falls straight
                 // through to the identical full path.
                 var dayCacheKey: String? = nil
                 if dayCacheEligible,
@@ -1541,10 +1556,9 @@ final class IntelligenceEngine: ObservableObject {
                                                      skinTempAnchorRaw: skinAnchorRaw,   // #938 second capture
                                                      skinTempWornToleranceSec: skinWornToleranceSec,   // #1467
                                                      spo2: spo2,                   // #93
-                                                     profile: up, baselines: baselines1, maxHROverride: maxHR,
+                                                     profile: up, maxHROverride: maxHR,
+                                                     hrmaxEvidence: hrmaxEvidence,
                                                      tzOffsetSeconds: tzOffset, wristOff: wristOff,
-                                                     sleepNeedHours: sleepNeedHours,
-                                                     sleepConsistency: sleepConsistency,
                                                      habitualMidsleepSec: habitualMidsleepSec,
                                                      bandSleepState: bandSleepState,
                                                      // #690: thread the V2 toggle into the NORMAL staging path so
@@ -1849,7 +1863,8 @@ final class IntelligenceEngine: ObservableObject {
                                    spo2Candidate: spo2CandidateMean,
                                    hrvOverCounted: hrvOverCounted,
                                    primarySessionRHR: primarySessionRHR,
-                                   primarySessionRHRCoverage: primarySessionRHRCoverage)
+                                   primarySessionRHRCoverage: primarySessionRHRCoverage,
+                                   sustainedPeak: dayHr.isEmpty ? nil : StrainScorer.sustainedPeak(dayHr))
                 // #1005: cache this freshly-scored scan under its per-day key (only when the day was
                 // cache-eligible this pass, i.e. a registered WHOOP owner with no trace active). Reused
                 // days `continue`d above and never reach here, so the cache only ever holds fresh scans.
@@ -1941,6 +1956,8 @@ final class IntelligenceEngine: ObservableObject {
         var primarySessionRHRByDay: [String: Double] = [:]
         // #1169: its coverage inputs (valid-sample count + primary-session duration), same lifetime as the mean.
         var primarySessionRHRCoverageByDay: [String: PrimarySessionRestingHR.Coverage] = [:]
+        // #54: daily sustained peak (adaptive-HRmax evidence), carried from pass 1 for persistence.
+        var sustainedPeakByDay: [String: Double] = [:]
 
         // Garmin child 9: a day a Garmin watch owns scores from the watch's OWN resting HR, overnight HRV and
         // respiration, each decided against NOOP's sparse-HR estimate by the one fusion resolver
@@ -1980,6 +1997,9 @@ final class IntelligenceEngine: ObservableObject {
             if let oc = scan.hrvOverCounted {
                 hrvOverCountByDay[res.daily.day] = oc
             }
+            if let v = scan.sustainedPeak {
+                sustainedPeakByDay[res.daily.day] = v
+            }
             // #1169: carry the primary-session mean RHR shadow metric into pass 2 for persistence.
             if let v = scan.primarySessionRHR {
                 primarySessionRHRByDay[res.daily.day] = v
@@ -2008,137 +2028,84 @@ final class IntelligenceEngine: ObservableObject {
         }
 
         markPostLoopPhase("dayReplay")
-        // ── Charge baselines (#2525). Each baseline is folded from the wearer's OWN nights over the last
-        // `ChargeBaselines.windowDays` calendar days, counted back from today; imported vendor nights only
-        // SEED it until the own nights alone would be trusted, then drop out (see `ChargeBaselines`). This
-        // is still the BLE-only recovery fix: the "-noop" nightly avgHrv/restingHr feed the baseline so a
-        // strap-only user crosses Baselines.minNightsSeed and recovery lights up.
+        // ── Charge baselines (#2525, #53). Each scored day D is scored against the nights BEFORE it, over
+        // `ChargeBaselines.windowDays` calendar days ending D − 1: a trailing mean and SD (ln RMSSD for HRV),
+        // so tonight never scores against itself and a stored day's Charge does not move as later nights
+        // arrive. The wearer's own nights are the baseline; imported vendor nights (then same-brand export
+        // nights, #31) only seed it until the own nights in the window would be trusted.
         //
-        // Before #2525 the own nights came from this pass's scan window while `hist` (every imported row,
-        // however old) was folded in full, so the import kept about a third of the weight for good. The
-        // window is the scan window's own 21 days, so the own nights are exactly this pass's fresh values
-        // (a full-history repair pass scores more days; the window trims it to the same 21), and a wearer
-        // with no import folds the same nights as before.
+        // The window reaches back before this pass's scan window, so the own nights are the STORED computed
+        // rows overlaid with this pass's fresh values (a rescored day's fresh value, nil included, wins).
         let oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * 86_400,
                                                   offsetSec: tzOffset)
         let newestDay = AnalyticsEngine.dayString(nowLocalMidnight, offsetSec: tzOffset)
-        func importedNights(_ value: (DailyMetric) -> Double?) -> [(day: String, value: Double?)] {
-            hist.map { (day: $0.day, value: value($0)) }
+        let ownFromDay = Baselines.isoEpochDay(oldestDay)
+            .map { Baselines.isoDay(fromEpochDay: $0 - ChargeBaselines.windowDays) } ?? oldestDay
+        let storedOwn = (try? await store.dailyMetrics(deviceId: computedId, from: ownFromDay, to: newestDay)) ?? []
+        var ownHrv: [String: Double?] = [:], ownRhr: [String: Double?] = [:]
+        var ownResp: [String: Double?] = [:], ownSkin: [String: Double?] = [:]
+        for row in storedOwn {
+            ownHrv[row.day] = row.avgHrv; ownRhr[row.day] = row.restingHr.map(Double.init)
+            ownResp[row.day] = row.respRateBpm; ownSkin[row.day] = row.skinTempC
         }
-        func ownNights(_ byDay: [String: Double?]) -> [(day: String, value: Double?)] {
-            byDay.map { (day: $0.key, value: $0.value) }
+        for (day, v) in nightlyHrvByDay { ownHrv[day] = v }
+        for (day, v) in nightlyRhrByDay { ownRhr[day] = v }
+        for (day, v) in nightlyRespByDay { ownResp[day] = v }
+        for (day, v) in nightlySkinByDay { ownSkin[day] = v }
+        func pairs(_ byDay: [String: Double?]) -> [(day: String, value: Double?)] {
+            byDay.keys.sorted().map { (day: $0, value: byDay[$0]!) }
         }
+        let ownNights = ChargeBaselines.Nights(hrv: pairs(ownHrv), restingHR: pairs(ownRhr),
+                                               resp: pairs(ownResp), skin: pairs(ownSkin))
+        var importedNights = ChargeBaselines.Nights(rows: hist)
+        importedNights.skin = []   // imports carry a deviation, not the raw nightly mean
 
-        // Which SOURCE measured each night's respiration — the input `Baselines.deviceEraEpoch` (#459)
-        // needs, and respiration is a metric that requires it: a WHOOP export reports its OWN measured rate
-        // (~16.1 for this history) while an Oura ring reports the rate its firmware measured (~14.6), and
-        // NOOP's own RSA estimate is a third method again. Pooling them in one baseline turns a strap SWITCH
-        // into a ~3σ illness-ward step against a ~0.52 bpm spread — a device artifact scored as physiology,
-        // which is exactly the failure #459 named for HRV (Oura RMSSD ~120-155 ms vs WHOOP ~72-112 ms).
-        //
-        // `resolvedScoreOwnerByDay` — THIS PASS's freshly resolved per-day owner (`resolveDayOwner`,
-        // straight off `DayOwnerResolver`, BEFORE any re-homing) — is the only per-night source this pass
-        // knows, and it covers every own night the window holds. The imported rows in `hist` are stored
-        // under `deviceId` (the import id) and are tagged `deviceId`, which buckets to WHOOP; the days this
-        // engine scores are written under `computedId`, never into `hist`.
-        var respSourceByDay: [String: String] = [:]
-        for (day, owner) in resolvedScoreOwnerByDay { respSourceByDay[day] = owner }
-        // #31: the active device's own-brand wearable-export nights (a Garmin wearer's Garmin Connect
-        // export) seed the baselines at the lowest precedence, through the SAME seed ids and rule the
-        // dashboard's `ChargeBaselines.resolve` uses. Each seeded night is tagged with its export source so
-        // the era cut below reads it as the brand it is: a `garmin-import` night and a `garmin-<uuid>`
-        // night share one era, so the Garmin cut no longer drops the history that predates pairing. A WHOOP
-        // wearer gets no seed ids, so their fold is unchanged.
+        // #31: the active device's own-brand wearable-export nights seed at the lowest precedence, through the
+        // same seed ids the dashboard reads. A WHOOP wearer gets no seed ids, so nothing changes for them.
         let seedIds = WearableHistory.baselineSeedIds(activeDeviceId: regActiveId)
         var seedLists: [[DailyMetric]] = []
-        let histDays = Set(hist.map(\.day))
+        var seedSources: [ChargeBaselines.SourceDay] = []
         for id in seedIds {
             let rows = (try? await store.dailyMetrics(deviceId: id, from: "0000-01-01", to: newestDay)) ?? []
             seedLists.append(rows)
-            for row in rows where respSourceByDay[row.day] == nil && !histDays.contains(row.day) {
-                respSourceByDay[row.day] = id
+            seedSources += rows.map { ChargeBaselines.SourceDay(day: $0.day, sourceId: id) }
+        }
+        var seedNights = ChargeBaselines.Nights(rows: Repository.coalesceUnion(seedLists))
+        seedNights.skin = []
+
+        // Which source measured each night, for the device-era cut (#459): this pass's resolved owner for a
+        // scanned day, else the source recorded when an older day was scored, else this device. The same
+        // rule (`ChargeBaselines.sourceDays` / `recordedSources`) builds the dashboard's eras, so the
+        // breakdown rows, countdown and readiness word cut where the ring did.
+        let recorded = ChargeBaselines.recordedSources(
+            ((try? await store.scoreInputSources(deviceId: computedId, from: ownFromDay, to: newestDay,
+                                                 keys: ChargeBaselines.sourceKeyPrecedence)) ?? [])
+                .map { (day: $0.day, key: $0.key, sourceId: $0.sourceId) })
+        let sourceDays = ChargeBaselines.sourceDays(
+            own: ownHrv.keys.sorted().map { (day: $0, sourceId: resolvedScoreOwnerByDay[$0] ?? recorded[$0]) },
+            ownFallbackId: deviceId, importedDays: hist.map(\.day), importedSourceId: deviceId,
+            seed: seedSources)
+        // The recalibration epochs are read ONCE, here, so every day of the pass folds against the same cut.
+        let hrvRecalibration = Baselines.hrvBaselineEpoch()
+        let recoveryRecalibration = Baselines.recoveryBaselineEpoch()
+        let chargeTraceOn = TestCentre.active(.recovery)
+        func chargeBaselines(for day: String) -> AnalyticsEngine.ProfileBaselines {
+            guard let r = ChargeBaselines.resolveDay(scoredDay: day, imported: importedNights, own: ownNights,
+                                                     seed: seedNights, sourceDays: sourceDays,
+                                                     hrvRecalibration: hrvRecalibration,
+                                                     recoveryRecalibration: recoveryRecalibration) else {
+                return AnalyticsEngine.ProfileBaselines()
             }
+            if chargeTraceOn {
+                diagnosticSink?(ChargeBaselines.logLine(scoredDay: day, hrv: r.hrvHistory, restingHR: r.restingHRHistory,
+                                                        resp: r.respHistory, skin: r.skinHistory), .recovery)
+            }
+            // Resp and skin are passed only when usable: a calibrating baseline must not move Charge.
+            return AnalyticsEngine.ProfileBaselines(hrv: r.hrv, restingHR: r.restingHR,
+                                                    resp: r.resp.usable ? r.resp : nil,
+                                                    skinTemp: r.skin.usable ? r.skin : nil,
+                                                    hrvPriorWeek: r.hrvPriorWeek)
         }
-        let seedRows = Repository.coalesceUnion(seedLists)
-        let respCandidateDays = Set(hist.map(\.day)).union(nightlyRespByDay.keys)
-            .union(seedRows.map(\.day)).sorted()
-        // rhr/resp/skin honour the Charge-wide recalibration epoch (noop.recoveryBaselineEpoch); 0 = no-op,
-        // so the manual Recalibrate re-anchors the whole Charge build-up (HRV + resting HR + resp + skin)
-        // together. The respiration baseline is additionally scoped to the CURRENT device era.
-        // `deviceEraEpoch` returns 0.0 for a single-brand history — every WHOOP-origin id (import, strap,
-        // the "-noop" computed sibling, the Apple/HC riders) buckets to one brand — so a WHOOP-only user is
-        // unaffected; `max` keeps whichever cut is LATER, since both mean "ignore nights before this".
-        // KNOWN GAP, and pre-existing: the bucket is per BRAND, so it does not separate an imported WHOOP
-        // vendor rate from NOOP's own RSA estimate on WHOOP nights; since #2525 the two meet only while the
-        // import seeds. #459's primitive is likewise still unwired for the HRV and resting-HR baselines it
-        // was written for; that is #459's own scope, not this change's.
-        let recoveryEpoch = Baselines.recoveryBaselineEpoch()
-        let respEraEpoch = Baselines.deviceEraEpoch(respCandidateDays.map { (day: $0, sourceId: respSourceByDay[$0] ?? deviceId) })
-        let respEpoch = max(recoveryEpoch, respEraEpoch)
-        // The HRV epoch is read ONCE, here, and handed to the history, the scored fold and the #1614 trace.
-        // Baselines+Trace is deliberately pure so it cannot read the pref itself, and letting the scored
-        // fold take its UserDefaults default while the trace read its own copy would leave a window -
-        // however small - where a diagnostic describes a fold the score did not perform.
-        // Garmin child 9: a Garmin watch's overnight HRV and resting HR are the watch's own methods, so a
-        // switch to or from one starts a new baseline era for both (#459). 0 when no night in the window is
-        // a Garmin night, so every other history folds exactly as before.
-        let garminEraEpoch = GarminScoringInputs.baselineEraEpoch(
-            respCandidateDays.map { (day: $0, sourceId: respSourceByDay[$0] ?? deviceId) })
-        let hrvEpoch = max(Baselines.hrvBaselineEpoch(), garminEraEpoch)
-        let rhrEpoch = max(recoveryEpoch, garminEraEpoch)
-        func seedNights(_ value: (DailyMetric) -> Double?) -> [(day: String, value: Double?)] {
-            seedRows.map { (day: $0.day, value: value($0)) }
-        }
-        let hrvHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.avgHrv }, own: ownNights(nightlyHrvByDay),
-                                                 seed: seedNights { $0.avgHrv },
-                                                 anchorDay: newestDay, cfg: hrvCfg, baselineEpoch: hrvEpoch)
-        let rhrHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.restingHr.map(Double.init) },
-                                                 own: ownNights(nightlyRhrByDay),
-                                                 seed: seedNights { $0.restingHr.map(Double.init) },
-                                                 anchorDay: newestDay, cfg: rhrCfg, baselineEpoch: rhrEpoch)
-        let respHistory = ChargeBaselines.historyWithSeed(imported: importedNights { $0.respRateBpm }, own: ownNights(nightlyRespByDay),
-                                                  seed: seedNights { $0.respRateBpm },
-                                                  anchorDay: newestDay, cfg: respCfg, baselineEpoch: respEpoch)
-        // Skin temperature has no imported counterpart (imported rows carry skinTempDevC, not the raw mean),
-        // so its history is the own nights alone.
-        let skinHistory = ChargeBaselines.history(imported: [], own: ownNights(nightlySkinByDay),
-                                                  anchorDay: newestDay, cfg: skinCfg, baselineEpoch: recoveryEpoch)
-        // Resp baseline gated on `usable`: RecoveryScorer includes the resp term whenever a
-        // baseline object is present , a CALIBRATING (<4-night) baseline would let one noisy
-        // RSA night move recovery (mirrors the skin-temp use-site gate; honest cold-start).
-        let respFold = Baselines.foldHistory(respHistory.values, dayKeys: respHistory.dayKeys, cfg: respCfg,
-                                             baselineEpoch: respEpoch)
-        // Skin-temp gated the same way for consistency: its only use-site re-checks `.usable`
-        // (AnalyticsEngine's skinTempDevC guard) so this is belt-and-suspenders, but it stops a
-        // future use-site from trusting a CALIBRATING baseline. (PR #97 review.)
-        let skinFold = Baselines.foldHistory(skinHistory.values, dayKeys: skinHistory.dayKeys, cfg: skinCfg,
-                                             baselineEpoch: recoveryEpoch)
-        // #1614: the per-night HRV fold, traced. HRV ONLY, deliberately: it is Charge's dominant driver
-        // and the one whose spread the score divides by, so tracing all four baselines would quadruple
-        // the log for the three that are not the question being asked. Capped at the last 14 nights,
-        // which is enough to see whether the spread is lifting without an established user's history
-        // burying the rest of the export. The whole history is still folded, so the state is unchanged
-        // and the trace cannot describe a baseline the scorer is not using. #2525 adds one line naming
-        // what each of the four baselines was folded from (own nights, or own nights still seeded by the
-        // import), read off the same histories the folds below consume.
-        if TestCentre.active(.recovery) {
-            diagnosticSink?(ChargeBaselines.logLine(anchorDay: newestDay, hrv: hrvHistory, restingHR: rhrHistory,
-                                                    resp: respHistory, skin: skinHistory), .recovery)
-            let traced = Baselines.foldHistoryTrace(hrvHistory.values, dayKeys: hrvHistory.dayKeys, cfg: hrvCfg,
-                                                    metric: "hrv",
-                                                    baselineEpoch: hrvEpoch,
-                                                    tail: 14)
-            for line in traced.lines { diagnosticSink?(line, .recovery) }
-        }
-        let baselines2 = AnalyticsEngine.ProfileBaselines(
-            // HRV honours noop.hrvBaselineEpoch; rhr/resp/skin honour noop.recoveryBaselineEpoch via their
-            // parallel day keys, so the manual Recalibrate restarts the whole Charge build-up together.
-            hrv: Baselines.foldHistory(hrvHistory.values, dayKeys: hrvHistory.dayKeys, cfg: hrvCfg,
-                                       baselineEpoch: hrvEpoch),
-            restingHR: Baselines.foldHistory(rhrHistory.values, dayKeys: rhrHistory.dayKeys, cfg: rhrCfg,
-                                             baselineEpoch: rhrEpoch),
-            resp: respFold.usable ? respFold : nil,
-            skinTemp: skinFold.usable ? skinFold : nil)
 
         // Real (non-detected) workouts in the scored window, used to de-duplicate detected bouts so a
         // user who BOTH has real sessions AND wears the strap doesn't see the same session twice (the
@@ -2221,7 +2188,9 @@ final class IntelligenceEngine: ObservableObject {
             mode: dayCycleMode,
             cache: dayCycleCache,
             profile: up,
-            maxHROverride: maxHR,
+            // #54: the pass's resolved HRmax, so step-cycle workouts share the day's yardstick.
+            maxHROverride: StrainScorer.resolveHRmax(override: maxHR, age: up.age,
+                                                     observedEvidence: hrmaxEvidence).value,
             effortMethod: effortMethodGlobal,
             trace: stepsTraceActive ? { self.diagnosticSink?($0, .steps) } : nil)
         // #299: `editsByStart` is now built PER DAY inside the scoring loop (scoped to the day each edit
@@ -2266,35 +2235,56 @@ final class IntelligenceEngine: ObservableObject {
             nowLocalMidnight: nowLocalMidnight, now: now, offsetSec: tzOffset,
             maxDays: maxDays, strictCanonicalAlias: strictCanonicalAlias)
         var appliedLegacySnapshots: [String: LegacyScoreSnapshot] = [:]
-        var paceMark = DispatchTime.now().uptimeNanoseconds
+        // #299: scope the edits to each day before folding. A userEdited row / hand-logged nap belongs
+        // to exactly ONE day — the day its night ENDS on, matching the daily's end-day bucket. `endTs`
+        // is stable under a bedtime edit (only the onset/`startTsAdjusted` moves), so end-day is the
+        // right key. Filtering here keeps a single-night edit overriding only its OWN night instead of
+        // every night. `effectiveStartTs` (the #318 user-corrected onset) is preserved on the row.
+        // Prepared for every night BEFORE the scoring loop so the sleep-need funnel below reads the
+        // same edited totals the loop scores.
+        var preparedDailies: [DailyMetric] = []
+        preparedDailies.reserveCapacity(scoredNights.count)
         for night in scoredNights {
-            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
-            // #299: scope the edits to THIS day before folding. A userEdited row / hand-logged nap belongs
-            // to exactly ONE day — the day its night ENDS on, matching the daily's end-day bucket. `endTs`
-            // is stable under a bedtime edit (only the onset/`startTsAdjusted` moves), so end-day is the
-            // right key. Filtering here keeps a single-night edit overriding only its OWN night instead of
-            // every night. `effectiveStartTs` (the #318 user-corrected onset) is preserved on the row.
             let dayEditedRows = Self.editedRowsForDay(editedRows, day: night.daily.day, tzOffsetSeconds: tzOffset)
             let editsByStart = Dictionary(dayEditedRows.map { ($0.startTs, $0) }, uniquingKeysWith: { a, _ in a })
-            var daily = sleepEditedDaily(night.daily, detected: night.cachedSleep, editsByStart: editsByStart,
-                                         habitualMidsleepSec: habitualMidsleepSec)
-            daily = DayCycleIntelligenceIntegration.applying(physiologicalSteps, to: daily)
-            daily = Self.recomputeRecoveryDaily(daily, nightlySkinTempC: night.nightlySkin,
-                                               baselines: baselines2)
+            let edited = sleepEditedDaily(night.daily, detected: night.cachedSleep, editsByStart: editsByStart,
+                                          habitualMidsleepSec: habitualMidsleepSec)
+            preparedDailies.append(DayCycleIntelligenceIntegration.applying(physiologicalSteps, to: edited))
+        }
+        // #55: the ONE per-day Rest context (need + debt + regularity + age targets), from the nights
+        // BEFORE each day. Every Rest written below — the persisted score, the Charge rest term, its
+        // drivers and trace, and the need/regularity/debt series the Sleep tab reads — uses it.
+        let restContexts = await Self.sleepScoringContexts(
+            store: store, importedId: deviceId, computedId: computedId,
+            historyIds: WearableHistory.readOrder(activeDeviceId: regActiveId),
+            fresh: zip(preparedDailies, scoredNights).map { ($0, $1.cachedSleep) },
+            oldestDay: oldestDay, newestDay: newestDay,
+            windowStart: windowStart - SleepNeed.baseWindowDays * 86_400, now: now,
+            offsetSec: tzOffset, age: profile.age > 0 ? profile.age : nil)
+        var paceMark = DispatchTime.now().uptimeNanoseconds
+        for (nightIndex, night) in scoredNights.enumerated() {
+            await RescoreBackgroundScheduler.paceIfBackgrounded(since: &paceMark)
+            let restContext = restContexts.byDay[night.daily.day]?.rest ?? .coldStart
+            // #53: this day's own baselines (window ending the day before).
+            let baselines2 = chargeBaselines(for: night.daily.day)
+            var daily = Self.recomputeRecoveryDaily(preparedDailies[nightIndex], nightlySkinTempC: night.nightlySkin,
+                                                    baselines: baselines2, restContext: restContext)
             let recovery = daily.recovery
             let skinDev = daily.skinTempDevC
             // Charge term-breakdown trace (Group G): only when the Recovery test mode is on. Emits which
             // term moved Charge and which was nil and forced the renorm, tagged `.recovery`. The trace's
             // score is RecoveryScorer.recovery verbatim, so the `recovery` written above is unchanged.
             if recoveryTraceActive {
-                for line in recoveryTraceLines(daily, baselines2) { diagnosticSink?(line, .recovery) }
+                for line in recoveryTraceLines(daily, baselines2, restContext: restContext) {
+                    diagnosticSink?(line, .recovery)
+                }
             }
             let source = DaySource.classify(day: daily.day, importedWhoopDays: importedWhoopDays,
                                             appleHealthDays: appleHealthDays)
             // SHARED CONTRACT enrichment: the ordered Charge driver list + the relative skin-temp marker,
             // built from the SAME inputs `recomputeRecovery` reads so the rows can never disagree with the
             // headline. Both are empty/nil pre-baseline (cold-start), matching the score's own null-honesty.
-            let drivers = recomputeChargeDrivers(daily, baselines2)
+            let drivers = recomputeChargeDrivers(daily, baselines2, restContext: restContext)
             let skinRel = RecoveryScorer.skinTempRelative(deviationC: skinDev)
             // Honest per-day Charge confidence (A3): the strap night reads `.solid`/`.building`/`.calibrating`
             // off the HRV baseline state rather than a blanket `.solid`, so a thin/provisional baseline shows
@@ -2330,7 +2320,9 @@ final class IntelligenceEngine: ObservableObject {
             if !dayImported, let tsm = daily.totalSleepMin, night.cachedSleep.isEmpty {
                 diagnosticSink?(Self.sleepDivergenceLogLine(day: daily.day,
                                                             totalSleepMin: Int(tsm.rounded()),
-                                                            editFold: dayEditedRows.count), nil)
+                                                            editFold: Self.editedRowsForDay(
+                                                                editedRows, day: daily.day,
+                                                                tzOffsetSeconds: tzOffset).count), nil)
             }
             // #195: one always-on line per scored night with the computed HRV value + the window it used,
             // so an "HRV reads high / deep-sleep window not changing" report is self-diagnosing straight
@@ -2370,8 +2362,14 @@ final class IntelligenceEngine: ObservableObject {
             // same `night.nightlySkin` the line above takes the deviation from — so the two can never
             // describe different nights, and no second derivation exists to drift.
             dailies.append(daily)
-            if let rest = AnalyticsEngine.Rest.composite(daily: daily) {
+            if let rest = AnalyticsEngine.Rest.composite(daily: daily, context: restContext) {
                 restPoints.append(MetricPoint(day: daily.day, key: "sleep_performance", value: rest))
+            }
+            restPoints += Self.sleepContextPoints(day: daily.day, daily: daily,
+                                                  context: restContexts.byDay[daily.day],
+                                                  napMin: restContexts.napMinByDay[daily.day] ?? 0)
+            if sleepTraceActive, let ctx = restContexts.byDay[daily.day] {
+                diagnosticSink?(Self.restContextLine(day: daily.day, context: ctx), .sleep)
             }
             if let onset = physiologicalSteps.onsetByWakeDay[daily.day] {
                 restPoints.append(MetricPoint(day: daily.day,
@@ -2396,6 +2394,9 @@ final class IntelligenceEngine: ObservableObject {
             // scored — so the mean-vs-floor comparison the issue needs can be evaluated from exports later.
             if let v = primarySessionRHRByDay[daily.day] {
                 restPoints.append(MetricPoint(day: daily.day, key: "rhr_primary_session", value: v))
+            }
+            if let v = sustainedPeakByDay[daily.day] {
+                restPoints.append(MetricPoint(day: daily.day, key: StrainScorer.sustainedPeakMetricKey, value: v))
             }
             // #1169: its coverage inputs beside the mean — valid-sample count + primary-session duration (s)
             // — so a thin-coverage night can be down-weighted in the later holdout. Raw inputs, not a fraction.
@@ -2539,9 +2540,12 @@ final class IntelligenceEngine: ObservableObject {
                 dailies.append(scored)
                 importScoredDays.insert(w.day)
                 resolvedScoreOwnerByDay[w.day] = source
-                if let rest = AnalyticsEngine.Rest.composite(daily: scored) {
+                let foldContext = restContexts.byDay[w.day]
+                if let rest = AnalyticsEngine.Rest.composite(daily: scored, context: foldContext?.rest ?? .coldStart) {
                     restPoints.append(MetricPoint(day: w.day, key: "sleep_performance", value: rest))
                 }
+                restPoints += Self.sleepContextPoints(day: w.day, daily: scored, context: foldContext,
+                                                      napMin: restContexts.napMinByDay[w.day] ?? 0)
                 out.append(Computed(day: w.day, recovery: recovery, strain: scored.strain,
                                     sleepMin: scored.totalSleepMin, hrv: scored.avgHrv, rhr: scored.restingHr,
                                     source: .computed, confidence: w.confidence))
@@ -2582,6 +2586,10 @@ final class IntelligenceEngine: ObservableObject {
         var provenanceByCell: [String: ScoreInputProvenanceRow] = [:]
         for daily in persistedDailies {
             guard let source = resolvedScoreOwnerByDay[daily.day] else { continue }
+            // #53: which source measured this night, recorded for EVERY scored day (not only those with a
+            // Charge), so later passes and the dashboard rebuild the same device eras.
+            provenanceByCell["\(daily.day)\u{1F}\(ChargeBaselines.baselineSourceKey)"] =
+                ScoreInputProvenanceRow(day: daily.day, key: ChargeBaselines.baselineSourceKey, sourceId: source)
             if daily.recovery != nil {
                 if let snapshot = appliedLegacySnapshots[daily.day] {
                     if let oldSource = snapshot.recoverySource {
@@ -2685,14 +2693,16 @@ final class IntelligenceEngine: ObservableObject {
         for d in faPriorDaily { faGateByDay[d.day] = d }
         for d in dailies { faGateByDay[d.day] = d }
         let faGate7 = Array(faGateByDay.values.sorted { $0.day < $1.day }.suffix(7))
+        let faSatKey = IntelligenceEngine.saturdayKey(onOrBefore: newestDay)
+        let faWatchVo2 = await watchVo2max(store: store, satKey: faSatKey)
         let faPts = Self.fitnessAgeRows(
             gateDays: faGate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
-            satKey: IntelligenceEngine.saturdayKey(onOrBefore: newestDay))
+            satKey: faSatKey, watchVo2max: faWatchVo2)
         if !faPts.isEmpty {
             try? await store.persistMetricSeriesWithProvenance(
                 points: faPts,
-                provenance: Self.vo2MaxProvenance(points: faPts, waistCm: profile.waistCm),
+                provenance: Self.vo2MaxProvenance(points: faPts, waistCm: profile.waistCm, watchVo2max: faWatchVo2),
                 deviceId: computedId
             )
         }
@@ -2709,7 +2719,10 @@ final class IntelligenceEngine: ObservableObject {
             chronoAge: Double(profile.age),
             restingHR: faRHRs.isEmpty ? nil : IntelligenceEngine.medianOf(faRHRs),
             sleepHours: vNights.isEmpty ? nil : vNights.reduce(0, +) / Double(vNights.count),
-            sleepConsistency: VitalityEngine.sleepConsistency(nightlyHours: vNights),
+            // #55: the Sleep Regularity Index the newest scored day's Rest used (÷100), the value persisted
+            // as that day's sleep_consistency — not 1 − CV of duration.
+            sleepConsistency: (dailies.map(\.day).max()).flatMap { restContexts.byDay[$0]?.regularity }
+                .map { ($0.score * 100.0 * 100.0).rounded() / 100.0 / 100.0 },
             rmssd: vHRVs.isEmpty ? nil : IntelligenceEngine.medianOf(vHRVs),
             rmssdNorm: VitalityEngine.rmssdNorm(forAge: Double(profile.age)),
             steps: vSteps.isEmpty ? nil : vSteps.reduce(0, +) / Double(vSteps.count))
@@ -3073,8 +3086,12 @@ final class IntelligenceEngine: ObservableObject {
         // today and the tail is the oldest day in the window. Taking the last match would have scored
         // today's workout against a resting HR up to `maxDays` old.
         let measuredResting = out.first(where: { $0.rhr != nil })?.rhr.map(Double.init)
-        await rescoreManualWorkouts(store: store, profile: up, restingHR: measuredResting,
-                                    effortMethod: effortMethodGlobal)
+        // #54: the pass's resolved HRmax (override, else observed evidence, else Tanaka), the same yardstick
+        // every day this pass scored used. Twin of Kotlin's `passResolvedMaxHr`.
+        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id),
+                              maxHROverride: StrainScorer.resolveHRmax(override: maxHR, age: up.age,
+                                                                       observedEvidence: hrmaxEvidence).value,
+                              restingHR: measuredResting, effortMethod: effortMethodGlobal)
 
         results = out
         note = out.isEmpty
@@ -3251,6 +3268,7 @@ final class IntelligenceEngine: ObservableObject {
     /// (negligible calories), and only when the recompute is a genuine improvement , so a well-scored
     /// 4.0 workout is never touched and a still-sparse window is a no-op.
     private func rescoreManualWorkouts(store: WhoopStore, profile up: UserProfile,
+                                       maxHROverride: Double?,
                                        restingHR: Double? = nil,
                                        // #1545: the recipe THIS PASS scored its days with, threaded in
                                        // rather than re-read. Re-reading would let a toggle flipped
@@ -3262,7 +3280,9 @@ final class IntelligenceEngine: ObservableObject {
         let since = now - 14 * 86_400
         guard let rows = try? await store.workouts(deviceId: deviceId, from: since, to: now, limit: 200)
         else { return }
-        let hrMax = Double(profile.hrMax)
+        // #50: the unrounded resolver Kotlin uses. `profile.hrMax` rounds Tanaka to an Int, which scored
+        // the same workout to a different Effort on each platform.
+        let hrMax = ManualWorkoutRescore.hrMax(override: maxHROverride, age: up.age)
         var updated: [WorkoutRow] = []
         // A manual row is eligible when it looks under-scored (negligible kcal, #137) OR it's missing
         // strain (the merged-workout case, where kcal is the SUM of inputs so it never looks under-scored
@@ -3290,13 +3310,62 @@ final class IntelligenceEngine: ObservableObject {
         if !updated.isEmpty { _ = try? await store.upsertWorkouts(updated, deviceId: deviceId) }
     }
 
+    /// The post-pass workout rescores: #137 manual rows first, then #50: a Garmin watch workout is stored by
+    /// the history sync with no Effort, so score it from the watch's own trace against the same HRmax,
+    /// resting HR and Effort method as the manual rescore. Kotlin twin: `IntelligenceEngine.rescoreWorkouts`.
+    private func rescoreWorkouts(store: WhoopStore, profile up: UserProfile, deviceIds: [String],
+                                 maxHROverride: Double?, restingHR: Double?,
+                                 effortMethod: StrainScorer.Method) async {
+        await rescoreManualWorkouts(store: store, profile: up, maxHROverride: maxHROverride,
+                                    restingHR: restingHR, effortMethod: effortMethod)
+        await scoreGarminWorkouts(store: store, deviceIds: deviceIds, profile: up,
+                                  hrMax: ManualWorkoutRescore.hrMax(override: maxHROverride, age: up.age),
+                                  restingHR: restingHR, effortMethod: effortMethod)
+    }
+
+    /// #50: fill the Effort of stored Garmin watch workouts. The history sync stores each activity with no
+    /// strain and its per-second HR under the watch's own device id, which is also the row's `source`.
+    /// Only rows still missing a strain are read, so a scored row is never touched again, and the whole
+    /// history is read with no row cap, so every workout stored before this pass existed is backfilled on
+    /// its first run (a capped ascending read would never reach the newest ones). A row whose trace is too
+    /// thin to score stays nil and is remembered for the life of the process, so later passes do not
+    /// re-read its HR. Twin of the Kotlin `scoreGarminWorkouts`.
+    private func scoreGarminWorkouts(store: WhoopStore, deviceIds: [String], profile up: UserProfile,
+                                     hrMax: Double, restingHR: Double?,
+                                     effortMethod: StrainScorer.Method) async {
+        let now = Int(Date().timeIntervalSince1970)
+        for id in deviceIds where GarminWorkoutEffort.isWatchSource(id) {
+            guard let rows = try? await store.workouts(deviceId: id, from: 0, to: now,
+                                                       limit: GarminWorkoutEffort.allRows) else { continue }
+            var updated: [WorkoutRow] = []
+            for row in rows where row.strain == nil && row.endTs > row.startTs {
+                let key = GarminWorkoutEffort.attemptKey(deviceId: id, startTs: row.startTs,
+                                                         endTs: row.endTs, sport: row.sport)
+                if unscorableGarminWorkouts.contains(key) { continue }
+                guard let samples = try? await store.hrSamples(deviceId: id, from: row.startTs, to: row.endTs,
+                                                               limit: 200_000) else { continue }
+                guard let strain = GarminWorkoutEffort.strainToFill(
+                    currentStrain: row.strain, windowSamples: samples, profile: up, hrMax: hrMax,
+                    restingHR: restingHR, effortMethod: effortMethod)
+                else { unscorableGarminWorkouts.insert(key); continue }
+                updated.append(WorkoutRow(
+                    startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
+                    durationS: row.durationS, energyKcal: row.energyKcal, avgHr: row.avgHr, maxHr: row.maxHr,
+                    strain: strain, distanceM: row.distanceM, zonesJSON: row.zonesJSON, notes: row.notes,
+                    steps: row.steps))
+            }
+            if !updated.isEmpty { _ = try? await store.upsertWorkouts(updated, deviceId: id) }
+        }
+    }
+
     /// Pass 1 has no seeded skin baseline. Attach the deviation before scoring so the score,
     /// explanation, trace and persisted row all consume the same temperature. Internal for regression tests.
     static func recomputeRecoveryDaily(_ daily: DailyMetric, nightlySkinTempC: Double?,
-                                       baselines: AnalyticsEngine.ProfileBaselines) -> DailyMetric {
+                                       baselines: AnalyticsEngine.ProfileBaselines,
+                                       restContext: AnalyticsEngine.Rest.Context = .coldStart) -> DailyMetric {
         let skinDev = recomputeSkinTempDev(nightlySkinTempC, baselines.skinTemp)
         let input = daily.with(recovery: daily.recovery, skinTempDevC: skinDev, skinTempC: nightlySkinTempC)
-        return input.with(recovery: recomputeRecovery(input, baselines), skinTempDevC: skinDev,
+        return input.with(recovery: recomputeRecovery(input, baselines, restContext: restContext), skinTempDevC: skinDev,
                           skinTempC: nightlySkinTempC)
     }
 
@@ -3344,16 +3413,18 @@ final class IntelligenceEngine: ObservableObject {
     /// baseline is usable (RecoveryScorer gates on `hrvBaseline.usable`, i.e. ≥ minNightsSeed valid
     /// nights) , so the honest null-until-4-nights cold-start is free. Mirrors AnalyticsEngine's own
     /// recovery call + Android IntelligenceEngine.recomputeRecovery. (#78)
-    private static func recomputeRecovery(_ daily: DailyMetric, _ baselines: AnalyticsEngine.ProfileBaselines) -> Double? {
+    private static func recomputeRecovery(_ daily: DailyMetric, _ baselines: AnalyticsEngine.ProfileBaselines,
+                                          restContext: AnalyticsEngine.Rest.Context) -> Double? {
         guard let hrvVal = daily.avgHrv, let rhrVal = daily.restingHr, let hrvBase = baselines.hrv else { return nil }
         // Charge enrichment: feed the Rest COMPOSITE (÷100) as the sleep-quality term instead of raw
         // efficiency, and fold in the night's skin-temp deviation. Both come from the persisted daily
         // fields (the raw streams are gone in pass 2). (Charge/Effort/Rest scoring redesign.)
-        let restQuality = AnalyticsEngine.Rest.composite(daily: daily).map { $0 / 100.0 } ?? daily.efficiency
+        let restQuality = AnalyticsEngine.Rest.composite(daily: daily, context: restContext).map { $0 / 100.0 }
+            ?? daily.efficiency
         return RecoveryScorer.recovery(hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
                                        hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
                                        respBaseline: baselines.resp, sleepPerf: restQuality,
-                                       skinTempDev: daily.skinTempDevC)
+                                       skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
     }
 
     /// The ordered "what shaped it" Charge driver list for one day (SHARED CONTRACT). Pure: it feeds the
@@ -3363,15 +3434,17 @@ final class IntelligenceEngine: ObservableObject {
     /// (HRV / RHR / HRV-baseline) is missing or the baseline isn't usable yet, mirroring `recomputeRecovery`'s
     /// own early-nil so a cold-start night shows the calibrating state rather than fabricated rows.
     private func recomputeChargeDrivers(_ daily: DailyMetric,
-                                        _ baselines: AnalyticsEngine.ProfileBaselines) -> [ChargeDriver] {
+                                        _ baselines: AnalyticsEngine.ProfileBaselines,
+                                        restContext: AnalyticsEngine.Rest.Context) -> [ChargeDriver] {
         guard let hrvVal = daily.avgHrv, let rhrVal = daily.restingHr, let hrvBase = baselines.hrv else {
             return []
         }
-        let restQuality = AnalyticsEngine.Rest.composite(daily: daily).map { $0 / 100.0 } ?? daily.efficiency
+        let restQuality = AnalyticsEngine.Rest.composite(daily: daily, context: restContext).map { $0 / 100.0 }
+            ?? daily.efficiency
         return RecoveryScorer.chargeDrivers(hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
                                             hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
                                             respBaseline: baselines.resp, sleepPerf: restQuality,
-                                            skinTempDev: daily.skinTempDevC)
+                                            skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
     }
 
     /// The Charge term-breakdown trace lines for one day (Recovery test mode, Group G). Pure: it feeds the
@@ -3380,17 +3453,19 @@ final class IntelligenceEngine: ObservableObject {
     /// trace can never diverge from the Charge number written for the day. Empty when a hard input
     /// (HRV / RHR / HRV-baseline) is missing, mirroring `recomputeRecovery`'s own early-nil. Only CALLED
     /// when `TestCentre.active(.recovery)` is true, so it costs nothing when the mode is off.
-    private func recoveryTraceLines(_ daily: DailyMetric, _ baselines: AnalyticsEngine.ProfileBaselines) -> [String] {
+    private func recoveryTraceLines(_ daily: DailyMetric, _ baselines: AnalyticsEngine.ProfileBaselines,
+                                    restContext: AnalyticsEngine.Rest.Context) -> [String] {
         guard let hrvVal = daily.avgHrv, let rhrVal = daily.restingHr, let hrvBase = baselines.hrv else {
             return ["charge day=\(daily.day) nilScore reason=missingInput "
                 + "(hrv/rhr/hrvBaseline required)"]
         }
-        let restQuality = AnalyticsEngine.Rest.composite(daily: daily).map { $0 / 100.0 } ?? daily.efficiency
+        let restQuality = AnalyticsEngine.Rest.composite(daily: daily, context: restContext).map { $0 / 100.0 }
+            ?? daily.efficiency
         let (_, trace) = RecoveryScorer.recoveryTrace(
             hrv: hrvVal, rhr: Double(rhrVal), resp: daily.respRateBpm,
             hrvBaseline: hrvBase, rhrBaseline: baselines.restingHR,
             respBaseline: baselines.resp, sleepPerf: restQuality,
-            skinTempDev: daily.skinTempDevC)
+            skinTempDev: daily.skinTempDevC, hrvPriorWeek: baselines.hrvPriorWeek)
         // Prefix each line with the day key so a multi-night export stays parseable, matching the sleep
         // trace's per-day shape. Strip ONLY the leading "charge " token the trace builder writes (every
         // line starts with it), then re-emit as "charge day=<day> ...".
@@ -3423,17 +3498,17 @@ final class IntelligenceEngine: ObservableObject {
     nonisolated static func watchRecoveries(appleRows: [DailyMetric],
                                 strapRecoveryDays: Set<String> = []) -> [WatchScoredDay] {
         let rows = appleRows.sorted { $0.day < $1.day }
+        let epochDays = rows.map { Baselines.isoEpochDay($0.day) }
         var out: [WatchScoredDay] = []
+        var lo = 0
         for (i, row) in rows.enumerated() where !strapRecoveryDays.contains(row.day) {
-            // Trailing baseline history = every earlier apple-health day with a usable value. Today is the
-            // current row; the baseline is built from the days BEFORE it so it can't see its own value.
-            let prior = rows[..<i]
-            let sdnnHistory = prior.compactMap { $0.avgHrv }
-            let rhrHistory = prior.compactMap { $0.restingHr.map(Double.init) }
-            let res = WatchRecovery.compute(todaySDNN: row.avgHrv,
-                                            todayRHR: row.restingHr,
-                                            sdnnHistory: sdnnHistory,
-                                            rhrHistory: rhrHistory)
+            // #53: each day reads its own trailing 60-day baseline (`WatchRecovery.score`, the funnel the
+            // dashboard's watch pill shares). Only the rows inside that window are handed over, so a long
+            // history stays linear rather than re-filtering every earlier day for every day.
+            if let d = epochDays[i] {
+                while lo < i, let e = epochDays[lo], d - e > ChargeBaselines.windowDays { lo += 1 }
+            }
+            let res = WatchRecovery.score(day: row.day, rows: Array(rows[lo...i]))
             out.append(WatchScoredDay(day: row.day, recovery: res.recovery, confidence: res.confidence))
         }
         return out
@@ -3547,11 +3622,8 @@ final class IntelligenceEngine: ObservableObject {
         return samples
     }
 
-    /// Habitual midsleep (local seconds) AND the trailing per-night sleep DURATIONS (hours,
-    /// chronological) from the stored sessions over the window — the longest block per LOCAL day, so
-    /// naps drop out. One read serves both the main-night midsleep learner (#547) and the personal
-    /// sleep-need + regularity that thread into `analyzeDay` (Wave 0 · SL1/T1). The midsleep result is
-    /// byte-identical to before; the nightly-hours output is the Swift-side extension.
+    /// Habitual midsleep (local seconds) from the stored sessions over the window — the longest block per
+    /// LOCAL day, so naps drop out — for the main-night midsleep learner (#547).
     ///
     /// Only sessions that ended before `finishedBefore` (the pass's local midnight) are learned from. Tonight's
     /// session is re-banked by every sync while it is still growing, and each time it moved the learned
@@ -3564,7 +3636,7 @@ final class IntelligenceEngine: ObservableObject {
     static func computeHabitualSleep(
         store: WhoopStore, importedId: String, computedId: String, historyIds: [String] = [],
         windowStart: Int, windowEnd: Int, finishedBefore: Int, offsetSec: Int
-    ) async -> (midsleepSec: Int?, nightlyHours: [Double]) {
+    ) async -> Int? {
         let imported = (try? await store.sleepSessions(deviceId: importedId, from: windowStart,
                                                        to: windowEnd, limit: 4000)) ?? []
         let ownComputed = (try? await store.sleepSessions(deviceId: computedId, from: windowStart,
@@ -3586,30 +3658,110 @@ final class IntelligenceEngine: ObservableObject {
         // covers an imported night and its computed twin (the longest capture wins, exactly what the
         // per-day length rule chose anyway).
         let merged = SleepSessionDedup.dedupe(all).kept.filter { $0.endTs < finishedBefore }
-        // Longest block per LOCAL day (naps drop out), chosen by in-bed SPAN — reused for BOTH the
-        // midsleep learner and the per-night durations (Wave 0 · SL1/T1), so the two can never read a
-        // different history. For the DURATIONS we keep TST (span × efficiency), NOT the in-bed span:
-        // the need/regularity estimate must be in the same asleep-time units as the `tstSeconds` Rest
-        // scores against, or need reads systematically high (validated on real data — an in-bed span
-        // over-counts ~0.85 h vs TST). Efficiency is 0..1 (post the v26 unit-heal); a rare nil main
-        // night falls back to a typical 0.9.
-        var longestByDay: [String: (span: Int, tstHours: Double)] = [:]
+        // One HistoryBlock per session keyed by the LOCAL day of its midpoint; the learner keeps the
+        // longest block per day, so naps drop out.
         let blocks = merged.compactMap { s -> SleepStageTotals.HistoryBlock? in
             let start = s.effectiveStartTs, end = s.endTs
             guard end > start else { return nil }
             let mid = start + (end - start) / 2
-            let dayKey = AnalyticsEngine.dayString(mid, offsetSec: offsetSec)
-            let span = end - start
-            if span > (longestByDay[dayKey]?.span ?? 0) {
-                let eff = s.efficiency.flatMap { (0.0 < $0 && $0 <= 1.0) ? $0 : nil } ?? 0.9
-                longestByDay[dayKey] = (span, Double(span) / 3600.0 * eff)
-            }
-            return SleepStageTotals.HistoryBlock(start: start, end: end, dayKey: dayKey)
+            return SleepStageTotals.HistoryBlock(start: start, end: end,
+                                                 dayKey: AnalyticsEngine.dayString(mid, offsetSec: offsetSec))
         }
-        let midsleep = SleepStageTotals.habitualMidsleepSec(blocks, offsetSec: offsetSec)
-        // Chronological (day-key string sort == date order) so a recent-window suffix is well-defined.
-        let nightlyHours = longestByDay.keys.sorted().compactMap { longestByDay[$0]?.tstHours }
-        return (midsleep, nightlyHours)
+        return SleepStageTotals.habitualMidsleepSec(blocks, offsetSec: offsetSec)
+    }
+
+    /// The per-day sleep-scoring inputs of one engine pass (#55): the joined Rest context per day and the
+    /// nap credit per wake day that fed it.
+    struct SleepScoringRun {
+        let byDay: [String: SleepScoring.DayContext]
+        let napMinByDay: [String: Double]
+    }
+
+    /// Resolve the Rest context for every day in `oldestDay…newestDay` from the nights BEFORE each day.
+    ///
+    /// History: the stored daily rows (computed `-noop` first, then the import) and sleep sessions (the
+    /// import, the computed rows and the wearable-history sources) from `windowStart`, with this pass's
+    /// own `fresh` dailies and sessions taking precedence for their days. Main-night minutes and Effort come
+    /// from the daily rows; naps are the asleep minutes outside each wake day's longest block; the
+    /// regularity raster takes every session, each on the UTC offset the device's zone had at its start
+    /// (`TimeZone.current` rules, DST-aware). No per-night offset is stored, so a night recorded in another
+    /// zone is placed by this device's current zone rules.
+    static func sleepScoringContexts(
+        store: WhoopStore, importedId: String, computedId: String, historyIds: [String],
+        fresh: [(daily: DailyMetric, sessions: [CachedSleepSession])],
+        oldestDay: String, newestDay: String,
+        windowStart: Int, now: Int, offsetSec: Int, age: Int?
+    ) async -> SleepScoringRun {
+        let fromDay = AnalyticsEngine.dayString(windowStart, offsetSec: offsetSec)
+        let storedComputed = (try? await store.dailyMetrics(deviceId: computedId, from: fromDay, to: newestDay)) ?? []
+        let storedImported = (try? await store.dailyMetrics(deviceId: importedId, from: fromDay, to: newestDay)) ?? []
+        var dailyByDay: [String: DailyMetric] = [:]
+        for d in storedImported { dailyByDay[d.day] = d }
+        for d in storedComputed { dailyByDay[d.day] = d }
+        for f in fresh { dailyByDay[f.daily.day] = f.daily }
+
+        var sessions: [CachedSleepSession] = []
+        for id in [importedId, computedId] + historyIds {
+            sessions += (try? await store.sleepSessions(deviceId: id, from: windowStart, to: now, limit: 8000)) ?? []
+        }
+        sessions += fresh.flatMap(\.sessions)
+        let kept = SleepSessionDedup.dedupe(sessions).kept.filter { $0.endTs > $0.effectiveStartTs }
+
+        var blocksByDay: [String: [(start: Int, end: Int, efficiency: Double?)]] = [:]
+        var windows: [SleepRegularity.Window] = []
+        windows.reserveCapacity(kept.count)
+        for s in kept {
+            let day = AnalyticsEngine.dayString(s.endTs, offsetSec: offsetSec)
+            blocksByDay[day, default: []].append((s.effectiveStartTs, s.endTs, s.efficiency))
+            // #55: each regularity window uses the zone offset in force at its own onset, so a clock change
+            // does not shift a night's epochs. Day KEYS stay on the run's one offset: per #2517 a day is a
+            // fixed 86,400 s window and the transition hour is recorded (dayWindowSkewLine), not corrected,
+            // and no per-night offset is stored that could re-key history after travel.
+            let zoneOffset = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs)))
+            windows.append(.init(start: s.effectiveStartTs, end: s.endTs, offsetSec: zoneOffset))
+        }
+        var napMinByDay: [String: Double] = [:]
+        for (day, blocks) in blocksByDay { napMinByDay[day] = SleepScoring.napMinutes(blocks) }
+
+        let nights = dailyByDay.values.map { d in
+            SleepNeed.Night(day: d.day, mainMin: d.totalSleepMin, napMin: napMinByDay[d.day] ?? 0, strain: d.strain)
+        }
+        var days: [String] = []
+        if let lo = DayOrdinal.ordinal(oldestDay), let hi = DayOrdinal.ordinal(newestDay), lo <= hi {
+            days = (lo...hi).map(DayOrdinal.key)
+        }
+        return SleepScoringRun(
+            byDay: SleepScoring.contexts(nights: nights, windows: windows, days: days, age: age),
+            napMinByDay: napMinByDay)
+    }
+
+    /// The per-day sleep figures persisted beside `sleep_performance` under the computed id, the keys the
+    /// WHOOP import also writes, so the Sleep tab reads one value per day whichever source supplied it:
+    /// `sleep_need_min` (what the night was scored against), `sleep_consistency` (regularity × 100) and
+    /// `sleep_debt_min` (debt after the night: the next night's carried debt).
+    static func sleepContextPoints(day: String, daily: DailyMetric, context: SleepScoring.DayContext?,
+                                   napMin: Double) -> [MetricPoint] {
+        guard let context else { return [] }
+        func r1(_ v: Double) -> Double { (v * 10.0).rounded() / 10.0 }
+        func r2(_ v: Double) -> Double { (v * 100.0).rounded() / 100.0 }
+        var out = [MetricPoint(day: day, key: "sleep_need_min", value: r1(context.need.totalHours * 60.0))]
+        if let reg = context.regularity {
+            out.append(MetricPoint(day: day, key: "sleep_consistency", value: r2(reg.score * 100.0)))
+        }
+        if let main = daily.totalSleepMin, main > 0 {
+            out.append(MetricPoint(day: day, key: "sleep_debt_min",
+                                   value: r1(SleepNeed.debtAfter(context.need, mainMin: main, napMin: napMin))))
+        }
+        return out
+    }
+
+    /// Sleep & Rest test mode: the context a day's Rest was scored against. Counts and rounded figures only.
+    static func restContextLine(day: String, context c: SleepScoring.DayContext) -> String {
+        func r2(_ v: Double) -> Double { (v * 100.0).rounded() / 100.0 }
+        let reg = c.regularity.map { "\(r2($0.score)) method=\($0.method.rawValue) n=\($0.samples)" } ?? "nil"
+        return "rest-context day=\(day) baseH=\(r2(c.need.baseHours)) strainH=\(r2(c.need.strainHours)) "
+            + "debtMin=\(r2(c.need.debtMin)) needH=\(r2(c.need.totalHours)) regularity=\(reg) "
+            + "age=\(c.rest.age.map(String.init) ?? "nil")"
     }
 
     /// Floor a unix-seconds timestamp to 00:00:00 of its UTC calendar day. Mirrors the Android
@@ -3637,7 +3789,7 @@ final class IntelligenceEngine: ObservableObject {
 extension IntelligenceEngine {
     /// Garmin child 9: rebuild a Garmin-owned day's row with the watch's own resting HR, overnight HRV and
     /// respiration where the arbitration table prefers them (`GarminScoringInputs.resolve`). nil for any
-    /// other owner. Reads the watch's day row and its HRV / respiration samples inside `nights`.
+    /// other owner. Reads the watch's day row and its HRV samples inside `nights`.
     nonisolated static func garminResolvedDaily(_ daily: DailyMetric, owner: String,
                                                 nights: [GarminScoringInputs.Night],
                                                 store: WhoopStore) async
@@ -3645,18 +3797,15 @@ extension IntelligenceEngine {
         guard FusionSource.isGarminWatchId(owner) else { return nil }
         let watchRow = (try? await store.dailyMetrics(deviceId: owner, from: daily.day, to: daily.day))?.first
         var hrv: [GarminScoringInputs.Sample] = []
-        var resp: [GarminScoringInputs.Sample] = []
         if let lo = nights.map(\.start).min(), let hi = nights.map(\.end).max() {
             hrv = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .hrvMs, from: lo, to: hi)) ?? [])
                 .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
-            resp = ((try? await store.deviceMetricSamples(deviceId: owner, kind: .respirationBpm,
-                                                          from: lo, to: hi)) ?? [])
-                .map { GarminScoringInputs.Sample(ts: $0.ts, value: $0.value) }
         }
+        // Respiration is the row's stored overnight value (#52), the one Trends shows for the day.
         let r = GarminScoringInputs.resolve(
             computedRestingHr: daily.restingHr, computedHrv: daily.avgHrv, computedResp: daily.respRateBpm,
             watch: watchRow.map { .init(restingHr: $0.restingHr, lastNightHrvMs: $0.avgHrv) },
-            hrvSamples: hrv, respSamples: resp, nights: nights)
+            hrvSamples: hrv, watchRespRateBpm: watchRow?.respRateBpm, nights: nights)
         return (daily.with(restingHr: r.restingHr, avgHrv: r.avgHrv, respRateBpm: r.respRateBpm), r)
     }
 
@@ -3674,11 +3823,10 @@ extension AnalyticsEngine.DayResult {
     func with(daily d: DailyMetric) -> AnalyticsEngine.DayResult {
         AnalyticsEngine.DayResult(
             daily: d, sleepSessions: sleepSessions, cachedSleep: cachedSleep, workouts: workouts,
-            recovery: recovery, strain: strain, nightlySkinTempC: nightlySkinTempC, restScore: restScore,
-            chargeConfidence: chargeConfidence, effortConfidence: effortConfidence,
+            strain: strain, nightlySkinTempC: nightlySkinTempC, restScore: restScore,
+            effortConfidence: effortConfidence,
             restConfidence: restConfidence, sessionMotionByStart: sessionMotionByStart,
-            sessionSleepStateByStart: sessionSleepStateByStart, chargeDrivers: chargeDrivers,
-            skinTempRelative: skinTempRelative, detectionFunnel: detectionFunnel,
+            sessionSleepStateByStart: sessionSleepStateByStart, detectionFunnel: detectionFunnel,
             mainNightBlocks: mainNightBlocks)
     }
 }

@@ -3,6 +3,8 @@ package com.noop.analytics
 import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import kotlin.math.exp
+import kotlin.math.ln
 
 /**
  * Faithful Kotlin port of
@@ -34,14 +36,14 @@ class RD1LogDomainTest {
         days.add(d(29, hrv = 50.0, rhr = 52))   // today: a typical night
 
         val hrv = ReadinessEngine.evaluate(days).signals.first { it.key == "hrv" }
-        // Log domain baselines against a GEOMETRIC center (49 ms), well below the arithmetic mean (54)
-        // a raw-ms z would report. Under RD2 the center is the recency-weighted, Winsor-clamped EWMA
-        // (Baselines spine, reject off): the 8 recent 85 ms nights nudge it up from the 42 ms cluster
-        // but Winsorization caps their pull, so it lands at 49 — still geometric, not the tail-inflated
-        // arithmetic 54. Byte-identical to the Swift RD1LogDomainTests value.
+        // Log domain baselines against a GEOMETRIC center, below the arithmetic mean (54) a raw-ms z
+        // would report. Since #53 it is the Charge baseline, the plain geometric mean of the trailing
+        // nights: exp((20·ln 42 + 8·ln 85) / 28) = 51.4 ms, rendered "50 vs 51 ms" as in the Swift
+        // RD1LogDomainTests.
         val evidence = hrv.evidence as ReadinessEngine.Evidence.MetricVsBaseline
         assertEquals(50.0, evidence.value, 0.0)
-        assertEquals(49.0, evidence.baseline, 0.5)
+        assertEquals(exp((20 * ln(42.0) + 8 * ln(85.0)) / 28), evidence.baseline, 1e-9)
+        assertEquals(51L, Math.round(evidence.baseline))
         assertEquals(ReadinessEngine.MetricUnit.MS, evidence.unit)
         // 50 sits at the typical night → neutral, read against a representative (not tail-inflated) baseline.
         assertEquals(ReadinessEngine.Flag.NEUTRAL, hrv.flag)

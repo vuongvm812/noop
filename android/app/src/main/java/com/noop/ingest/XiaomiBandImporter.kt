@@ -273,7 +273,9 @@ object XiaomiBandImporter {
                 efficiency = sleepEfficiency(d.totalSleepMin, d.awakeMin),
                 deepMin = d.deepMin, remMin = d.remMin, lightMin = d.lightMin,
                 restingHr = d.restingHr, spo2Pct = d.avgSpo2, steps = d.steps,
-                activeKcalEst = d.activeKcal,
+                // No activeKcalEst: that column is whole-day TOTAL energy (#51), and the band's
+                // `calories` is not known to include resting energy. It stays in the active_kcal series,
+                // as on Swift (XiaomiImporter), and NOOP's computed total fills the day.
             )
         }
         if (dailyMetrics.isNotEmpty()) repo.upsertDailyMetrics(dailyMetrics)
@@ -291,7 +293,7 @@ object XiaomiBandImporter {
         fun add(day: String, key: String, v: Double?) { if (v != null) series.add(MetricSeriesRow(deviceId, day, key, v)) }
         for (d in days) {
             add(d.day, "steps", d.steps?.toDouble()); add(d.day, "distance_m", d.distanceM)
-            add(d.day, "energy_kcal", d.activeKcal); add(d.day, "rhr", d.restingHr?.toDouble())
+            add(d.day, "active_kcal", d.activeKcal); add(d.day, "rhr", d.restingHr?.toDouble())
             add(d.day, "avg_hr", d.avgHr?.toDouble()); add(d.day, "max_hr", d.maxHr?.toDouble())
             add(d.day, "min_hr", d.minHr?.toDouble()); add(d.day, "spo2", d.avgSpo2)
             add(d.day, "stress", d.avgStress?.toDouble()); add(d.day, "vitality", d.vitality?.toDouble())

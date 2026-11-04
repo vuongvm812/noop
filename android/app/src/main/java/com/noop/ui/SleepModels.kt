@@ -27,6 +27,9 @@ internal data class Metric(
     val latestDay: String?,
     val typical: Double?,
     val series: List<Double>,
+    /** The yyyy-MM-dd day of each [series] value, index-aligned, for the sparkline's scrub callout.
+     *  Empty when the builder has no per-value day. */
+    val seriesDays: List<String> = emptyList(),
 ) {
 
     companion object {

@@ -37,6 +37,14 @@ object StressToday {
         val scaleMax: Double get() = if (source == Source.GARMIN) GARMIN_MAX else NOOP_MAX
     }
 
+    /**
+     * The one figure the Today Key Metrics Stress tile shows (#57): the latest level, or today's average
+     * when only an average is known (an imported day). Null when the reading has neither. The Stress
+     * screen's summary card prints the same `latest`, so the tile and the card agree.
+     * Swift twin: `StressToday.tileLevel`.
+     */
+    fun tileLevel(reading: Reading?): Double? = reading?.latest?.level ?: reading?.average
+
     /** Garmin's highest stress value. Anything outside 0..100 is a watch sentinel and is ignored. */
     const val GARMIN_MAX = 100.0
 

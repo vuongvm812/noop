@@ -112,6 +112,20 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// A multi-sport day: walking, cycling and swimming counters side by side (#51). Only walking's
+    /// `cycles` are steps; cycling counts revolutions and swimming strokes in the same field. Distance
+    /// and calories still sum over every type.
+    static func multiSport() -> Data {
+        var f = WellnessFit()
+        f.def(0, 103, [(253, 4, u32), (0, 4, u32)])
+        f.data(0); f.u32(t); f.u32(t + offset)
+        f.def(1, 55, [(253, 4, u32), (5, 1, en), (3, 4, u32), (2, 4, u32), (1, 2, u16), (19, 2, u16)])
+        f.data(1); f.u32(t - 1200); f.u8(6); f.u32(2_000); f.u32(150_000); f.u16(1_500); f.u16(90)
+        f.data(1); f.u32(t - 900); f.u8(2); f.u32(900); f.u32(1_200_000); f.u16(300); f.u16(280)
+        f.data(1); f.u32(t - 600); f.u8(5); f.u32(40); f.u32(100_000); f.u16(120); f.u16(110)
+        return f.finish()
+    }
+
     static func restingHeartRate() -> Data {
         var f = WellnessFit()
         f.def(0, 211, [(253, 4, u32), (0, 1, u8), (1, 1, u8)])
@@ -209,12 +223,45 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// #49: a night and a later nap ending on the same local day, each in its own sleep window. The night
+    /// holds a 30 minute unmeasurable span (level 0), so its timeline covers 93% of its window; the nap is
+    /// the later session, which is what used to overwrite the night's day totals.
+    static func sleepNap() -> Data {
+        var f = WellnessFit()
+        f.def(0, 21, [(253, 4, u32), (0, 1, en), (1, 1, en)])
+        f.def(1, 275, [(253, 4, u32), (0, 1, en)])
+        f.data(0); f.u32(t); f.u8(74); f.u8(0)
+        f.data(1); f.u32(t + 1800); f.u8(2)
+        f.data(1); f.u32(t + 5400); f.u8(3)
+        f.data(1); f.u32(t + 7200); f.u8(0)
+        f.data(1); f.u32(t + 14400); f.u8(4)
+        f.data(1); f.u32(t + 16200); f.u8(1)
+        f.data(1); f.u32(t + 27000); f.u8(2)
+        f.data(0); f.u32(t + 27000); f.u8(74); f.u8(1)
+        f.data(0); f.u32(t + 50000); f.u8(74); f.u8(0)
+        f.data(1); f.u32(t + 51200); f.u8(2)
+        f.data(1); f.u32(t + 52400); f.u8(1)
+        f.data(0); f.u32(t + 52400); f.u8(74); f.u8(1)
+        return f.finish()
+    }
+
     static func respiration() -> Data {
         var f = WellnessFit()
         f.def(0, 297, [(253, 4, u32), (0, 2, s16)])
         f.data(0); f.u32(t); f.u16(1450)
         f.data(0); f.u32(t + 60); f.u16(-1)
         f.data(0); f.u32(t + 120); f.u16(0x7FFF)
+        return f.finish()
+    }
+
+    /// MAX_MET_DATA (229): a VO2max of 52.3, then one under the plausible floor and one with no update time,
+    /// both dropped.
+    static func vo2max() -> Data {
+        var f = WellnessFit()
+        f.def(0, 229, [(0, 4, u32), (2, 2, u16), (9, 1, en)])
+        f.data(0); f.u32(t); f.u16(523); f.u8(1)
+        f.data(0); f.u32(t + 86_400); f.u16(50); f.u8(1)
+        f.data(0); f.u32(0); f.u16(480); f.u8(0)
         return f.finish()
     }
 
@@ -260,10 +307,36 @@ enum WellnessFixtures {
         return f.finish()
     }
 
+    /// Plausible-range edges for SpO2, respiration and HRV values (#52), and a resting HR stamped exactly at
+    /// local midnight (t + 1504 at the +6 h offset the 103 message sets), which belongs to the ended day.
+    static func bounds() -> Data {
+        var f = WellnessFit()
+        f.def(0, 103, [(253, 4, u32), (0, 4, u32)])
+        f.data(0); f.u32(t); f.u32(t + offset)
+        f.def(1, 269, [(253, 4, u32), (0, 1, u8)])
+        f.data(1); f.u32(t + 10); f.u8(69)
+        f.data(1); f.u32(t + 20); f.u8(70)
+        f.data(1); f.u32(t + 30); f.u8(100)
+        f.def(2, 297, [(253, 4, u32), (0, 2, s16)])
+        f.data(2); f.u32(t + 40); f.u16(399)
+        f.data(2); f.u32(t + 50); f.u16(400)
+        f.data(2); f.u32(t + 60); f.u16(6000)
+        f.data(2); f.u32(t + 70); f.u16(6001)
+        f.def(3, 371, [(253, 4, u32), (0, 2, u16)])
+        f.data(3); f.u32(t + 80); f.u16(639)
+        f.data(3); f.u32(t + 90); f.u16(640)
+        f.data(3); f.u32(t + 100); f.u16(38_400)
+        f.data(3); f.u32(t + 110); f.u16(38_401)
+        f.def(4, 211, [(253, 4, u32), (1, 1, u8)])
+        f.data(4); f.u32(t + 1504); f.u8(48)
+        f.data(4); f.u32(t + 1505); f.u8(47)
+        return f.finish()
+    }
+
     static let all: [(String, () -> Data)] = [
-        ("monitoring", monitoring), ("midnight", midnight), ("restingHeartRate", restingHeartRate), ("stress", stress),
-        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("respiration", respiration), ("hrv", hrv),
-        ("candidates", candidates), ("framing", framing),
+        ("monitoring", monitoring), ("midnight", midnight), ("multiSport", multiSport), ("restingHeartRate", restingHeartRate), ("stress", stress),
+        ("spo2", spo2), ("sleep", sleep), ("sleepWindow", sleepWindow), ("sleepNap", sleepNap), ("respiration", respiration), ("vo2max", vo2max), ("hrv", hrv),
+        ("candidates", candidates), ("framing", framing), ("bounds", bounds),
     ]
 
     // MARK: - Canonical dump
@@ -294,12 +367,12 @@ enum WellnessFixtures {
         for d in s.dailyActivity {
             out.append("day \(d.day) steps=\(num(d.steps)) dist=\(num(d.distanceM)) cal=\(num(d.calories)) act=\(num(d.activeCalories))")
         }
-        for r in s.restingMetabolicRate { out.append("rmr \(r.ts) \(r.value)") }
         for r in s.restingHeartRate { out.append("rhr \(r.ts) \(r.value)") }
         for r in s.stress { out.append("stress \(r.ts) \(r.value)") }
         for r in s.bodyBattery { out.append("bb \(r.ts) \(r.value)") }
-        for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent) conf=\(num(r.confidence)) mode=\(num(r.mode))") }
+        for r in s.spo2 { out.append("spo2 \(r.ts) \(r.percent)") }
         for r in s.respiration { out.append("resp \(r.ts) \(num(r.value))") }
+        for r in s.vo2max { out.append("vo2max \(r.ts) \(num(r.value))") }
         for r in s.sleepLevels { out.append("level \(r.ts) \(r.value)") }
         for r in s.sleepMarks { out.append("mark \(r.ts) \(r.value)") }
         for r in s.sleepSessions {

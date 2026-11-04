@@ -6,9 +6,11 @@ import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
 import com.noop.analytics.ChargeDriver
 import com.noop.analytics.RecoveryDrivers
+import com.noop.analytics.RecoveryScorer
 import com.noop.analytics.RestScorer
 import com.noop.analytics.ScoreConfidence
 import com.noop.data.DailyMetric
+import com.noop.data.ScoreInputProvenanceRow
 import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneId
@@ -17,39 +19,56 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 /**
- * The recovery baseline's real seed count while it still cold-starts, the honest "calibrating N of
- * <seed>" progress shown in place of "No Data"; null once recovery exists or the baseline has crossed
- * the seed gate. N is the HRV baseline's `nValid` from folding the SAME day-keyed, epoch-aware history
- * the recovery engine folds ([Baselines.foldHistory] with [hrvBaselineEpoch]), NOT a looser per-night
- * bounds count. Callers pass the Charge HRV history ([ChargeBaselines.Resolved.hrvHistory], #2525), the
- * nights the engine's fold actually reads.
- *
- * The old count advanced on every in-range night, including nights the engine's fold DROPS after a
- * manual "Recalibrate HRV baseline" (each night dated before the epoch is discarded, not skip-and-held).
- * A genuinely-calibrating user who had >= seed old in-range nights therefore read `count >= seed -> null`,
- * and the Today score side fell through to [ScoreState.NeedsStrap] while the post-recalibration baseline
- * was still seeding (Bug B, #393 follow-up). `nValid` is the exact count Baselines.computeStatus gates
- * CALIBRATING on, so N now tracks the baseline the Charge ring rides and can never over-state it.
- * [nightlyHrv] and [dayKeys] are parallel and oldest->newest (same order the engine folds). Mirrors the
- * Swift `RecoveryScorer.calibrationNights`. Pure + unit-tested (RecoveryCalibrationTest). (PR #85)
+ * #53: the calibration countdown read straight off the resolved HRV baseline for the displayed day
+ * ([ChargeBaselines.Inputs.resolve]), so it counts exactly the nights the ring's baseline holds, era cut
+ * included. Delegates to [RecoveryScorer.calibrationNights]. Swift twin:
+ * `RecoveryScorer.calibrationNights(hrvBaseline:hasRecovery:)`.
  */
 internal fun recoveryCalibrationNights(
-    nightlyHrv: List<Double?>,
-    dayKeys: List<String>,
+    hrvBaseline: BaselineState?,
     hasRecovery: Boolean,
-    hrvBaselineEpoch: Double,
     seed: Int = Baselines.minNightsSeed,
-): Int? {
-    if (hasRecovery) return null
-    val n = Baselines.foldHistory(nightlyHrv, dayKeys, Baselines.hrvCfg, hrvBaselineEpoch).nValid
-    // Include 0: a brand-new user (no banked nights) reads "Calibrating, 0 of N" on Charge, not a
-    // bare "No data" that looks broken (#335). Caller gates past days to null; >= seed -> null.
-    return n.takeIf { it in 0 until seed }
+): Int? = RecoveryScorer.calibrationNights(hrvBaseline, hasRecovery, seed)
+
+/** Days before the ViewModel's first local day the dashboard reads Charge-baseline rows from (#53): the
+ *  60-day window plus room to browse back a quarter, so a past day still resolves its full window. */
+internal const val CHARGE_BASELINE_READ_DAYS: Int = ChargeBaselines.windowDays + 90
+
+/**
+ * The dashboard's [ChargeBaselines.Inputs] from the stored rows (#53), by the engine's rule: own nights'
+ * sources from the recorded provenance ([ChargeBaselines.recordedSources]), an unknown one falling back to
+ * [importedSourceId] (the id the engine passes as `importedDeviceId`), every imported day tagged with it, and
+ * every seed day with the export source its row came from. Pure, so the era rebuild is unit-tested.
+ */
+internal fun chargeBaselineInputs(
+    imported: List<DailyMetric>,
+    own: List<DailyMetric>,
+    seed: List<DailyMetric>,
+    provenance: List<ScoreInputProvenanceRow>,
+    importedSourceId: String,
+    hrvRecalibration: Double,
+    recoveryRecalibration: Double,
+): ChargeBaselines.Inputs {
+    val recorded = ChargeBaselines.recordedSources(
+        provenance.map { ChargeBaselines.ProvenanceRow(it.day, it.key, it.sourceId) },
+    )
+    val sourceDays = ChargeBaselines.sourceDays(
+        own = own.map { it.day to recorded[it.day] },
+        ownFallbackId = importedSourceId,
+        importedDays = imported.map { it.day },
+        importedSourceId = importedSourceId,
+        seed = seed.map { ChargeBaselines.SourceDay(it.day, it.deviceId) },
+    )
+    return ChargeBaselines.Inputs(
+        imported = imported, own = own, seed = seed, sourceDays = sourceDays,
+        hrvRecalibration = hrvRecalibration, recoveryRecalibration = recoveryRecalibration,
+    )
 }
 
 /**
  * The ordered "What shaped it" Charge driver rows for [displayDay], scored against [baselines], the
- * Charge baselines [AppViewModel.chargeBaselines] resolves with the engine's own rule (#2525), so the bars
+ * Charge baselines [AppViewModel.chargeBaselines] resolves for that day with the engine's own rule (#2525,
+ * #53: pass `inputs.resolve(displayDay.day)`), so the bars
  * describe the baseline the Charge ring was scored against. Before #2525 this folded the whole visible
  * history itself, which kept every imported night and every stored own night while the headline kept only
  * the recent own nights plus the import, so the page could show one baseline in the rows and score against
@@ -62,6 +81,9 @@ internal fun recoveryCalibrationNights(
 internal fun recoveryChargeDrivers(
     baselines: ChargeBaselines.Resolved?,
     displayDay: DailyMetric?,
+    // #55: the persisted Rest the engine scored this day's recovery against (its sleep context). null →
+    // the cold-start composite from the row's totals.
+    scoredRest: Double? = null,
 ): List<ChargeDriver> {
     val resolved = baselines ?: return emptyList()
     val day = displayDay ?: return emptyList()
@@ -78,7 +100,7 @@ internal fun recoveryChargeDrivers(
 
     // sleepPerf: the Rest COMPOSITE (/100) when stages exist, else raw efficiency, the SAME derivation
     // recomputeRecovery uses, so the Sleep driver scores against the headline's own input.
-    val sleepPerf = RestScorer.restFromDaily(day)?.let { it / 100.0 } ?: day.efficiency
+    val sleepPerf = (scoredRest ?: RestScorer.restFromDaily(day))?.let { it / 100.0 } ?: day.efficiency
 
     return RecoveryDrivers.chargeDrivers(
         hrv = hrv,
@@ -89,6 +111,7 @@ internal fun recoveryChargeDrivers(
         respBaseline = respBase,
         sleepPerf = sleepPerf,
         skinTempDev = day.skinTempDevC,
+        hrvPriorWeek = resolved.hrvPriorWeek,
     )
 }
 
@@ -530,6 +553,14 @@ internal fun spo2SparkSeries(
     calibrated: List<Double>,
     candidate: List<Double>,
 ): List<Double> = if (calibrated.size >= 2 || candidate.size < 2) calibrated else candidate
+
+/** The days behind whichever series [spo2SparkSeries] picks, so the scrub callout names the right day. */
+internal fun spo2SparkDays(
+    calibrated: List<Double>,
+    candidate: List<Double>,
+    calibratedDays: List<String>,
+    candidateDays: List<String>,
+): List<String> = if (calibrated.size >= 2 || candidate.size < 2) calibratedDays else candidateDays
 
 /**
  * True when the tile's VALUE is the strap estimate rather than a measured reading, so the caption can

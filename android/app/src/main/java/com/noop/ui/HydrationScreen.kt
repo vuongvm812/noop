@@ -50,6 +50,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -493,8 +495,27 @@ private fun HydrationHistoryBars(
     // Scale the bars to the LARGER of the goal and the biggest day, so an over-goal day doesn't clip.
     val ceiling = kotlin.math.max(goal, maxMl).coerceAtLeast(1.0)
 
+    // Scrub cursor (#58): a tap selects a day's bar, a drag or hold-then-drag scrubs across the week.
+    var scrubX by remember(history) { mutableStateOf<Float?>(null) }
+    var chartW by remember { mutableStateOf(0f) }
+    val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { 10.dp.toPx() }
+    val selected = scrubX?.let { x ->
+        chartScrubNearestIndex(hydrationBarCenterFractions(history.size, chartW, gapPx), chartW, x)
+    }
+    ChartScrubHaptic(selected)
+    val paints = rememberChartScrubPaints()
+    val calloutValue = selected?.let { hydrationScrubValue(history[it].second) }
+    val calloutLabel = selected?.let { lastChargeDateLabel(history[it].first) }
+
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(96.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .onSizeChanged { chartW = it.width.toFloat() }
+                .chartScrub(history, onRelease = { scrubX = null }) { scrubX = it }
+                .semantics { if (calloutValue != null) stateDescription = chartScrubSpoken(calloutValue, calloutLabel) },
+        ) {
             val n = history.size
             val gap = 10.dp.toPx()
             val barW = (size.width - gap * (n - 1)) / n
@@ -510,6 +531,17 @@ private fun HydrationHistoryBars(
                     drawRoundRectBar(x, size.height - h, barW, h, corner, color)
                 }
             }
+            if (selected != null && calloutValue != null) {
+                // The bar's own fill marks the reading, so the cursor draws no dot (y = null).
+                drawScrubCursor(
+                    x = selected * (barW + gap) + barW / 2f,
+                    y = null,
+                    accent = accent,
+                    value = calloutValue,
+                    label = calloutLabel,
+                    paints = paints,
+                )
+            }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             history.forEach { (dayKey, _) ->
@@ -524,6 +556,17 @@ private fun HydrationHistoryBars(
         }
     }
 }
+
+/** Each bar's centre as a 0..1 fraction of [width], for [n] equal bars separated by [gapPx] (the same
+ *  layout [HydrationHistoryBars] draws), so the scrub cursor snaps to the bar under the finger. */
+internal fun hydrationBarCenterFractions(n: Int, width: Float, gapPx: Float): List<Float> {
+    if (n <= 0 || width <= 0f) return List(n) { 0f }
+    val barW = (width - gapPx * (n - 1)) / n
+    return List(n) { i -> (i * (barW + gapPx) + barW / 2f) / width }
+}
+
+/** A day's total in litres, the unit the hero above the bars prints ("1.8 L"). */
+internal fun hydrationScrubValue(ml: Double): String = String.format(Locale.US, "%.1f L", ml / 1000.0)
 
 /** Draw one rounded-rect bar via the Canvas draw scope (small helper so the bar loop stays readable). */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRoundRectBar(

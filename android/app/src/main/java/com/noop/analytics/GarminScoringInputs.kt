@@ -15,12 +15,21 @@ package com.noop.analytics
  *
  * Overnight HRV: the watch's last-night average (FIT 370) when present, else the mean of its 5-minute HRV
  * values (FIT 371) inside the night's sleep blocks. Beat intervals (FIT 290) are an unconfirmed candidate
- * decode and are not used. Respiration: the mean of the watch's samples (FIT 297) inside the sleep blocks.
+ * decode and are not used. Respiration: the watch day's stored overnight value ([com.noop.data.GarminSyncStore.nightMean]),
+ * the same number the row and the `resp_rate` series carry (#52).
  */
 object GarminScoringInputs {
 
-    /** Fewest in-sleep samples a mean is formed from. Five-minute HRV values: 3 = a quarter hour of sleep. */
-    const val MIN_NIGHT_SAMPLES = 3
+    /** Fewest in-sleep samples a mean is formed from on its own: twelve five-minute HRV values is an hour of
+     *  sleep (#53; three, a quarter hour, let a sliver of the night stand for all of it). */
+    const val MIN_NIGHT_SAMPLES = 12
+
+    /** Alternatively, the samples may cover at least this fraction of the sleep window (each sample standing
+     *  for [SAMPLE_INTERVAL_SEC]), so a short but fully sampled night still resolves. */
+    const val MIN_NIGHT_COVERAGE = 0.5
+
+    /** The watch's sampling interval for the coverage rule: its overnight HRV values are five-minute values. */
+    const val SAMPLE_INTERVAL_SEC = 300
 
     /** One timestamped watch sample (unix seconds, value in the kind's unit). */
     data class Sample(val ts: Long, val value: Double)
@@ -50,7 +59,11 @@ object GarminScoringInputs {
         val respRateSource: FusionSource?,
     )
 
-    /** Mean of the samples inside any of [nights] (inclusive), or null under [MIN_NIGHT_SAMPLES]. */
+    /**
+     * Mean of the samples inside any of [nights] (inclusive), or null unless there are at least
+     * [MIN_NIGHT_SAMPLES] of them or they cover [MIN_NIGHT_COVERAGE] of the sleep window (#53). Each sample
+     * counts once even when blocks overlap. Swift twin: `GarminScoringInputs.nightMean`.
+     */
     fun nightMean(samples: List<Sample>, nights: List<Night>): Double? {
         var sum = 0.0
         var n = 0
@@ -61,7 +74,35 @@ object GarminScoringInputs {
                 n += 1
             }
         }
-        return if (n >= MIN_NIGHT_SAMPLES) sum / n else null
+        if (n == 0) return null
+        if (n >= MIN_NIGHT_SAMPLES) return sum / n
+        val window = sleepSeconds(nights)
+        if (window <= 0 || (n.toLong() * SAMPLE_INTERVAL_SEC).toDouble() < MIN_NIGHT_COVERAGE * window.toDouble()) {
+            return null
+        }
+        return sum / n
+    }
+
+    /** Seconds covered by the union of [nights] (overlapping blocks counted once). Swift twin:
+     *  `GarminScoringInputs.sleepSeconds`. */
+    internal fun sleepSeconds(nights: List<Night>): Long {
+        val sorted = nights.filter { it.end > it.start }.sortedBy { it.start }
+        var total = 0L
+        var curStart = 0L
+        var curEnd = 0L
+        var open = false
+        for (b in sorted) {
+            if (open && b.start <= curEnd) {
+                curEnd = maxOf(curEnd, b.end)
+            } else {
+                if (open) total += curEnd - curStart
+                curStart = b.start
+                curEnd = b.end
+                open = true
+            }
+        }
+        if (open) total += curEnd - curStart
+        return total
     }
 
     /** Swift twin: the nested `pick` in `GarminScoringInputs.resolve`. */
@@ -81,7 +122,7 @@ object GarminScoringInputs {
         computedResp: Double?,
         watch: WatchDay?,
         hrvSamples: List<Sample>,
-        respSamples: List<Sample>,
+        watchRespRateBpm: Double?,
         nights: List<Night>,
     ): Resolution {
         val rhr = pick("rhr", watch?.restingHr?.toDouble(), computedRestingHr?.toDouble())
@@ -95,7 +136,7 @@ object GarminScoringInputs {
             else -> HrvBasis.COMPUTED
         }
 
-        val resp = pick("resp_rate", nightMean(respSamples, nights), computedResp)
+        val resp = pick("resp_rate", watchRespRateBpm, computedResp)
 
         return Resolution(
             // Swift `Double.rounded()` rounds half away from zero; so does Math.round for these positive values.
@@ -125,6 +166,22 @@ object GarminScoringInputs {
      * back to false restores the label on both platforms.
      */
     const val EFFORT_VALIDATED = true
+
+    /** How long a watch VO2max still stands for a week (#51). The watch re-estimates it only after an
+     *  activity that qualifies, so its latest value is its current one for weeks at a time. */
+    const val WATCH_VO2MAX_MAX_AGE_DAYS = 28
+
+    /**
+     * The watch's own VO2max for the week keyed [weekKey] ("yyyy-MM-dd"): its latest positive point on or
+     * before that day and within [WATCH_VO2MAX_MAX_AGE_DAYS] of it, or null. The VO2max card prefers it
+     * over NOOP's estimate ([IntelligenceEngine.fitnessAgeRows]). Swift twin: `GarminScoringInputs.watchVo2max`.
+     */
+    fun watchVo2max(points: List<Pair<String, Double>>, weekKey: String): Double? {
+        val week = runCatching { java.time.LocalDate.parse(weekKey) }.getOrNull() ?: return null
+        val from = week.minusDays((WATCH_VO2MAX_MAX_AGE_DAYS - 1).toLong()).toString()
+        return points.filter { (day, v) -> day >= from && day <= weekKey && v > 0.0 && v.isFinite() }
+            .maxByOrNull { it.first }?.second
+    }
 
     /** True when an Effort whose inputs came from [sourceId] (registry [brand]) carries the experimental label. */
     fun effortIsExperimental(sourceId: String, brand: String?): Boolean {

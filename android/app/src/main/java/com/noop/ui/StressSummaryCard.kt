@@ -1,6 +1,5 @@
 package com.noop.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -37,10 +35,9 @@ import kotlin.math.roundToInt
  * StressSummaryCard — today's stress at a glance (#42).
  *
  * The latest level, today's average, a small intraday sparkline and the source (Garmin's own 0-100
- * stress, or NOOP's 0-3 proxy). The SAME composable, fed by the SAME [StressTodayLoader] →
- * [StressToday.resolve], renders on Today and at the top of the Stress screen, so the two readouts cannot
- * disagree. On Today [onOpen] opens the Stress screen; the Stress screen passes null.
- * Twin of macOS `StressSummaryCard` (Strand/Screens/StressSummaryCard.swift).
+ * stress, or NOOP's 0-3 proxy), at the top of the Stress screen. The Today Key Metrics Stress tile (#57)
+ * reads the SAME [StressTodayLoader] → [StressToday.resolve] and taps through to this screen, so the two
+ * readouts cannot disagree. Twin of macOS `StressSummaryCard` (Strand/Screens/StressSummaryCard.swift).
  *
  * [refreshKey] re-reads when Today's data refreshes (a resume or sync moves it).
  */
@@ -48,7 +45,6 @@ import kotlin.math.roundToInt
 fun StressSummaryCard(
     viewModel: AppViewModel,
     refreshKey: Any?,
-    onOpen: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var reading by remember { mutableStateOf<StressToday.Reading?>(null) }
@@ -65,8 +61,7 @@ fun StressSummaryCard(
         loaded = true
     }
 
-    val tapModifier = if (onOpen != null) Modifier.clickable { onOpen() } else Modifier
-    NoopCard(tint = Palette.stressColor, modifier = tapModifier) {
+    NoopCard(tint = Palette.stressColor) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -84,14 +79,6 @@ fun StressSummaryCard(
                 )
                 reading?.let {
                     Text(uiString(sourceLabelRes(it.source)), style = NoopType.caption, color = Palette.textTertiary)
-                }
-                if (onOpen != null) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = Palette.textTertiary,
-                        modifier = Modifier.size(18.dp),
-                    )
                 }
             }
             val r = reading
@@ -117,7 +104,12 @@ fun StressSummaryCard(
                         StressFigure(uiString(R.string.stress_summary_average), r.average, r, null)
                     }
                     if (r.points.size >= 2) {
-                        Sparkline(values = r.points.map { it.level }, color = Palette.stressColor)
+                        Sparkline(
+                            values = r.points.map { it.level },
+                            color = Palette.stressColor,
+                            formatValue = { formatStressSummaryValue(it, r.source) + stressScaleSuffix(r.scaleMax) },
+                            selectionLabels = r.points.map { stressTimeLabel(it.ts) },
+                        )
                     }
                 }
             }
@@ -146,7 +138,8 @@ private fun StressFigure(label: String, value: Double?, reading: StressToday.Rea
     }
 }
 
-private fun sourceLabelRes(source: StressToday.Source): Int = when (source) {
+/** Also the Key Metrics Stress tile's caption (#57). */
+internal fun sourceLabelRes(source: StressToday.Source): Int = when (source) {
     StressToday.Source.GARMIN -> R.string.stress_summary_source_garmin
     StressToday.Source.NOOP -> R.string.stress_summary_source_noop
 }

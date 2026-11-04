@@ -223,6 +223,13 @@ data class BaselineState(
     val nightsSinceUpdate: Int,
     /** Cold-start / staleness status. */
     val status: BaselineStatus,
+    /**
+     * True when the baseline was built in the LOG domain (#53: the Charge HRV baseline, lnRMSSD).
+     * [baseline] is then the geometric mean back in the metric's own unit (ms), while [spread] is in ln
+     * units: a value's z is (ln value − ln baseline) / σ. Every z-scoring reader goes through
+     * [Baselines.z] / [RecoveryScorer] so the domain is applied in one place. Mirrors Swift.
+     */
+    val logDomain: Boolean = false,
 ) {
     /** True iff fully trusted (not calibrating or stale). */
     val trusted: Boolean get() = status == BaselineStatus.TRUSTED
@@ -257,6 +264,9 @@ data class ProfileBaselines(
     val restingHR: BaselineState? = null,
     val resp: BaselineState? = null,
     val skinTemp: BaselineState? = null,
+    /** The valid HRV nights (ms) of the six days before the scored day, for the 7-day trend modifier
+     *  ([ChargeBaselines.Resolved.hrvPriorWeek]). Empty leaves the modifier out. */
+    val hrvPriorWeek: List<Double> = emptyList(),
 )
 
 /**
@@ -274,8 +284,6 @@ data class DayResult(
     val sleepSessions: List<DetectedSleep>,
     /** Detected workout/exercise sessions. */
     val workouts: List<ExerciseSession>,
-    /** Charge (recovery) score [0,100] or null (cold-start / no HRV baseline). */
-    val recovery: Double?,
     /** Effort (strain) score [0,100] or null (insufficient HR samples / invalid HRR). */
     val strain: Double?,
     /**
@@ -291,8 +299,6 @@ data class DayResult(
      * in a second pass. APPROXIMATE. (PR #85)
      */
     val nightlySkinTempC: Double? = null,
-    /** Per-score certainty tier for Charge (recovery). Mirrors Swift. */
-    val chargeConfidence: ScoreConfidence = ScoreConfidence.CALIBRATING,
     /** Per-score certainty tier for Effort (strain). Mirrors Swift. */
     val effortConfidence: ScoreConfidence = ScoreConfidence.CALIBRATING,
     /** Per-score certainty tier for Rest (sleep_performance composite). Mirrors Swift. */

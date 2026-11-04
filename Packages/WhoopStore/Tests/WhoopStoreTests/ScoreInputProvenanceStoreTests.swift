@@ -41,6 +41,25 @@ final class ScoreInputProvenanceStoreTests: XCTestCase {
         XCTAssertEqual(source, "polar-1")
     }
 
+    /// #53: the bulk read returns only the requested keys inside the day range, ordered by day then key.
+    func testBulkSourcesReadFiltersKeysAndRange() async throws {
+        let store = try await WhoopStore.inMemory()
+        let days = ["2026-05-01", "2026-05-02", "2026-05-03"]
+        let dailies = days.map { DailyMetric(day: $0, totalSleepMin: nil, efficiency: nil, deepMin: nil, remMin: nil,
+                                             lightMin: nil, disturbances: nil, restingHr: nil, avgHrv: 50,
+                                             recovery: nil, strain: nil, exerciseCount: nil) }
+        let rows = days.flatMap { d in [ScoreInputProvenanceRow(day: d, key: "charge_baseline_source", sourceId: "garmin-A"),
+                                        ScoreInputProvenanceRow(day: d, key: "sleep_performance", sourceId: "x")] }
+        try await store.persistComputedScores(dailyMetrics: dailies, metricPoints: [], provenance: rows,
+                                              deviceId: "my-whoop-noop", from: days[0], to: days[2])
+        let got = try await store.scoreInputSources(deviceId: "my-whoop-noop", from: days[1], to: days[2],
+                                                    keys: ["charge_baseline_source", "recovery"])
+        XCTAssertEqual(got.map(\.day), [days[1], days[2]])
+        XCTAssertEqual(Set(got.map(\.key)), ["charge_baseline_source"])
+        let none = try await store.scoreInputSources(deviceId: "my-whoop-noop", from: days[0], to: days[2], keys: [])
+        XCTAssertTrue(none.isEmpty)
+    }
+
     func testReplacingWindowRemovesProvenanceForMissingMetric() async throws {
         let store = try await WhoopStore.inMemory()
         let day = "2026-07-24"

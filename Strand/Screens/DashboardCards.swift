@@ -87,7 +87,7 @@ enum DashboardCard: String, CaseIterable, Identifiable {
         case .bloodOxygen: return String(localized: "Blood oxygen")
         case .skinTemp:    return String(localized: "Skin temperature")
         case .sleep:       return String(localized: "Last night")
-        case .calories:    return String(localized: "Active energy")
+        case .calories:    return String(localized: "Today")
         case .hydration:   return String(localized: "Today's fluid")
         case .coupled:     return String(localized: "Recovery, strain and sleep in one glance")
         // Reuses the Coach screen's own subtitle, so the card and the screen describe the feature

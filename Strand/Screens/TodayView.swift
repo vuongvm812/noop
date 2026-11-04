@@ -314,6 +314,9 @@ struct TodayView: View {
 
     // 14-day sparkline series, keyed by metric key. Loaded once in .task.
     @State private var sparks: [String: [Double]] = [:]
+    /// The day key (yyyy-MM-dd) of each `sparks` value, same key, length and order, so a tile's scrub
+    /// readout can name the day it is on (#58). Written only through `setSpark`.
+    @State private var sparkDays: [String: [String]] = [:]
     @State private var workouts: [WorkoutRow] = []
     /// #1694: a tapped Latest-Workouts tile. Wrapped so `.sheet(item:)` drives presentation, mirroring
     /// WorkoutsView's own detail target — the feed was read-only, so the only route to a session's
@@ -329,6 +332,13 @@ struct TodayView: View {
     @State private var stressToday: Double?
     @State private var fitnessAgeToday: Double?
     @State private var vo2maxToday: Double?   // #1391
+    /// #57: today's stress for the Key Metrics Stress tile, from the same `StressTodayLoader` the Stress
+    /// screen's summary card reads. Nil until loaded or when nothing scored today.
+    @State private var stressReading: StressToday.Reading?
+    /// #57: the hand-logged weight diary and the Apple Health weigh-ins the Weight tile resolves between.
+    @State private var weightLog: [WeightLog.Entry] = []
+    @State private var weightHealth: [WeightLog.Entry] = []
+    @State private var showWeightLog = false
     @State private var vitalityToday: Double?
     /// #1505: whether this strap's R-R is read under the WHOOP 5 single-transport unit policy, plus the
     /// two local days that bound the era it could not score: the first day it banked ANY beat, and the
@@ -834,10 +844,10 @@ struct TodayView: View {
 
     /// The ordered "What shaped it" Charge drivers for the displayed Charge ring, PLUS the confidence tier
     /// computed from the SAME folded HRV baseline. PURE derivation from the SAME `displayDay` (post-#814
-    /// union-read row) the ring already shows, plus the HRV/RHR/resp baselines `repo.chargeBaselines`
+    /// union-read row) the ring already shows, plus the HRV/RHR/resp baselines `repo.chargeBaselines(for:)`
     /// resolved with the engine's own rule (#2525), so a row can NEVER describe a term the ring's number
     /// didn't use. This is NOT a second store read: it reads only data already resolved into
-    /// `repo.chargeBaselines`/`displayDay`. nil for a calibrating / cold-start night (no usable HRV baseline
+    /// `repo.chargeBaselines(for:)`/`displayDay`. nil for a calibrating / cold-start night (no usable HRV baseline
     /// or no value), so the sheet gates through to the calibration countdown instead.
     ///
     /// PERF: this replaces the two separate computed properties (`chargeDrivers` +
@@ -846,7 +856,8 @@ struct TodayView: View {
     /// and the sheet reads drivers + confidence out of a single sheet-local `let`.
     private func chargeBreakdown() -> (drivers: [ChargeDriver], confidence: ScoreConfidence)? {
         guard let row = chargeBreakdownRow else { return nil }
-        guard let baselines = repo.chargeBaselines else { return nil }
+        // #53: the baselines THIS row's day was scored against (window ending the day before, era-cut).
+        guard let baselines = repo.chargeBaselines(for: row.day) else { return nil }
         return ChargeBreakdownWiring.breakdown(baselines: baselines, row: row, sleepPerfPercent: restScore)
     }
 
@@ -927,7 +938,11 @@ struct TodayView: View {
     static func provenanceDisplayLabel(rawSource: String, deviceId: String) -> String {
         if rawSource.hasPrefix(vo2MaxAttributionPrefix) {
             let raw = String(rawSource.dropFirst(vo2MaxAttributionPrefix.count))
-            let method = vo2MaxEstimatorDisplayName(Vo2MaxEstimator(rawValue: raw))
+            let estimator = Vo2MaxEstimator(rawValue: raw)
+            let method = vo2MaxEstimatorDisplayName(estimator)
+            // The watch's own value (#51) was not computed on this device: it reads as the watch alone,
+            // as Android's `vo2MaxAttributionLabelRes` does.
+            if estimator == .garmin { return method }
             return "\(String(localized: "On-device")) · \(method)"
         }
         // #103/queue-11a follow-up: the Explorer's spo2 candidate-fallback rows (see
@@ -1052,14 +1067,10 @@ struct TodayView: View {
         let conf: ScoreConfidence
         switch metricKey {
         case "recovery":
-            // Same HRV-baseline gate the Charge engine uses, fed by the loaded nightly SDNN history.
-            // #2315: with the recalibration epoch, which is what makes the claim above true. Without it this
-            // gate folded the whole history while the Charge engine folded from the epoch, so the pill could
-            // read solid off nights the ring is no longer using.
-            let hrvBase = Baselines.foldHistory(repo.days.map(\.avgHrv), dayKeys: repo.days.map(\.day),
-                                                cfg: Baselines.hrvCfg,
-                                                baselineEpoch: Baselines.hrvBaselineEpoch())
-            conf = ScoreConfidence.charge(recovery: displayDay?.recovery, hrvBaseline: hrvBase)
+            // #53: the confidence the watch number was scored with, through the engine's own resolver
+            // (`WatchRecovery.score` over the same Apple Health rows and the same trailing baseline), so the
+            // pill can never read solid off nights the ring is not using.
+            conf = displayDay.map { repo.watchCharge(for: $0.day).confidence } ?? .calibrating
         case "sleep_performance":
             // A watch night with a Rest score reads as built; without one it's still calibrating.
             conf = restScore != nil ? .building : .calibrating
@@ -1141,13 +1152,15 @@ struct TodayView: View {
         // key instead (the section header then stamps "Last night · <date>"). Honest: it's the real prior
         // read, not a fabricated today's, and today's own readiness wins the instant tonight is scored.
         let anchor = lastScoredRecoveryDay?.day ?? Repository.logicalDayKey(Date())
-        return ReadinessEngine.evaluate(days: repo.days, today: anchor)
+        return ReadinessEngine.evaluate(days: repo.days, today: anchor, baselines: repo.chargeBaselines(for: anchor))
     }
 
     private func computeCalibration() -> Int? {
         guard selectedDayOffset == 0 else { return nil }
-        return RecoveryScorer.calibrationNights(nightlyHrv: repo.chargeBaselines?.hrvHistory.values ?? [],
-                                                dayKeys: repo.chargeBaselines?.hrvHistory.dayKeys ?? [],
+        // #53: counts the nights today's own baseline holds (era cut included), so the countdown cannot
+        // read calibrated while the engine still returns no score.
+        let day = repo.today?.day ?? Repository.logicalDayKey(Date())
+        return RecoveryScorer.calibrationNights(hrvBaseline: repo.chargeBaselines(for: day)?.hrv,
                                                 hasRecovery: repo.today?.recovery != nil)
     }
 
@@ -1570,6 +1583,9 @@ struct TodayView: View {
         // edited / deleted drink (hydrationSeq) and the Settings feature toggle both re-read just the two
         // hydration fields. Cheap (one metricSeries row), never re-runs the heavy loads.
         .task(id: repo.hydrationSeq) { await reloadHydration() }
+        // #57: the Weight tile re-reads on a diary write (weightLogSeq) as well as a data refresh, and the
+        // Stress tile re-reads on a refresh. Both are cheap next to loadAll.
+        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)") { await reloadKeyMetricExtras() }
         .onChangeCompat(of: hydrationEnabled) { _ in Task { await reloadHydration() } }
         // #755: NO per-edge safety net here, on purpose. A deep offload segments into many slices that each
         // flip `backfilling` false→true, so re-running the heavy history-wide reads on that edge would re-fire
@@ -1589,6 +1605,7 @@ struct TodayView: View {
         }
         .onAppear {
             DashboardCardPrefs.migrateLegacyStepsAverage()
+            KeyMetricPrefs.runMigrations()   // #57: Stress card → tile, VO₂max joins
             if derivedKey != todayInputKey {
                 derived = buildDerived()
                 derivedKey = todayInputKey
@@ -1623,6 +1640,9 @@ struct TodayView: View {
         }
         // H6, the steps-calibration sheet, opened from an estimated Steps tile (the same sheet Settings
         // hosts). Presented from Today so a WHOOP 4.0 user can calibrate from where the "est." caption shows.
+        .sheet(isPresented: $showWeightLog) {
+            WeightLogSheet(unitSystem: unitSystem, onClose: { showWeightLog = false })
+        }
         .sheet(isPresented: $showStepsCalibration) {
             StepsCalibrationSheet(repo: repo, onClose: { showStepsCalibration = false })
         }
@@ -1862,7 +1882,7 @@ struct TodayView: View {
             let ratio = readinessNumber(chronic > 0 ? acute / chronic : 0, decimals: 2)
             switch signal.flag {
             case .good: return String(localized: "in the sweet spot (acute:chronic \(ratio))")
-            case .bad: return String(localized: "spiking (acute:chronic \(ratio)) - higher injury risk")
+            case .bad: return String(localized: "spiking (acute:chronic \(ratio)) - well above your usual load")
             case .watch: return acute < chronic
                 ? String(localized: "ramping down (acute:chronic \(ratio)) - room to build")
                 : String(localized: "building fast (acute:chronic \(ratio)) - watch fatigue")
@@ -1956,12 +1976,6 @@ struct TodayView: View {
             workoutsSection
         case .heartRate:
             heartRateTrendSection
-        case .stress:
-            // #42: today's stress, tapping through to the Stress screen. Today only.
-            if selectedDayOffset == 0 {
-                NavigationLink(value: TabRoute.stress) { StressSummaryCard(showsChevron: true) }
-                    .buttonStyle(.plain)
-            }
         case .recoveryVitals:
             recoveryVitalsSection
         case .yourCards:
@@ -2505,14 +2519,13 @@ struct TodayView: View {
             // the stress curve there is no read behind these and nothing to gate.
             HostedTrendCard(card: card, days: repo.days, effortScale: effortScale)
         case .stressToday:
-            // READ-ONLY, like `stages`: the Stress tab keeps the interactive timeline and this mirrors
-            // only the display. `DaytimeLoadLine` is the tab's OWN line, so the host cannot drift into
-            // a second drawing of the same day.
+            // `DaytimeLoadLine` is the Stress tab's OWN line, so the host cannot drift into a second
+            // drawing of the same day. It reads by hover or touch-and-hold, so a tap still opens the tab.
             NoopCard(tint: StressRamp.calm) {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("Stress through the day").strandOverline()
                     if hostedStressHours.contains(where: { $0.level != nil }) {
-                        DaytimeLoadLine(hours: hostedStressHours)
+                        DaytimeLoadLine(hours: hostedStressHours, tapThrough: true)
                     } else {
                         // The honest blank: only waking hours score and an hour needs enough heart
                         // rate, so early morning is empty by construction rather than by failure.
@@ -2774,7 +2787,7 @@ struct TodayView: View {
             let est = stepsEstByDay[selectedDayKey].map { intString(Double($0)) }
             return real ?? est ?? "—"
         case .calories:
-            return withUnit(caloriesValue(appleDays.last))
+            return withUnit(caloriesValue())
         case .stress:
             #if DEBUG
             // DEBUG promo harness: pin the Stress card (0–3) to the active frame's value. No-op otherwise.
@@ -3846,9 +3859,7 @@ struct TodayView: View {
                     // shorter tile up to its row-mate: a tile carrying a sparkline (e.g. Rest) sat taller
                     // than a plain-value one and the row looked ragged. A single fixed height fixes that,
                     // and holds up as text scales because it clears the tallest tile layout.
-                    keyMetricTile(metric)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: NoopMetrics.keyMetricTileHeight)
+                    keyMetricCell(metric)
                 }
             }
             if metricsHasOverflow {
@@ -3933,6 +3944,44 @@ struct TodayView: View {
         return ("—", unit)
     }
 
+    /// A Key-Metric tile at the grid's fixed height, made tappable where it has somewhere to go (#57):
+    /// Stress opens the Stress screen (its summary card is the same reading), VO₂max its trend detail,
+    /// and Weight the weight diary sheet. The other tiles stay as they were.
+    @ViewBuilder
+    private func keyMetricCell(_ metric: KeyMetric) -> some View {
+        let tile = keyMetricTile(metric)
+            .frame(maxWidth: .infinity)
+            .frame(height: NoopMetrics.keyMetricTileHeight)
+        switch metric {
+        case .stress:
+            NavigationLink(value: TabRoute.stress) { tile }.buttonStyle(.plain)
+        case .vo2max:
+            NavigationLink(value: TabRoute.metric("vo2max_est")) { tile }.buttonStyle(.plain)
+        case .weight:
+            Button { showWeightLog = true } label: { tile.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Log your weight"))
+        default:
+            tile
+        }
+    }
+
+    /// #57: load the Stress tile's reading (today only, and only when the tile is shown) and the weight
+    /// diary plus Apple Health weigh-ins the Weight tile resolves between.
+    private func reloadKeyMetricExtras() async {
+        let enabled = Set(enabledKeyMetrics)
+        if enabled.contains(.stress), selectedDayOffset == 0 {
+            stressReading = await StressTodayLoader.load(repo: repo)
+        } else {
+            stressReading = nil
+        }
+        if enabled.contains(.weight) {
+            weightLog = await repo.weightLogEntries()
+            weightHealth = await repo.series(key: "weight", source: "apple-health", fullHistory: true)
+                .map { WeightLog.Entry(day: $0.day, kg: $0.value) }
+        }
+    }
+
     /// One Key-Metric tile, keyed so the grid can be filtered + reordered per the saved layout (#251).
     /// Each case is byte-for-byte the tile that used to be hard-coded in the grid, the refactor only
     /// changes WHICH tiles render and in WHAT order, never how an individual tile looks.
@@ -3962,7 +4011,9 @@ struct TodayView: View {
                 accent: d?.recovery.map { StrandPalette.recoveryColor($0) }
                     ?? carried.map { StrandPalette.recoveryColor($0.value) } ?? StrandPalette.textPrimary,
                 sparkline: sparks["recovery"],
-                sparkColor: StrandPalette.accent
+                sparkColor: StrandPalette.accent,
+                sparkFormat: { "\(Int($0.rounded()))%" },
+                sparkLabels: sparkLabels("recovery")
             )
         case .effort:
             // Unscored TODAY → a short "building" hint instead of the "of N" axis caption, so a
@@ -3978,6 +4029,8 @@ struct TodayView: View {
                 accent: effort.map { StrandPalette.effortTint(fraction: $0 / StrainScorer.maxStrain) } ?? StrandPalette.textPrimary,
                 sparkline: sparks["strain"],
                 sparkColor: StrandPalette.strain066,
+                sparkFormat: { UnitFormatter.effortDisplay($0, scale: effortScale) },
+                sparkLabels: sparkLabels("strain"),
                 // Inline ⓘ in the tile header (not a corner overlay) so it never sits over the value (#495).
                 accessory: { scoreInfoButton(.effort) }
             )
@@ -4003,6 +4056,8 @@ struct TodayView: View {
                 // The Rest composite (0–100) trend, not raw sleep minutes, tracks the score above (#614).
                 sparkline: sparks["sleep_performance"],
                 sparkColor: StrandPalette.metricPurple,
+                sparkFormat: { "\(Int($0.rounded()))%" },
+                sparkLabels: sparkLabels("sleep_performance"),
                 // Inline ⓘ in the tile header (not a corner overlay) so it never sits over the value (#495).
                 accessory: { scoreInfoButton(.rest) }
             )
@@ -4017,7 +4072,9 @@ struct TodayView: View {
                 caption: hrv.caption,
                 accent: hrv.value == "—" ? StrandPalette.textPrimary : StrandPalette.metricPurple,
                 sparkline: sparks["hrv"],
-                sparkColor: StrandPalette.metricPurple
+                sparkColor: StrandPalette.metricPurple,
+                sparkFormat: { "\(Int($0.rounded())) ms" },
+                sparkLabels: sparkLabels("hrv")
             )
         case .restingHr:
             let rhr = carriedVital(unit: "bpm", today: d?.restingHr.map(Double.init),
@@ -4028,7 +4085,9 @@ struct TodayView: View {
                 caption: rhr.caption,
                 accent: rhr.value == "—" ? StrandPalette.textPrimary : StrandPalette.metricRose,
                 sparkline: sparks["rhr"],
-                sparkColor: StrandPalette.metricRose
+                sparkColor: StrandPalette.metricRose,
+                sparkFormat: { "\(Int($0.rounded())) bpm" },
+                sparkLabels: sparkLabels("rhr")
             )
         case .bloodOxygen:
             // PER-FIELD carry (perField: lastSpo2Day): the whole-row `lastScoredRecoveryDay` carry lands on a
@@ -4066,7 +4125,9 @@ struct TodayView: View {
                 caption: spo2Caption,
                 accent: spo2Value == "—" ? StrandPalette.textPrimary : StrandPalette.metricCyan,
                 sparkline: spo2.value == "—" && candidateTail != nil ? sparks["spo2_candidate"] : sparks["spo2"],
-                sparkColor: StrandPalette.metricCyan
+                sparkColor: StrandPalette.metricCyan,
+                sparkFormat: { String(format: "%.0f%%", locale: AppLanguage.activeLocale, $0) },
+                sparkLabels: sparkLabels(spo2.value == "—" && candidateTail != nil ? "spo2_candidate" : "spo2")
             )
         case .respiratory:
             // Respiratory keeps its sparkline-tail fallback for a NON-carrying today (a sparse-but-recent
@@ -4084,7 +4145,9 @@ struct TodayView: View {
                 caption: (respValue != "—" && respCarry.value == "—") ? "rpm" : respCarry.caption,
                 accent: respValue == "—" ? StrandPalette.textPrimary : StrandPalette.accent,
                 sparkline: sparks["resp_rate"],
-                sparkColor: StrandPalette.accent
+                sparkColor: StrandPalette.accent,
+                sparkFormat: { "\(String(format: "%.1f", locale: AppLanguage.activeLocale, $0)) rpm" },
+                sparkLabels: sparkLabels("resp_rate")
             )
         case .steps:
             // Prefer a REAL step count: the strap's own @57 counter (DailyMetric.steps, WHOOP 5/MG),
@@ -4123,6 +4186,8 @@ struct TodayView: View {
                 accent: (realSteps != nil || estSteps != nil) ? StrandPalette.metricCyan : StrandPalette.textPrimary,
                 sparkline: sparks["steps"],
                 sparkColor: StrandPalette.metricCyan,
+                sparkFormat: { intString($0) },
+                sparkLabels: sparkLabels("steps"),
                 // H6, an estimated (or awaiting-calibration) steps tile carries a small ⚙︎ that opens the
                 // steps-calibration sheet (the SAME one Settings hosts), so a WHOOP 4.0 user can tune or
                 // hand-set the estimate from here even before enough auto-fit days exist (#589).
@@ -4139,22 +4204,31 @@ struct TodayView: View {
                 }
             )
         case .weight:
+            // #57: the newest of the hand-logged diary and Apple Health on or before the selected day, through
+            // the one `WeightLog.resolve`; the profile weight is the fallback. Tapping opens the diary sheet.
+            let resolved = WeightLog.resolve(logged: weightLog, health: weightHealth, onOrBefore: selectedDayKey)
+            let weight = weightTile(resolved?.entry.kg)
+            let weightSpark = WeightLog.dailySeries(logged: weightLog, health: weightHealth)
+                .filter { $0.day <= selectedDayKey }.suffix(90)
             StatTile(
                 label: "Weight",
-                value: weightTile(aLatest?.weightKg).value,
-                caption: weightTile(aLatest?.weightKg).caption,
+                value: weight.value,
+                caption: weight.caption,
                 accent: StrandPalette.accent,
-                sparkline: sparks["weight"],
-                sparkColor: StrandPalette.accent
+                sparkline: weightSpark.map(\.kg),
+                sparkColor: StrandPalette.accent,
+                sparkFormat: { UnitFormatter.massFromKilograms($0, system: unitSystem) },
+                sparkLabels: weightSpark.map { SleepModel.shortDayLabel($0.day) }
             )
         case .calories:
             StatTile(
                 label: "Calories",
-                value: caloriesValue(aLatest),
-                caption: String(localized: "active"),
+                value: caloriesValue(),
                 accent: StrandPalette.metricAmber,
-                sparkline: sparks["active_kcal"],
-                sparkColor: StrandPalette.metricAmber
+                sparkline: sparks["energy_kcal"],
+                sparkColor: StrandPalette.metricAmber,
+                sparkFormat: { "\(intString($0)) kcal" },
+                sparkLabels: sparkLabels("energy_kcal")
             )
         case .skinTemp:
             // Added 2026-08-24 (queue 11c follow-up): first Key Metrics appearance for Skin Temp — was
@@ -4168,7 +4242,32 @@ struct TodayView: View {
                 caption: skinTempValue == nil ? Self.needsStrapCaption : "",
                 accent: skinTempValue == nil ? StrandPalette.textPrimary : StrandPalette.metricAmber,
                 sparkline: sparks["skin_temp"],
-                sparkColor: StrandPalette.metricAmber
+                sparkColor: StrandPalette.metricAmber,
+                sparkFormat: { Self.skinTempCardValue($0, fahrenheit: temperatureUnit == .fahrenheit) },
+                sparkLabels: sparkLabels("skin_temp")
+            )
+        case .stress:
+            // #57: the latest level from `StressTodayLoader` → `StressToday.resolve`, the reading the Stress
+            // screen's summary card prints, on that reading's own scale. Today only: the loader reads today.
+            let reading = selectedDayOffset == 0 ? stressReading : nil
+            let level = StressToday.tileLevel(reading)
+            StatTile(
+                label: "Stress",
+                value: level.flatMap { lv in
+                    reading.map { StressSummaryCard.format(lv, source: $0.source) + StressSummaryCard.scaleSuffix($0.scaleMax) }
+                } ?? "—",
+                caption: reading.map { StressSummaryCard.sourceLabel($0.source) } ?? "",
+                accent: level == nil ? StrandPalette.textPrimary : StrandPalette.stressColor,
+                sparkline: reading.map { $0.points.map(\.level) },
+                sparkColor: StrandPalette.stressColor
+            )
+        case .vo2max:
+            // #57: the same latest VO₂max the "Your Cards" VO₂max card shows (`vo2maxToday`).
+            StatTile(
+                label: "VO₂ Max",
+                value: vo2maxToday.map { "\(Int($0.rounded()))" } ?? "—",
+                caption: vo2maxToday == nil ? "" : "ml/kg/min",
+                accent: vo2maxToday == nil ? StrandPalette.textPrimary : StrandPalette.chargeColor
             )
         }
     }
@@ -4657,7 +4756,9 @@ struct TodayView: View {
             allSessions: hostedSessions,
             importedSleep: repo.importedSleep,
             habitualMidsleepSec: hostedHabitual,
-            motionByStart: hostedMotion))
+            motionByStart: hostedMotion,
+            computedSleep: repo.computedSleep,
+            age: profile.age > 0 ? profile.age : nil))
     }
 
     /// True while the strap is mid history-offload, the SAME signal the "Syncing strap history…" note
@@ -4700,26 +4801,27 @@ struct TodayView: View {
         async let respRateSpark      = sparkValuesExplore("resp_rate", source: "my-whoop", window: 14)
         async let stepsAppleSpark    = sparkValues("steps", source: "apple-health", window: 14)
         async let weightSpark        = sparkValues("weight", source: "apple-health", window: 90)
-        async let activeKcalSpark    = sparkValues("active_kcal", source: "apple-health", window: 14)
+        // #51: the day's TOTAL energy, which `exploreSeries` resolves per day through `DayCalories`.
+        async let energyKcalSpark    = sparkValuesExplore("energy_kcal", source: "my-whoop", window: 14)
 
-        sparks["recovery"]        = await recoverySpark
-        sparks["strain"]          = await strainSpark
-        sparks["sleep_total_min"] = await sleepTotalSpark
-        sparks["hrv"]             = await hrvSpark
-        sparks["rhr"]             = await rhrSpark
-        sparks["spo2"]            = await spo2Spark
-        sparks["spo2_candidate"]  = await spo2CandidateSpark
-        sparks["skin_temp"]       = await skinTempSpark
-        sparks["resp_rate"]   = await respRateSpark
-        sparks["steps"]       = await stepsAppleSpark
+        setSpark("recovery", await recoverySpark)
+        setSpark("strain", await strainSpark)
+        setSpark("sleep_total_min", await sleepTotalSpark)
+        setSpark("hrv", await hrvSpark)
+        setSpark("rhr", await rhrSpark)
+        setSpark("spo2", await spo2Spark)
+        setSpark("spo2_candidate", await spo2CandidateSpark)
+        setSpark("skin_temp", await skinTempSpark)
+        setSpark("resp_rate", await respRateSpark)
+        setSpark("steps", await stepsAppleSpark)
         // Steps prefer the strap's own @57 daily total (no metricSeries, it lives on the daily row),
         // so a strap-only WHOOP 5/MG user gets a steps trend without Apple Health. Falls back to the
         // Apple Health series above when the strap supplied no steps (#276). This synchronous overwrite
         // must run AFTER sparks["steps"] is assigned from the Apple-Health read above (unchanged order).
-        let strapSteps = repo.days.suffix(14).compactMap { $0.steps.map(Double.init) }
-        if !strapSteps.isEmpty { sparks["steps"] = strapSteps }
-        sparks["weight"]      = await weightSpark
-        sparks["active_kcal"] = await activeKcalSpark
+        let strapSteps = repo.days.suffix(14).compactMap { d in d.steps.map { (day: d.day, value: Double($0)) } }
+        if !strapSteps.isEmpty { setSpark("steps", strapSteps) }
+        setSpark("weight", await weightSpark)
+        setSpark("energy_kcal", await energyKcalSpark)
 
         // Steps ESTIMATE per day (WHOOP 4.0 motion → calibrated steps), the Mi-Band series, workout +
         // Apple-daily rows, and the three "your cards" series, all history-wide (none depends on the
@@ -4786,8 +4888,11 @@ struct TodayView: View {
         // would clobber the new day's value with a stale one. Every other spark key is history-wide.
         var historyWideSparks = sparks
         historyWideSparks["sleep_performance"] = nil
+        var historyWideSparkDays = sparkDays
+        historyWideSparkDays["sleep_performance"] = nil
         repo.todayHistoryWideCache = TodayHistoryWideCache(
             sparks: historyWideSparks,
+            sparkDays: historyWideSparkDays,
             stepsEstByDay: stepsEstByDay,
             workouts: workouts,
             appleDays: appleDays,
@@ -4807,6 +4912,7 @@ struct TodayView: View {
     /// entry. Every other history-wide spark key is restored.
     private func restoreHistoryWide(_ c: TodayHistoryWideCache) {
         sparks.merge(c.sparks) { _, cached in cached }
+        sparkDays.merge(c.sparkDays) { _, cached in cached }
         stepsEstByDay = c.stepsEstByDay
         workouts = c.workouts
         appleDays = c.appleDays
@@ -4865,6 +4971,7 @@ struct TodayView: View {
     /// load, which on the fresh-mount hit path is the nil → nil no-op (a re-mount resets `@State`).
     private func restoreDayScoped(_ c: TodayDayScopedCache) {
         sparks["sleep_performance"] = c.restSpark
+        sparkDays["sleep_performance"] = c.restSparkDays
         restScore = c.restScore
         provenanceByMetric = c.provenanceByMetric
         providerByMetric = c.providerByMetric
@@ -4955,8 +5062,9 @@ struct TodayView: View {
         // 0–100) but its mini-graph used to plot raw sleep MINUTES (`sparks["sleep_total_min"]`), so the
         // trend didn't track the score it sat under. Plot the SAME merged `sleep_performance` 0–100 series
         // the score reads instead, windowed to the trailing 14 calendar days like every other spark.
-        let restSparkLocal = trailingWindow(restSeries, days: 14).map { $0.value }
-        sparks["sleep_performance"] = restSparkLocal
+        let restSparkPoints = trailingWindow(restSeries, days: 14)
+        let restSparkLocal = restSparkPoints.map { $0.value }
+        setSpark("sleep_performance", restSparkPoints)
         // The selected day's Rest, falling back to the series tail only when today itself is selected (a
         // navigated past day with no Rest row shows ", " rather than borrowing the newest value) AND that
         // tail night is still fresh. #977: a live 5.0 whose sleep never scores used to pin Rest to the
@@ -5121,6 +5229,7 @@ struct TodayView: View {
         guard loadDayKey == selectedDayKey, !Task.isCancelled else { return }
         repo.todayDayScopedCache = TodayDayScopedCache(
             restSpark: restSparkLocal,
+            restSparkDays: restSparkPoints.map(\.day),
             restScore: restScoreLocal,
             provenanceByMetric: provenance,
             providerByMetric: providers,
@@ -5170,7 +5279,7 @@ struct TodayView: View {
     /// already handles 0/1 points (empty / a single head dot), so no fallback is needed for layout.
     /// `latestString` reads `.last` of this windowed series, so a value older than the window shows
     /// ", " rather than a stale number under a Today tile (#49).
-    private func sparkValues(_ key: String, source: String, window: Int) async -> [Double] {
+    private func sparkValues(_ key: String, source: String, window: Int) async -> [(day: String, value: Double)] {
         // PERF: clamp the read at the store level to the trailing window instead of materializing the
         // FULL history (the old default `days: 4000`) for a 14-point sparkline — this runs as ~10
         // concurrent reads on every Today load. `repo.series(days:)` anchors its from-key at
@@ -5180,7 +5289,7 @@ struct TodayView: View {
         // points are byte-identical to the full-history read.
         let all = await repo.series(key: key, source: source, days: window + 1)   // windowed, asc
         guard !all.isEmpty else { return [] }
-        return trailingWindow(all, days: window).map { $0.value }
+        return trailingWindow(all, days: window)
     }
 
     /// Same as `sparkValues` but reads via `exploreSeries` so the on-device COMPUTED `DailyMetric`
@@ -5190,10 +5299,23 @@ struct TodayView: View {
     /// falls back to `dailyColumn` so the strap's own nightly respiratory rate fills the trend.
     /// Mirrors the Android `rememberTrendWindow` which builds the resp spark from
     /// `DailyMetric.respRateBpm` directly. Used for `resp_rate` (parity fix).
-    private func sparkValuesExplore(_ key: String, source: String, window: Int) async -> [Double] {
+    private func sparkValuesExplore(_ key: String, source: String, window: Int) async -> [(day: String, value: Double)] {
         let all = await repo.exploreSeries(key: key, source: source, days: window + 1)
         guard !all.isEmpty else { return [] }
-        return trailingWindow(all, days: window).map { $0.value }
+        return trailingWindow(all, days: window)
+    }
+
+    /// Store one sparkline's values and their day keys together, so the two can never disagree (#58).
+    private func setSpark(_ key: String, _ points: [(day: String, value: Double)]) {
+        sparks[key] = points.map(\.value)
+        sparkDays[key] = points.map(\.day)
+    }
+
+    /// The scrub readout's date line for each point of a loaded sparkline: "12 Jul", the form the
+    /// carried-value stamps on these tiles use. Nil when the days are missing or out of step.
+    private func sparkLabels(_ key: String) -> [String]? {
+        guard let days = sparkDays[key], days.count == sparks[key]?.count else { return nil }
+        return days.map(SleepModel.shortDayLabel)
     }
 
     /// Keep only points within the trailing `days` CALENDAR days ending TODAY (the phone's local date).
@@ -5213,12 +5335,11 @@ struct TodayView: View {
     }
 
     /// The Weight tile's display string + an honest caption ("from profile" only on the fallback).
-    /// Prefers a real Apple-Health reading (today's daily, else the "weight" series' newest point so a
-    /// sparse-but-recent value still renders); when neither carries a weight, falls back to the user's
-    /// self-reported profile weight instead of ", " (#204). Always formatted through the shared
+    /// `resolvedKg` is `WeightLog.resolve`'s pick (#57: the diary or Apple Health); when there is none,
+    /// falls back to the user's profile weight instead of "—" (#204). Always formatted through the shared
     /// `UnitFormatter` so the Imperial/Metric toggle reaches this tile. Mirrors Android's `weightTile`.
-    private func weightTile(_ appleWeightKg: Double?) -> (value: String, caption: String) {
-        if let kg = appleWeightKg ?? sparks["weight"]?.last {
+    private func weightTile(_ resolvedKg: Double?) -> (value: String, caption: String) {
+        if let kg = resolvedKg {
             return (UnitFormatter.massFromKilograms(kg, system: unitSystem), String(localized: "latest"))
         }
         return (UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), String(localized: "from profile"))
@@ -5385,10 +5506,14 @@ struct TodayView: View {
         }
     }
 
-    /// Active calories (Apple) for the latest day, falling back to the sparkline tail.
-    private func caloriesValue(_ a: AppleDaily?) -> String {
-        if let kcal = a?.activeKcal { return intString(kcal) }
-        return latestString("active_kcal", decimals: 0)
+    /// The selected day's TOTAL energy (#51), resolved by `DayCalories` like the Liquid Today tile: the
+    /// phone's total (active + basal) when it has one, else the stored total. Day-scoped, so a past day
+    /// never shows today's figure.
+    private func caloriesValue() -> String {
+        let phone = appleDays.filter { $0.day == selectedDayKey }
+            .map { DayCalories.ImportedDay(day: $0.day, activeKcal: $0.activeKcal, basalKcal: $0.basalKcal) }
+        let stored = displayDay.flatMap { d in d.activeKcalEst.map { [d.day: $0] } } ?? [:]
+        return DayCalories.byDay(imported: phone, stored: stored).first.map { intString($0.kcal) } ?? "—"
     }
 
     private func workoutDuration(_ w: WorkoutRow) -> String {
@@ -5461,6 +5586,7 @@ private struct TodayLoadKey: Equatable {
 /// after an import. Built only after a real `loadHistoryWide()`; consumed when the seq still matches.
 struct TodayHistoryWideCache {
     let sparks: [String: [Double]]
+    let sparkDays: [String: [String]]
     let stepsEstByDay: [String: Int]
     let workouts: [WorkoutRow]
     let appleDays: [AppleDaily]
@@ -5486,6 +5612,7 @@ struct TodayHistoryWideCache {
 /// `Repository.todayDayScopedLoadedSeq` / `todayDayScopedLoadedDayKey`).
 struct TodayDayScopedCache {
     let restSpark: [Double]
+    let restSparkDays: [String]
     let restScore: Double?
     let provenanceByMetric: [String: String]
     let providerByMetric: [String: ScoreInputProvider]

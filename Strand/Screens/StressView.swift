@@ -543,7 +543,9 @@ struct StressView: View {
                 caption: String(localized: "of 3 · \(model.band.title)"),
                 accent: StressRamp.color(model.score),
                 sparkline: model.sparkValues.count > 1 ? model.sparkValues : nil,
-                sparkColor: StressRamp.color(model.score)
+                sparkColor: StressRamp.color(model.score),
+                sparkFormat: { StressTrace.formatLevel($0) },
+                sparkLabels: model.sparkDays
             )
             // Resting HR — an INCREASE is the stressful direction.
             markerTile(
@@ -848,6 +850,8 @@ struct StressModel {
 
     /// Last up-to-14 trend values, for the hero tile sparkline.
     var sparkValues: [Double] { Array(fullTrend.suffix(14)).map(\.value) }
+    /// The day of each `sparkValues` entry, for the tile's scrub readout (#58).
+    var sparkDays: [String] { fullTrend.suffix(14).map { TrendChart.defaultDateString($0.date) } }
 
     private static let dayParser: DateFormatter = {
         let f = DateFormatter()
@@ -1034,8 +1038,13 @@ enum StressMath {
 
 struct DaytimeLoadLine: View {
     let hours: [DaytimeStress.HourPoint]
+    /// Set where the line sits inside a navigation link (the Today-hosted mirror): the scrub then reads by
+    /// hover or touch-and-hold only, so a click or a plain tap still opens the Stress tab (#58).
+    var tapThrough: Bool = false
 
     private let chartHeight: CGFloat = 78
+
+    @State private var scrubX: CGFloat? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -1098,12 +1107,41 @@ struct DaytimeLoadLine: View {
                             .position(x: only.0, y: only.1)
                     }
                 }
+
+                scrubLayer(width: w, height: h)
             }
+            .frame(width: w, height: h)
+            .chartScrub($scrubX, tapThrough: tapThrough)
+            .chartScrubHaptic(scrubX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: hours.count, width: w) })
         }
         .frame(height: chartHeight)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
+    }
+
+    /// The scrub readout: a rule on the timeline point nearest the cursor, with that point's 0–3 level
+    /// and the clock time its window starts. Points sit evenly across the width (the same placement as
+    /// `scoredRuns`), so the cursor always lands on a slot; an unscored slot reads "No data" (#58).
+    @ViewBuilder
+    private func scrubLayer(width w: CGFloat, height h: CGFloat) -> some View {
+        if let sx = scrubX, let i = ChartHoverMath.nearestIndex(toX: sx, count: hours.count, width: w) {
+            let p = hours[i]
+            let px = hours.count <= 1 ? w / 2 : w * CGFloat(i) / CGFloat(hours.count - 1)
+            let time = Date(timeIntervalSince1970: TimeInterval(p.startTs)).formatted(.dateTime.hour().minute())
+            CrosshairRule(x: px, height: h)
+            if let level = p.level {
+                let py = h - h * CGFloat(min(max(level / 3.0, 0), 1))
+                let color = StressRamp.color(level)
+                HighlightDot(color: color).position(x: px, y: py)
+                PositionedTooltip(anchor: CGPoint(x: px, y: py), container: CGSize(width: w, height: h),
+                                  tooltip: ChartTooltip(value: StressTrace.formatLevel(level), label: time,
+                                                        accent: color))
+            } else {
+                PositionedTooltip(anchor: CGPoint(x: px, y: h / 2), container: CGSize(width: w, height: h),
+                                  tooltip: ChartTooltip(value: ChartScrubMath.noDataText, label: time))
+            }
+        }
     }
 
     /// CONTIGUOUS RUNS of scored hours, in chart coordinates.

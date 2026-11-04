@@ -934,10 +934,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">Начать сеанс дыхания</string>
     <string name="l10n_stress_screen_stress_bad33342">Стресс</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">Последние %1$s часов вы остаётесь в высокой зоне. Несколько минут of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">Норма за 7 ночей %1$s мс, обычный диапазон %2$s–%3$s мс%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">Также писать журнал браслета в системный журнал (logcat) для разработки через adb. По умолчанию выключено.</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android выполняет это через WorkManager (Doze может задержать).</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">Калибровка (%1$s из %2$s ночей)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">Отмена</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">Ежедневный автоэкспорт</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">Отладочное журналирование</string>
@@ -952,9 +950,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">Это удалит все запланированные файлы журнала браслета и сырого захвата, сохранённые NOOP. Отменить нельзя.</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">Внимание: этот тестовый режим выключен, поэтому в отчёте нет соответствующего захвата. Для useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">Пульс из PPG: интерполяция внутри задержки (заполнение пропусков v26)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">Готовность по ВСР (эксперимент)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">Готовность по ВСР (эксперимент): %1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">Готовность по ВСР (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Перекалибровать</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Перекалибровать норму Заряда</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">Перекалибровать норму Заряда?</string>
@@ -1432,7 +1427,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">Перезапустить этот браслет?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Пока нечего объединять</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Ваши данные, объединённые</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Активная энергия</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">Кислород в крови</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Кислород в крови</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Влияет на ваш Фитнес-возраст</string>
@@ -2236,7 +2230,6 @@
     <string name="today_card_steps">Шаги</string>
     <string name="today_card_steps_subtitle">Сегодня</string>
     <string name="today_card_calories">Калории</string>
-    <string name="today_card_calories_subtitle">Активная энергия</string>
     <string name="today_card_stress">Стресс</string>
     <string name="today_card_stress_subtitle">Вегетативная нагрузка</string>
     <string name="today_card_fitness_age">Фитнес-возраст</string>
@@ -2279,7 +2272,8 @@
     <string name="today_readiness_load_ramping_down">снижается (острая:хроническая %1$s) — есть запас для роста</string>
     <string name="today_readiness_load_sweet_spot">в оптимальной зоне (острая:хроническая %1$s)</string>
     <string name="today_readiness_load_building_fast">быстро растёт (острая:хроническая %1$s) — следите за усталостью</string>
-    <string name="today_readiness_load_spiking">резкий скачок (острая:хроническая %1$s) — выше риск травмы</string>
+    <string name="settings_hrmax_auto_observed">Авторасчёт · %1$d уд/мин (по данным)</string>
+    <string name="today_readiness_load_spiking">резкий скачок (острая:хроническая %1$s) — намного выше вашей обычной нагрузки</string>
     <string name="today_readiness_more_nights">Ещё несколько ночей данных — и оценка готовности станет точнее.</string>
     <string name="today_readiness_run_down">Истощён</string>
     <string name="today_readiness_run_down_summary">Сразу несколько показателей снижены. Считайте сегодняшний день восстановительным — лёгкая активность и полноценный сон этой ночью.</string>
@@ -2423,6 +2417,11 @@
     <string name="today_driver_near_baseline">около нормы</string>
     <string name="today_driver_warmer_limiting">теплее нормы, что ограничивает восстановление</string>
     <string name="today_driver_cooler_limiting">холоднее нормы, ограничивает восстановление</string>
+    <string name="today_driver_hrv_trend">Тренд ВСР (7 дней)</string>
+    <string name="today_driver_range_ms">норма %1$d-%2$d мс</string>
+    <string name="today_driver_hrv_trend_above">среднее за 7 дней выше вашей нормы, поддерживает восстановление</string>
+    <string name="today_driver_hrv_trend_below">среднее за 7 дней ниже вашей нормы, признак накопленной усталости</string>
+    <string name="today_driver_hrv_trend_inside">среднее за 7 дней в пределах вашей нормы</string>
     <string name="today_driver_a11y">%1$s, %2$s, %3$s, %4$s пунктов, %5$s</string>
     <string name="scoring_guide_daily_scores">ВАШИ ЕЖЕДНЕВНЫЕ ПОКАЗАТЕЛИ</string>
     <string name="scoring_guide_three_scores">ТРИ ПОКАЗАТЕЛЯ</string>
@@ -2847,4 +2846,33 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">ещё нет</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">Загружено в NOOP: %1$d файлов</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">Подробности каждого сообщения пишутся в журнал браслета, пока включён тестовый режим «Подключение» или «Источники».</string>
+    <string name="workout_watch_reference_title">Данные часов</string>
+    <string name="workout_watch_reference_overline">По данным ваших часов</string>
+    <string name="workout_watch_reference_aerobic_te">Аэробный TE</string>
+    <string name="workout_watch_reference_anaerobic_te">Анаэробный TE</string>
+    <string name="workout_watch_reference_training_load">Тренировочная нагрузка</string>
+    <string name="workout_watch_reference_intensity_minutes">Минуты интенсивности</string>
+    <string name="workout_watch_reference_intensity_split">%1$d умеренных · %2$d интенсивных</string>
+    <string name="workout_watch_reference_explanation">Значения, рассчитанные вашими часами для этой тренировки. Training Effect принимает значения от 0 до 5, тренировочная нагрузка основана на EPOC, а интенсивная минута засчитывается в минуты интенсивности вдвойне. NOOP показывает их для справки и не использует в Effort или Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">r Пирсона</string>
+    <string name="l10n_compare_screen_spearman_rho">ρ Спирмена</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Метод корреляции</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">Вес в профиле следует за последним записанным весом.</string>
+    <string name="weight_log_chart_empty">Запишите вес хотя бы за два дня, чтобы увидеть динамику.</string>
+    <string name="weight_log_field_kg">Вес (кг)</string>
+    <string name="weight_log_field_lb">Вес (фунты)</string>
+    <string name="weight_log_invalid">Введите вес от %1$s до %2$s.</string>
+    <string name="weight_log_history">Записанный вес</string>
+    <string name="weight_log_empty">Вес ещё не записан.</string>
+    <string name="weight_log_save">Сохранить</string>
+    <string name="weight_log_delete">Удалить</string>
+    <string name="weight_log_done">Готово</string>
+    <string name="weight_log_previous_day">Предыдущий день</string>
+    <string name="weight_log_next_day">Следующий день</string>
+    <string name="chart_scrub_no_data">Нет данных</string>
+    <string name="chart_scrub_next_point">Следующая точка</string>
+    <string name="chart_scrub_previous_point">Предыдущая точка</string>
+    <string name="chart_scrub_spoken">%1$s, %2$s</string>
 </resources>

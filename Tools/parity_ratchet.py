@@ -31,6 +31,14 @@ ROOT = Path(__file__).resolve().parent.parent
 TWIN_MAP_PATH = "Tools/parity_twin_map.json"
 LEDGER_BASELINE_PATH = "Tools/parity_ledger_baseline.json"
 DISPOSITIONS_PATH = "Tools/parity_dispositions.json"
+# Pair-removal kinds a `retired_pair` disposition may declare, and the inventory set each pair's two
+# endpoints are looked up in. A retirement is accepted only when BOTH endpoints are gone from that set:
+# deleting one side, or re-pointing a claim at another declaration, still fails closed.
+RETIRED_PAIR_INVENTORY = {
+    "remove-function-pair": "functions",
+    "remove-property-pair": "properties",
+    "remove-constant-pair": "constants",
+}
 class RatchetError(ValueError):
     """Raised when governance inputs cannot be interpreted safely."""
 
@@ -154,6 +162,12 @@ def _validate_dispositions(value: dict, location: str, root: Path | None = None)
         if not isinstance(item, dict):
             raise RatchetError(f"{prefix} must be an object")
         disposition_type = item.get("type")
+        if disposition_type == "retired_pair":
+            _validate_retired_pair(item, prefix)
+            if item["identity"] in seen_identities:
+                raise RatchetError(f"{location}: dispositions require unique exact identities and issues")
+            seen_identities.add(item["identity"])
+            continue
         common = {"type", "kind", "identity", "identity_sha256", "platform"}
         expected = {
             "experimental": common | {"issue", "reason", "expires_on"},
@@ -197,6 +211,46 @@ def _validate_dispositions(value: dict, location: str, root: Path | None = None)
         seen_identities.add(identity)
         if issue is not None:
             seen_issues.add(issue)
+
+
+def _validate_retired_pair(item: dict, prefix: str) -> None:
+    """A twin pair deliberately deleted on BOTH platforms, bound to the issue that retired it.
+
+    Unlike the one-sided types it names no platform: the identity is the pair itself, exactly as the
+    derived pair set spells it (Swift endpoint, NUL, Kotlin endpoint). Several pairs may share one
+    issue, since one change commonly retires a group of twins together.
+    """
+    expected = {"type", "kind", "identity", "identity_sha256", "issue", "reason"}
+    if set(item) != expected:
+        raise RatchetError(f"{prefix} keys must be exact for type 'retired_pair'")
+    kind, identity = item["kind"], item["identity"]
+    if kind not in RETIRED_PAIR_INVENTORY:
+        raise RatchetError(f"{prefix} retired_pair may only declare a pair removal: {kind!r}")
+    if not isinstance(identity, str) or "*" in identity or identity.count("\0") != 1:
+        raise RatchetError(f"{prefix} retired_pair identity must be one exact Swift/Kotlin pair")
+    swift, kotlin = identity.split("\0")
+    if not swift.split("::", 1)[0].endswith(".swift") or not kotlin.split("::", 1)[0].endswith(".kt"):
+        raise RatchetError(f"{prefix} retired_pair identity must name a Swift then a Kotlin endpoint")
+    if item["identity_sha256"] != parity_ledger._canonical_sha256(identity):
+        raise RatchetError(f"{prefix} identity hash mismatch")
+    issue_ref.parse_current(item["issue"])
+    reason = item["reason"]
+    if not isinstance(reason, str) or len(reason.strip()) < 20:
+        raise RatchetError(f"{prefix} needs a specific non-generic reason")
+
+
+def _retired_pair_errors(item: dict, current_sets: dict[str, list[str]]) -> list[str]:
+    """Both endpoints of a retired pair must be gone; otherwise it is a one-sided removal."""
+    inventory = set(current_sets[RETIRED_PAIR_INVENTORY[item["kind"]]])
+    swift, kotlin = item["identity"].split("\0")
+    survivors = [
+        endpoint for endpoint in (f"swift\0{swift}", f"kotlin\0{kotlin}") if endpoint in inventory
+    ]
+    return [
+        f"{DISPOSITIONS_PATH}: retired_pair {item['kind']} keeps a live endpoint "
+        f"{endpoint.split(chr(0), 1)[1]}; retire both platforms or restore the pair"
+        for endpoint in survivors
+    ]
 
 
 def _is_out_of_scope_reclassification(old: dict, current: dict | None) -> bool:
@@ -591,6 +645,9 @@ def compare_metadata(
             item for key, item in current_by_key.items()
             if key not in old_by_key and key in required
         ]
+        for item in new_exemptions:
+            if item["type"] == "retired_pair":
+                errors.extend(_retired_pair_errors(item, current_sets))
         active_exemptions = [
             item for key, item in current_by_key.items()
             if key in inherited or key in required

@@ -4,19 +4,21 @@ import Foundation
 //
 // Pure, deterministic, DB-free. Computes the Pearson product-moment correlation r,
 // a simple ordinary-least-squares regression line (slope/intercept of y on x), and
-// an approximate two-sided p-value for r.
+// a two-sided p-value for r.
 //
 //   r = Σ(x−x̄)(y−ȳ) / sqrt( Σ(x−x̄)² · Σ(y−ȳ)² )         (Pearson)
 //   slope     = Σ(x−x̄)(y−ȳ) / Σ(x−x̄)²                     (OLS, y on x)
 //   intercept = ȳ − slope·x̄
 //
-// The p-value uses the standard t-statistic for a correlation,
-//   t = r · sqrt( (n−2) / (1−r²) ),
-// converted to a two-sided tail probability via a NORMAL approximation
-// (2·(1−Φ(|t|))). This is an approximation — for small n the true Student-t tails
-// are heavier, so pApprox slightly understates p — but it is fully deterministic
-// and needs no special-function tables. Φ is evaluated with the Abramowitz &
-// Stegun 7.1.26 erf rational approximation.
+// The p-value uses the t-statistic for a correlation,
+//   t = r · sqrt( (n_eff−2) / (1−r²) ),
+// with a Student-t tail on n_eff − 2 degrees of freedom (StatTests). n_eff corrects n for the lag-1
+// autocorrelation of both daily series (Bretherton et al. 1999), since consecutive days are not
+// independent draws. Below `minPairs` pairs no inference is offered: p is 1.0, though r and the
+// regression line are still returned for callers that only need a slope.
+//
+// `spearman` is the rank-based option: Pearson on average-tie ranks, robust to an outlier night or an
+// imported step change that a raw Pearson would read as a strong relationship.
 //
 // `alignByDay` inner-joins two "yyyy-MM-dd"-keyed series on the day key, returning
 // (x, y) pairs sorted by day. `lagged` shifts y forward by `lagDays` relative to x
@@ -30,27 +32,65 @@ public struct Correlation: Equatable, Sendable {
     public let r: Double
     /// Number of paired observations used.
     public let n: Int
-    /// Approximate two-sided p-value for H0: r = 0 (normal approx of the t-test).
+    /// Two-sided p-value for H0: r = 0 (Student-t on the autocorrelation-corrected n; 1.0 below
+    /// `CorrelationEngine.minPairs`).
     public let pApprox: Double
-    /// OLS slope of y on x.
+    /// OLS slope of y on x (on ranks for Spearman).
     public let slope: Double
-    /// OLS intercept of y on x.
+    /// OLS intercept of y on x (on ranks for Spearman).
     public let intercept: Double
+    /// Sample size after the lag-1 autocorrelation correction (≤ n).
+    public let nEffective: Double
+    /// Which coefficient `r` holds.
+    public let method: CorrelationEngine.Method
 
-    public init(r: Double, n: Int, pApprox: Double, slope: Double, intercept: Double) {
+    public init(r: Double, n: Int, pApprox: Double, slope: Double, intercept: Double,
+                nEffective: Double? = nil, method: CorrelationEngine.Method = .pearson) {
         self.r = r
         self.n = n
         self.pApprox = pApprox
         self.slope = slope
         self.intercept = intercept
+        self.nEffective = nEffective ?? Double(n)
+        self.method = method
     }
 }
 
 public enum CorrelationEngine {
 
-    // MARK: - Pearson + regression
+    /// Correlation coefficient to compute.
+    public enum Method: String, Equatable, Sendable {
+        case pearson
+        case spearman
+    }
 
-    /// Pearson r plus an OLS regression line and approximate p-value for the pairs.
+    /// Minimum paired days before a correlation is shown or tested. Below this p is 1.0.
+    public static let minPairs: Int = 10
+
+    // MARK: - Pearson / Spearman
+
+    /// `pearson` or `spearman` over the pairs, in the order given (day order for the p-value's
+    /// autocorrelation correction).
+    /// Kotlin twin: `CorrelationEngine.correlate`.
+    public static func correlate(_ xy: [(Double, Double)], method: Method) -> Correlation? {
+        switch method {
+        case .pearson: return pearson(xy)
+        case .spearman: return spearman(xy)
+        }
+    }
+
+    /// Spearman's rho: Pearson over average-tie ranks. The autocorrelation correction is taken on the
+    /// ranks too. Returns nil under the same conditions as `pearson`.
+    /// Kotlin twin: `CorrelationEngine.spearman`.
+    public static func spearman(_ xy: [(Double, Double)]) -> Correlation? {
+        let rx = StatTests.averageRanks(xy.map(\.0))
+        let ry = StatTests.averageRanks(xy.map(\.1))
+        guard let c = pearson(Array(zip(rx, ry))) else { return nil }
+        return Correlation(r: c.r, n: c.n, pApprox: c.pApprox, slope: c.slope,
+                           intercept: c.intercept, nEffective: c.nEffective, method: .spearman)
+    }
+
+    /// Pearson r plus an OLS regression line and p-value for the pairs.
     /// Returns nil when fewer than 3 pairs, or when either variable has zero
     /// variance (r undefined).
     public static func pearson(_ xy: [(Double, Double)]) -> Correlation? {
@@ -82,9 +122,13 @@ public enum CorrelationEngine {
 
         let slope = sxy / sxx
         let intercept = meanY - slope * meanX
-        let p = pValue(r: r, n: n)
+        let nEff = StatTests.effectiveN(n: n,
+                                        rx: StatTests.lag1Autocorrelation(xy.map(\.0)),
+                                        ry: StatTests.lag1Autocorrelation(xy.map(\.1)))
+        let p = n < minPairs ? 1.0 : StatTests.correlationP(r: r, n: nEff)
 
-        return Correlation(r: r, n: n, pApprox: p, slope: slope, intercept: intercept)
+        return Correlation(r: r, n: n, pApprox: p, slope: slope, intercept: intercept,
+                           nEffective: nEff)
     }
 
     // MARK: - Day alignment
@@ -111,9 +155,11 @@ public enum CorrelationEngine {
     ///
     /// Returns nil when fewer than 3 lag-matched pairs survive or when `pearson`
     /// rejects them (zero variance).
+    /// Kotlin twin: `CorrelationEngine.lagged`.
     public static func lagged(x: [(day: String, value: Double)],
                               y: [(day: String, value: Double)],
-                              lagDays: Int) -> Correlation? {
+                              lagDays: Int,
+                              method: Method = .pearson) -> Correlation? {
         var mapY: [String: Double] = [:]
         for row in y { mapY[row.day] = row.value }
 
@@ -126,21 +172,10 @@ public enum CorrelationEngine {
                 pairs.append((row.value, yv))
             }
         }
-        return pearson(pairs)
+        return correlate(pairs, method: method)
     }
 
     // MARK: - p-value
-
-    /// Two-sided p-value for H0: r = 0 via t = r·sqrt((n−2)/(1−r²)) and a normal
-    /// approximation of the t tail. n ≤ 2 → 1.0 (no evidence); |r| = 1 → 0.0.
-    static func pValue(r: Double, n: Int) -> Double {
-        guard n > 2 else { return 1.0 }
-        let oneMinusR2 = 1.0 - r * r
-        if oneMinusR2 <= 0 { return 0.0 }  // |r| == 1
-        let t = r * (Double(n - 2) / oneMinusR2).squareRoot()
-        // Two-sided tail of the standard normal at |t|.
-        return 2.0 * (1.0 - normalCDF(abs(t)))
-    }
 
     /// Standard-normal CDF Φ(z) using the A&S 7.1.26 erf approximation.
     static func normalCDF(_ z: Double) -> Double {

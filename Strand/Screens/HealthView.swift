@@ -408,7 +408,7 @@ struct LiveHRSample: Identifiable, Equatable {
 /// Hover/tooltip (previously missing): reuses the same `CrosshairRule`/`HighlightDot`/`PositionedTooltip`/
 /// `ChartTooltip` components `TrendChart`'s `chartOverlay` uses — no new mechanism. No downsampling here:
 /// the buffer is already capped at 180 samples (#941) and this IS the live, in-progress trace, so every
-/// sample stays significant.
+/// sample stays significant. Scrub: hover or click-drag on the Mac, touch-and-hold then drag on iOS (#58).
 private struct LiveTimeChart: View {
     var samples: [LiveHRSample]
     /// The gradient the line/area is stroked with (the current HR-zone band).
@@ -436,12 +436,14 @@ private struct LiveTimeChart: View {
         StrandPalette.sample(stops: gradient.stops, at: 0.85)
     }
 
-    /// The sample nearest a given chart-local x, matching `TrendChart.nearestPoint`.
-    private func nearestSample(toX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> LiveHRSample? {
-        guard !samples.isEmpty else { return nil }
-        let relX = x - plot.minX
-        guard let date: Date = proxy.value(atX: relX) else { return nil }
-        return samples.min(by: { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) })
+    /// What the cursor at chart-local `x` is on: the nearest sample, and the empty second's time when the
+    /// cursor sits over a dropout in the stream instead (#58), matching `TrendChart.scrubTarget`.
+    private func scrubTarget(atX x: CGFloat, proxy: ChartProxy, plot: CGRect) -> (sample: LiveHRSample, gap: Date?)? {
+        let relX = min(max(x, plot.minX), plot.maxX) - plot.minX
+        guard let date: Date = proxy.value(atX: relX),
+              let hit = ChartScrubMath.resolve(dates: samples.map(\.date), cursor: date)
+        else { return nil }
+        return (samples[hit.index], hit.gapAt.map { Date(timeIntervalSince1970: TimeInterval($0)) })
     }
 
     // Map a bpm value onto the unit interval for gradient sampling, same idiom as `TrendChart.unit`.
@@ -495,9 +497,18 @@ private struct LiveTimeChart: View {
         .chartOverlay { proxy in
             GeometryReader { geo in
                 let plot = proxy.plotRectCompat(in: geo)
+                let target = hoverX.flatMap { scrubTarget(atX: $0, proxy: proxy, plot: plot) }
                 ZStack(alignment: .topLeading) {
-                    if let hx = hoverX,
-                       let s = nearestSample(toX: hx, proxy: proxy, plot: plot),
+                    if let target, let gap = target.gap, let gx = proxy.position(forX: gap) {
+                        let cx = gx + plot.minX
+                        CrosshairRule(x: cx, height: geo.size.height)
+                        PositionedTooltip(
+                            anchor: CGPoint(x: cx, y: plot.midY),
+                            container: geo.size,
+                            tooltip: ChartTooltip(value: ChartScrubMath.noDataText,
+                                                  label: gap.formatted(.dateTime.hour().minute().second()))
+                        )
+                    } else if let s = target?.sample,
                        let px = proxy.position(forX: s.date),
                        let py = proxy.position(forY: s.bpm) {
                         let cx = px + plot.minX
@@ -518,19 +529,8 @@ private struct LiveTimeChart: View {
                 }
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
-                    // draw-on animation and flickers the curve (mirrors TrendChart #104).
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) {
-                        switch phase {
-                        case .active(let location): hoverX = location.x
-                        case .ended: hoverX = nil
-                        }
-                    }
-                }
+                .chartScrub($hoverX)
+                .chartScrubHaptic(target.map { $0.gap ?? $0.sample.date })
             }
         }
         .clipped()
@@ -1220,7 +1220,10 @@ private struct VitalitySection: View {
             chronoAge: Double(profile.age),
             restingHR: rhrs.isEmpty ? nil : IntelligenceEngine.medianOf(rhrs),
             sleepHours: mean(nights),
-            sleepConsistency: VitalityEngine.sleepConsistency(nightlyHours: nights),
+            // #55: the Sleep Regularity Index the engine persisted for its newest scored day (÷100), the
+            // same value the stored headline used.
+            sleepConsistency: repo.computedSleep.filter { $0.value.consistencyPct != nil }.max { $0.key < $1.key }?
+                .value.consistencyPct.map { $0 / 100.0 },
             rmssd: hrvs.isEmpty ? nil : IntelligenceEngine.medianOf(hrvs),
             rmssdNorm: VitalityEngine.rmssdNorm(forAge: Double(profile.age)),
             steps: mean(steps)))
@@ -1436,7 +1439,10 @@ private struct LiquidVitalTile: View {
                 }
                 #if !os(watchOS)
                 if let sparkline = reading.sparkline, sparkline.count > 1 {
-                    Sparkline(values: sparkline, gradient: Gradient(colors: [reading.metricColor.opacity(0.5), reading.metricColor]))
+                    let days = reading.sparkDays?.count == sparkline.count ? reading.sparkDays : nil
+                    Sparkline(values: sparkline, gradient: Gradient(colors: [reading.metricColor.opacity(0.5), reading.metricColor]),
+                              valueFormat: { "\(reading.format($0)) \(reading.unit)" },
+                              indexLabel: days.map { d in { BodyVitalReading.dayLabel(d[$0]) } })
                         .frame(height: 22).padding(.top, 6)
                         .accessibilityHidden(true)
                 }
@@ -1516,7 +1522,7 @@ private struct SkinTempSection: View {
             // previously enabled it later switches to male, we still honour the existing awareness card
             // rather than silently hiding their data; only the OPT-IN invitation is gated.
             if cycleEnabled, let cycle = model.cyclePhase {
-                CycleAwarenessCard(result: cycle, curve: model.cycleCurve,
+                CycleAwarenessCard(result: cycle, curve: model.cycleCurve, curveDays: model.cycleCurveDays,
                                    onLogPeriod: {
                                        Task {
                                            await repo.logPeriodStart(day: Repository.localDayKey(Date()))
@@ -1551,7 +1557,7 @@ private struct SkinTempSection: View {
         }
         .sheet(isPresented: $cycleTrackerPresented) {
             if let cycle = model.cyclePhase {
-                CycleTrackerView(result: cycle, curve: model.cycleCurve)
+                CycleTrackerView(result: cycle, curve: model.cycleCurve, curveDays: model.cycleCurveDays)
                     .environmentObject(repo)
                     .environmentObject(model)
             }

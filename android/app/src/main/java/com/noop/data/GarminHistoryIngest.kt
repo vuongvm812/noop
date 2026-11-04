@@ -30,19 +30,52 @@ object GarminHistoryIngest {
         }.toSet()
 
     /**
-     * Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
-     * their nights over the watch's own sleep window (#47). Files older than the sync lookback are not
-     * listed again, so their nights keep the old fold. Swift twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+     * Once per watch, repair the nights an older fold stored: forget the stored SLEEP files so the next
+     * sync re-folds them over the watch's own sleep window (#47) and rewrites the recent day rollups from
+     * their main night (#49), and divide by 100 every stored efficiency above 1, the percent the older
+     * fold wrote (#49; this part also reaches nights older than the sync lookback). Nothing on the watch
+     * changes. Key version 2, so a watch repaired for #47 alone runs it once more.
+     * Swift twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
      */
     suspend fun refetchSleepFilesOnce(store: GarminSyncStore, deviceId: String, prefs: SharedPreferences, log: (String) -> Unit) {
-        val key = "noop.garmin.sleepRefold.v1.$deviceId"
+        val key = "noop.garmin.sleepRefold.v2.$deviceId"
         if (prefs.getBoolean(key, false)) return
         try {
+            val rescaled = store.repairEfficiencyUnits(deviceId)
             val forgotten = store.forgetFiles(deviceId, 255, GarminFitFileType.SLEEP.raw)
             prefs.edit().putBoolean(key, true).apply()
-            log("Garmin: re-folding stored nights; $forgotten sleep files will download again")
+            log("Garmin: re-folding stored nights; $forgotten sleep files will download again, " +
+                "$rescaled efficiency values rescaled from percent")
         } catch (e: Exception) {
             log("Garmin: re-fold of stored nights postponed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
+     * Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
+     * stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
+     * use the phone's current UTC offset, as the fold does for a file without one.
+     * Swift twin: `GarminHistoryIngest.rederiveNightVitalsOnce`.
+     */
+    suspend fun rederiveNightVitalsOnce(
+        store: GarminSyncStore,
+        deviceId: String,
+        prefs: SharedPreferences,
+        log: (String) -> Unit,
+        utcOffsetS: Int = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 1000,
+    ) {
+        val key = "noop.garmin.nightVitals.v1.$deviceId"
+        if (prefs.getBoolean(key, false)) return
+        try {
+            val days = store.days(deviceId).map { day ->
+                val start = GarminWatchIngest.dayStartUnix(day, utcOffsetS)
+                GarminDayRollup(day = day, dayStartTs = start, dayEndTs = start + 86_400)
+            }
+            val changed = store.rederiveNightVitals(deviceId, days)
+            prefs.edit().putBoolean(key, true).apply()
+            log("Garmin: re-derived overnight SpO2 / respiration for ${days.size} days ($changed points)")
+        } catch (e: Exception) {
+            log("Garmin: overnight vitals re-derive postponed: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -91,6 +124,9 @@ object GarminHistoryIngest {
         if (activity.hrSamples.isNotEmpty()) {
             repo.insertHr(activity.hrSamples.map { HrSample(deviceId = deviceId, ts = it.ts, bpm = it.bpm) })
         }
+        // The watch's Training Effect and training load, read back by the workout detail.
+        val reference = GarminWatchIngest.activityReference(activity)
+        if (reference.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = reference), deviceId)
         log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} " +
             "route=${if (row.routePolyline == null) 0 else activity.route.size} from ${file.key.label}")
     }

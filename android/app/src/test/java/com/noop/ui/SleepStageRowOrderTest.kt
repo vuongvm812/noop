@@ -22,14 +22,9 @@ import org.junit.Test
  * comes before deep" would have passed the state the report was filed about.
  *
  * SCOPE, stated so the next reader does not over-trust this. It pins the six stage ROW STACKS, which are
- * what #2534 is about. Two other places name the stages in a sequence and are NOT covered, because aligning
- * them was not part of this change:
- *
- *  - `XiaomiBandView.swift` lists REM / Deep / Light / Awake for a Mi Band night.
- *  - `Charts.hypnogramSummary` builds the hypnogram's screen-reader read-out as deep / REM / light / awake,
- *    so a TalkBack user currently hears a different order from the one they would see.
- *
- * Both are worth a look, and neither is pinned here.
+ * what #2534 is about. One other place names the stages in a sequence and is NOT covered, because aligning
+ * it was not part of this change: `XiaomiBandView.swift` lists REM / Deep / Light / Awake for a Mi Band
+ * night. It is worth a look, and is not pinned here.
  */
 class SleepStageRowOrderTest {
 

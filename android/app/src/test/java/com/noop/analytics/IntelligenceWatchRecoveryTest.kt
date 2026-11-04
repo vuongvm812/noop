@@ -12,8 +12,8 @@ import org.junit.Test
  * Kotlin twin of the macOS IntelligenceWatchRecoveryTests: the source-only Charge fold (#823). An
  * import-only user (Health Connect / Oura-Fitbit-Garmin / Apple Health) has DAILY aggregates (HRV + resting
  * HR, recovery null) but no raw stream, so the raw-HR scoring loop never scores their days.
- * [IntelligenceEngine.watchRecoveries] folds the TRAILING HRV+RHR history into the cross-lane
- * [WatchRecovery] engine and writes a recovery + confidence per day, staying null/CALIBRATING until there is
+ * [IntelligenceEngine.watchRecoveries] scores each day through the cross-lane [WatchRecovery.score] against
+ * its trailing 60-day Charge baselines (#53) and writes a recovery + confidence per day, staying null/CALIBRATING until there is
  * enough baseline (never a fabricated number). Pure (no Room) , the SAME logic analyzeRecent ships per day.
  */
 class IntelligenceWatchRecoveryTest {
@@ -65,5 +65,24 @@ class IntelligenceWatchRecoveryTest {
         val scored = IntelligenceEngine.watchRecoveries(ordered.shuffled())
         assertEquals(ordered.map { it.day }, scored.map { it.day })
         assertNotNull(scored.last().recovery)
+    }
+
+    /** #53: the engine hands each day only the rows inside its 60-day window, an optimisation that must not
+     *  change a single result: every day equals [WatchRecovery.score] over the whole history. The history
+     *  spans well over the window and varies, so the slicing is exercised. */
+    @Test
+    fun windowSlicingMatchesScoringOverTheWholeHistory() {
+        val start = Baselines.isoEpochDay("2026-01-01")!!
+        val rows = (0 until 150).filter { it % 9 != 4 }.map {
+            importRow(Baselines.isoDayFromEpochDay(start + it), 40.0 + (it * 7) % 13, 50 + (it * 5) % 7)
+        }
+        val scored = IntelligenceEngine.watchRecoveries(rows)
+        assertEquals(rows.size, scored.size)
+        for (w in scored) {
+            val whole = WatchRecovery.score(w.day, rows)
+            assertEquals(w.day, whole.recovery, w.recovery)
+            assertEquals(w.day, whole.confidence, w.confidence)
+        }
+        assertTrue(scored.count { it.recovery != null } > 100)
     }
 }

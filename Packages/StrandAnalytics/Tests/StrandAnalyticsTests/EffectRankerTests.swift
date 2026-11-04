@@ -153,4 +153,49 @@ final class EffectRankerTests: XCTestCase {
                              effect: e, confidence: .building)
         XCTAssertTrue(r.sentence().hasSuffix("(next morning)."))
     }
+
+    // MARK: - Benjamini–Hochberg family (#56)
+
+    /// A borderline effect that clears raw p < 0.05 on its own loses significance once it is one of
+    /// many tests in the family, and q is never below the raw p.
+    func testFamilyAdjustmentRaisesQ() {
+        var outcome: [String: Double] = [:]
+        for d in 1...30 { outcome[ymd(2026, 6, d)] = 70 + jitter(d) }
+        var behaviors: [String: Set<String>] = [:]
+        var controls: [String: Set<String>] = [:]
+        // Twelve null behaviours on staggered day sets.
+        for k in 0..<12 {
+            let yes = Set((1...30).filter { ($0 + k) % 3 == 0 }.map { ymd(2026, 6, $0) })
+            behaviors["B\(k)"] = yes
+            controls["B\(k)"] = Set(outcome.keys).subtracting(yes)
+        }
+        let rows = EffectRanker.rank(behaviors: behaviors, controls: controls,
+                                     outcomeByDay: outcome, outcome: "Charge")
+        XCTAssertFalse(rows.isEmpty)
+        for r in rows {
+            XCTAssertGreaterThanOrEqual(r.effect.pAdjusted, r.effect.pApprox)
+            XCTAssertEqual(r.effect.significant, r.effect.pAdjusted < BehaviorInsights.alpha)
+        }
+    }
+
+    /// rankFamily over two outcomes adjusts across both: the same row's q is at least its q in a
+    /// one-outcome family.
+    func testFamilySpansOutcomes() throws {
+        var a: [String: Double] = [:], b: [String: Double] = [:]
+        var yes: Set<String> = []
+        for d in 1...30 {
+            a[ymd(2026, 6, d)] = 70 + jitter(d)
+            b[ymd(2026, 6, d)] = 40 + jitter(d + 1)
+            if d % 4 == 0 { yes.insert(ymd(2026, 6, d)); a[ymd(2026, 6, d)] = 62 + jitter(d) }
+        }
+        let controls = Set(a.keys).subtracting(yes)
+        let single = try XCTUnwrap(EffectRanker.rank(behaviors: ["X": yes], controls: ["X": controls],
+                                                     outcomeByDay: a, outcome: "A").first)
+        let family = EffectRanker.rankFamily(behaviors: ["X": yes], controls: ["X": controls],
+                                             outcomes: ["A": a, "B": b])
+        let joint = try XCTUnwrap(family["A"]?.first)
+        XCTAssertNotNil(family["B"])
+        XCTAssertEqual(joint.lag, single.lag)
+        XCTAssertGreaterThanOrEqual(joint.effect.pAdjusted, single.effect.pAdjusted)
+    }
 }

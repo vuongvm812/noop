@@ -286,4 +286,44 @@ class EffectRankerTest {
         assertEquals("Half", ranked.first().behavior)
     }
 
+
+    // ── Benjamini–Hochberg family (#56); twin of the Swift EffectRankerTests cases ──
+
+    @Test
+    fun familyAdjustmentRaisesQ() {
+        val outcome = HashMap<String, Double>()
+        for (d in 1..30) outcome[ymd(2026, 6, d)] = 70 + jitter(d)
+        val behaviors = HashMap<String, Set<String>>()
+        val controls = HashMap<String, Set<String>>()
+        for (k in 0 until 12) {
+            val yes = (1..30).filter { (it + k) % 3 == 0 }.map { ymd(2026, 6, it) }.toSet()
+            behaviors["B$k"] = yes
+            controls["B$k"] = outcome.keys - yes
+        }
+        val rows = EffectRanker.rank(behaviors, controls, outcome, "Charge")
+        assertFalse(rows.isEmpty())
+        for (r in rows) {
+            assertTrue(r.effect.pAdjusted >= r.effect.pApprox)
+            assertEquals(r.effect.pAdjusted < EffectRanker.alpha, r.effect.significant)
+        }
+    }
+
+    @Test
+    fun familySpansOutcomes() {
+        val a = HashMap<String, Double>()
+        val b = HashMap<String, Double>()
+        val yes = HashSet<String>()
+        for (d in 1..30) {
+            a[ymd(2026, 6, d)] = 70 + jitter(d)
+            b[ymd(2026, 6, d)] = 40 + jitter(d + 1)
+            if (d % 4 == 0) { yes.add(ymd(2026, 6, d)); a[ymd(2026, 6, d)] = 62 + jitter(d) }
+        }
+        val controls = a.keys - yes
+        val single = EffectRanker.rank(mapOf("X" to yes), mapOf("X" to controls), a, "A").first()
+        val family = EffectRanker.rankFamily(mapOf("X" to yes), mapOf("X" to controls), mapOf("A" to a, "B" to b))
+        val joint = family.getValue("A").first()
+        assertNotNull(family["B"])
+        assertEquals(single.lag, joint.lag)
+        assertTrue(joint.effect.pAdjusted >= single.effect.pAdjusted)
+    }
 }

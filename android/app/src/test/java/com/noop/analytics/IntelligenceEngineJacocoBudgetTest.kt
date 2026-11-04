@@ -306,6 +306,7 @@ class IntelligenceEngineJacocoBudgetTest {
             1.5,
             persistCalibration,
             trace,
+            null,   // vitalityRegularity (#55)
             continuation,
         )
         assertEquals(Unit, result)

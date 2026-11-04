@@ -160,6 +160,15 @@ final class StrandDesignTests: XCTestCase {
         XCTAssertGreaterThan(pos.y, 5)
     }
 
+    func testTooltipPlacementFloatsAboveAStripShorterThanItself() {
+        // A 22 pt inline sparkline cannot hold a 36 pt tooltip: it sits wholly above the strip.
+        let size = CGSize(width: 80, height: 36)
+        let pos = ChartTooltipPlacement.position(anchor: CGPoint(x: 40, y: 11),
+                                                 tooltipSize: size, in: CGSize(width: 160, height: 22))
+        XCTAssertLessThanOrEqual(pos.y + size.height / 2, 0)
+        XCTAssertEqual(pos.x, 40)
+    }
+
     func testTrendChartDefaultDateStringNonEmpty() {
         let s = TrendChart.defaultDateString(Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(s.isEmpty)

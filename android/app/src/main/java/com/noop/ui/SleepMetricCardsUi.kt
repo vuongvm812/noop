@@ -21,7 +21,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,12 +41,18 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.noop.analytics.SleepDebtLedger
 import com.noop.data.SleepSession
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.time.LocalDate
+import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.util.TimeZone
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
@@ -74,7 +83,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.performance.latest),
                 caption = tileCaption(m.performance.latestDay, m.performance.latest, m.performance.typical, "%"),
                 accent = m.performance.latest?.let { Palette.recoveryColor(it) } ?: Palette.textPrimary,
-                spark = m.performance.series, sparkColor = Palette.restColor,
+                spark = m.performance.series, sparkDays = m.performance.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("performance") },
             )
         },
@@ -84,7 +93,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.efficiency.latest),
                 caption = tileCaption(m.efficiency.latestDay, m.efficiency.latest, m.efficiency.typical, "%"),
                 accent = Palette.statusPositive,
-                spark = m.efficiency.series, sparkColor = Palette.statusPositive,
+                spark = m.efficiency.series, sparkDays = m.efficiency.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.statusPositive,
                 onClick = { onMetricClick("efficiency") },
             )
         },
@@ -94,7 +103,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.consistency.latest),
                 caption = tileCaption(m.consistency.latestDay, m.consistency.latest, m.consistency.typical, "%"),
                 accent = m.consistency.latest?.let { Palette.recoveryColor(it) } ?: Palette.textPrimary,
-                spark = m.consistency.series, sparkColor = Palette.metricCyan,
+                spark = m.consistency.series, sparkDays = m.consistency.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.metricCyan,
                 onClick = { onMetricClick("consistency") },
             )
         },
@@ -104,7 +113,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.hoursVsNeeded.latest),
                 caption = tileCaption(m.hoursVsNeeded.latestDay, m.hoursVsNeeded.latest, m.hoursVsNeeded.typical, "%"),
                 accent = m.hoursVsNeeded.latest?.let { Palette.recoveryColor(minOf(100.0, it)) } ?: Palette.textPrimary,
-                spark = m.hoursVsNeeded.series, sparkColor = Palette.restColor,
+                spark = m.hoursVsNeeded.series, sparkDays = m.hoursVsNeeded.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.restColor,
                 onClick = { onMetricClick("hours_vs_needed") },
             )
         },
@@ -114,7 +123,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = pctValue(m.restorative.latest),
                 caption = tileCaption(m.restorative.latestDay, m.restorative.latest, m.restorative.typical, "%"),
                 accent = Palette.sleepREM,
-                spark = m.restorative.series, sparkColor = Palette.sleepREM,
+                spark = m.restorative.series, sparkDays = m.restorative.seriesDays, formatSpark = { pctValue(it) }, sparkColor = Palette.sleepREM,
                 onClick = { onMetricClick("restorative") },
             )
         },
@@ -124,7 +133,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
                 value = m.respiratory.latest?.let { String.format(Locale.US, "%.1f", it) } ?: "—",
                 caption = tileCaption(m.respiratory.latestDay, m.respiratory.latest, m.respiratory.typical, " rpm", decimals = 1),
                 accent = Palette.metricPurple,
-                spark = m.respiratory.series, sparkColor = Palette.metricPurple,
+                spark = m.respiratory.series, sparkDays = m.respiratory.seriesDays, formatSpark = { String.format(Locale.US, "%.1f rpm", it) }, sparkColor = Palette.metricPurple,
                 onClick = { onMetricClick("respiratory") },
             )
         },
@@ -140,7 +149,7 @@ private fun MetricGrid(m: SleepModel, onMetricClick: (String) -> Unit = {}) {
             value = m.sleepDebt.latest?.let { durationText(it) } ?: "—",
             caption = debtCaption(m.sleepDebt.latest),
             accent = debtColor(m.sleepDebt.latest),
-            spark = m.sleepDebt.series, sparkColor = Palette.metricRose,
+            spark = m.sleepDebt.series, sparkDays = m.sleepDebt.seriesDays, formatSpark = { durationText(it) }, sparkColor = Palette.metricRose,
             onClick = { onMetricClick("sleep_debt") },
         )
 
@@ -231,13 +240,26 @@ private fun DebtDeltaBars(ledger: SleepDebtLedger) {
     val accentColor = Palette.accent
     val deficitColor = Palette.metricRose
     val centreColor = Palette.hairline
+    // #58: scrub a bar to read that night's surplus or deficit and which night it was.
+    var scrubX by remember(ledger) { mutableStateOf<Float?>(null) }
+    var boxW by remember { mutableStateOf(0f) }
+    val fractions = remember(deltas.size) { slotCentreFractions(deltas.size) }
+    val scrubIndex = scrubX?.takeIf { deltas.isNotEmpty() }?.let { chartScrubNearestIndex(fractions, boxW, it) }
+    ChartScrubHaptic(scrubIndex)
+    val scrubNight = scrubIndex?.let { ledger.nights.getOrNull(it) }
+    val scrubValue = scrubNight?.let { debtSigned(it.deltaMin) }
+    val scrubLabel = scrubNight?.let { debtNightLabel(it.day) }
+    val paints = rememberChartScrubPaints()
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
+            .onSizeChanged { boxW = it.width.toFloat() }
+            .chartScrub(ledger, onRelease = { scrubX = null }) { scrubX = it }
             .semantics {
                 contentDescription =
                     uiString(R.string.l10n_sleep_screen_per_night_sleep_balance_ledger_nightcount_f339d0ab, ledger.nightCount, debtSigned(ledger.balanceMin))
+                if (scrubValue != null) stateDescription = chartScrubSpoken(scrubValue, scrubLabel)
             }
             .drawBehind {
                 val n = max(deltas.size, 1)
@@ -264,8 +286,46 @@ private fun DebtDeltaBars(ledger: SleepDebtLedger) {
                         cornerRadius = CornerRadius(2f, 2f),
                     )
                 }
+                val i = scrubIndex
+                val night = scrubNight
+                if (i != null && night != null && scrubValue != null) {
+                    val accent = if (night.deltaMin >= 0.0) accentColor else deficitColor
+                    drawScrubCursor(slot * i + slot / 2f, null, accent, scrubValue, scrubLabel, paints)
+                }
             },
     )
+}
+
+/** Centre of each of [count] equal slots as a 0..1 fraction: where a slotted bar chart draws its bars. */
+internal fun slotCentreFractions(count: Int): List<Float> =
+    List(count) { (it + 0.5f) / count }
+
+/**
+ * A debt-ledger night named by the EVENING it belongs to. The ledger's day key is the wake day (sleep
+ * rows are keyed by the day the night ends on), so this steps back one day, the same naming the
+ * night header uses (`clockLabel`, #2199). Falls back to the raw key when it does not parse.
+ */
+internal fun debtNightLabel(day: String): String =
+    runCatching {
+        LocalDate.parse(day).minusDays(1).format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US))
+    }.getOrDefault(day)
+
+/**
+ * A consistency bar's callout: the bed-to-wake window as clock times (value) and the night it belongs
+ * to (label), built the same way the night header builds `clockLabelFor`: the date is the wake day
+ * minus one in [zone], the times are the true onset and wake.
+ */
+internal fun consistencyScrubText(
+    onsetTs: Long,
+    wakeTs: Long,
+    is24h: Boolean,
+    zone: java.time.ZoneId = TimeZone.getDefault().toZoneId(),
+): Pair<String, String> {
+    val timeFmt = DateTimeFormatter.ofPattern(com.noop.analytics.ClockFormat.hourMinutePattern(is24h), Locale.US)
+    val onset = Instant.ofEpochSecond(onsetTs).atZone(zone).format(timeFmt)
+    val wake = Instant.ofEpochSecond(wakeTs).atZone(zone).format(timeFmt)
+    val nightDay = Instant.ofEpochSecond(wakeTs).atZone(zone).toLocalDate().minusDays(1)
+    return "$onset - $wake" to nightDay.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale.US))
 }
 
 // MARK: - Stages (read-only latest-night host card)
@@ -717,6 +777,8 @@ private fun SparkTile(
     accent: Color,
     spark: List<Double>,
     sparkColor: Color,
+    sparkDays: List<String>,
+    formatSpark: (Double) -> String,
     onClick: (() -> Unit)? = null,
 ) {
     // liquidPress on the tappable tile: it settles inward on press (the pilot's card feel). The SAME
@@ -760,10 +822,12 @@ private fun SparkTile(
             val tail = spark.takeLast(30)
             if (tail.size >= 2) {
                 // Full-width bottom spark. Outer height(sparkHeight) deliberately overrides Sparkline's
-                // internal 28dp default down to the 22dp tile spark (same override SparkTailBox does).
+                // internal 28dp default down to the 22dp tile spark.
                 Sparkline(
                     values = tail,
                     color = sparkColor,
+                    formatValue = formatSpark,
+                    selectionLabels = sparkTailDayLabels(spark, sparkDays, 30),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = Metrics.space8)
@@ -941,7 +1005,12 @@ internal fun ConsistencyHostCard(m: SleepModel) {
             }
             // Sparkline of the consistency history, in metricCyan to match the Sleep-tab Night-detail tile.
             if (cons.series.size > 1) {
-                Sparkline(values = cons.series.takeLast(30), color = Palette.metricCyan)
+                Sparkline(
+                    values = cons.series.takeLast(30),
+                    color = Palette.metricCyan,
+                    formatValue = { uiString(R.string.l10n_sleep_screen_score_roundtoint_a2d1cc99, it.roundToInt()) },
+                    selectionLabels = sparkTailDayLabels(cons.series, cons.seriesDays, 30),
+                )
             }
         }
     }
@@ -950,7 +1019,13 @@ internal fun ConsistencyHostCard(m: SleepModel) {
 // MARK: - Sleep Consistency card
 
 /** One night's bed/wake fold for [SleepConsistencyCard], memoized off `sleeps` (#perf). */
-private data class SleepNightTiming(val label: String, val bedHour: Float, val wakeHour: Float)
+private data class SleepNightTiming(
+    val label: String,
+    val bedHour: Float,
+    val wakeHour: Float,
+    val onsetTs: Long,
+    val wakeTs: Long,
+)
 
 /**
  * Sleep-consistency chart: for the trailing 14 sessions, draws each night's bed→wake window
@@ -981,7 +1056,7 @@ internal fun SleepConsistencyCard(
             // Fold an evening bedtime to a negative hour so it sorts ABOVE the next-day wake on the axis.
             val bedNorm = if (bedH > 12f) bedH - 24f else bedH
             val wakeH = wakeCal.get(Calendar.HOUR_OF_DAY) + wakeCal.get(Calendar.MINUTE) / 60f
-            SleepNightTiming(sdf.format(Date(wakeTs * 1000L)), bedNorm, wakeH)
+            SleepNightTiming(sdf.format(Date(wakeTs * 1000L)), bedNorm, wakeH, onsetTs, wakeTs)
         }
     }
     if (timings.size < 3) return
@@ -1031,14 +1106,34 @@ internal fun SleepConsistencyCard(
             val purpleColor = Palette.metricPurple
             val hairlineColor = Palette.hairline
             val labelArgb = Palette.textTertiary.toArgb()
+            // #58: scrub a night's bar to read its bed and wake times and the night it belongs to.
+            // The bars sit in equal slots right of the 52px label gutter, so the hit test does too.
+            val yAxisPx = 52f
+            var scrubX by remember(timings) { mutableStateOf<Float?>(null) }
+            var boxW by remember { mutableStateOf(0f) }
+            val fractions = remember(timings.size) { slotCentreFractions(timings.size) }
+            val scrubIndex = scrubX?.let {
+                chartScrubNearestIndex(fractions, (boxW - yAxisPx).coerceAtLeast(0f), it - yAxisPx)
+            }
+            ChartScrubHaptic(scrubIndex)
+            val is24h = ClockPrefs.uses24Hour(LocalContext.current)
+            val scrubText = scrubIndex?.let { timings.getOrNull(it) }?.let {
+                consistencyScrubText(it.onsetTs, it.wakeTs, is24h)
+            }
+            val paints = rememberChartScrubPaints()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(160.dp)
                     .clip(RoundedCornerShape(Metrics.cornerSm))
-                    .semantics { contentDescription = uiString(R.string.l10n_sleep_screen_sleep_consistency_nightly_bed_and_wake_14526f89) }
+                    .onSizeChanged { boxW = it.width.toFloat() }
+                    .chartScrub(timings, onRelease = { scrubX = null }) { scrubX = it }
+                    .semantics {
+                        contentDescription = uiString(R.string.l10n_sleep_screen_sleep_consistency_nightly_bed_and_wake_14526f89)
+                        scrubText?.let { (v, l) -> stateDescription = chartScrubSpoken(v, l) }
+                    }
                     .drawBehind {
-                        val yAxisW = 52f
+                        val yAxisW = yAxisPx
                         val chartW = size.width - yAxisW
                         val chartH = size.height
 
@@ -1092,6 +1187,11 @@ internal fun SleepConsistencyCard(
                                 drawLine(col.copy(alpha = 0.7f), Offset(x, y), Offset(minOf(x + dashLen, size.width), y), strokeWidth = 2f)
                                 x += dashLen + gapLen
                             }
+                        }
+                        val i = scrubIndex
+                        val text = scrubText
+                        if (i != null && text != null) {
+                            drawScrubCursor(yAxisW + step * i + step / 2f, null, accentColor, text.first, text.second, paints)
                         }
                     },
             ) {}

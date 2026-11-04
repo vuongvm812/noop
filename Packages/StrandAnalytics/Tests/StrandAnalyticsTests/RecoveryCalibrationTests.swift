@@ -4,9 +4,9 @@ import XCTest
 /// Unit tests for `RecoveryScorer.calibrationNights`, the pure helper behind the Today recovery
 /// cold-start "Calibrating — N of 4 nights" affordance. Recovery is nil until the HRV baseline
 /// crosses the seed gate (Baselines.minNightsSeed valid nights); this surfaces honest progress
-/// instead of a bare empty state. N is the HRV baseline's real `nValid` from folding the SAME
-/// day-keyed, epoch-aware history the recovery engine folds. Mirrors the Android
-/// RecoveryCalibrationTest case-for-case.
+/// instead of a bare empty state. N is the `nValid` of the trailing HRV baseline (#53) built from the
+/// same day-keyed, epoch-aware nights the scorer reads. Mirrors the Android RecoveryCalibrationTest
+/// case-for-case.
 final class RecoveryCalibrationTests: XCTestCase {
 
     private let seed = Baselines.minNightsSeed // 4
@@ -17,8 +17,8 @@ final class RecoveryCalibrationTests: XCTestCase {
         (0..<count).map { i in String(format: "2026-01-%02d", i + 1) }
     }
 
-    /// The UTC day-start epoch (seconds) for a "yyyy-MM-dd" key, computed exactly as
-    /// `Baselines.foldHistory(_:dayKeys:cfg:baselineEpoch:)` does, so a test epoch lands on a real boundary.
+    /// The UTC day-start epoch (seconds) for a "yyyy-MM-dd" key, the boundary `ChargeBaselines.state`
+    /// compares night keys against, so a test epoch lands on a real boundary.
     private func epoch(_ dayKey: String) -> Double {
         let fmt = DateFormatter()
         fmt.calendar = Calendar(identifier: .gregorian)
@@ -27,11 +27,12 @@ final class RecoveryCalibrationTests: XCTestCase {
         return fmt.date(from: dayKey)!.timeIntervalSince1970
     }
 
-    /// Call helper pinning `baselineEpoch: 0` (no recalibration) so the plain fold is deterministic
-    /// regardless of any UserDefaults `hrvBaselineEpoch` set by another test in the process.
-    private func nights(_ hrv: [Double?], hasRecovery: Bool) -> Int? {
-        RecoveryScorer.calibrationNights(nightlyHrv: hrv, dayKeys: keys(hrv.count),
-                                         hasRecovery: hasRecovery, baselineEpoch: 0)
+    /// The countdown over the HRV baseline these nights build, anchored on the last night.
+    private func nights(_ hrv: [Double?], hasRecovery: Bool, baselineEpoch: Double = 0) -> Int? {
+        let dayKeys = keys(hrv.count)
+        let state = ChargeBaselines.state(values: hrv, dayKeys: dayKeys, metric: .hrv,
+                                          anchorDay: dayKeys.last ?? "2026-01-01", baselineEpoch: baselineEpoch)
+        return RecoveryScorer.calibrationNights(hrvBaseline: state, hasRecovery: hasRecovery)
     }
 
     func testNilWhenRecoveryAlreadyExists() {
@@ -78,8 +79,7 @@ final class RecoveryCalibrationTests: XCTestCase {
         // nights — a genuinely-calibrating baseline. The old per-night bounds count was 6 (>= seed)
         // and returned nil, which stranded the score side on "Needs the strap". N must now read 2.
         let hrv: [Double?] = Array(repeating: 55.0, count: 6)
-        let result = RecoveryScorer.calibrationNights(
-            nightlyHrv: hrv, dayKeys: keys(6), hasRecovery: false, baselineEpoch: epoch("2026-01-05"))
+        let result = nights(hrv, hasRecovery: false, baselineEpoch: epoch("2026-01-05"))
         XCTAssertEqual(result, 2)
     }
 
@@ -88,8 +88,7 @@ final class RecoveryCalibrationTests: XCTestCase {
         // nil recovery is some OTHER gap — so we must not claim "calibrating" (mirrors the non-recalibrated
         // at/above-seed case). Epoch at 2026-01-02 drops one night; five post-epoch nights → nValid 5.
         let hrv: [Double?] = Array(repeating: 55.0, count: 6)
-        let result = RecoveryScorer.calibrationNights(
-            nightlyHrv: hrv, dayKeys: keys(6), hasRecovery: false, baselineEpoch: epoch("2026-01-02"))
+        let result = nights(hrv, hasRecovery: false, baselineEpoch: epoch("2026-01-02"))
         XCTAssertNil(result)
     }
 }

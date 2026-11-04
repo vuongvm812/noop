@@ -25,12 +25,28 @@ import Foundation
 
 enum GarminExportParser {
 
+    /// The order files are folded in (#52), so the result never depends on dictionary or ZIP order: legacy
+    /// daily summaries before the newer `UDSFile_*` aggregator files, so a UDS day's value wins where both
+    /// carry it (daily fields are last-wins); within a rank, by path in UTF-16 code-unit order, which both
+    /// platforms compare the same way. Kotlin twin: `WearableExportImporter.garminFileOrder`.
+    static func fileOrder(_ names: [String]) -> [String] {
+        let ranked = names.map { (uds: $0.lowercased().contains("udsfile"), name: $0) }
+        return ranked.sorted { a, b in
+            a.uds != b.uds ? !a.uds : a.name.utf16.lexicographicallyPrecedes(b.name.utf16)
+        }.map(\.name)
+    }
+
+    /// A daily stress average on Garmin's 0-100 scale; anything above is not a stress level.
+    /// Kotlin twin: `WearableExportImporter.garminStress`.
+    static func stress(_ v: Int?) -> Int? { v.flatMap { $0 <= 100 ? $0 : nil } }
+
     static func parse(_ files: [String: Data]) -> (days: [WearableDailyRow], sleeps: [WearableSleepSession]) {
         var byDay: [String: WearableDailyRow] = [:]
         var sleeps: [WearableSleepSession] = []
         func day(_ key: String) -> WearableDailyRow { byDay[key] ?? WearableDailyRow(day: key) }
 
-        for (name, data) in files {
+        for name in fileOrder(Array(files.keys)) {
+            guard let data = files[name] else { continue }
             let base = (name as NSString).lastPathComponent
             // A Garmin wellness file is usually a top-level array; some are { ... : [ ... ] }.
             let records = elements(data)
@@ -59,8 +75,8 @@ enum GarminExportParser {
                     row.steps = WearableJSON.posInt(d, "totalSteps") ?? WearableJSON.posInt(d, "steps") ?? row.steps
                     row.distanceM = WearableJSON.posDbl(d, "totalDistanceMeters") ?? WearableJSON.posDbl(d, "totalDistanceInMeters") ?? row.distanceM
                     row.activeKcal = WearableJSON.posDbl(d, "activeKilocalories") ?? WearableJSON.posDbl(d, "activeCalories") ?? row.activeKcal
-                    row.avgStress = WearableJSON.posInt(d, "averageStressLevel") ?? WearableJSON.posInt(d, "avgStressLevel")
-                        ?? totalStress(d) ?? row.avgStress
+                    row.avgStress = stress(WearableJSON.posInt(d, "averageStressLevel"))
+                        ?? stress(WearableJSON.posInt(d, "avgStressLevel")) ?? stress(totalStress(d)) ?? row.avgStress
                     // healthStatusData: the overnight HRV sits in a `metrics` list. No other Garmin file
                     // carries a day HRV, so file order cannot change which value wins.
                     row.avgHrvMs = metricValue(d, "HRV") ?? row.avgHrvMs
@@ -68,7 +84,7 @@ enum GarminExportParser {
                 }
             }
         }
-        return (Array(byDay.values), sleeps)
+        return (byDay.values.sorted { $0.day < $1.day }, sleeps.sorted { $0.start < $1.start })
     }
 
     // MARK: - Helpers

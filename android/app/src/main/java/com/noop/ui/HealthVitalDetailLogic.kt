@@ -1,11 +1,13 @@
 package com.noop.ui
 
 import com.noop.analytics.Baselines
+import com.noop.analytics.DayCalories
 import com.noop.analytics.StepsDetailBucket
 import com.noop.analytics.StepsDetailDensity
 import com.noop.analytics.StepsDetailGranularity
 import com.noop.analytics.StepsDetailRange
 import com.noop.analytics.StepsDetailReading
+import com.noop.data.AppleDaily
 import com.noop.data.Vo2MaxEstimator
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -211,12 +213,24 @@ internal fun mergeStepsReadings(
                 .firstOrNull { it != null && it.value.isFinite() && it.value >= 0.0 }
         }
 
-/** #616: per-day precedence merge for a metric with disjoint stores (first non-null per day wins),
- *  ascending. The N-store generalisation of [mergeStepsReadings]; calories reuse it as the two-store
- *  on-device (`activeKcalEst`) ?: imported (Apple/Health-Connect `activeKcal`) union. Pure for testability. */
-internal fun mergeReadings(vararg stores: Map<String, VitalReading>): List<VitalReading> =
-    stores.flatMap { it.keys }.toSortedSet()
-        .mapNotNull { day -> stores.firstNotNullOfOrNull { it[day] } }
+/**
+ * #616 / #51: the Calories readings, one per day, resolved by [DayCalories] (the phone's total energy,
+ * active + basal, else the stored total). [stored] is the stored total per day; [phone] the phone's rows.
+ * A phone day names the row that supplied its total, a stored day its own source. Ascending. Pure for
+ * testability.
+ */
+internal fun caloriesReadingsFrom(stored: List<VitalReading>, phone: List<AppleDaily>): List<VitalReading> {
+    val storedByDay = stored.associateBy { it.day }
+    val phoneByDay = phone.groupBy { it.day }
+    return DayCalories.byDay(
+        phone.map { DayCalories.ImportedDay(it.day, it.activeKcal, it.basalKcal) },
+        storedByDay.mapValues { it.value.value },
+    ).map { (day, kcal) ->
+        val phoneSource = phoneByDay[day]
+            ?.firstOrNull { DayCalories.importedTotal(it.activeKcal, it.basalKcal) == kcal }?.deviceId
+        VitalReading(day, kcal, phoneSource ?: storedByDay.getValue(day).source)
+    }
+}
 
 /** The rows of a vital detail's readings table: each reading's day (localized), its formatted value with
  *  unit, and a human source label. Plain strings so the composable is a thin renderer and the projection

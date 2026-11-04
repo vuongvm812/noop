@@ -13,16 +13,17 @@ import kotlin.math.floor
  *
  * Pure, deterministic, DB-free. Given a chronological series of per-night total
  * sleep (minutes) and a personal sleep need (hours), it accumulates a running
- * debt from unmet current need across a capped trailing window (14 nights by
- * default) and reports that debt plus the raw per-night deltas behind it.
+ * debt from unmet current need across a capped trailing window (14 calendar days
+ * by default) and reports that debt plus the raw per-night deltas behind it. A day
+ * with no record decays the debt by the same 0.55 carry (#55).
  *
  * HONEST by construction:
  *   - Debt is 55% of the current unmet need. Meeting need (including carried debt)
  *     clears it; extra sleep never creates a positive bank.
- *   - The window is capped (default 14) so debt never compounds across months of
+ *   - The window is capped (default 14 days) so debt never compounds across months of
  *     history — only the recent fortnight is in scope.
- *   - Nights with no usable sleep total are SKIPPED (no zero-fill), so a gap in wear
- *     never reads as a full night of debt.
+ *   - Nights with no usable sleep total are never zero-filled, so a gap in wear never
+ *     reads as a full night of debt; the debt decays across it.
  *   - The need value is supplied by the caller ([RestScorer.defaultSleepNeedHours] =
  *     8.0 by default; the caller passes any per-user override). Computation here stays
  *     a pure function of (series, need, window).
@@ -96,8 +97,9 @@ object SleepDebt {
     }
 
     /**
-     * Debt values oldest → newest for local fallback surfaces. An imported value wins verbatim
-     * for its day's output, while the independent local recurrence continues from credited sleep.
+     * Debt values oldest → newest for local fallback surfaces. Each usable day's value is the ledger
+     * through that day over the trailing [window] CALENDAR days. An imported value wins verbatim for its
+     * day's output only. Mirrors Swift `SleepDebt.debtSeries`.
      */
     fun debtSeries(
         series: List<Pair<String, Double?>>,
@@ -105,37 +107,26 @@ object SleepDebt {
         importedDebtMin: Map<String, Double> = emptyMap(),
         window: Int = DEFAULT_WINDOW_NIGHTS,
     ): List<Pair<String, Double>> {
-        val cap = window.coerceAtLeast(1)
-        val usableHistory = ArrayList<Pair<String, Double?>>(cap)
         val result = ArrayList<Pair<String, Double>>(series.size)
-        for ((day, slept) in series) {
-            val imported = importedDebtMin[day]
+        for ((i, row) in series.withIndex()) {
+            val (day, slept) = row
             val sleptMin = slept?.takeIf { it > 0.0 }
-            if (sleptMin != null) {
-                usableHistory.add(day to sleptMin)
-                if (usableHistory.size > cap) usableHistory.removeAt(0)
-            }
+            val imported = importedDebtMin[day]
             if (imported != null) result.add(day to imported)
             else if (sleptMin != null) {
-                result.add(day to ledger(usableHistory, needHours = needHours, window = cap).magnitudeMin)
+                val prefix = series.subList(maxOf(0, i - 4 * window.coerceAtLeast(1)), i + 1)
+                result.add(day to ledger(prefix, needHours = needHours, window = window).magnitudeMin)
             }
         }
         return result
     }
 
     /**
-     * Build the ledger from a chronological `List<Pair<day, totalSleepMin?>>` series.
-     *
-     * @param series per-night `(day, totalSleepMin)` rows in CHRONOLOGICAL order
-     *   (oldest → newest), exactly the order `days` carries. A null or non-positive
-     *   `totalSleepMin` marks a night with no usable data and is SKIPPED (never zero-filled).
-     * @param needHours personal sleep need (hours) each night is measured against. Defaults
-     *   to [RestScorer.defaultSleepNeedHours] (8 h); the caller passes any per-user override.
-     * @param window how many of the most-recent COUNTED nights to include. Defaults to
-     *   [DEFAULT_WINDOW_NIGHTS] (14). Clamped to ≥ 1.
-     *
-     * Each night applies `nextDebt = 0.55 * max(0, need + currentDebt - slept)`.
-     * Calculated debt below ten minutes is cleared. Returns an empty ledger when no night has data.
+     * Build the ledger from a `List<Pair<day, totalSleepMin?>>` series. A null or non-positive total
+     * marks a day with no usable night; a repeated day keeps its last row. [window] is CALENDAR days
+     * ending at the newest usable night. Day by day: a recorded night carries
+     * `0.55 × max(0, need + debt − slept)`, a day with no record decays the debt by 0.55 (#55). Below
+     * ten minutes clears. Mirrors Swift `SleepDebt.ledger` byte-for-byte.
      */
     fun ledger(
         series: List<Pair<String, Double?>>,
@@ -144,26 +135,23 @@ object SleepDebt {
     ): SleepDebtLedger {
         val needMin = needHours.coerceAtLeast(0.0) * 60.0
         val cap = window.coerceAtLeast(1)
-
-        // Keep only nights with usable sleep, preserving chronological order, then take the
-        // most-recent `cap` of them.
-        val usable = series.filter { (it.second ?: 0.0) > 0.0 }
-        val windowed = usable.takeLast(cap)
-
-        val nights = ArrayList<SleepDebtNight>(windowed.size)
-        var debt = 0.0
-        for ((day, slept) in windowed) {
-            val sleptMin = slept ?: 0.0
-            val delta = sleptMin - needMin
-            debt = nextDebt(needMin, debt, sleptMin)
-            nights.add(SleepDebtNight(day = day, sleptMin = sleptMin, deltaMin = delta))
+        val byOrd = HashMap<Int, Pair<String, Double>>()
+        for ((day, slept) in series) {
+            val o = DayOrdinal.ordinal(day) ?: continue
+            if (slept != null && slept > 0.0) byOrd[o] = day to slept else byOrd.remove(o)
         }
-        return SleepDebtLedger(balanceMin = -round1(debt), nights = nights, needMin = needMin)
-    }
-
-    private fun nextDebt(needMin: Double, currentDebt: Double, sleptMin: Double): Double {
-        val calculatedDebt = DEBT_CARRY * (needMin + currentDebt - sleptMin).coerceAtLeast(0.0)
-        return if (calculatedDebt < ON_TARGET_BAND_MIN) 0.0 else calculatedDebt
+        val end = byOrd.keys.maxOrNull()
+            ?: return SleepDebtLedger(balanceMin = 0.0, nights = emptyList(), needMin = needMin)
+        val nights = ArrayList<SleepDebtNight>()
+        var debt = 0.0
+        for (o in (end - cap + 1)..end) {
+            val night = byOrd[o]
+            debt = SleepNeed.step(debt, needMin, night?.second)
+            if (night != null) {
+                nights.add(SleepDebtNight(day = night.first, sleptMin = night.second, deltaMin = night.second - needMin))
+            }
+        }
+        return SleepDebtLedger(balanceMin = round1(-debt), nights = nights, needMin = needMin)
     }
 
     /**

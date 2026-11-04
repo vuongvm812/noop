@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,8 +55,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.noop.analytics.Correlation
+import com.noop.analytics.CorrelationEngine
 import com.noop.analytics.LabBookProjection
 import com.noop.analytics.LabMarkerCategory
 import com.noop.analytics.MarkerCatalog
@@ -72,7 +77,6 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.sqrt
 
 // MARK: - Lab Book (Health Records pillar — v5) — Compose twin of LabBookView.swift
 //
@@ -96,7 +100,7 @@ import kotlin.math.sqrt
 private const val LAB_STRAP_DEVICE_ID = "my-whoop"
 
 /** Reading-count floor below which NO conclusion sentence renders (spec default 4). */
-private const val LAB_FLOOR = 4
+private const val LAB_FLOOR = CorrelationEngine.minPairs
 
 @Composable
 fun LabBookScreen(vm: AppViewModel) {
@@ -337,18 +341,38 @@ fun LabBookScreen(vm: AppViewModel) {
 
 @Composable
 private fun MarkerRow(key: String, readings: List<LabMarkerRow>, onClick: () -> Unit) {
-    val numeric = readings.mapNotNull { it.value }
+    val withValue = readings.filter { it.value != null }
+    val numeric = withValue.mapNotNull { it.value }
     val latest = readings.lastOrNull()
+    // Scrub cursor (#58): the 64×28 dp spark is too small to hold a callout, so while a finger reads it the
+    // row's own value and caption name the reading under it instead, and return to the latest on release.
+    var scrubbed by remember(readings) { mutableStateOf<Int?>(null) }
+    val scrubbedRow = scrubbed?.let { withValue.getOrNull(it) }
     NoopCard(modifier = Modifier.clickable(onClick = onClick)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(displayName(key), style = NoopType.headline, color = Palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(lastTakenCaption(latest), style = NoopType.footnote, color = Palette.textTertiary)
+                Text(
+                    scrubbedRow?.let { labDayFromKey(it.day) } ?: lastTakenCaption(latest),
+                    style = NoopType.footnote,
+                    color = Palette.textTertiary,
+                )
             }
             if (numeric.size > 1) {
-                MiniSpark(values = numeric, color = Palette.metricCyan, modifier = Modifier.width(64.dp).height(28.dp))
+                MiniSpark(
+                    values = numeric,
+                    color = Palette.metricCyan,
+                    modifier = Modifier.width(64.dp).height(28.dp),
+                    onScrubIndex = { scrubbed = it },
+                )
             }
-            Text(latestLabel(latest, key), style = NoopType.number(18f), color = Palette.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                scrubbedRow?.let { valueLabel(key, it) } ?: latestLabel(latest, key),
+                style = NoopType.number(18f),
+                color = Palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Palette.textTertiary, modifier = Modifier.size(16.dp))
         }
     }
@@ -371,7 +395,7 @@ private fun MarkerDetailSheet(
     var signal by remember { mutableStateOf<LabSignal?>(null) }
     var window by remember { mutableStateOf(LabWindow.FORTNIGHT) }
     var pairs by remember { mutableStateOf<List<WindowedPair>>(emptyList()) }
-    var correlation by remember { mutableStateOf<LabCorrelation?>(null) }
+    var correlation by remember { mutableStateOf<Correlation?>(null) }
     var computing by remember { mutableStateOf(false) }
 
     LaunchedEffect(signal, window) {
@@ -388,7 +412,7 @@ private fun MarkerDetailSheet(
         val built = LabBookProjection.pairMarkerToWearable(markerSeries, wearable, window.days)
         pairs = built
         correlation = if (built.size >= LAB_FLOOR) {
-            pearson(LabBookProjection.correlationInput(built))
+            CorrelationEngine.pearson(LabBookProjection.correlationInput(built))
         } else {
             null
         }
@@ -410,7 +434,12 @@ private fun MarkerDetailSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     val nums = numeric.mapNotNull { it.value }
                     if (nums.size > 1) {
-                        MiniSpark(values = nums, color = Palette.metricCyan, modifier = Modifier.fillMaxWidth().height(64.dp))
+                        MiniSpark(
+                            values = nums,
+                            color = Palette.metricCyan,
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                            callouts = numeric.map { valueLabel(markerKey, it) to labDayFromKey(it.day) },
+                        )
                     }
                     Text(trendSentence(markerKey, numeric, unit), style = NoopType.subhead, color = Palette.textSecondary)
                     latestReferenceText(readings)?.let { ref ->
@@ -478,7 +507,7 @@ private fun CorrelationResult(
     signal: LabSignal?,
     window: LabWindow,
     pairs: List<WindowedPair>,
-    correlation: LabCorrelation?,
+    correlation: Correlation?,
     computing: Boolean,
 ) {
     val n = pairs.size
@@ -731,34 +760,6 @@ private fun correlationColor(r: Double): Color {
     return base.copy(alpha = (0.55f + 0.45f * min(abs(r), 1.0)).toFloat())
 }
 
-/** Pearson r over the pairs — value-for-value with CompareScreen's engine (null when <3 or zero variance). */
-private data class LabCorrelation(val r: Double, val n: Int)
-
-private fun pearson(xy: List<Pair<Double, Double>>): LabCorrelation? {
-    val n = xy.size
-    if (n < 3) return null
-    val nD = n.toDouble()
-    var sumX = 0.0
-    var sumY = 0.0
-    for (p in xy) { sumX += p.first; sumY += p.second }
-    val meanX = sumX / nD
-    val meanY = sumY / nD
-    var sxx = 0.0
-    var syy = 0.0
-    var sxy = 0.0
-    for (p in xy) {
-        val dx = p.first - meanX
-        val dy = p.second - meanY
-        sxx += dx * dx
-        syy += dy * dy
-        sxy += dx * dy
-    }
-    if (sxx <= 0.0 || syy <= 0.0) return null
-    var r = sxy / (sqrt(sxx) * sqrt(syy))
-    if (r > 1.0) r = 1.0
-    if (r < -1.0) r = -1.0
-    return LabCorrelation(r, n)
-}
 
 private val labDayFmt = SimpleDateFormat("d MMM yyyy", Locale.US)
 private fun labDayLabel(epochSeconds: Long): String = labDayFmt.format(Date(epochSeconds * 1000L))
@@ -841,15 +842,47 @@ internal fun PrimaryActionButton(
     }
 }
 
-/** A tiny inline sparkline for a short numeric series, sized by the modifier (width × height). */
+/**
+ * A tiny inline sparkline for a short numeric series, sized by the modifier (width × height).
+ *
+ * Two ways to turn on the shared scrub cursor (#58):
+ * - [callouts], one (value, date) pair per point: the detail sheet's full-width trend, which draws the
+ *   callout itself.
+ * - [onScrubIndex]: the 64×28 dp spark in a marker row, too small to hold a callout. It reports the index
+ *   under the finger (null on release) so the row shows that reading in its own value and caption. A
+ *   plain tap is left to the row, whose click opens the detail.
+ */
 @Composable
-internal fun MiniSpark(values: List<Double>, color: Color, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
+internal fun MiniSpark(
+    values: List<Double>,
+    color: Color,
+    modifier: Modifier = Modifier,
+    callouts: List<Pair<String, String>>? = null,
+    onScrubIndex: ((Int?) -> Unit)? = null,
+) {
+    val inline = onScrubIndex != null
+    val scrubbable = values.size > 1 && (inline || (callouts != null && callouts.size == values.size))
+    var scrubX by remember(values) { mutableStateOf<Float?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val pad = 3f
+    val selected = scrubX?.takeIf { scrubbable }?.let { x ->
+        labSparkNearestIndex(values.size, chartWidth, pad, x)
+    }
+    val callout = selected?.let { callouts?.getOrNull(it) }
+    ChartScrubHaptic(selected)
+    val report by rememberUpdatedState(onScrubIndex)
+    LaunchedEffect(selected) { report?.invoke(selected) }
+    Canvas(
+        modifier = modifier
+            .onSizeChanged { chartWidth = it.width.toFloat() }
+            .chartScrub(values, enabled = scrubbable, selectOnTap = !inline, onRelease = { scrubX = null }) { scrubX = it }
+            .semantics { callout?.let { (value, label) -> stateDescription = "$value, $label" } },
+    ) {
         if (values.size < 2) return@Canvas
         val lo = values.min()
         val hi = values.max()
         val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
-        val pad = 3f
         val w = size.width - pad * 2
         val h = size.height - pad * 2
         val pts = values.mapIndexed { i, v ->
@@ -862,5 +895,22 @@ internal fun MiniSpark(values: List<Double>, color: Color, modifier: Modifier = 
             for (i in 1 until pts.size) lineTo(pts[i].x, pts[i].y)
         }
         drawPath(path, color = color, style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        if (selected != null && callout != null) {
+            val pt = pts[selected]
+            drawScrubCursor(pt.x, pt.y, color, callout.first, callout.second, paints)
+        } else if (selected != null && inline) {
+            // The row names the reading; the spark only marks where it sits.
+            val pt = pts[selected]
+            drawLine(Palette.hairlineStrong, Offset(pt.x, 0f), Offset(pt.x, size.height), strokeWidth = 1f)
+            drawCircle(Palette.surfaceBase, radius = 4f * density, center = pt)
+            drawCircle(color, radius = 2.5f * density, center = pt)
+        }
     }
 }
+
+/**
+ * The spark point nearest [x] for [count] readings spread evenly across [width] inset by [pad] on both
+ * sides, the placement [MiniSpark] draws them at.
+ */
+internal fun labSparkNearestIndex(count: Int, width: Float, pad: Float, x: Float): Int =
+    chartScrubNearestIndex(chartScrubIndexFractions(count), (width - pad * 2).coerceAtLeast(0f), x - pad)

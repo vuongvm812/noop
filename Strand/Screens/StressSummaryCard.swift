@@ -5,17 +5,14 @@ import StrandDesign
 // MARK: - Stress card (Today + Stress screen) — #42
 //
 // Today's stress at a glance: the latest level, today's average, a small intraday sparkline and the
-// source (Garmin's own 0-100 stress, or NOOP's 0-3 proxy). The SAME view, fed by the SAME
-// `StressTodayLoader` → `StressToday.resolve`, renders on Today and at the top of the Stress screen, so
-// the two readouts cannot disagree. Today wraps it in a link to the Stress screen. Twin of Android
-// `StressSummaryCard` (android/.../ui/StressSummaryCard.kt).
+// source (Garmin's own 0-100 stress, or NOOP's 0-3 proxy), at the top of the Stress screen. The Today
+// Key Metrics Stress tile (#57) reads the SAME `StressTodayLoader` → `StressToday.resolve` and taps
+// through to this screen, so the two readouts cannot disagree. Twin of Android `StressSummaryCard`
+// (android/.../ui/StressSummaryCard.kt).
 
 struct StressSummaryCard: View {
 
     @EnvironmentObject var repo: Repository
-
-    /// Today shows a chevron because the card opens the Stress screen; the Stress screen itself does not.
-    var showsChevron = false
 
     @State private var reading: StressToday.Reading?
     @State private var loaded = false
@@ -31,11 +28,14 @@ struct StressSummaryCard: View {
                 } else if let reading {
                     figures(reading)
                     if reading.points.count >= 2 {
-                        Sparkline(values: reading.points.map(\.level),
+                        // The scrub (#58) names each point's level and time.
+                        let points = reading.points
+                        Sparkline(values: points.map(\.level),
                                   gradient: Gradient(colors: [StrandPalette.stressColor.opacity(0.5),
                                                               StrandPalette.stressColor]),
                                   range: 0...reading.scaleMax,
-                                  showsHover: false)
+                                  valueFormat: { Self.format($0, source: reading.source) },
+                                  indexLabel: { Self.timeLabel(points[$0].ts) })
                             .frame(height: 36)
                             .accessibilityHidden(true)
                     }
@@ -66,15 +66,9 @@ struct StressSummaryCard: View {
                 .foregroundStyle(StrandPalette.textPrimary)
             Spacer()
             if let reading {
-                Text(sourceLabel(reading.source))
+                Text(Self.sourceLabel(reading.source))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
-            }
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(StrandFont.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
-                    .accessibilityHidden(true)
             }
         }
     }
@@ -109,7 +103,8 @@ struct StressSummaryCard: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func sourceLabel(_ source: StressToday.Source) -> String {
+    /// Also the Key Metrics Stress tile's caption (#57).
+    static func sourceLabel(_ source: StressToday.Source) -> String {
         switch source {
         case .garmin: return String(localized: "Garmin stress")
         case .noop:   return String(localized: "NOOP stress")
@@ -129,7 +124,8 @@ struct StressSummaryCard: View {
         "/" + String(Int(scaleMax))
     }
 
-    private static func timeLabel(_ ts: Int) -> String {
+    /// Also the Key Metrics Stress tile's scrub readout time (#58).
+    static func timeLabel(_ ts: Int) -> String {
         Date(timeIntervalSince1970: TimeInterval(ts)).formatted(date: .omitted, time: .shortened)
     }
 }

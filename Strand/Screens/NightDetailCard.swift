@@ -44,7 +44,9 @@ struct NightDetailCard: View {
                 caption: nightDetailDebtCaption(debt.latest),
                 accent: nightDetailDebtColor(debt.latest),
                 sparkline: spark(debt.series),
-                sparkColor: StrandPalette.metricRose)
+                sparkColor: StrandPalette.metricRose,
+                sparkFormat: { durationText($0) },
+                sparkLabels: sparkDays(debt))
                 .frame(maxWidth: .infinity)
             #endif
 
@@ -57,7 +59,9 @@ struct NightDetailCard: View {
                                          typical: perf.typical, suffix: "%"),
                     accent: perf.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
                     sparkline: spark(perf.series),
-                    sparkColor: StrandPalette.restColor)
+                    sparkColor: StrandPalette.restColor,
+                    sparkFormat: { pctValue($0) },
+                    sparkLabels: sparkDays(perf))
 
                 StatTile(
                     label: "Efficiency",
@@ -66,7 +70,9 @@ struct NightDetailCard: View {
                                          typical: eff.typical, suffix: "%"),
                     accent: StrandPalette.statusPositive,
                     sparkline: spark(eff.series),
-                    sparkColor: StrandPalette.statusPositive)
+                    sparkColor: StrandPalette.statusPositive,
+                    sparkFormat: { pctValue($0) },
+                    sparkLabels: sparkDays(eff))
 
                 StatTile(
                     label: "Consistency",
@@ -75,7 +81,9 @@ struct NightDetailCard: View {
                                          typical: cons.typical, suffix: "%"),
                     accent: cons.latest.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textPrimary,
                     sparkline: spark(cons.series),
-                    sparkColor: StrandPalette.metricCyan)
+                    sparkColor: StrandPalette.metricCyan,
+                    sparkFormat: { pctValue($0) },
+                    sparkLabels: sparkDays(cons))
 
                 StatTile(
                     label: "Hours vs Needed",
@@ -84,7 +92,9 @@ struct NightDetailCard: View {
                                          typical: need.typical, suffix: "%"),
                     accent: need.latest.map { StrandPalette.recoveryColor(min(100, $0)) } ?? StrandPalette.textPrimary,
                     sparkline: spark(need.series),
-                    sparkColor: StrandPalette.restColor)
+                    sparkColor: StrandPalette.restColor,
+                    sparkFormat: { pctValue($0) },
+                    sparkLabels: sparkDays(need))
 
                 StatTile(
                     label: "Restorative",
@@ -93,7 +103,9 @@ struct NightDetailCard: View {
                                          typical: rest.typical, suffix: "%"),
                     accent: StrandPalette.sleepREM,
                     sparkline: spark(rest.series),
-                    sparkColor: StrandPalette.sleepREM)
+                    sparkColor: StrandPalette.sleepREM,
+                    sparkFormat: { pctValue($0) },
+                    sparkLabels: sparkDays(rest))
 
                 StatTile(
                     label: "Respiratory",
@@ -102,7 +114,9 @@ struct NightDetailCard: View {
                                          typical: resp.typical, suffix: " rpm", decimals: 1),
                     accent: StrandPalette.metricPurple,
                     sparkline: spark(resp.series),
-                    sparkColor: StrandPalette.metricPurple)
+                    sparkColor: StrandPalette.metricPurple,
+                    sparkFormat: { "\(rrValue($0)) rpm" },
+                    sparkLabels: sparkDays(resp))
 
                 #if !os(iOS)
                 // macOS keeps the original adaptive dashboard instead of stretching one
@@ -113,7 +127,9 @@ struct NightDetailCard: View {
                     caption: nightDetailDebtCaption(debt.latest),
                     accent: nightDetailDebtColor(debt.latest),
                     sparkline: spark(debt.series),
-                    sparkColor: StrandPalette.metricRose)
+                    sparkColor: StrandPalette.metricRose,
+                    sparkFormat: { durationText($0) },
+                    sparkLabels: sparkDays(debt))
                 #endif
             }
         }
@@ -154,6 +170,11 @@ struct NightDetailCard: View {
     private func spark(_ series: [Double]) -> [Double]? {
         let tail = Array(series.suffix(30))
         return tail.count > 1 ? tail : nil
+    }
+
+    /// The day of each `spark` value, for the scrub readout (#58): the same trailing 30.
+    private func sparkDays(_ metric: SleepModel.Metric) -> [String] {
+        metric.seriesDays.suffix(30).map(SleepModel.shortDayLabel)
     }
 
     /// Minutes → "Xm" / "Yh Zm" (verbatim of `SleepView.durationText`). Kept local to the card so it

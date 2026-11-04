@@ -16,9 +16,9 @@ import WhoopStore
 //
 // #979 spin-offs: (1) annotation parity with the classic Today whole-day chart — the main night's sleep
 // band + a sport glyph at each workout, fed through the SAME OverviewHRChart layers Today uses (this
-// screen previously drew a bare line, despite being sold as "the whole-day trend with bands"); (2) an
-// iPhone touch-and-hold scrub (`touchScrub: true`) so the crosshair readout the Mac pointer hover gets
-// is reachable on touch too.
+// screen previously drew a bare line, despite being sold as "the whole-day trend with bands"); (2) the
+// iPhone touch-and-hold scrub, so the crosshair readout the Mac pointer hover gets is reachable on touch
+// too (OverviewHRChart's default since #58).
 
 struct FullDayChartView: View {
     @EnvironmentObject var repo: Repository
@@ -256,9 +256,6 @@ struct FullDayChartView: View {
             valueRange: valueRange(displayPoints),
             xRange: dayBounds,
             height: 280,
-            // #979 spin-off — iPhone touch scrub: hold to pin the crosshair, drag to read values under
-            // the finger (the Mac pointer hover's readout, made reachable on touch). Opt-in here only.
-            touchScrub: true,
             zoomDomain: $zoomDomain,
             zoomBounds: panBounds,   // #986: pan/scroll clamp is the rolling 3-day window, not one day
             valueFormat: { format($0) },

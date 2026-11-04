@@ -85,6 +85,20 @@ internal fun latestWeightKg(
 }
 
 /**
+ * #57: the same health-store weigh-ins [latestWeightKg] picks from, as diary-shaped entries in the same
+ * order (Apple Health first, so it keeps winning a same-day tie), for [com.noop.analytics.WeightLog.resolve]
+ * to weigh against the hand-logged diary. [healthConnectOnly] drops Apple Health for the same reason.
+ */
+internal fun healthWeightEntries(
+    apple: List<AppleDaily>,
+    healthConnect: List<AppleDaily>,
+    healthConnectOnly: Boolean = false,
+): List<com.noop.analytics.WeightLog.Entry> {
+    val rows = if (healthConnectOnly) healthConnect else apple + healthConnect
+    return HealthConnectWeightSync.weightReadings(rows).map { com.noop.analytics.WeightLog.Entry(it.day, it.kg) }
+}
+
+/**
  * Steps for [dayKey] from the imported Apple Health / Health Connect daily aggregates, or null when
  * neither source carries a step total for that day. Backs the Today Steps-tile fallback for straps
  * NOOP can't read steps off over Bluetooth, notably the WHOOP 4.0, which DOES count steps (in the

@@ -3,7 +3,7 @@ import XCTest
 import WhoopProtocol
 
 /// Tests Calories.estimateDayCalories — the APPROXIMATE whole-day HR-only energy estimate
-/// (Keytel active + Harris–Benedict BMR) that backs DailyMetric.activeKcalEst for BLE-only
+/// (Keytel active + Mifflin–St Jeor BMR) that backs DailyMetric.activeKcalEst for BLE-only
 /// users. Pure-function tests; no DB. Not cloud/clinical parity. Mirrors the Android
 /// DayCaloriesTest vectors value-for-value.
 final class DayCaloriesTests: XCTestCase {
@@ -39,8 +39,10 @@ final class DayCaloriesTests: XCTestCase {
     }
 
     func testGaplessOneHzDayMatchesLegacyTotal() {
-        // Pin the pre-change 1 Hz result so the sparse-cadence fix cannot silently move WHOOP 4
-        // totals. This mixed full day exercises both the resting floor and gross active rate.
+        // Pin the 1 Hz result so a cadence change cannot silently move WHOOP 4 totals. This mixed full
+        // day exercises both the resting floor and gross active rate. At 1 Hz every reading's local
+        // cadence is 1 s, exactly what the old median cadence gave; the value moved in #51 only through
+        // the Mifflin–St Jeor BMR and the awake-resting offset in the Uth VO2max.
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
         let block = 8 * 3_600
         let day = hrDay(bpm: 55, n: block)
@@ -48,9 +50,8 @@ final class DayCaloriesTests: XCTestCase {
             + hrDay(bpm: 70, n: block, start: 2 * block)
         let total = Calories.estimateDayCalories(day, profile: profile,
                                                  hrmax: 185.0, restingHR: 55.0)
-        // Measured from the legacy estimator on main. Its per-sample summation differs from the
-        // new R × N association by ~6.6e-9 kcal, so keep tolerance above that rounding noise.
-        XCTAssertEqual(total, 6_774.323772067612, accuracy: 1e-6,
+        // Generated from the Swift implementation; the Kotlin twin asserts the same literal.
+        XCTAssertEqual(total, 6_528.722753344159, accuracy: 1e-6,
                        "a gapless 1 Hz day must remain equal to the legacy estimator")
     }
 
@@ -70,14 +71,14 @@ final class DayCaloriesTests: XCTestCase {
     func testSedentaryFullDayApproximatesBMR() {
         // A full 24 h at resting HR (below the day active gate) must total ≈ the subject's BMR:
         // the day estimator floors every sub-threshold second at the resting metabolic rate, so
-        // an all-rest day is BMR by construction. Standard male test subject's revised
-        // Harris–Benedict BMR ≈ 1825 kcal. This is an APPROXIMATE estimate, not medical advice.
+        // an all-rest day is BMR by construction. Standard male test subject's Mifflin–St Jeor
+        // BMR = 10·80 + 6.25·180 − 5·35 + 5 = 1755 kcal. This is an APPROXIMATE estimate, not medical advice.
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
         let sedentary = hrDay(bpm: 55, n: 86_400)   // 24 h, all at resting HR
         let total = Calories.estimateDayCalories(sedentary, profile: profile,
                                                  hrmax: 185.0, restingHR: 55.0)
-        XCTAssertEqual(total, 1825.25, accuracy: 1.0,
-                       "a sedentary full day must total ≈ the subject's BMR (~1825 kcal)")
+        XCTAssertEqual(total, 1755.0, accuracy: 1.0,
+                       "a sedentary full day must total ≈ the subject's BMR (1755 kcal)")
     }
 
     func testLightActivityDayIsFarBelowOldInflatedTotal() {
@@ -93,8 +94,8 @@ final class DayCaloriesTests: XCTestCase {
             + hrDay(bpm: 100, n: block, start: 2 * block)
         let total = Calories.estimateDayCalories(lightDay, profile: profile,
                                                  hrmax: 185.0, restingHR: 55.0)
-        // NEW total ≈ 1825 kcal (every second below the 120 bpm gate → BMR floor).
-        XCTAssertEqual(total, 1825.25, accuracy: 1.0,
+        // Total ≈ 1755 kcal (every second below the 120 bpm gate → BMR floor).
+        XCTAssertEqual(total, 1755.0, accuracy: 1.0,
                        "a light-activity day must land near BMR, not the old inflated total")
         // Teeth: the OLD 30%-gate model credited the 8 h @100 bpm block at the full Keytel
         // active rate (~3551 kcal for that block alone), so the old day total was ≈ 4768 kcal.
@@ -142,13 +143,17 @@ final class DayCaloriesTests: XCTestCase {
             (0..<600).map { HRSample(ts: $0, bpm: 130) },
             stride(from: 0, to: 600, by: 30).map { HRSample(ts: $0, bpm: 130) },
             [HRSample(ts: 0, bpm: 130), HRSample(ts: 3600, bpm: 130)],
+            stride(from: 0, to: 86_400, by: 120).map { HRSample(ts: $0, bpm: 55) },
+            stride(from: 0, to: 7200, by: 120).map { HRSample(ts: $0, bpm: 140) } + hrDay(bpm: 150, n: 600, start: 7200),
         ].map { Calories.estimateDayEnergy($0, profile: profile, hrmax: 185, restingHR: 55) }
         // Generated from the Swift implementation and copied verbatim to Android's parity test.
         let expected: [(resting: Double, active: Double, total: Double, seconds: Double)] = [
-            (1825.247000000000, 0.000000000000, 1825.247000000000, 86_400.0),
-            (12.675326388889, 103.105766084605, 115.781092473494, 600.0),
-            (12.675326388889, 103.105766084603, 115.781092473492, 600.0),
-            (2.535065277778, 20.621153216921, 23.156218494699, 120.0),
+            (1755.000000000000, 0.000000000000, 1755.000000000000, 86_400.0),
+            (12.187500000000, 99.452557361377, 111.640057361377, 600.0),
+            (12.187500000000, 99.452557361377, 111.640057361377, 600.0),
+            (12.187500000000, 99.452557361377, 111.640057361377, 600.0),
+            (1755.000000000000, 0.000000000000, 1755.000000000000, 86_400.0),
+            (158.437500000000, 1505.024737093748, 1663.462237093748, 7800.0),
         ]
         for (value, oracle) in zip(vectors, expected) {
             XCTAssertEqual(value.restingKcal, oracle.resting, accuracy: 1e-9)
@@ -174,10 +179,10 @@ final class DayCaloriesTests: XCTestCase {
 
     func testDayPathCapsRestingAndActiveGap() {
         // Two isolated high readings must not claim the whole hour as either resting or active
-        // energy. With the 60 s carry cap, both components cover exactly 120 supported seconds.
+        // energy. With the 300 s carry cap, both components cover exactly 600 supported seconds.
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
         let gapped = [HRSample(ts: 0, bpm: 130), HRSample(ts: 3600, bpm: 130)]
-        let active120s = hrDay(bpm: 130, n: 120)
+        let active120s = hrDay(bpm: 130, n: 600)
         let active3660s = hrDay(bpm: 130, n: 3660)
         let gapEnergy = Calories.estimateDayEnergy(gapped, profile: profile,
                                                    hrmax: 185.0, restingHR: 55.0)
@@ -185,14 +190,51 @@ final class DayCaloriesTests: XCTestCase {
                                                      hrmax: 185.0, restingHR: 55.0)
         let continuousEnergy = Calories.estimateDayEnergy(active3660s, profile: profile,
                                                           hrmax: 185.0, restingHR: 55.0)
-        XCTAssertEqual(gapEnergy.observedSeconds, 120, accuracy: 1e-12)
+        XCTAssertEqual(gapEnergy.observedSeconds, 600, accuracy: 1e-12)
         XCTAssertEqual(gapEnergy.restingKcal, shortEnergy.restingKcal, accuracy: 1e-9,
-                       "a long gap must carry only 120 capped resting seconds")
+                       "a long gap must carry only 600 capped resting seconds")
         XCTAssertEqual(gapEnergy.activeKcal, shortEnergy.activeKcal, accuracy: 1e-9,
-                       "a long gap must carry only 120 capped active seconds")
+                       "a long gap must carry only 600 capped active seconds")
         XCTAssertEqual(gapEnergy.totalKcal, shortEnergy.totalKcal, accuracy: 1e-9)
         XCTAssertLessThan(gapEnergy.totalKcal, continuousEnergy.totalKcal,
                           "a sensor gap must not be treated as continuous exercise")
+    }
+
+    /// A watch recording heart rate every 2 minutes (Garmin all-day monitoring) must bank the whole
+    /// day's BMR. At the old 60 s cap each reading carried half its interval, so a sedentary Garmin day
+    /// came to about half the subject's BMR (#51). Twin of the Kotlin test.
+    func testTwoMinuteCadenceDayBanksFullBmr() {
+        let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
+        let day = stride(from: 0, to: 86_400, by: 120).map { HRSample(ts: $0, bpm: 55) }
+        let e = Calories.estimateDayEnergy(day, profile: profile, hrmax: 185, restingHR: 55)
+        XCTAssertEqual(e.observedSeconds, 86_400, accuracy: 1e-9)
+        XCTAssertEqual(e.totalKcal, 1755.0, accuracy: 1e-6)
+    }
+
+    /// A per-second workout must not shrink the credit of the 2-minute readings around it. The old
+    /// day-wide MEDIAN cadence fell to 1 s on such a day, so every elevated monitoring reading outside
+    /// the workout earned one second (#51); each reading now earns its own local cadence. Twin of the
+    /// Kotlin test.
+    func testWorkoutDoesNotShrinkMonitoringReadingsCredit() {
+        let profile = UserProfile(weightKg: 80, heightCm: 180, age: 35, sex: "male")
+        let monitoring = stride(from: 0, to: 7200, by: 120).map { HRSample(ts: $0, bpm: 140) }
+        let workout = hrDay(bpm: 150, n: 600, start: 7200)
+        let both = Calories.estimateDayEnergy(monitoring + workout, profile: profile, hrmax: 185, restingHR: 55)
+        let alone = Calories.estimateDayEnergy(monitoring, profile: profile, hrmax: 185, restingHR: 55)
+        let workoutOnly = Calories.estimateDayEnergy(workout, profile: profile, hrmax: 185, restingHR: 55)
+        // The monitoring block's last reading is followed by the workout 120 s later, so it carries
+        // 120 s in `both` as it does when alone (where its local cadence is its 120 s previous gap).
+        XCTAssertEqual(both.activeKcal, alone.activeKcal + workoutOnly.activeKcal, accuracy: 1e-6)
+        XCTAssertEqual(both.observedSeconds, 7800, accuracy: 1e-9)
+    }
+
+    /// Pins the local-cadence kernel: the shorter neighbour gap, ties sharing it, capped at
+    /// `dayMaxObservedGapS`. The Kotlin twin asserts the same literals.
+    func testLocalCadencesOracle() {
+        XCTAssertEqual(Calories.localCadences([0, 0, 60, 61, 61, 400, 2000]),
+                       [60.0, 60.0, 1.0, 1.0, 1.0, 300.0, 300.0])
+        XCTAssertEqual(Calories.localCadences([5, 5]), [1.0, 1.0])
+        XCTAssertEqual(Calories.localCadences([]), [])
     }
 
     // A timestamp safely inside UTC day 2026-01-02 (2026-01-02T12:00:00Z).

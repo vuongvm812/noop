@@ -8,14 +8,18 @@ import WhoopStore
 /// deterministic function of the rows you pass in — no networking, no strap commands, no state.
 ///
 /// Signals and their references:
-/// - **HRV readiness** — z-score of today's HRV against the personal trailing baseline. A drop of
+/// - **HRV readiness** — z-score of today's lnRMSSD against the personal trailing baseline. A drop of
 ///   roughly half a standard deviation flags autonomic fatigue (Plews et al. 2013; Buchheit 2014).
+///   HRV, resting HR and respiration are read against the SAME per-day Charge baselines the ring is
+///   scored on (`ChargeBaselines`, #53), so the readiness word and the Charge ring cannot disagree about
+///   where a night sits.
 /// - **Resting-HR drift** — elevated resting HR vs baseline is a classic overtraining / illness
 ///   signal (Lamberts et al. 2004).
 /// - **Respiratory-rate drift** — a rise in sleeping respiratory rate is an early illness signal.
-/// - **Training Stress Balance (ACWR)** — acute (7-day) vs chronic (28-day) strain. The 0.8–1.3
-///   band is the "sweet spot"; >1.5 is associated with higher injury risk (Gabbett 2016).
-/// - **Training monotony** — mean/SD of daily strain over a week; high monotony (low variety) is
+/// - **Training Stress Balance (ACWR)** — EWMA acute (7-day) vs chronic (28-day) daily TRIMP over
+///   calendar days (Williams 2017). Descriptive only: the 0.8–1.3 band reads as "in line with your
+///   recent load", and the ratio is not an injury predictor (Impellizzeri 2020).
+/// - **Training monotony** — mean/SD of daily TRIMP over a week; high monotony (low variety) is
 ///   associated with higher strain and illness (Foster 1998).
 ///
 /// Not medical advice. These are approximations from a consumer strap; they describe trends in
@@ -80,29 +84,39 @@ public enum ReadinessEngine {
 
     // MARK: Tunables (named so the thresholds are auditable)
 
-    private static let baselineWindow = 30   // days for HRV / RHR / RR baselines
-    private static let minBaseline    = 7    // need at least this many baseline nights
     private static let acuteWindow    = 7
     private static let chronicWindow  = 28
-    private static let minChronic     = 14   // need at least this much strain history for ACWR
+    private static let minChronic     = 14   // observed days of the last `chronicWindow` needed for ACWR
 
     // MARK: Entry point
 
     /// Evaluate readiness from daily metrics. `days` may be in any order; the most recent day is
     /// treated as "today" unless `today` (a YYYY-MM-DD string) is given.
-    public static func evaluate(days: [DailyMetric], today: String? = nil) -> Readiness {
+    ///
+    /// `baselines` (#53) are the Charge baselines the displayed day was scored against
+    /// (`Repository.chargeBaselines(for:)` / `ChargeBaselines.Inputs.resolve`): the HRV, resting-HR and
+    /// respiration signals are z-scored against exactly those states, era cut included, so the readiness
+    /// word and the ring agree. nil resolves the same per-day rule from `days` alone (no imports, no
+    /// device eras), for callers with nothing else to hand.
+    public static func evaluate(days: [DailyMetric], today: String? = nil,
+                                baselines: ChargeBaselines.Resolved? = nil) -> Readiness {
         // v7.0.2 perf (#707): `evaluate` SORTS the entire daily history and walks trailing windows every
         // call, and it is read from a SwiftUI computed property — so a `body` re-evaluation (the iOS twin of
         // a Compose recompose) re-runs the full-history sort on each ~1 Hz live-HR tick. The Today view also
         // memoizes this at the View layer (its `todayInputKey`); this engine-level cache additionally shields
-        // every OTHER caller and the first/uncached read. Key = `today` + a fingerprint over ONLY the row
-        // fields the synthesis reads (day + avgHrv/restingHr/respRateBpm/strain), so a new sync re-keys but a
-        // cosmetic reorder does not. Result is a small `Readiness`; no row arrays are retained.
-        let key = ReadinessKey(today: today, rows: Self.rowsFingerprint(days))
-        return evaluateCache.value(key) { evaluateUncached(days: days, today: today) }
+        // every OTHER caller and the first/uncached read. Key = `today` + the baselines + a fingerprint over
+        // ONLY the row fields the synthesis reads (day + avgHrv/restingHr/respRateBpm/strain), so a new sync
+        // re-keys but a cosmetic reorder does not. Result is a small `Readiness`; no row arrays are retained.
+        let key = ReadinessKey(today: today, hrv: baselines?.hrv, restingHR: baselines?.restingHR,
+                               resp: baselines?.resp, rows: Self.rowsFingerprint(days))
+        return evaluateCache.value(key) { evaluateUncached(days: days, today: today, baselines: baselines) }
     }
 
-    private struct ReadinessKey: Hashable { let today: String?; let rows: StreamFingerprint }
+    private struct ReadinessKey: Hashable {
+        let today: String?
+        let hrv: BaselineState?, restingHR: BaselineState?, resp: BaselineState?
+        let rows: StreamFingerprint
+    }
     private static let evaluateCache = AnalyticsMemoCache<ReadinessKey, Readiness>(capacity: 16)
 
     /// Fingerprint the readiness-relevant columns of the daily rows without re-sorting or copying them.
@@ -126,7 +140,8 @@ public enum ReadinessEngine {
         return StreamFingerprint(count: days.count, firstTs: minDayHash, lastTs: maxDayHash, checksum: sum)
     }
 
-    private static func evaluateUncached(days: [DailyMetric], today: String?) -> Readiness {
+    private static func evaluateUncached(days: [DailyMetric], today: String?,
+                                         baselines: ChargeBaselines.Resolved?) -> Readiness {
         let sorted = days.sorted { $0.day < $1.day }
         // When an explicit `today` is given (the dashboard passes the device's real local day key), use
         // the row for THAT day and nothing else: a stale historical import has no row for today, so the
@@ -142,19 +157,21 @@ public enum ReadinessEngine {
                              signals: [], acwr: nil, monotony: nil)
         }
         let history = sorted.filter { $0.day < latest.day }   // everything before today
+        // #53: the Charge baselines for this day (window ending the day before, era-cut).
+        let charge = baselines ?? ChargeBaselines.resolveDay(
+            scoredDay: latest.day, imported: .init(), own: ChargeBaselines.Nights(rows: history), seed: .init(),
+            sourceDays: [], hrvRecalibration: 0, recoveryRecalibration: 0)
 
         var signals: [Signal] = []
 
         // HRV readiness ------------------------------------------------------
         let hrvSignal = zSignal(
             value: latest.avgHrv,
-            baseline: history.suffix(baselineWindow).compactMap { $0.avgHrv },
+            baseline: charge?.hrv,
             key: "hrv", label: "HRV",
             unit: "ms",
             decimals: 0,
             higherIsBetter: true,
-            logDomain: true,   // RD1: lnRMSSD — HRV is right-skewed
-            cfg: Baselines.readinessHRVLnCfg,   // RD2: ln-space spine, reject off
             goodText: "above your baseline - well recovered",
             neutralText: "in your normal range",
             watchText: "a touch below baseline",
@@ -164,12 +181,11 @@ public enum ReadinessEngine {
         // Resting-HR drift ---------------------------------------------------
         let rhrSignal = zSignal(
             value: latest.restingHr.map(Double.init),
-            baseline: history.suffix(baselineWindow).compactMap { $0.restingHr.map(Double.init) },
+            baseline: charge?.restingHR,
             key: "rhr", label: "Resting HR",
             unit: "bpm",
             decimals: 0,
             higherIsBetter: false,
-            cfg: Baselines.restingHRCfg,   // RD2: raw-bpm spine, reject off
             goodText: "at or below baseline",
             neutralText: "in your normal range",
             watchText: "running a little high",
@@ -182,10 +198,9 @@ public enum ReadinessEngine {
         // use wider resp-only z thresholds (WATCH 1.5 / BAD 2.0) than HRV/RHR so a single noisy night
         // can't flip RUNDOWN. Mirrors the Kotlin reference (#78) for cross-platform parity.
         if let rr = latest.respRateBpm, SleepStager.respPlausibleRangeBpm.contains(rr) {
-            let base = history.suffix(baselineWindow).compactMap { $0.respRateBpm }
-            if base.count >= minBaseline, let m = mean(base),
-               SleepStager.respPlausibleRangeBpm.contains(m), let sd = sampleSD(base), sd > 0 {
-                let z = (rr - m) / sd
+            if let b = charge?.resp, b.usable, SleepStager.respPlausibleRangeBpm.contains(b.baseline) {
+                let m = b.baseline
+                let z = (rr - m) / max(1.253 * b.spread, 1e-9)
                 if z >= 2.0 {
                     signals.append(Signal(key: "respRate", label: "Respiratory rate",
                         evidence: evidence(value: rr, baseline: m, unit: "rpm", decimals: 1),
@@ -201,27 +216,29 @@ public enum ReadinessEngine {
         }
 
         // Training Stress Balance (ACWR) + monotony --------------------------
-        let strainSeries = sorted.compactMap { $0.strain }
+        // On TRIMP, not the log-scaled Effort (`EffortLoad`), over CALENDAR days ending YESTERDAY: today's
+        // row is a partial day still accruing, so counting it would read every morning as ramping down.
+        // EWMA acute/chronic (Williams 2017) instead of coupled rolling means.
         var acwr: Double? = nil
         var monotony: Double? = nil
-        if strainSeries.count >= minChronic {
-            let acute = mean(Array(strainSeries.suffix(acuteWindow)))!
-            let chronic = mean(Array(strainSeries.suffix(chronicWindow)))!
-            if chronic > 0 {
-                let ratio = acute / chronic
-                acwr = ratio
-                signals.append(acwrSignal(ratio, acute: acute, chronic: chronic))
-            }
-            // Foster monotony over the last week of strain.
-            let week = Array(strainSeries.suffix(acuteWindow))
-            if week.count >= 4, let sd = sampleSD(week), sd > 0, let m = mean(week) {
-                let mono = m / sd
-                monotony = mono
-                if mono >= 2.0 {
-                    signals.append(Signal(key: "monotony", label: "Training variety",
-                        evidence: "monotony \(String(format: "%.1f", mono))",
-                        evidenceData: .monotony(mono),
-                        detail: "low - similar strain every day raises strain/illness risk", flag: .watch))
+        if let todayOrdinal = TrainingLoadEngine.dayOrdinal(latest.day) {
+            let loads = EffortLoad.loadsByOrdinal(history.map { ($0.day, $0.strain) })
+            let end = todayOrdinal - 1
+            if let ac = EffortLoad.acuteChronic(loads: loads, endOrdinal: end, acuteSpan: acuteWindow,
+                                                chronicSpan: chronicWindow, minObserved: minChronic) {
+                if let ratio = ac.ratio {
+                    acwr = ratio
+                    signals.append(acwrSignal(ratio, acute: ac.acute, chronic: ac.chronic))
+                }
+                // Foster monotony over the last calendar week of load.
+                if let mono = EffortLoad.monotony(loads: loads, endOrdinal: end, spanDays: acuteWindow) {
+                    monotony = mono
+                    if mono >= 2.0 {
+                        signals.append(Signal(key: "monotony", label: "Training variety",
+                            evidence: "monotony \(String(format: "%.1f", mono))",
+                            evidenceData: .monotony(mono),
+                            detail: "low - similar strain every day raises strain/illness risk", flag: .watch))
+                    }
                 }
             }
         }
@@ -229,12 +246,12 @@ public enum ReadinessEngine {
         let (level, headline, summary) = synthesize(signals: signals,
                                                     hasHistory: !history.isEmpty || acwr != nil)
         // RD-confidence: surface how much history backs the read (HRV baseline density, the primary
-        // readiness driver). A read off a 7-night baseline must not look as certain as one off the full
-        // 30-night window. Insufficient reads carry .calibrating.
-        let hrvBaselineNights = history.suffix(baselineWindow).compactMap { $0.avgHrv }.count
+        // readiness driver), on the Charge baseline's own trust gate so the two tiers agree. A read off a
+        // thin baseline must not look as certain as one off a trusted one. Insufficient reads carry
+        // .calibrating.
         let confidence = ScoreConfidence.readiness(hasRead: level != .insufficient,
-                                                   baselineNights: hrvBaselineNights,
-                                                   fullWindow: baselineWindow)
+                                                   baselineNights: charge?.hrv.nValid ?? 0,
+                                                   fullWindow: Baselines.minNightsTrust)
         return Readiness(level: level, headline: headline, summary: summary,
                          signals: signals, acwr: acwr, monotony: monotony,
                          confidence: confidence)
@@ -242,36 +259,17 @@ public enum ReadinessEngine {
 
     // MARK: Signal builders
 
-    /// Build a z-score signal for a metric where the baseline is the trailing window.
-    private static func zSignal(value: Double?, baseline: [Double],
+    /// Build a z-score signal against a Charge baseline (HRV in the log domain, the others linear). No
+    /// signal while that baseline is not usable, exactly as the Charge score drops the term.
+    private static func zSignal(value: Double?, baseline: BaselineState?,
                                 key: String, label: String, unit: String, decimals: Int,
-                                higherIsBetter: Bool, logDomain: Bool = false,
-                                cfg: MetricCfg,
+                                higherIsBetter: Bool,
                                 goodText: String, neutralText: String,
                                 watchText: String, badText: String) -> Signal? {
-        guard let v = value, baseline.count >= minBaseline else { return nil }
-        // RD1: right-skewed metrics (HRV/RMSSD) are z-scored in the LOG domain — lnRMSSD is closer to
-        // normal, so a symmetric z is statistically valid, whereas a raw-ms z over-weights the long
-        // upper tail and misstates tail rarity (Plews/Altini; the app's own HRVReadiness works this
-        // way). RHR/resp are ~normal and stay linear. Evidence stays in the metric's own units, but the
-        // baseline shown is then the GEOMETRIC mean (exp of the log-mean) — a typical night, not an
-        // outlier-inflated arithmetic mean.
-        let tv = logDomain ? log(max(v, 1.0)) : v
-        let tb = logDomain ? baseline.map { log(max($0, 1.0)) } : baseline
-        // RD2: fold the trailing baseline through the shared Winsorized-EWMA spine — recency-weighted,
-        // σ-floored (a tight baseline can't saturate the z), and Winsor-clamped so a single freak night
-        // is DAMPED not folded raw — instead of a flat mean + sample SD. Hard-outlier REJECTION is off
-        // (`rejectHardOutliers: false`): a re-folded trailing window must ADAPT to a recent sustained
-        // shift (fitness change / device swap) rather than reject the new normal as a run of outliers —
-        // the window-fold vs incremental-fold distinction, validated on real HRV history. `cfg` is in
-        // the SAME space as `tb` (ln for HRV, linear for RHR); center + spread come back σ-floored.
-        let state = Baselines.foldHistory(tb.map { Optional($0) }, cfg: cfg, rejectHardOutliers: false)
-        guard state.usable else { return nil }
-        let sigma = max(1.253 * state.spread, 1e-9)   // robust σ from the EWMA-abs-dev spread
-        guard sigma > 0 else { return nil }
-        let m = state.baseline
+        guard let v = value, let b = baseline, b.usable else { return nil }
         // Orient z so positive always means "better".
-        let z = (higherIsBetter ? (tv - m) : (m - tv)) / sigma
+        let z = higherIsBetter ? RecoveryScorer.higherBetterZ(v, state: b)
+                               : (b.baseline - v) / max(1.253 * b.spread, 1e-9)
         let flag: Flag
         let text: String
         switch z {
@@ -280,11 +278,10 @@ public enum ReadinessEngine {
         case -1.0 ..< -0.5: flag = .watch;   text = watchText
         default:            flag = .bad;     text = badText
         }
+        // `baseline` is the geometric mean (ms) for the log-domain HRV state, the mean otherwise.
         return Signal(key: key, label: label,
-                      evidence: evidence(value: v, baseline: logDomain ? exp(m) : m,
-                                         unit: unit, decimals: decimals),
-                      evidenceData: .metric(value: v, baseline: logDomain ? exp(m) : m,
-                                            unit: unit, decimals: decimals),
+                      evidence: evidence(value: v, baseline: b.baseline, unit: unit, decimals: decimals),
+                      evidenceData: .metric(value: v, baseline: b.baseline, unit: unit, decimals: decimals),
                       detail: text, flag: flag)
     }
 
@@ -311,7 +308,7 @@ public enum ReadinessEngine {
             return Signal(key: "acwr", label: "Training load",
                 evidence: evidence,
                 evidenceData: .trainingLoad(acute: acute, chronic: chronic),
-                detail: "spiking (acute:chronic \(pct)) - higher injury risk", flag: .bad)
+                detail: "spiking (acute:chronic \(pct)) - well above your usual load", flag: .bad)
         }
     }
 
@@ -352,18 +349,5 @@ public enum ReadinessEngine {
         }
         return (.balanced, "Balanced",
                 "Nothing's flagging. Train to feel - your body's holding steady.")
-    }
-
-    // MARK: Stats helpers
-
-    static func mean(_ xs: [Double]) -> Double? {
-        xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count)
-    }
-
-    /// Sample standard deviation (n-1). nil for fewer than 2 points.
-    static func sampleSD(_ xs: [Double]) -> Double? {
-        guard xs.count >= 2, let m = mean(xs) else { return nil }
-        let ss = xs.reduce(0) { $0 + ($1 - m) * ($1 - m) }
-        return (ss / Double(xs.count - 1)).squareRoot()
     }
 }

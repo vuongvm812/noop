@@ -1,6 +1,7 @@
 package com.noop.ui
 
 import com.noop.analytics.Baselines
+import com.noop.analytics.ChargeBaselines
 import com.noop.data.DailyMetric
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -12,8 +13,8 @@ import org.junit.Test
  * Unit tests for [recoveryCalibrationNights], the pure helper behind the Today recovery cold-start
  * "Calibrating — N of 4 nights" affordance. Recovery is null until the HRV baseline crosses the seed
  * gate (Baselines.minNightsSeed valid nights); this surfaces honest progress instead of "No Data". N
- * is the HRV baseline's real `nValid` from folding the SAME day-keyed, epoch-aware history the recovery
- * engine folds. Mirrors the Swift RecoveryCalibrationTests case-for-case.
+ * is the `nValid` of the trailing HRV baseline (#53) built from the same day-keyed, epoch-aware nights
+ * the scorer reads. Mirrors the Swift RecoveryCalibrationTests case-for-case.
  */
 class RecoveryCalibrationTest {
 
@@ -21,15 +22,19 @@ class RecoveryCalibrationTest {
 
     private fun day(d: String, hrv: Double?) = DailyMetric(deviceId = "my-whoop-noop", day = d, avgHrv = hrv)
 
-    /** The UTC day-start epoch (seconds) for a "yyyy-MM-dd" key, computed exactly as
-     *  [Baselines.foldHistory] does, so a test epoch lands on a real night boundary. */
+    /** The UTC day-start epoch (seconds) for a "yyyy-MM-dd" key, the boundary [ChargeBaselines.state]
+     *  compares night keys against, so a test epoch lands on a real night boundary. */
     private fun epoch(dayKey: String): Double =
         LocalDate.parse(dayKey).atStartOfDay(ZoneOffset.UTC).toEpochSecond().toDouble()
 
-    /** The helper takes the parallel HRV values + day keys the engine folds (#2525 passes the Charge HRV
-     *  history); these cases build them from rows. */
-    private fun nights(days: List<DailyMetric>, hasRecovery: Boolean, epoch: Double = 0.0): Int? =
-        recoveryCalibrationNights(days.map { it.avgHrv }, days.map { it.day }, hasRecovery, hrvBaselineEpoch = epoch)
+    /** The countdown over the HRV baseline these rows build, anchored on the last night. */
+    private fun nights(days: List<DailyMetric>, hasRecovery: Boolean, epoch: Double = 0.0): Int? {
+        val state = ChargeBaselines.state(
+            days.map { it.avgHrv }, days.map { it.day }, ChargeBaselines.Metric.HRV,
+            days.lastOrNull()?.day ?: "2026-01-01", epoch,
+        )
+        return recoveryCalibrationNights(state, hasRecovery)
+    }
 
     @Test
     fun nullWhenRecoveryAlreadyExists() {

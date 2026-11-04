@@ -3252,6 +3252,7 @@ class WhoopBleClient(
                     IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
                         profileStore.stepsHasBankedMotion = hasMotion
                     }
+                    IntelligenceEngine.hrmaxEvidenceSink = { profileStore.observedHrMaxEvidence = it }
                     IntelligenceEngine.analyzeRecent(
                         repo = repository,
                         profile = profile,
@@ -3374,6 +3375,7 @@ class WhoopBleClient(
                 }
                 // #1816: clear the motion sink after the post-backfill pass completes.
                 IntelligenceEngine.stepsHasMotionSink = null
+                IntelligenceEngine.hrmaxEvidenceSink = null
                 // Keep the opt-in Health Connect writeback fresh in background-only operation too.
                 if (NoopPrefs.hcWriteback(context)) {
                     // #660: log the count AND any PII-safe failure categories (the writer also persists

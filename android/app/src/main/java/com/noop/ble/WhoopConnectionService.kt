@@ -87,6 +87,8 @@ internal data class NotifyDayState(
     val widgetRecovery: Int?,
     val widgetRest: Int?,
     val widgetEffort: Int?,
+    /** The widget's anchor row, so the caller can resolve its persisted Rest (#55). */
+    val widgetAnchorRow: DailyMetric? = null,
     val illness: String?,
     val days: List<DailyMetric>,
 )
@@ -130,6 +132,7 @@ internal class NotifyDayStateCache(
             widgetRecovery = anchorRow?.recovery?.roundToInt(),
             widgetRest = anchorRow?.let { RestScorer.restFromDaily(it)?.roundToInt() },
             widgetEffort = anchorRow?.strain?.roundToInt(),
+            widgetAnchorRow = anchorRow,
             illness = if (illnessEnabled && todayRow != null && days.lastOrNull()?.day == todayRow.day) {
                 illnessEvaluator(days)
             } else null,
@@ -155,6 +158,23 @@ class WhoopConnectionService : Service() {
 
     /** Daily analytics projection shared across the notification's ~1 Hz live-state ticks. */
     private val notifyDayStateCache = NotifyDayStateCache()
+
+    /** #55: memo for the widget's Rest, re-read only when the anchor row changes (the row is replaced
+     *  whenever the engine re-scores, which is also when the persisted Rest moves). */
+    private var widgetRestRow: DailyMetric? = null
+    private var widgetRestValue: Int? = null
+
+    /** The anchor row's Rest via the shared [WhoopRepository.restScoreFor] resolver, memoized per row. */
+    private suspend fun widgetRestPct(dayState: NotifyDayState): Int? {
+        val row = dayState.widgetAnchorRow ?: return null
+        if (row !== widgetRestRow) {
+            widgetRestValue = runCatching {
+                repo.restScoreFor((application as NoopApplication).activeDeviceId, row)?.roundToInt()
+            }.getOrElse { dayState.widgetRest }
+            widgetRestRow = row
+        }
+        return widgetRestValue
+    }
 
     /** Watches [GpsSession] and runs the platform location stream while a GPS workout is active. This
      *  is what makes route tracking survive the screen turning off (#215): the collection lives on the
@@ -534,7 +554,7 @@ class WhoopConnectionService : Service() {
                             // Rest = the sleep_performance composite from the anchor row's banked stage
                             // figures (pure, honest-null until last night is scored); Effort = the 0-100
                             // strain. Widget-only carry, so it shows the same day as Today. (#516/#911)
-                            restPct = dayState.widgetRest,
+                            restPct = widgetRestPct(dayState),
                             effortPct = dayState.widgetEffort,
                             heartRate = state.heartRate,
                             // The ACTIVE device's charge (#2075). This service is the widget's

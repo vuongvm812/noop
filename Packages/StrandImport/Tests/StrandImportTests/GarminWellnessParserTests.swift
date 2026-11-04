@@ -16,7 +16,6 @@ final class GarminWellnessParserTests: XCTestCase {
         mon 1731090896 type=6 int=- cyc=50 dist=- cal=10 act=- time=- hr=58 mod=0 vig=0
         day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
         day 2024-11-09 steps=50 dist=- cal=10 act=-
-        rmr 1731087296 1650
         == midnight
         offset 21600 complete true other 0 dropped 0
         mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
@@ -28,6 +27,12 @@ final class GarminWellnessParserTests: XCTestCase {
         mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
         day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
         day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
+        == multiSport
+        offset 21600 complete true other 0 dropped 0
+        mon 1731086096 type=6 int=- cyc=2000 dist=1500.0000 cal=1500 act=90 time=- hr=- mod=- vig=-
+        mon 1731086396 type=2 int=- cyc=900 dist=12000.0000 cal=300 act=280 time=- hr=- mod=- vig=-
+        mon 1731086696 type=5 int=- cyc=40 dist=1000.0000 cal=120 act=110 time=- hr=- mod=- vig=-
+        day 2024-11-08 steps=2000 dist=14500.0000 cal=1920 act=480
         == restingHeartRate
         offset - complete true other 0 dropped 1
         rhr 1731087296 52
@@ -41,8 +46,7 @@ final class GarminWellnessParserTests: XCTestCase {
         hrv 1731087836 32.0000
         == spo2
         offset - complete true other 0 dropped 1
-        spo2 1731087296 96 conf=3 mode=3
-        spo2 1731087416 94 conf=- mode=1
+        spo2 1731087296 96
         == sleep
         offset 21600 complete true other 0 dropped 1
         level 1731087416 1
@@ -78,9 +82,28 @@ final class GarminWellnessParserTests: XCTestCase {
         mark 1731087296 0
         mark 1731116919 1
         night 1731087296-1731116919 unmeasurable=0 awake=1380 light=15900 deep=6420 rem=5923
+        == sleepNap
+        offset - complete true other 0 dropped 0
+        level 1731089096 2
+        level 1731092696 3
+        level 1731094496 0
+        level 1731101696 4
+        level 1731103496 1
+        level 1731114296 2
+        level 1731138496 2
+        level 1731139696 1
+        mark 1731087296 0
+        mark 1731114296 1
+        mark 1731137296 0
+        mark 1731139696 1
+        night 1731087296-1731114296 unmeasurable=1800 awake=1800 light=12600 deep=3600 rem=7200
+        night 1731137296-1731139696 unmeasurable=0 awake=1200 light=1200 deep=0 rem=0
         == respiration
         offset - complete true other 0 dropped 2
         resp 1731087296 14.5000
+        == vo2max
+        offset - complete true other 0 dropped 2
+        vo2max 1731087296 52.3000
         == hrv
         offset - complete true other 0 dropped 1
         hrvsum 1731087296 40.0000,37.5000,54.6875,-,34.0000,50.0000 status=4
@@ -97,6 +120,16 @@ final class GarminWellnessParserTests: XCTestCase {
         resp 1731087306 15.2500
         resp 1731087331 15.5000
         hrv 1731087296 40.0000
+        == bounds
+        offset 21600 complete true other 0 dropped 5
+        rhr 1731088800 48
+        rhr 1731088801 47
+        spo2 1731087316 70
+        spo2 1731087326 100
+        resp 1731087346 4.0000
+        resp 1731087356 60.0000
+        hrv 1731087386 5.0000
+        hrv 1731087396 300.0000
         == localDay
         0@0 1970-01-01
         -1@0 1969-12-31

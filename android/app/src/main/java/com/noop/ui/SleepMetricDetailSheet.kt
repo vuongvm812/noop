@@ -37,12 +37,13 @@ internal fun SleepMetricDetailSheetContent(
     key: String,
     imported: ImportedSleepSeries = ImportedSleepSeries(),
     napSleepMinByDay: Map<String, Double> = emptyMap(),
+    computed: ImportedSleepSeries = ImportedSleepSeries(),
 ) {
     val days by vm.recentDays.collectAsStateWithLifecycle()
     var range by remember { mutableStateOf(SleepMetricRange.MONTH) }
     val spec = remember(key) { sleepMetricSpec(key) }
-    val allPoints = remember(days, key, imported, napSleepMinByDay) {
-        buildSleepMetricPoints(days, key, imported, napSleepMinByDay)
+    val allPoints = remember(days, key, imported, napSleepMinByDay, computed) {
+        buildSleepMetricPoints(days, key, imported, napSleepMinByDay, computed)
     }
     val filteredPoints = remember(allPoints, range) { filterSleepMetricPoints(allPoints, range) }
 

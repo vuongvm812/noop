@@ -32,6 +32,9 @@ internal data class Vital(
     /** Trailing values (oldest → newest) for the tile's metric-tinted sparkline trail, matching
      *  Today's Key-Metrics tiles. Presentation-only; defaulted so existing call sites compile. */
     val sparkline: List<Double> = emptyList(),
+    /** The day key (yyyy-MM-dd) of each [sparkline] point, same order and length, so the tile's scrub
+     *  cursor can name the night it sits on. */
+    val sparklineDays: List<String> = emptyList(),
     /** #103: true when [value] is the spo2_candidate_82 strap estimate (not a calibrated spo2Pct).
      *  Drives the "Estimate (unverified)" caption so the user knows this is an unverified value.
      *  Defaulted false so every other vital is unaffected. */
@@ -283,6 +286,10 @@ internal fun vitalsFor(
     // history already gathered for banding, including the displayed day's value. Presentation-only.
     fun trail(current: Double?, window: Int = 14, selector: (DailyMetric) -> Double?): List<Double> =
         (history.mapNotNull(selector) + listOfNotNull(current)).takeLast(window)
+    // The day of each [trail] point, built by the same filter so the two lists stay index-aligned.
+    fun trailDays(current: Double?, window: Int = 14, selector: (DailyMetric) -> Double?): List<String> =
+        (history.mapNotNull { row -> selector(row)?.let { row.day } } +
+            listOfNotNull(current?.let { todayKey })).takeLast(window)
 
     // Skin temp is bimodal: CSV imports store ABSOLUTE °C, the on-device pipeline a ±°C
     // DEVIATION — partition the history to the displayed value's kind and pick the matching
@@ -356,6 +363,7 @@ internal fun vitalsFor(
             banding = VitalBands.band(d?.respRateBpm, series { it.respRateBpm }, 12.0..20.0, Baselines.respCfg),
             metricColor = Palette.metricCyan,
             sparkline = trail(d?.respRateBpm) { it.respRateBpm },
+            sparklineDays = trailDays(d?.respRateBpm) { it.respRateBpm },
         ),
         Vital(
             key = "spo2", label = uiString(R.string.l10n_health_screen_blood_o_9bf5ed9b), unit = "%",
@@ -385,6 +393,7 @@ internal fun vitalsFor(
             banding = VitalBands.band(d?.spo2Pct ?: d?.day?.let { spo2CandidateByDay[it] }, emptyList(), 95.0..100.0, null),
             metricColor = Palette.metricCyan,
             sparkline = trail(d?.spo2Pct) { it.spo2Pct },
+            sparklineDays = trailDays(d?.spo2Pct) { it.spo2Pct },
             // #103: mark as estimate when the value came from the candidate, not a calibrated spo2Pct.
             isEstimate = d?.spo2Pct == null && d?.day?.let { spo2CandidateByDay[it] } != null,
         ),
@@ -404,6 +413,7 @@ internal fun vitalsFor(
             banding = VitalBands.band(d?.let(spo2RawMean), emptyList(), 0.0..65535.0, null),
             metricColor = Palette.metricCyan,
             sparkline = trail(d?.let(spo2RawMean)) { spo2RawMean(it) },
+            sparklineDays = trailDays(d?.let(spo2RawMean)) { spo2RawMean(it) },
         ),
         Vital(
             key = "rhr", label = uiString(R.string.l10n_health_screen_resting_hr_26677094), unit = "bpm",
@@ -419,6 +429,7 @@ internal fun vitalsFor(
             ),
             metricColor = Palette.metricRose,
             sparkline = trail(d?.restingHr?.toDouble()) { it.restingHr?.toDouble() },
+            sparklineDays = trailDays(d?.restingHr?.toDouble()) { it.restingHr?.toDouble() },
         ),
         Vital(
             key = "hrv", label = "HRV", unit = "ms",
@@ -436,6 +447,7 @@ internal fun vitalsFor(
             banding = VitalBands.band(d?.avgHrv, series { it.avgHrv }, 40.0..120.0, Baselines.hrvCfg),
             metricColor = Palette.metricPurple,
             sparkline = trail(d?.avgHrv) { it.avgHrv },
+            sparklineDays = trailDays(d?.avgHrv) { it.avgHrv },
             // #1118: mark HRV "unverified" on an over-counted night — the WHOOP 4.0 two-optical-channel
             // artifact inflates R-R and contaminates RMSSD, so NOOP's HRV won't match WHOOP until the
             // de-dup fix lands. The flag is written only for NOOP's own measured capture, so an imported
@@ -460,6 +472,9 @@ internal fun vitalsFor(
             banding = skinResult, metricColor = Palette.metricAmber,
             // Keep the trail on the displayed value's kind — absolute °C and ±deviation must not mix.
             sparkline = trail(skin) { row ->
+                skinSelector(row)?.takeIf { VitalBands.isAbsoluteSkinTemp(it) == skinIsAbsolute }
+            },
+            sparklineDays = trailDays(skin) { row ->
                 skinSelector(row)?.takeIf { VitalBands.isAbsoluteSkinTemp(it) == skinIsAbsolute }
             },
             // #1636: the deviation this absolute was derived from, beneath it. Only on an absolute-led

@@ -13,7 +13,8 @@ import WhoopStore
 ///   transaction (`WhoopStore.ingestGarminFile`).
 /// - ACTIVITY files go through the existing workout path (`ActivityFileImporter`, the same parse the
 ///   manual workout-file import uses), stored under the watch's own device id, then recorded. A GPS
-///   route goes to `RouteStore` under the row's natural key, so the workout detail draws its map.
+///   route goes to `RouteStore` under the row's natural key, so the workout detail draws its map; the
+///   watch's Training Effect and training load go to `deviceMetricSample` for the same detail.
 /// Kotlin twin: `GarminHistoryIngest` (android/.../data/GarminHistoryIngest.kt).
 enum GarminHistoryIngest {
 
@@ -26,22 +27,51 @@ enum GarminHistoryIngest {
         })
     }
 
-    /// Once per watch, forget the stored SLEEP files so the next sync downloads them again and re-folds
-    /// their nights over the watch's own sleep window (#47). The fold before that split a night at every
-    /// single-stage stretch over an hour and started it at the first stage change; the store replaces
-    /// the overlapping split rows when the re-fold lands. Files older than the sync lookback are not
-    /// listed again, so their nights keep the old fold. Kotlin twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
+    /// Once per watch, repair the nights an older fold stored. Two faults are corrected:
+    ///  - #47: a night split at every single-stage stretch over an hour and started at its first stage
+    ///    change. The stored SLEEP files are forgotten, so the next sync downloads them again and re-folds
+    ///    them over the watch's own sleep window; the store replaces the overlapping split rows.
+    ///  - #49: efficiency stored as a percent (93.3) where every reader expects a fraction (0.933), and a
+    ///    nap's totals written over the night's in the day rollup. Every stored efficiency of this watch
+    ///    above 1 is divided by 100, which also covers nights older than the sync lookback; the re-fold
+    ///    above rewrites the recent day rollups from their main night.
+    /// Nothing on the watch changes. Version 2 of the key, so a watch repaired for #47 alone runs it once
+    /// more. Kotlin twin: `GarminHistoryIngest.refetchSleepFilesOnce`.
     static func refetchSleepFilesOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
                                       log: (String) -> Void) async {
-        let key = "noop.garmin.sleepRefold.v1.\(deviceId)"
+        let key = "noop.garmin.sleepRefold.v2.\(deviceId)"
         guard !defaults.bool(forKey: key) else { return }
         do {
+            let rescaled = try await store.repairGarminEfficiencyUnits(deviceId: deviceId)
             let forgotten = try await store.forgetGarminSyncedFiles(deviceId: deviceId, dataType: 255,
                                                                     subType: Int(GarminFitFileType.sleep.rawValue))
             defaults.set(true, forKey: key)
-            log("Garmin: re-folding stored nights; \(forgotten) sleep files will download again")
+            log("Garmin: re-folding stored nights; \(forgotten) sleep files will download again, "
+                + "\(rescaled) efficiency values rescaled from percent")
         } catch {
             log("Garmin: re-fold of stored nights postponed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
+    /// stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
+    /// use the phone's current UTC offset, as the fold does for a file without one. Kotlin twin:
+    /// `GarminHistoryIngest.rederiveNightVitalsOnce`.
+    static func rederiveNightVitalsOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
+                                        utcOffsetS: Int = TimeZone.current.secondsFromGMT(),
+                                        log: (String) -> Void) async {
+        let key = "noop.garmin.nightVitals.v1.\(deviceId)"
+        guard !defaults.bool(forKey: key) else { return }
+        do {
+            let days = try await store.garminDays(deviceId: deviceId).map { day -> GarminDayRollup in
+                let start = GarminWatchIngest.dayStartUnix(day, utcOffsetS: utcOffsetS)
+                return GarminDayRollup(day: day, dayStartTs: start, dayEndTs: start + 86_400)
+            }
+            let changed = try await store.rederiveGarminNightVitals(deviceId: deviceId, days: days)
+            defaults.set(true, forKey: key)
+            log("Garmin: re-derived overnight SpO2 / respiration for \(days.count) days (\(changed) points)")
+        } catch {
+            log("Garmin: overnight vitals re-derive postponed: \(error.localizedDescription)")
         }
     }
 
@@ -105,9 +135,11 @@ enum GarminHistoryIngest {
             notes: activity.importNote(),
             steps: activity.steps)
         try await store.upsertWorkouts([row], deviceId: deviceId)
-        if !activity.hrSamples.isEmpty {
-            _ = try await store.insert(Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) }),
-                                       deviceId: deviceId)
+        // The per-sample HR, plus the watch's Training Effect and training load for the workout detail.
+        let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
+                              deviceMetric: GarminWatchIngest.activityReference(activity))
+        if !streams.isEmpty {
+            _ = try await store.insert(streams, deviceId: deviceId)
         }
         let route = workoutRoute(from: activity)
         log("Garmin: stored workout \(row.sport) \(row.startTs)-\(row.endTs) hr=\(activity.hrSamples.count) "

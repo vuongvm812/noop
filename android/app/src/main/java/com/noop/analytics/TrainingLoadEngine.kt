@@ -178,7 +178,7 @@ object TrainingLoadEngine {
 
     // Integer-only proleptic-Gregorian (Howard Hinnant) transform. Avoids timezone/DST/locale drift
     // between platforms so the Swift twin cannot diverge around DST or locale boundaries.
-    private fun dayOrdinal(value: String): Int? {
+    internal fun dayOrdinal(value: String): Int? {
         val parts = value.split('-', limit = 3)
         if (parts.size != 3 || parts[0].length != 4 || parts[1].length != 2 || parts[2].length != 2) return null
         val year = parts[0].toIntOrNull() ?: return null

@@ -240,6 +240,62 @@ object StrainScorer {
     /** Tanaka (2001): HRmax = 208 − 0.7 × age (gender-independent). */
     fun tanakaHRmax(age: Double): Double = 208.0 - 0.7 * age
 
+    // ---- Adaptive HRmax (#54) ----
+
+    /** Calendar days of daily sustained peaks that count as evidence. Twin of Swift. */
+    const val adaptiveHRmaxWindowDays: Int = 90
+    /** Distinct days that must reach a value before it can raise HRmax. */
+    const val adaptiveHRmaxMinDays: Int = 2
+    /** Daily sustained peaks above this are discarded as evidence rather than clamped. */
+    const val adaptiveHRmaxCeiling: Double = 220.0
+    /** Metric-series key holding each day's [sustainedPeak]. */
+    const val sustainedPeakMetricKey: String = "hr_sustained_peak"
+
+    /**
+     * The HRmax the daily sustained peaks support: the highest value reached on at least
+     * [adaptiveHRmaxMinDays] different days (the second-highest daily peak). Null with fewer usable days.
+     *
+     * Kotlin twin of Swift `StrainScorer.observedHRmaxEvidence(dailyPeaks:)`.
+     */
+    fun observedHRmaxEvidence(dailyPeaks: List<Double>): Double? {
+        val usable = dailyPeaks.filter { it.isFinite() && it > 0 && it <= adaptiveHRmaxCeiling }
+            .sortedDescending()
+        if (usable.size < adaptiveHRmaxMinDays) return null
+        return usable[adaptiveHRmaxMinDays - 1]
+    }
+
+    /**
+     * [observedHRmaxEvidence] over the peaks of the [adaptiveHRmaxWindowDays] calendar days ending on
+     * [day] (inclusive), keyed by YYYY-MM-DD.
+     *
+     * Kotlin twin of Swift `StrainScorer.observedHRmaxEvidence(peaksByDay:endingOn:)`.
+     */
+    fun observedHRmaxEvidenceEndingOn(peaksByDay: Map<String, Double>, day: String): Double? {
+        val end = TrainingLoadEngine.dayOrdinal(day) ?: return null
+        val start = end - adaptiveHRmaxWindowDays + 1
+        val peaks = peaksByDay.mapNotNull { (key, value) ->
+            val ordinal = TrainingLoadEngine.dayOrdinal(key) ?: return@mapNotNull null
+            if (ordinal in start..end) value else null
+        }
+        return observedHRmaxEvidence(peaks)
+    }
+
+    /**
+     * The single HRmax resolver: a manual override wins ("override"); otherwise observed evidence ABOVE
+     * the age formula ("observed"); otherwise Tanaka ("tanaka"); with no age and no evidence above the
+     * [defaultMaxHR] fallback, null ("default").
+     *
+     * Kotlin twin of Swift `StrainScorer.resolveHRmax`.
+     */
+    fun resolveHRmax(override: Double?, age: Double, observedEvidence: Double?): Pair<Double?, String> {
+        if (override != null && override > 0) return Pair(override, "override")
+        val tanaka: Double? = if (age > 0) tanakaHRmax(age) else null
+        val floor = tanaka ?: defaultMaxHR().toDouble()
+        if (observedEvidence != null && observedEvidence > floor) return Pair(observedEvidence, "observed")
+        if (tanaka != null) return Pair(tanaka, "tanaka")
+        return Pair(null, "default")
+    }
+
     /** Classic 220 − age. Last-resort fallback only. */
     fun defaultMaxHR(age: Int = defaultAge): Int = 220 - age
 
@@ -297,12 +353,20 @@ object StrainScorer {
     // ---- TRIMP accumulation ----
 
     /**
-     * Longest span (minutes) a single reading may be credited with. A wear or connection dropout leaves a
-     * gap with no data in it; without a ceiling the last reading before the gap would be credited with the
-     * whole of it, so one sample in zone 5 could invent hours of effort. 2 min is 4x the sparsest real
-     * cadence we know of (the 5/MG's ~30 s, see [minSparseReadings]), so no genuine cadence is truncated.
+     * Shortest cap (minutes) on the span a single reading may be credited with. A wear or connection
+     * dropout leaves a gap with no data in it; without a ceiling the last reading before the gap would be
+     * credited with the whole of it, so one sample in zone 5 could invent hours of effort. 2 min is 4x the
+     * 5/MG's ~30 s cadence (see [minSparseReadings]). Sparser sources get a cap that follows their own
+     * cadence, up to [sparseGapCapMaxMin] (see [gapCapMinutes]).
      */
     const val maxSampleGapMin: Double = 2.0
+
+    /** Ceiling (minutes) on the cadence-aware cap. Twin of Swift `sparseGapCapMaxMin`. */
+    const val sparseGapCapMaxMin: Double = 5.0
+    /** The cap follows the LOCAL cadence: this × the median of the surrounding gaps. */
+    const val sparseGapCadenceFactor: Double = 1.5
+    /** Gaps on each side of a reading that its local cadence median is taken over. */
+    const val sparseGapNeighbourGaps: Int = 5
 
     /**
      * The one Effort figure every read-out on Today must show (#1001).
@@ -359,14 +423,32 @@ object StrainScorer {
     fun sampleDurationsMinutes(hr: List<HrSample>): List<Double> {
         if (hr.isEmpty()) return emptyList()
         if (hr.size == 1) return listOf(fallbackSampleMin)
-        val out = ArrayList<Double>(hr.size)
+        val raw = ArrayList<Double>(hr.size - 1)
         for (i in 0 until hr.size - 1) {
             val deltaS = abs((hr[i + 1].ts - hr[i].ts).toDouble())
-            val min = if (deltaS > 0) deltaS / 60.0 else fallbackSampleMin
-            out.add(kotlin.math.min(min, maxSampleGapMin))
+            raw.add(if (deltaS > 0) deltaS / 60.0 else fallbackSampleMin)
         }
+        val out = ArrayList<Double>(hr.size)
+        for (i in raw.indices) out.add(kotlin.math.min(raw[i], gapCapMinutes(raw, i)))
         out.add(out.last())   // the final reading has no successor; reuse the gap before it
         return out
+    }
+
+    /**
+     * The longest span the reading before gap [i] may be credited with:
+     * `max(maxSampleGapMin, min(sparseGapCapMaxMin, sparseGapCadenceFactor × local median gap))`, the
+     * median taken over the [sparseGapNeighbourGaps] gaps either side. For 1 Hz and 30 s streams the cap
+     * stays 2 min; a source logging every 3–5 min is credited its own cadence (#54).
+     *
+     * Byte-parity twin of Swift `gapCapMinutes`.
+     */
+    fun gapCapMinutes(gaps: List<Double>, i: Int): Double {
+        val lo = maxOf(0, i - sparseGapNeighbourGaps)
+        val hi = minOf(gaps.size - 1, i + sparseGapNeighbourGaps)
+        val window = gaps.subList(lo, hi + 1).sorted()
+        val n = window.size
+        val median = if (n % 2 == 1) window[n / 2] else (window[n / 2 - 1] + window[n / 2]) / 2.0
+        return maxOf(maxSampleGapMin, minOf(sparseGapCapMaxMin, sparseGapCadenceFactor * median))
     }
 
     fun edwardsTRIMP(

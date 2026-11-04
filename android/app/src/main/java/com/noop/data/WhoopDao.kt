@@ -518,6 +518,26 @@ interface WhoopDao : DeviceRegistryDao {
     )
     suspend fun scoreInputSource(deviceId: String, day: String, key: String): String?
 
+    /** Provenance rows for one computed namespace over a day range, limited to [keys]. The Charge baselines
+     *  (#53) read each own night's measuring source from these to rebuild the engine's device eras. Swift
+     *  twin: `WhoopStore.scoreInputSources`. */
+    @Query(
+        "SELECT * FROM scoreInputProvenance " +
+            "WHERE deviceId = :deviceId AND day >= :from AND day <= :to AND `key` IN (:keys) ORDER BY day, `key`"
+    )
+    suspend fun scoreInputSources(
+        deviceId: String, from: String, to: String, keys: List<String>,
+    ): List<ScoreInputProvenanceRow>
+
+    /** Reactive twin of [scoreInputSources] for the dashboard's Charge baselines (#53). */
+    @Query(
+        "SELECT * FROM scoreInputProvenance " +
+            "WHERE deviceId = :deviceId AND day >= :from AND day <= :to AND `key` IN (:keys) ORDER BY day, `key`"
+    )
+    fun scoreInputSourcesFlow(
+        deviceId: String, from: String, to: String, keys: List<String>,
+    ): Flow<List<ScoreInputProvenanceRow>>
+
     @Query(
         "DELETE FROM scoreInputProvenance " +
             "WHERE deviceId = :deviceId AND day >= :from AND day <= :to " +

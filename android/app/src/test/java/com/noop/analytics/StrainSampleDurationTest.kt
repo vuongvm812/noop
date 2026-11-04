@@ -79,13 +79,14 @@ class StrainSampleDurationTest {
 
     // --- the clamp ---
 
-    /** A dropout gap is capped: one reading before a 3 h hole may carry at most [maxSampleGapMin], not
-     *  the whole hole — otherwise a single zone-5 sample invents hours of effort. */
+    /** A dropout gap is capped: one reading before a 3 h hole may carry at most [sparseGapCapMaxMin], not
+     *  the whole hole. With no other gap to read a cadence from, the cadence-aware cap (#54) sits at its
+     *  ceiling; a hole inside a dense stream is still cut to [maxSampleGapMin]. Twin of Swift. */
     @Test
     fun dropoutGapIsClampedNotCredited() {
         val hr = series(0, 3 * 3600)
         val durations = StrainScorer.sampleDurationsMinutes(hr)
-        assertEquals(listOf(StrainScorer.maxSampleGapMin, StrainScorer.maxSampleGapMin), durations)
+        assertEquals(listOf(StrainScorer.sparseGapCapMaxMin, StrainScorer.sparseGapCapMaxMin), durations)
     }
 
     /** No genuine cadence is truncated: the clamp sits at 4x the sparsest real cadence (~30 s). */

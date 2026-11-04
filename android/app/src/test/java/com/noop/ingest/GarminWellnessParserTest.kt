@@ -273,6 +273,22 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /**
+         * A multi-sport day: walking, cycling and swimming counters side by side (#51). Only walking's
+         * `cycles` are steps; cycling counts revolutions and swimming strokes in the same field. Distance
+         * and calories still sum over every type. Swift twin: `WellnessFixtures.multiSport`.
+         */
+        fun multiSport(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 103, listOf(Triple(253, 4, U32), Triple(0, 4, U32)))
+            f.data(0); f.u32(T); f.u32(T + OFFSET)
+            f.def(1, 55, listOf(Triple(253, 4, U32), Triple(5, 1, EN), Triple(3, 4, U32), Triple(2, 4, U32), Triple(1, 2, U16), Triple(19, 2, U16)))
+            f.data(1); f.u32(T - 1200); f.u8(6); f.u32(2_000); f.u32(150_000); f.u16(1_500); f.u16(90)
+            f.data(1); f.u32(T - 900); f.u8(2); f.u32(900); f.u32(1_200_000); f.u16(300); f.u16(280)
+            f.data(1); f.u32(T - 600); f.u8(5); f.u32(40); f.u32(100_000); f.u16(120); f.u16(110)
+            return f.finish()
+        }
+
         fun restingHeartRate(): ByteArray {
             val f = WellnessFit()
             f.def(0, 211, listOf(Triple(253, 4, U32), Triple(0, 1, U8), Triple(1, 1, U8)))
@@ -372,12 +388,42 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /** #49: a night with a 30 minute unmeasurable span, then a nap ending the same day. Swift twin: `WellnessFixtures.sleepNap`. */
+        fun sleepNap(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 21, listOf(Triple(253, 4, U32), Triple(0, 1, EN), Triple(1, 1, EN)))
+            f.def(1, 275, listOf(Triple(253, 4, U32), Triple(0, 1, EN)))
+            f.data(0); f.u32(T); f.u8(74); f.u8(0)
+            f.data(1); f.u32(T + 1800); f.u8(2)
+            f.data(1); f.u32(T + 5400); f.u8(3)
+            f.data(1); f.u32(T + 7200); f.u8(0)
+            f.data(1); f.u32(T + 14400); f.u8(4)
+            f.data(1); f.u32(T + 16200); f.u8(1)
+            f.data(1); f.u32(T + 27000); f.u8(2)
+            f.data(0); f.u32(T + 27000); f.u8(74); f.u8(1)
+            f.data(0); f.u32(T + 50000); f.u8(74); f.u8(0)
+            f.data(1); f.u32(T + 51200); f.u8(2)
+            f.data(1); f.u32(T + 52400); f.u8(1)
+            f.data(0); f.u32(T + 52400); f.u8(74); f.u8(1)
+            return f.finish()
+        }
+
         fun respiration(): ByteArray {
             val f = WellnessFit()
             f.def(0, 297, listOf(Triple(253, 4, U32), Triple(0, 2, S16)))
             f.data(0); f.u32(T); f.u16(1450)
             f.data(0); f.u32(T + 60); f.u16(-1)
             f.data(0); f.u32(T + 120); f.u16(0x7FFF)
+            return f.finish()
+        }
+
+        /** MAX_MET_DATA (229): 52.3, then one under the floor and one with no update time, both dropped. */
+        fun vo2max(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 229, listOf(Triple(0, 4, U32), Triple(2, 2, U16), Triple(9, 1, EN)))
+            f.data(0); f.u32(T); f.u16(523); f.u8(1)
+            f.data(0); f.u32(T + 86_400); f.u16(50); f.u8(1)
+            f.data(0); f.u32(0L); f.u16(480); f.u8(0)
             return f.finish()
         }
 
@@ -422,10 +468,35 @@ class GarminWellnessParserTest {
             return f.finish()
         }
 
+        /** Twin of Swift `WellnessFixtures.bounds` (#52). */
+        fun bounds(): ByteArray {
+            val f = WellnessFit()
+            f.def(0, 103, listOf(Triple(253, 4, U32), Triple(0, 4, U32)))
+            f.data(0); f.u32(T); f.u32(T + OFFSET)
+            f.def(1, 269, listOf(Triple(253, 4, U32), Triple(0, 1, U8)))
+            f.data(1); f.u32(T + 10); f.u8(69)
+            f.data(1); f.u32(T + 20); f.u8(70)
+            f.data(1); f.u32(T + 30); f.u8(100)
+            f.def(2, 297, listOf(Triple(253, 4, U32), Triple(0, 2, S16)))
+            f.data(2); f.u32(T + 40); f.u16(399)
+            f.data(2); f.u32(T + 50); f.u16(400)
+            f.data(2); f.u32(T + 60); f.u16(6000)
+            f.data(2); f.u32(T + 70); f.u16(6001)
+            f.def(3, 371, listOf(Triple(253, 4, U32), Triple(0, 2, U16)))
+            f.data(3); f.u32(T + 80); f.u16(639)
+            f.data(3); f.u32(T + 90); f.u16(640)
+            f.data(3); f.u32(T + 100); f.u16(38_400)
+            f.data(3); f.u32(T + 110); f.u16(38_401)
+            f.def(4, 211, listOf(Triple(253, 4, U32), Triple(1, 1, U8)))
+            f.data(4); f.u32(T + 1504); f.u8(48)
+            f.data(4); f.u32(T + 1505); f.u8(47)
+            return f.finish()
+        }
+
         val ALL: List<Pair<String, () -> ByteArray>> = listOf(
-            "monitoring" to ::monitoring, "midnight" to ::midnight, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
-            "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "respiration" to ::respiration, "hrv" to ::hrv,
-            "candidates" to ::candidates, "framing" to ::framing,
+            "monitoring" to ::monitoring, "midnight" to ::midnight, "multiSport" to ::multiSport, "restingHeartRate" to ::restingHeartRate, "stress" to ::stress,
+            "spo2" to ::spo2, "sleep" to ::sleep, "sleepWindow" to ::sleepWindow, "sleepNap" to ::sleepNap, "respiration" to ::respiration, "vo2max" to ::vo2max, "hrv" to ::hrv,
+            "candidates" to ::candidates, "framing" to ::framing, "bounds" to ::bounds,
         )
 
         // MARK: - Canonical dump (twin of Swift `WellnessFixtures.dump`)
@@ -461,12 +532,12 @@ class GarminWellnessParserTest {
             for (d in s.dailyActivity) {
                 out.add("day ${d.day} steps=${num(d.steps)} dist=${num(d.distanceM)} cal=${num(d.calories)} act=${num(d.activeCalories)}")
             }
-            for (r in s.restingMetabolicRate) out.add("rmr ${r.ts} ${r.value}")
             for (r in s.restingHeartRate) out.add("rhr ${r.ts} ${r.value}")
             for (r in s.stress) out.add("stress ${r.ts} ${r.value}")
             for (r in s.bodyBattery) out.add("bb ${r.ts} ${r.value}")
-            for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent} conf=${num(r.confidence)} mode=${num(r.mode)}")
+            for (r in s.spo2) out.add("spo2 ${r.ts} ${r.percent}")
             for (r in s.respiration) out.add("resp ${r.ts} ${num(r.value)}")
+            for (r in s.vo2max) out.add("vo2max ${r.ts} ${num(r.value)}")
             for (r in s.sleepLevels) out.add("level ${r.ts} ${r.value}")
             for (r in s.sleepMarks) out.add("mark ${r.ts} ${r.value}")
             for (r in s.sleepSessions) {
@@ -527,7 +598,6 @@ class GarminWellnessParserTest {
             mon 1731090896 type=6 int=- cyc=50 dist=- cal=10 act=- time=- hr=58 mod=0 vig=0
             day 2024-11-08 steps=1600 dist=800.0000 cal=3510 act=120
             day 2024-11-09 steps=50 dist=- cal=10 act=-
-            rmr 1731087296 1650
             == midnight
             offset 21600 complete true other 0 dropped 0
             mon 1731088200 type=1 int=- cyc=11000 dist=8500.0000 cal=- act=560 time=- hr=- mod=- vig=-
@@ -539,6 +609,12 @@ class GarminWellnessParserTest {
             mon 1731088860 type=6 int=- cyc=31 dist=24.0000 cal=- act=1 time=- hr=- mod=- vig=-
             day 2024-11-08 steps=16100 dist=12100.0000 cal=- act=790
             day 2024-11-09 steps=31 dist=24.0000 cal=- act=1
+            == multiSport
+            offset 21600 complete true other 0 dropped 0
+            mon 1731086096 type=6 int=- cyc=2000 dist=1500.0000 cal=1500 act=90 time=- hr=- mod=- vig=-
+            mon 1731086396 type=2 int=- cyc=900 dist=12000.0000 cal=300 act=280 time=- hr=- mod=- vig=-
+            mon 1731086696 type=5 int=- cyc=40 dist=1000.0000 cal=120 act=110 time=- hr=- mod=- vig=-
+            day 2024-11-08 steps=2000 dist=14500.0000 cal=1920 act=480
             == restingHeartRate
             offset - complete true other 0 dropped 1
             rhr 1731087296 52
@@ -552,8 +628,7 @@ class GarminWellnessParserTest {
             hrv 1731087836 32.0000
             == spo2
             offset - complete true other 0 dropped 1
-            spo2 1731087296 96 conf=3 mode=3
-            spo2 1731087416 94 conf=- mode=1
+            spo2 1731087296 96
             == sleep
             offset 21600 complete true other 0 dropped 1
             level 1731087416 1
@@ -589,9 +664,28 @@ class GarminWellnessParserTest {
             mark 1731087296 0
             mark 1731116919 1
             night 1731087296-1731116919 unmeasurable=0 awake=1380 light=15900 deep=6420 rem=5923
+            == sleepNap
+            offset - complete true other 0 dropped 0
+            level 1731089096 2
+            level 1731092696 3
+            level 1731094496 0
+            level 1731101696 4
+            level 1731103496 1
+            level 1731114296 2
+            level 1731138496 2
+            level 1731139696 1
+            mark 1731087296 0
+            mark 1731114296 1
+            mark 1731137296 0
+            mark 1731139696 1
+            night 1731087296-1731114296 unmeasurable=1800 awake=1800 light=12600 deep=3600 rem=7200
+            night 1731137296-1731139696 unmeasurable=0 awake=1200 light=1200 deep=0 rem=0
             == respiration
             offset - complete true other 0 dropped 2
             resp 1731087296 14.5000
+            == vo2max
+            offset - complete true other 0 dropped 2
+            vo2max 1731087296 52.3000
             == hrv
             offset - complete true other 0 dropped 1
             hrvsum 1731087296 40.0000,37.5000,54.6875,-,34.0000,50.0000 status=4
@@ -608,6 +702,16 @@ class GarminWellnessParserTest {
             resp 1731087306 15.2500
             resp 1731087331 15.5000
             hrv 1731087296 40.0000
+            == bounds
+            offset 21600 complete true other 0 dropped 5
+            rhr 1731088800 48
+            rhr 1731088801 47
+            spo2 1731087316 70
+            spo2 1731087326 100
+            resp 1731087346 4.0000
+            resp 1731087356 60.0000
+            hrv 1731087386 5.0000
+            hrv 1731087396 300.0000
             == localDay
             0@0 1970-01-01
             -1@0 1969-12-31

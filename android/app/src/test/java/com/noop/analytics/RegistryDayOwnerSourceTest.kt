@@ -69,6 +69,7 @@ class RegistryDayOwnerSourceTest {
         override suspend fun deleteEcgWaveformFor(deviceId: String) {}
         override suspend fun deleteDeviceMetricFor(deviceId: String) {}
         override suspend fun deleteGarminSyncedFilesFor(deviceId: String) {}
+        override suspend fun deleteGarminActivityPeaksFor(deviceId: String) {}
         override suspend fun deleteV18AuxFor(deviceId: String) {}
         override suspend fun deleteEventsFor(deviceId: String) {}
         override suspend fun deleteBatteryFor(deviceId: String) {}
@@ -108,6 +109,7 @@ class RegistryDayOwnerSourceTest {
         override suspend fun reKeyEcgWaveform(from: String, to: String) {}
         override suspend fun reKeyDeviceMetric(from: String, to: String) {}
         override suspend fun reKeyGarminSyncedFiles(from: String, to: String) {}
+        override suspend fun reKeyGarminActivityPeaks(from: String, to: String) {}
         override suspend fun reKeyV18Aux(from: String, to: String) {}
         override suspend fun reKeyEvents(from: String, to: String) {}
         override suspend fun reKeyBattery(from: String, to: String) {}

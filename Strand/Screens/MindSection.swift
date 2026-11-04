@@ -14,9 +14,9 @@ import WhoopStore
 //     + an "Edit" affordance. Storage via MoodStore (dedicated `noop-mood`
 //     source id, one row per local day, edits overwrite).
 //
-//  2. INSIGHTS — once ≥ 7 mood days exist, up to three plain-English lines
+//  2. INSIGHTS — once ≥ 10 mood days exist, up to three plain-English lines
 //     correlating mood against the body's signals (HRV, recovery, sleep
-//     duration) via CorrelationEngine. Gated at |r| ≥ 0.3 and n ≥ 7 so the
+//     duration) via CorrelationEngine. Gated at |r| ≥ 0.3 and n ≥ 10 so the
 //     section never over-claims from noise.
 //
 // Guardrails (non-negotiable, from the design doc): non-clinical framing with a
@@ -37,7 +37,7 @@ struct MindSection: View {
     @State private var moodDayCount = 0
 
     /// Minimum mood days AND minimum paired observations before any line shows.
-    private static let minDays = 7
+    private static let minDays = CorrelationEngine.minPairs
     /// Minimum correlation magnitude worth a sentence (matches Explore's gate).
     private static let minAbsR = 0.3
 

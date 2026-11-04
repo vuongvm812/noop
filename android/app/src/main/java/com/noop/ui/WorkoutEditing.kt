@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
  */
 
 /** Origin of a workout row, classified from its stored `source` column. */
-enum class WorkoutSource { WHOOP, APPLE, DETECTED, MANUAL, LIFTING, ACTIVITY_FILE }
+enum class WorkoutSource { WHOOP, APPLE, DETECTED, MANUAL, LIFTING, ACTIVITY_FILE, GARMIN }
 
 object WorkoutEditing {
 
@@ -32,6 +32,9 @@ object WorkoutEditing {
             s == "manual" -> WorkoutSource.MANUAL
             s == "lifting" -> WorkoutSource.LIFTING       // imported Hevy / Liftosaur strength session
             s == "activity-file" -> WorkoutSource.ACTIVITY_FILE // imported GPX / TCX / FIT activity file
+            // Garmin history sync (#50): the watch's registry id "garmin-<uuid>". Before the "whoop"
+            // catch, as on Swift.
+            com.noop.analytics.GarminWorkoutEffort.isWatchSource(s) -> WorkoutSource.GARMIN
             s.contains("whoop") -> WorkoutSource.WHOOP
             else -> WorkoutSource.APPLE
         }
@@ -288,6 +291,7 @@ object WorkoutEditing {
         WorkoutSource.MANUAL -> "manual"
         WorkoutSource.LIFTING -> "lifting"
         WorkoutSource.ACTIVITY_FILE -> "activityFile"
+        WorkoutSource.GARMIN -> "garmin"
     }
 
     /**
@@ -568,7 +572,8 @@ object WorkoutMerge {
     /** Only MANUAL and DETECTED rows can be merged (imported history stays read-only). */
     fun isMergeable(row: WorkoutRow): Boolean = when (WorkoutEditing.classify(row.source)) {
         WorkoutSource.MANUAL, WorkoutSource.DETECTED -> true
-        WorkoutSource.WHOOP, WorkoutSource.APPLE, WorkoutSource.LIFTING, WorkoutSource.ACTIVITY_FILE -> false
+        WorkoutSource.WHOOP, WorkoutSource.APPLE, WorkoutSource.LIFTING, WorkoutSource.ACTIVITY_FILE,
+        WorkoutSource.GARMIN -> false
     }
 
     /** True when a set of selected rows can be merged: two or more, and every one is mergeable. */

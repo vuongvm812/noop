@@ -160,8 +160,9 @@ final class BaselinesTests: XCTestCase {
 
     // MARK: - Manual recalibration epoch (noop.hrvBaselineEpoch)
 
-    /// Day-keyed fold with a recalibration epoch must DROP every night before the epoch and re-seed
-    /// from the first on-or-after night — so a high early baseline resets to the recent reality.
+    /// The Charge baseline (`ChargeBaselines.state`, #53) with a recalibration epoch must DROP every night
+    /// before the epoch and re-seed from the first on-or-after night, so a high early baseline resets to
+    /// the recent reality.
     func testRecalibrateEpochReseedsFromEpoch() {
         // Pre-recalibration: 6 high nights; post: 6 lower nights. Epoch = start of 2026-06-15.
         let days = ["2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13",
@@ -175,24 +176,22 @@ final class BaselinesTests: XCTestCase {
         cal.timeZone = TimeZone(secondsFromGMT: 0)!
         let epoch = cal.date(from: comps)!.timeIntervalSince1970
 
-        let recalibrated = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg, baselineEpoch: epoch)
+        let recalibrated = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: epoch)
         // Only the 6 post-epoch (~54ms) nights contribute → baseline is the lower value, not anchored high.
         XCTAssertEqual(recalibrated.nValid, 6)
         XCTAssertEqual(recalibrated.baseline, 54.0, accuracy: 2.0)
 
         // Sanity: with NO epoch the high pre-nights still anchor it well above the recalibrated value.
-        let notRecalibrated = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg, baselineEpoch: 0)
+        let notRecalibrated = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: 0)
         XCTAssertGreaterThan(notRecalibrated.baseline, recalibrated.baseline + 10.0)
     }
 
-    /// epoch <= 0 is byte-identical to the plain foldHistory (no recalibration).
+    /// epoch <= 0 keeps every night (no recalibration).
     func testRecalibrateEpochZeroIsNoOp() {
         let days = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
         let vals: [Double?] = [60, 61, 59, 62]
-        let withZero = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg, baselineEpoch: 0)
-        let plain = Baselines.foldHistory(vals, cfg: Baselines.hrvCfg)
-        XCTAssertEqual(withZero.baseline, plain.baseline, accuracy: 1e-9)
-        XCTAssertEqual(withZero.nValid, plain.nValid)
+        let withZero = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: 0)
+        XCTAssertEqual(withZero.nValid, 4)
     }
 
     /// An epoch AFTER every night drops them all → calibrating cold-start (re-learns from scratch).
@@ -200,7 +199,7 @@ final class BaselinesTests: XCTestCase {
         let days = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
         let vals: [Double?] = [60, 61, 59, 62]
         // Far-future epoch.
-        let s = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg, baselineEpoch: 4_000_000_000)
+        let s = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: 4_000_000_000)
         XCTAssertEqual(s.nValid, 0)
         XCTAssertEqual(s.status, .calibrating)
     }
@@ -219,14 +218,13 @@ final class BaselinesTests: XCTestCase {
         let deepVals: [Double?] = Array(repeating: 48.0, count: 21)
 
         // #201 path: fold with no recalibration epoch → usable, centered on the new deep value.
-        let refolded = Baselines.foldHistory(deepVals, dayKeys: days, cfg: Baselines.hrvCfg, baselineEpoch: 0)
+        let refolded = ChargeBaselines.state(values: deepVals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: 0)
         XCTAssertTrue(refolded.usable)
         XCTAssertEqual(refolded.baseline, 48.0, accuracy: 2.0)
 
         // Old behaviour: re-anchoring the epoch to "now" (after every re-scored night) drops them all →
         // calibrating cold-start.
-        let reset = Baselines.foldHistory(deepVals, dayKeys: days, cfg: Baselines.hrvCfg,
-                                          baselineEpoch: 4_000_000_000)
+        let reset = ChargeBaselines.state(values: deepVals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: 4_000_000_000)
         XCTAssertFalse(reset.usable)
         XCTAssertEqual(reset.status, .calibrating)
     }
@@ -265,10 +263,10 @@ final class BaselinesTests: XCTestCase {
                     "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-19", "2026-06-20"]
         let vals: [Double?] = [90, 91, 89, 90, 92, 88,  54, 55, 53, 54, 56, 54]
 
-        // Before any reset the early high week anchors the baseline well above the real ~54ms.
-        let before = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg,
-                                           baselineEpoch: Baselines.hrvBaselineEpoch(d))
-        XCTAssertGreaterThan(before.baseline, 70.0)
+        // Before any reset the early high week pulls the baseline well above the real ~54ms (the
+        // geometric mean of both weeks, ~70ms).
+        let before = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: Baselines.hrvBaselineEpoch(d))
+        XCTAssertGreaterThan(before.baseline, 65.0)
 
         // User taps "Recalibrate Charge baseline" at the start of 2026-06-15.
         var comps = DateComponents()
@@ -280,8 +278,7 @@ final class BaselinesTests: XCTestCase {
 
         // The next computation folds the IDENTICAL history (nothing deleted) but honours the new epoch,
         // dropping the pre-reset nights and re-seeding from tonight onward.
-        let after = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg,
-                                          baselineEpoch: Baselines.hrvBaselineEpoch(d))
+        let after = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: Baselines.hrvBaselineEpoch(d))
         XCTAssertEqual(after.nValid, 6)                     // only the 6 post-reset nights contribute
         XCTAssertEqual(after.baseline, 54.0, accuracy: 2.0) // re-anchored to the real value
         XCTAssertLessThan(after.baseline, before.baseline - 10.0)
@@ -298,35 +295,9 @@ final class BaselinesTests: XCTestCase {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(secondsFromGMT: 0)!
         Baselines.recalibrateRecoveryBaselines(now: cal.date(from: comps)!.timeIntervalSince1970, defaults: d)
 
-        let after = Baselines.foldHistory(vals, dayKeys: days, cfg: Baselines.hrvCfg,
-                                          baselineEpoch: Baselines.recoveryBaselineEpoch(d))
+        let after = ChargeBaselines.state(values: vals, dayKeys: days, metric: .hrv, anchorDay: days.last!, baselineEpoch: Baselines.recoveryBaselineEpoch(d))
         XCTAssertEqual(after.nValid, 0)
         XCTAssertEqual(after.status, .calibrating)
-    }
-
-    // MARK: - "strain" MetricCfg (RecoveryScorer Activity-Balance / previous-day-Effort term)
-
-    func testStrainCfgRegisteredWithEffortScaleBounds() {
-        // Bounds match StrainScorer.maxStrain's 0-100 output scale, keyed "strain" to match the
-        // existing internal metric-key convention (StrainScorer: "Internal metric key stays strain").
-        XCTAssertEqual(Baselines.metricCfg["strain"]!, Baselines.strainCfg)
-        XCTAssertEqual(Baselines.strainCfg.minVal, 0.0, accuracy: 1e-9)
-        XCTAssertEqual(Baselines.strainCfg.maxVal, 100.0, accuracy: 1e-9)
-    }
-
-    func testStrainCfgIsBaselineRelativeOverDailyEffort() {
-        // A week of moderate days then a rest day: the baseline tracks the moderate norm, and
-        // the rest day reads as a clear BELOW-baseline (positive, "lighter than usual") deviation.
-        let moderateWeek: [Double?] = [38, 42, 40, 36, 44, 39, 41]
-        let s = Baselines.foldHistory(moderateWeek, cfg: Baselines.strainCfg)
-        XCTAssertTrue(s.usable)
-        XCTAssertEqual(s.baseline, 40.0, accuracy: 5.0)
-
-        let restDay = Baselines.deviation(10.0, state: s)
-        XCTAssertLessThan(restDay.z, 0, "a much-lighter-than-normal day must read BELOW the effort baseline")
-
-        let hardDay = Baselines.deviation(85.0, state: s)
-        XCTAssertGreaterThan(hardDay.z, 0, "a much-harder-than-normal day must read ABOVE the effort baseline")
     }
 
     // MARK: - sigma() + daytime configs (DaytimeStress baseline-relative mode)

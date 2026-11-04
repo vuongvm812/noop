@@ -43,11 +43,13 @@ class V5HealthSignalsTest {
 
     @Test
     fun `fourteen nights for one illness signal are trusted`() {
-        val history = (0L until 14L).map { offset ->
+        // #56: the baseline stops three nights before the newest (two recent nights + a gap), the
+        // same window as Apple, so fourteen baseline nights need seventeen rows before tonight.
+        val history = (0L until 17L).map { offset ->
             day(offset, restingHr = 54 + (offset % 3L).toInt())
         }
         val snapshot = V5HealthSignals.evaluate(
-            days = history + day(14, restingHr = 64),
+            days = history + day(17, restingHr = 64),
             cycleOptedIn = false,
         )
 

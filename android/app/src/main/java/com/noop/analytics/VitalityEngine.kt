@@ -20,6 +20,8 @@ object VitalityEngine {
     private const val vitalityPerYear = 2.5
     const val minFactors = 3
     const val bandYears = 5.0
+    /** Reference regularity (SRI ÷ 100) contributing 0: about the UK Biobank median SRI. Swift parity. */
+    const val regularityRef = 0.80
 
     data class Inputs(
         val chronoAge: Double,
@@ -27,6 +29,7 @@ object VitalityEngine {
         val vo2max: Double? = null,
         val expectedVO2max: Double? = null,
         val sleepHours: Double? = null,
+        /** Sleep Regularity Index ÷ 100 (SleepRegularity), 0–1. */
         val sleepConsistency: Double? = null,
         val rmssd: Double? = null,
         val rmssdNorm: Double? = null,
@@ -60,18 +63,6 @@ object VitalityEngine {
         return anchors.last().second
     }
 
-    /** Sleep regularity (0–1) from nightly sleep durations (hours): 1 − coefficient of variation,
-     *  clamped. < 3 nights → null. */
-    fun sleepConsistency(nightlyHours: List<Double>): Double? {
-        val xs = nightlyHours.filter { it > 0 }
-        if (xs.size < 3) return null
-        val mean = xs.sum() / xs.size
-        if (mean <= 0) return null
-        val variance = xs.sumOf { (it - mean) * (it - mean) } / xs.size
-        val cv = kotlin.math.sqrt(variance) / mean
-        return (1 - cv).coerceIn(0.0, 1.0)
-    }
-
     /** Per-factor signed log-hazard vs the population reference (positive ages you, negative protective).
      *  Conservative published per-unit hazard ratios — see the Swift file for citations. */
     fun contributions(inputs: Inputs): List<Contribution> {
@@ -88,7 +79,7 @@ object VitalityEngine {
             out.add(Contribution("sleep", "Sleep duration", dev.coerceIn(0.0, 3.0) * 0.110))
         }
         inputs.sleepConsistency?.let {
-            out.add(Contribution("consistency", "Sleep regularity", (0.75 - it.coerceIn(0.0, 1.0)) * 0.450))
+            out.add(Contribution("consistency", "Sleep regularity", (regularityRef - it.coerceIn(0.0, 1.0)) * 0.450))
         }
         val h = inputs.rmssd; val norm = inputs.rmssdNorm
         if (h != null && norm != null && norm > 0) {

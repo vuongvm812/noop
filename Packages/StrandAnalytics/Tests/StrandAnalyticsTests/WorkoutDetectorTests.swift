@@ -27,13 +27,13 @@ final class WorkoutDetectorTests: XCTestCase {
 
     func testCaloriesActiveAndRestingMale() {
         // 600 active samples at 150 bpm, male 80 kg 30 y, hrmax 190, RHR 60. With a resting HR known,
-        // the Keytel FITNESS-adjusted model runs (Uth VO2max = 15.3·190/60 = 48.45): 58.5503 kJ/min ×
-        // 600 s / 251.04 = 139.9386 kcal. (The base fitness-blind model gave 146.972.) MUST match the
+        // the Keytel FITNESS-adjusted model runs (Uth VO2max = 15.3·190/(60+5) = 44.72): 57.0447 kJ/min ×
+        // 600 s / 251.04 = 136.3399 kcal. (The base fitness-blind model gave 146.972.) MUST match the
         // Kotlin twin Vo2maxCaloriesTest.caloriesActiveAndRestingMale_matchesSwiftGolden.
         let hr = (0..<600).map { HRSample(ts: $0, bpm: 150) }
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 30, sex: "male")
         let (kcal, kj) = Calories.estimateBoutCalories(hr, profile: profile, hrmax: 190, restingHR: 60)
-        XCTAssertEqual(kcal, 139.9386, accuracy: 0.1)
+        XCTAssertEqual(kcal, 136.3399, accuracy: 0.1)
         XCTAssertEqual(kj, kcal * 4.184, accuracy: 1e-6)
     }
 
@@ -43,8 +43,8 @@ final class WorkoutDetectorTests: XCTestCase {
         let hr = (0..<86400).map { HRSample(ts: $0, bpm: 80) }  // a full "day" of resting
         let profile = UserProfile(weightKg: 80, heightCm: 180, age: 30, sex: "male")
         let (kcal, _) = Calories.estimateBoutCalories(hr, profile: profile, hrmax: 190, restingHR: 60)
-        // 86400 s at BMR rate ≈ full BMR ≈ 1853.6 kcal/day.
-        XCTAssertEqual(kcal, 1853.632, accuracy: 1.0)
+        // 86400 s at BMR rate ≈ full Mifflin–St Jeor BMR = 1780 kcal/day.
+        XCTAssertEqual(kcal, 1780.0, accuracy: 1.0)
     }
 
     func testCaloriesSexCoefficientsDiffer() {

@@ -7,8 +7,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,9 +47,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,8 +63,8 @@ import com.noop.ingest.NutritionCsvImporter
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.noop.analytics.CorrelationEngine
 import kotlin.math.abs
-import kotlin.math.sqrt
 
 // MARK: - Compare
 //
@@ -263,6 +264,18 @@ internal fun parseCompareSelection(raw: String?, minSelection: Int, maxSelection
 private object ComparePrefs {
     private const val KEY_RANGE = "compare.range"
     private const val KEY_SELECTED = "compare.selectedMetrics"
+    private const val KEY_METHOD = "compare.correlationMethod"
+
+    /** Pearson (linear) or Spearman (ranks: robust to an outlier night or an imported step change). */
+    fun readMethod(context: Context): CorrelationEngine.Method {
+        val raw = NoopPrefs.of(context).getString(KEY_METHOD, null) ?: return CorrelationEngine.Method.PEARSON
+        return CorrelationEngine.Method.entries.firstOrNull { it.name.lowercase() == raw }
+            ?: CorrelationEngine.Method.PEARSON
+    }
+
+    fun writeMethod(context: Context, method: CorrelationEngine.Method) {
+        NoopPrefs.of(context).edit().putString(KEY_METHOD, method.name.lowercase()).apply()
+    }
 
     fun readRange(context: Context): CompareRange {
         val raw = NoopPrefs.of(context).getString(KEY_RANGE, null) ?: return CompareRange.Year
@@ -338,51 +351,6 @@ private fun dayOrdinal(day: String): Long? {
     return era.toLong() * 146097L + doe - 719468L
 }
 
-// MARK: - Correlation engine (ported from StrandAnalytics/CorrelationEngine.swift)
-
-private data class Correlation(val r: Double, val n: Int)
-
-private object CorrelationEngine {
-    /** Inner-join two day-keyed series on the day key → (x, y) pairs sorted by day. */
-    fun alignByDay(
-        a: List<Pair<String, Double>>,
-        b: List<Pair<String, Double>>,
-    ): List<Pair<Double, Double>> {
-        val mapA = HashMap<String, Double>()
-        for ((day, v) in a) mapA[day] = v
-        val mapB = HashMap<String, Double>()
-        for ((day, v) in b) mapB[day] = v
-        val common = mapA.keys.filter { mapB.containsKey(it) }.sorted()
-        return common.map { mapA[it]!! to mapB[it]!! }
-    }
-
-    /** Pearson r over the pairs. Null when <3 pairs or either variable has zero variance. */
-    fun pearson(xy: List<Pair<Double, Double>>): Correlation? {
-        val n = xy.size
-        if (n < 3) return null
-        val nD = n.toDouble()
-        var sumX = 0.0
-        var sumY = 0.0
-        for (p in xy) { sumX += p.first; sumY += p.second }
-        val meanX = sumX / nD
-        val meanY = sumY / nD
-        var sxx = 0.0
-        var syy = 0.0
-        var sxy = 0.0
-        for (p in xy) {
-            val dx = p.first - meanX
-            val dy = p.second - meanY
-            sxx += dx * dx
-            syy += dy * dy
-            sxy += dx * dy
-        }
-        if (sxx <= 0.0 || syy <= 0.0) return null
-        var r = sxy / (sqrt(sxx) * sqrt(syy))
-        if (r > 1.0) r = 1.0
-        if (r < -1.0) r = -1.0
-        return Correlation(r = r, n = n)
-    }
-}
 
 // MARK: - Root
 
@@ -879,32 +847,43 @@ private fun OverlayChart(series: List<CompareSeries>, modifier: Modifier) {
         )
     }
     var selectedDay by remember(prepared) { mutableStateOf<String?>(null) }
+    var chartWidth by remember { mutableStateOf(0f) }
+    val context = LocalContext.current
+    val unitSystem = UnitPrefs.system(context)
+    val tempUnit = UnitPrefs.temperature(context)
 
-    fun selectDay(x: Float, width: Float) {
+    fun selectDay(x: Float) {
         selectedDay = nearestCompareDayForX(
             dayIndex = prepared.dayIndex,
             minOrd = prepared.minOrd,
             maxOrd = prepared.maxOrd,
-            width = width,
+            width = chartWidth,
             x = x,
         )
     }
 
+    // A light tick each time the cursor snaps to a different day.
+    ChartScrubHaptic(selectedDay)
+
+    // TalkBack reads the selected day and every series' value on it, the same text the tooltip shows.
+    val selectionDescription = selectedDay?.let { day ->
+        compareSelectionDescription(
+            dayLabel = prettyCompareDay(day),
+            rows = prepared.perSeries.map { preparedSeries ->
+                val source = preparedSeries.source
+                source.metric.title to preparedSeries.pointsByDay[day]?.value?.let {
+                    source.metric.format(it, unitSystem, tempUnit)
+                }
+            },
+        )
+    }
+
+    // The shared chart scrub (#58): a tap selects a day, a horizontal drag or a touch-and-hold scrubs,
+    // and a vertical swipe stays with the page scroll. A scrub clears when the finger lifts.
     val selectionModifier = Modifier
-        .pointerInput(prepared.dayIndex) {
-            detectTapGestures(onTap = { offset -> selectDay(offset.x, size.width.toFloat()) })
-        }
-        .pointerInput(prepared.dayIndex) {
-            detectHorizontalDragGestures(
-                onDragStart = { start -> selectDay(start.x, size.width.toFloat()) },
-                onHorizontalDrag = { change, _ ->
-                    selectDay(change.position.x, size.width.toFloat())
-                    change.consume()
-                },
-                onDragEnd = { selectedDay = null },
-                onDragCancel = { selectedDay = null },
-            )
-        }
+        .onSizeChanged { chartWidth = it.width.toFloat() }
+        .chartScrub(prepared.dayIndex, onRelease = { selectedDay = null }) { x -> selectDay(x) }
+        .semantics { selectionDescription?.let { stateDescription = it } }
 
     // Build the per-series Paths in drawWithCache — rebuilt only when the prepared pairs or the canvas
     // size change (NOT on unrelated recompositions), instead of allocating a fresh Path every frame.
@@ -1078,6 +1057,14 @@ private data class OverlayPreparedSeries(
 }
 
 /**
+ * The overlay selection as one spoken line: the day, then each series' title and formatted value, with
+ * "No data" for a series that has no reading on that day.
+ */
+internal fun compareSelectionDescription(dayLabel: String, rows: List<Pair<String, String?>>): String =
+    (listOf(dayLabel) + rows.map { (title, value) -> "$title ${value ?: CHART_SCRUB_NO_DATA}" })
+        .joinToString(", ")
+
+/**
  * Maps a chart x-coordinate to the nearest day that has at least one value. The union may be sparse
  * or irregular, so selecting by list index would snap to the wrong date; use the plotted day domain.
  * Ties choose the earlier day, matching the Apple Compare chart.
@@ -1228,16 +1215,16 @@ private data class PairResult(
     val id: String get() = "${a.id}~${b.id}"
 }
 
-/** The pairwise Pearson scan over the non-empty series — strongest relationships first. */
-private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
+/** The pairwise scan ([method]) over the non-empty series — strongest relationships first. */
+private fun computePairResults(series: List<CompareSeries>, method: CorrelationEngine.Method): List<PairResult> {
     val s = series.filter { it.rows.isNotEmpty() }
     if (s.size < 2) return emptyList()
     val out = ArrayList<PairResult>()
     for (i in 0 until s.size - 1) {
         for (j in i + 1 until s.size) {
             val pairs = CorrelationEngine.alignByDay(s[i].rows, s[j].rows)
-            if (pairs.size < 3) continue
-            val c = CorrelationEngine.pearson(pairs) ?: continue
+            if (pairs.size < CorrelationEngine.minPairs) continue
+            val c = CorrelationEngine.correlate(pairs, method) ?: continue
             out.add(PairResult(a = s[i], b = s[j], r = c.r, n = c.n))
         }
     }
@@ -1247,18 +1234,35 @@ private fun computePairResults(series: List<CompareSeries>): List<PairResult> {
 
 @Composable
 private fun CorrelationSection(series: List<CompareSeries>, range: CompareRange) {
+    val context = LocalContext.current
+    var method by remember { mutableStateOf(ComparePrefs.readMethod(context)) }
     // A stable fingerprint of the windowed series content; the scan recomputes only when
     // that content changes (selection / range / data updates), never on unrelated recompose.
     val key = series.joinToString("|") { s ->
         "${s.id}:${s.rows.size}:${s.rows.firstOrNull()?.first ?: ""}>${s.rows.lastOrNull()?.first ?: ""}"
     }
-    val pairs = remember(key) { computePairResults(series) }
+    val pairs = remember(key, method) { computePairResults(series, method) }
+    fun methodLabel(m: CorrelationEngine.Method): String = uiString(
+        if (m == CorrelationEngine.Method.PEARSON) R.string.l10n_compare_screen_pearson_r
+        else R.string.l10n_compare_screen_spearman_rho,
+    )
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader(
             "How They Move Together",
-            overline = "Pearson r · ${range.phrase}",
+            overline = uiString(R.string.l10n_compare_screen_method_overline, methodLabel(method), range.phrase),
             trailing = if (pairs.isEmpty()) null else "${pairs.size} pairs",
+        )
+        val methodDescription = uiString(R.string.l10n_compare_screen_correlation_method)
+        SegmentedPillControl(
+            items = listOf(CorrelationEngine.Method.PEARSON, CorrelationEngine.Method.SPEARMAN),
+            selection = method,
+            label = { methodLabel(it) },
+            onSelect = {
+                method = it
+                ComparePrefs.writeMethod(context, it)
+            },
+            modifier = Modifier.semantics { contentDescription = methodDescription },
         )
 
         if (pairs.isEmpty()) {

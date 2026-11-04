@@ -28,6 +28,8 @@ public struct ScoreInputProvenanceRow: Equatable, Codable, Sendable {
 public enum Vo2MaxEstimator: String, Codable, Sendable {
     case nes
     case uth
+    /// The Garmin watch's own estimate (FIT MAX_MET_DATA), preferred when the watch has one (#51).
+    case garmin
 
     public static func forWaistCm(_ waistCm: Double) -> Self { waistCm > 0 ? .nes : .uth }
 }
@@ -99,6 +101,23 @@ extension WhoopStore {
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(deviceId, day,key) DO UPDATE SET sourceId = excluded.sourceId
                     """, arguments: [deviceId, row.day, row.key, row.sourceId])
+            }
+        }
+    }
+
+    /// Provenance rows for a computed namespace over a day range, limited to `keys`. The Charge baselines
+    /// (#53) read each own night's measuring source from these to rebuild the engine's device eras.
+    public func scoreInputSources(deviceId: String, from: String, to: String,
+                                  keys: [String]) async throws -> [ScoreInputProvenanceRow] {
+        guard !keys.isEmpty else { return [] }
+        let marks = Array(repeating: "?", count: keys.count).joined(separator: ",")
+        var args: [DatabaseValueConvertible] = [deviceId, from, to]
+        args.append(contentsOf: keys)
+        let sql = "SELECT day, key, sourceId FROM scoreInputProvenance "
+            + "WHERE deviceId = ? AND day >= ? AND day <= ? AND key IN (\(marks)) ORDER BY day, key"
+        return try syncRead { db in
+            try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args)).map {
+                ScoreInputProvenanceRow(day: $0["day"], key: $0["key"], sourceId: $0["sourceId"])
             }
         }
     }

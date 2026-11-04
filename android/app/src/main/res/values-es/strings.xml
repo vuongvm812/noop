@@ -730,7 +730,6 @@
     <string name="l10n_strand_components_previous_day_e2b6b0a1">Día anterior</string>
     <string name="l10n_stress_screen_band_title_hours_hours_f9779fd3">%1$s %2$s hours</string>
     <string name="l10n_stress_screen_calm_time_fa546d52">Tiempo de calma</string>
-    <string name="l10n_stress_screen_hourlabel_pt_hour_tenths_10_tenths_cd4c9c16">%1$s · %2$s.%3$s</string>
     <string name="l10n_stress_screen_hours_h_7610ac7c">%1$sh</string>
     <string name="l10n_stress_screen_no_stress_history_yet_ec962e3c">No hay historia del estrés todavía</string>
     <string name="l10n_stress_screen_reading_your_heart_rate_variability_and_c0249246">Leyendo tu variabilidad de la frecuencia cardíaca y tu frecuencia cardíaca en reposo…</string>
@@ -739,10 +738,8 @@
     <string name="l10n_stress_screen_start_a_breathe_session_9619e5c0">Iniciar una sesión de respiración</string>
     <string name="l10n_stress_screen_stress_bad33342">Estrés</string>
     <string name="l10n_stress_screen_your_last_day_sustainedrun_hours_have_194825dd">Sus últimas horas %1$s se han quedado en la banda alta. Unos minutos. of paced breathing can help downshift your nervous system.</string>
-    <string name="l10n_test_centre_screen_7_night_baseline_base_ms_normal_43d9cfa6">7 noches de referencia %1$s ms, %2$s normal a %3$s ms%4$s</string>
     <string name="l10n_test_centre_screen_also_write_the_strap_log_to_655b55b2">También escriba el registro de correa al registro del sistema (logcat) para el desarrollo sobre adb. Por defecto.</string>
     <string name="l10n_test_centre_screen_android_runs_this_via_workmanager_doze_875e499e">Android ejecuta esto a través de WorkManager (Doze puede retrasarlo).</string>
-    <string name="l10n_test_centre_screen_calibrating_validcount_hrvreadiness_min_nights_nights_c5b21706">Calibración (noches %1$s/%2$s)</string>
     <string name="l10n_test_centre_screen_cancel_77dfd213">Cancelar</string>
     <string name="l10n_test_centre_screen_daily_auto_export_02ed9f75">Autoexportación diaria</string>
     <string name="l10n_test_centre_screen_debug_logging_daaa7d74">Debug logging</string>
@@ -757,9 +754,6 @@
     <string name="l10n_test_centre_screen_this_deletes_every_scheduled_strap_ea52c535">Esto elimina todos los archivos de registro de la correa y de captura en bruto programados que NOOP ha guardado. Esto no se puede deshacer.</string>
     <string name="l10n_test_centre_screen_heads_up_this_test_mode_is_8b82ed69">Cabeza arriba: este modo de prueba está apagado, por lo que el informe no tiene captura para él. Para un useful report, turn the mode on, reproduce the problem while wearing the strap, then report again.</string>
     <string name="l10n_test_centre_screen_hr_from_ppg_sub_lag_interpolation_a3ed1536">HR-from-PPG sub-lag interpolation (v26 gap-fill)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_924f61bc">HRV preparedness (experimental)</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_experimental_word_a471930e">HRV preparedness (experimental): %1$s</string>
-    <string name="l10n_test_centre_screen_hrv_readiness_plews_altini_bce6578f">HRV preparedness (Plews/Altini)</string>
     <string name="l10n_test_centre_screen_recalibrate_aaa989ea">Recalibrar</string>
     <string name="l10n_test_centre_screen_recalibrate_charge_baseline_52a05a26">Recalibrar la línea base de Carga</string>
     <string name="l10n_test_centre_screen_recalibrate_your_charge_baseline_018e3846">¿Recalibrar tu línea base de Carga?</string>
@@ -1207,7 +1201,6 @@
     <string name="l10n_devices_screen_restart_this_strap_50fc481b">¿Reiniciar esta correa?</string>
     <string name="l10n_fused_record_screen_nothing_to_fuse_yet_30789c4e">Aún no hay nada que fusionar</string>
     <string name="l10n_fused_record_screen_your_data_fused_a740fd4a">Tus datos, fusionados</string>
-    <string name="l10n_health_screen_active_energy_2d3288f9">Energía activa</string>
     <string name="l10n_health_screen_blood_o_9bf5ed9b">O₂ en sangre</string>
     <string name="l10n_health_screen_blood_oxygen_a8ad9ff5">Oxígeno en sangre</string>
     <string name="l10n_health_screen_drives_your_fitness_age_9d0d1219">Determina tu edad de forma física</string>
@@ -2282,7 +2275,6 @@
     <string name="today_card_steps">Pasos</string>
     <string name="today_card_steps_subtitle">Hoy</string>
     <string name="today_card_calories">Calorías</string>
-    <string name="today_card_calories_subtitle">Energía activa</string>
     <string name="today_card_stress">Estrés</string>
     <string name="today_card_stress_subtitle">Carga autonómica</string>
     <string name="today_card_fitness_age">Edad física</string>
@@ -2325,7 +2317,8 @@
     <string name="today_readiness_load_ramping_down">disminuyendo (aguda:crónica %1$s) - margen para aumentar</string>
     <string name="today_readiness_load_sweet_spot">en el rango óptimo (aguda:crónica %1$s)</string>
     <string name="today_readiness_load_building_fast">aumento rápido (aguda:crónica %1$s) - vigila la fatiga</string>
-    <string name="today_readiness_load_spiking">pico (aguda:crónica %1$s) - mayor riesgo de lesión</string>
+    <string name="settings_hrmax_auto_observed">Auto · %1$d ppm (observada)</string>
+    <string name="today_readiness_load_spiking">pico (aguda:crónica %1$s) - muy por encima de tu carga habitual</string>
     <string name="today_readiness_more_nights">Con unas noches más de datos, tu lectura de disposición será más precisa.</string>
     <string name="today_readiness_run_down">Agotado</string>
     <string name="today_readiness_run_down_summary">Varias señales están bajas a la vez. Dedica hoy a recuperarte: movimiento suave y sueño reparador esta noche.</string>
@@ -2497,6 +2490,11 @@
     <string name="today_driver_near_baseline">cerca de la referencia</string>
     <string name="today_driver_warmer_limiting">más alta que la referencia, limita la recuperación</string>
     <string name="today_driver_cooler_limiting">más baja que la referencia, limita la recuperación</string>
+    <string name="today_driver_hrv_trend">Tendencia de la VFC (7 días)</string>
+    <string name="today_driver_range_ms">rango normal de %1$d-%2$d ms</string>
+    <string name="today_driver_hrv_trend_above">media de 7 días por encima de tu rango normal, favorece la recuperación</string>
+    <string name="today_driver_hrv_trend_below">media de 7 días por debajo de tu rango normal, señal de fatiga acumulada</string>
+    <string name="today_driver_hrv_trend_inside">media de 7 días dentro de tu rango normal</string>
     <string name="today_driver_a11y">%1$s, %2$s, %3$s, %4$s puntos, %5$s</string>
     <string name="scoring_guide_daily_scores">Tus puntuaciones diarias</string>
     <string name="scoring_guide_three_scores">Las tres puntuaciones</string>
@@ -2952,4 +2950,33 @@
     <string name="l10n_test_centre_screen_not_yet_3a230353">aún no</string>
     <string name="l10n_test_centre_screen_ingested_in_noop_files_290626fd">Importados en NOOP: %1$d archivos</string>
     <string name="l10n_test_centre_screen_per_message_detail_goes_to_the_d305d4b1">El detalle de cada mensaje va al registro de la banda mientras el modo de prueba Conexión o Fuentes está activo.</string>
+    <string name="workout_watch_reference_title">Referencia del reloj</string>
+    <string name="workout_watch_reference_overline">Según tu reloj</string>
+    <string name="workout_watch_reference_aerobic_te">TE aeróbico</string>
+    <string name="workout_watch_reference_anaerobic_te">TE anaeróbico</string>
+    <string name="workout_watch_reference_training_load">Carga de entrenamiento</string>
+    <string name="workout_watch_reference_intensity_minutes">Minutos de intensidad</string>
+    <string name="workout_watch_reference_intensity_split">%1$d moderados · %2$d intensos</string>
+    <string name="workout_watch_reference_explanation">Cifras que tu reloj calculó para esta sesión. El Training Effect va de 0 a 5, la carga de entrenamiento se basa en el EPOC y un minuto intenso cuenta doble en los minutos de intensidad. NOOP las muestra como referencia y no las usa en Effort ni en Charge.</string>
+    <string name="l10n_compare_screen_pearson_r">r de Pearson</string>
+    <string name="l10n_compare_screen_spearman_rho">ρ de Spearman</string>
+    <string name="l10n_compare_screen_method_overline">%1$s · %2$s</string>
+    <string name="l10n_compare_screen_correlation_method">Método de correlación</string>
+    <!-- #57: the weight diary sheet. -->
+    <string name="weight_log_profile_note">El peso de tu perfil sigue tu último peso registrado.</string>
+    <string name="weight_log_chart_empty">Registra tu peso en dos o más días para ver la tendencia.</string>
+    <string name="weight_log_field_kg">Peso (kg)</string>
+    <string name="weight_log_field_lb">Peso (lb)</string>
+    <string name="weight_log_invalid">Introduce un peso entre %1$s y %2$s.</string>
+    <string name="weight_log_history">Pesos registrados</string>
+    <string name="weight_log_empty">Aún no has registrado ningún peso.</string>
+    <string name="weight_log_save">Guardar</string>
+    <string name="weight_log_delete">Eliminar</string>
+    <string name="weight_log_done">Listo</string>
+    <string name="weight_log_previous_day">Día anterior</string>
+    <string name="weight_log_next_day">Día siguiente</string>
+    <string name="chart_scrub_no_data">Sin datos</string>
+    <string name="chart_scrub_next_point">Punto siguiente</string>
+    <string name="chart_scrub_previous_point">Punto anterior</string>
+    <string name="chart_scrub_spoken">%1$s, %2$s</string>
 </resources>

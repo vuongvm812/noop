@@ -10,7 +10,6 @@ extension TodaySection {
         case .keyMetrics: return "square.grid.2x2"
         case .workouts: return "figure.run"
         case .heartRate: return "waveform.path.ecg"
-        case .stress: return "gauge.with.dots.needle.50percent"
         case .recoveryVitals: return "heart.text.square"
         case .yourCards: return "rectangle.stack"
         case .menstrualCycle: return "drop.degreesign"
@@ -28,7 +27,6 @@ extension TodaySection {
         case .keyMetrics: return StrandPalette.metricPurple
         case .workouts: return StrandPalette.effortColor
         case .heartRate: return StrandPalette.metricRose
-        case .stress: return StrandPalette.stressColor
         case .recoveryVitals: return StrandPalette.metricCyan
         case .yourCards: return StrandPalette.accent
         case .menstrualCycle: return StrandPalette.restColor
@@ -54,6 +52,9 @@ extension KeyMetric {
         case .calories: return "flame.fill"
         // Same glyph the sibling "Your Cards" tile (`DashboardCard.skinTemp`) already uses.
         case .skinTemp: return "thermometer.medium"
+        case .stress: return "gauge.with.dots.needle.50percent"
+        // Same glyph as the "Your Cards" VO₂max card.
+        case .vo2max: return "lungs"
         }
     }
 
@@ -66,6 +67,8 @@ extension KeyMetric {
         case .bloodOxygen, .steps: return StrandPalette.metricCyan
         case .respiratory, .weight: return StrandPalette.accent
         case .calories, .skinTemp: return StrandPalette.metricAmber
+        case .stress: return StrandPalette.stressColor
+        case .vo2max: return StrandPalette.chargeColor
         }
     }
 }

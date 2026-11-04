@@ -45,7 +45,8 @@ extension RecoveryScorer {
                                      rhrBaseline: BaselineState?,
                                      respBaseline: BaselineState?,
                                      sleepPerf: Double?,
-                                     skinTempDev: Double? = nil)
+                                     skinTempDev: Double? = nil,
+                                     hrvPriorWeek: [Double] = [])
         -> (score: Double?, trace: [String]) {
 
         // Trace numbers use nearest rounding with half-ties away from zero on both platforms.
@@ -66,7 +67,7 @@ extension RecoveryScorer {
         let score = recovery(hrv: hrv, rhr: rhr, resp: resp,
                              hrvBaseline: hrvBaseline, rhrBaseline: rhrB,
                              respBaseline: respB, sleepPerf: sleepPerf,
-                             skinTempDev: skinTempDev)
+                             skinTempDev: skinTempDev, hrvPriorWeek: hrvPriorWeek)
 
         // Cold-start gate: HRV baseline not usable -> recovery() returns nil before any term is built.
         // Report the gate so a nil Charge is explainable, then stop (no terms were scored).
@@ -80,7 +81,8 @@ extension RecoveryScorer {
         // Per-driver baseline state lines (mean / spread / nValid / status). The skin-temp term carries no
         // baseline arg here (skinTempDev is already a deviation), so it has no baseline line.
         lines.append("charge baseline hrv mean=\(r2(hrvBaseline.baseline)) spread=\(r2(hrvBaseline.spread)) "
-            + "nValid=\(hrvBaseline.nValid) status=\(hrvBaseline.status.rawValue)")
+            + "nValid=\(hrvBaseline.nValid) status=\(hrvBaseline.status.rawValue)"
+            + (hrvBaseline.logDomain ? " domain=ln" : ""))
         if let b = rhrB {
             lines.append("charge baseline rhr mean=\(r2(b.baseline)) spread=\(r2(b.spread)) "
                 + "nValid=\(b.nValid) status=\(b.status.rawValue)")
@@ -105,7 +107,7 @@ extension RecoveryScorer {
         // L9: every WEIGHT / SCALE / centre constant goes through r2() too (not just the z-scores), so a
         // future non-round weight (e.g. 0.333) renders identically on Swift and Kotlin and the parity
         // fixture cannot silently desync. The values render the same as before today.
-        let hrvZRaw = zScore(hrv, mean: hrvBaseline.baseline, spread: hrvBaseline.spread)
+        let hrvZRaw = higherBetterZ(hrv, state: hrvBaseline)
         let sat = parasympatheticSaturation(hrvZ: hrvZRaw, rhrZ: rhrZForGuard)
         terms.append(("hrv", hrvZRaw, wHRV))
         lines.append("charge term hrv z=\(r2(hrvZRaw)) w=\(r2(wHRV)) (higher HRV is better)")
@@ -154,11 +156,28 @@ extension RecoveryScorer {
         // Renormalization: total surviving weight and the weighted composite z, the SAME math
         // recovery(...) runs to produce the logistic input.
         let totalWeight = terms.reduce(0) { $0 + $1.w }
-        let compositeZ = totalWeight > 0
-            ? terms.reduce(0) { $0 + $1.z * $1.w } / totalWeight
+        let termsZ = totalWeight > 0
+            ? terms.reduce(0) { $0 + clampZ($1.z) * $1.w } / totalWeight
             : 0.0
+        // #53: the 7-day HRV trend modifier, added on top of the renormalised terms (0 inside the band).
+        let trend = hrvTrend(hrv: hrv, priorWeek: hrvPriorWeek, baseline: DriverBaseline(hrvBaseline))
+        let trendShift = trend.map { wHRVTrend * $0.z } ?? 0.0
+        let compositeZ = termsZ + trendShift
+        // #53: name every term the ±termZClamp limit bit on, so a capped artefact night is visible.
+        let clamped = terms.filter { abs($0.z) > termZClamp }.map(\.name)
+        if !clamped.isEmpty {
+            lines.append("charge clamp terms=[\(clamped.joined(separator: ","))] limit=\(r2(termZClamp))")
+        }
+        if let t = trend {
+            lines.append("charge trend hrv7=\(r2(t.rollingMs)) band=\(r2(t.normalLowMs))-\(r2(t.normalHighMs)) "
+                + "nights=\(hrvPriorWeek.count + 1) z=\(r2(t.z)) w=\(r2(wHRVTrend)) "
+                + "(7-day rolling lnRMSSD vs the smallest worthwhile change)")
+        } else {
+            lines.append("charge trend hrv7=nil nights=\(hrvPriorWeek.count + 1) "
+                + "(needs >=\(hrvTrendMinNights) nights in 7 days)")
+        }
         lines.append("charge renorm totalWeight=\(r2(totalWeight)) compositeZ=\(r2(compositeZ)) "
-            + "(z = sum(z*w)/sum(w))")
+            + "(z = sum(z*w)/sum(w) + trend)")
 
         // Final logistic score + band, read from recovery(...) verbatim.
         if let s = score {
@@ -179,7 +198,8 @@ extension RecoveryScorer {
         // wouldRaiseCharge recomputes the composite with the eased HRV z swapped in and runs it through
         // logisticScore(...) -- the SAME curve recovery() uses -- so the delta is exact, not estimated.
         if sat.active, let s = score, totalWeight > 0 {
-            let easedZ = terms.reduce(0) { $0 + ($1.name == "hrv" ? sat.easedHrvZ : $1.z) * $1.w } / totalWeight
+            let easedZ = terms.reduce(0) { $0 + clampZ($1.name == "hrv" ? sat.easedHrvZ : $1.z) * $1.w } / totalWeight
+                + trendShift
             let wouldBe = logisticScore(compositeZ: easedZ)
             lines.append("charge saturation active hrvZraw=\(r2(hrvZRaw)) rhrZ=\(r2(rhrZForGuard ?? 0)) "
                 + "damp=\(r2(sat.dampFraction)) wouldEaseHrvZTo=\(r2(sat.easedHrvZ)) "

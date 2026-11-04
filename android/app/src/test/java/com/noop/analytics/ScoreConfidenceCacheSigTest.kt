@@ -5,14 +5,11 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 /**
- * #1005 (backfill storm): the analyzeRecent per-day cache signature folds the HRV baseline's CONFIDENCE
- * TIER (`ScoreConfidence.forCharge`), NOT baselines1's raw value, so a value-only drift during a history
- * backfill no longer drops the whole cache each offload chunk. `chargeConfidence` is the only cached,
- * non-pass-2-recomputed field that depends on baselines1, and it reads ONLY the HRV baseline's
- * usable/nValid/trusted STATUS. This pins the property the fix relies on: the charge tier is invariant to
- * the baseline's VALUE (baseline/spread) and changes only on a genuine STATUS/tier transition. If a future
- * edit makes forCharge depend on the baseline value, this fails — flagging that the cache sig would churn
- * again. Twin of the Swift ScoreConfidenceCacheSigTests.
+ * #1005 (backfill storm): the Charge confidence tier (`ScoreConfidence.forCharge`) reads ONLY the HRV
+ * baseline's usable/nValid/trusted STATUS, never its value. This pins that property: the charge tier is
+ * invariant to the baseline's VALUE (baseline/spread) and changes only on a genuine STATUS/tier
+ * transition. (Since #53 pass 1 reads no baselines at all, so no cache signature carries one.) Twin of
+ * the Swift ScoreConfidenceCacheSigTests.
  */
 class ScoreConfidenceCacheSigTest {
     private fun hrv(baseline: Double, spread: Double, nValid: Int, status: BaselineStatus) =

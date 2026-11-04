@@ -445,9 +445,13 @@ struct SettingsView: View {
                 FormRow(label: "Max heart rate") {
                     VStack(alignment: .trailing, spacing: 6) {
                         hrMaxField
+                        // Names the resolver's own source (#54): an HRmax raised by observed peaks
+                        // must not be labelled as the age formula.
                         Text(profile.hrMaxOverride > 0
                              ? "Manual override"
-                             : "Auto · \(profile.hrMax) bpm (Tanaka)")
+                             : (profile.hrMaxSource == "observed"
+                                ? "Auto · \(profile.hrMax) bpm (observed)"
+                                : "Auto · \(profile.hrMax) bpm (Tanaka)"))
                             .font(StrandFont.footnote)
                             .foregroundStyle(profile.hrMaxOverride > 0
                                              ? StrandPalette.accent

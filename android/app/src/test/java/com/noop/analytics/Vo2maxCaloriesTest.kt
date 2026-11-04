@@ -16,7 +16,8 @@ class Vo2maxCaloriesTest {
 
     @Test
     fun vo2maxForIsUthAndNullWithoutRestingHr() {
-        assertEquals(58.14, Calories.vo2maxFor(hrmax = 190.0, restingHR = 50.0)!!, 1e-9)
+        // 15.3 · 190 / (50 + 5): the resting HR is a sleep floor, lifted to an awake-resting value (#51).
+        assertEquals(52.854545454545, Calories.vo2maxFor(hrmax = 190.0, restingHR = 50.0)!!, 1e-9)
         assertNull(Calories.vo2maxFor(hrmax = 190.0, restingHR = null))
         assertNull(Calories.vo2maxFor(hrmax = 190.0, restingHR = 0.0))
         assertNull(Calories.vo2maxFor(hrmax = 0.0, restingHR = 50.0))
@@ -49,11 +50,11 @@ class Vo2maxCaloriesTest {
     fun caloriesActiveAndRestingMale_matchesSwiftGolden() {
         // Twin of Swift WorkoutDetectorTests.testCaloriesActiveAndRestingMale (which had NO Kotlin
         // equivalent — this closes that gap). 600 s @150 bpm, male 80 kg / 30 y, hrmax 190, RHR 60 →
-        // Uth VO2max 48.45 → fitness model 58.5503 kJ/min × 600 / 251.04 = 139.9386 kcal.
+        // Uth VO2max 15.3·190/(60+5) = 44.72 → fitness model 57.0447 kJ/min × 600 / 251.04 = 136.3399 kcal.
         val hr = (0 until 600).map { com.noop.data.HrSample(deviceId = "test", ts = it.toLong(), bpm = 150) }
         val profile = UserProfile(weightKg = 80.0, heightCm = 180.0, age = 30.0, sex = "male")
         val kcal = Calories.estimateBoutCalories(hr, profile, hrmax = 190.0, restingHR = 60.0).first
-        assertEquals(139.9386, kcal, 0.1)
+        assertEquals(136.3399, kcal, 0.1)
     }
 
     @Test
@@ -63,6 +64,9 @@ class Vo2maxCaloriesTest {
         val profile = UserProfile(weightKg = 80.0, heightCm = 180.0, age = 30.0, sex = "male")
         val hr = (0 until 60).map { com.noop.data.HrSample(deviceId = "test", ts = it.toLong(), bpm = 150) }
         val kcal = Calories.estimateBoutCalories(hr, profile, hrmax = 190.0, restingHR = 50.0).first
-        assertEquals(0.248825127469726 * 60, kcal, 1e-9)
+        val rate = Calories.activeKcalPerS(Calories.male, hr = 150.0, hrmax = 190.0, weightKg = 80.0, age = 30.0,
+            vo2max = Calories.vo2maxFor(hrmax = 190.0, restingHR = 50.0))
+        assertEquals(0.240319217509705, rate, 1e-12)
+        assertEquals(rate * 60, kcal, 1e-9)
     }
 }

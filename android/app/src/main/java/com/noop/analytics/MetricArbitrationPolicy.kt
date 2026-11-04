@@ -120,7 +120,7 @@ object MetricArbitrationPolicy {
             }
 
         MetricKind.CALORIES ->
-            // Active energy is an estimate everywhere; phone aggregate slightly over a strap estimate.
+            // Total energy is an estimate everywhere; phone aggregate slightly over a strap estimate.
             when (source) {
                 FusionSource.APPLE_HEALTH -> 2
                 FusionSource.HEALTH_CONNECT -> 2

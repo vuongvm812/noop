@@ -1,5 +1,5 @@
 #if !os(watchOS)
-// Sparkline uses .onContinuousHover + ChartHover helpers (unavailable on watchOS); the watch
+// Sparkline uses .chartScrub + ChartHover helpers (unavailable on watchOS); the watch
 // doesn't draw sparklines, so the whole view is excluded there. iOS/macOS unchanged.
 import SwiftUI
 
@@ -21,10 +21,12 @@ public struct Sparkline: View {
     public var showsHead: Bool
     /// Whether hovering highlights the nearest sample + shows a compact tooltip.
     public var showsHover: Bool
+    /// Set when the sparkline sits inside a navigation link or button: the scrub then reads by hover or
+    /// touch-and-hold only, so a click or plain tap still reaches the parent (#58).
+    public var scrubTapThrough: Bool
     /// Formats a sample value for the tooltip's bold line.
     public var valueFormat: (Double) -> String
-    /// Optional secondary label for a sample by index (e.g. a timestamp). When
-    /// nil the tooltip falls back to "sample N".
+    /// Secondary tooltip line for a sample by index: its date or time. Nil shows the value alone.
     public var indexLabel: ((Int) -> String)?
 
     public init(
@@ -35,6 +37,7 @@ public struct Sparkline: View {
         showsArea: Bool = true,
         showsHead: Bool = true,
         showsHover: Bool = true,
+        scrubTapThrough: Bool = false,
         valueFormat: @escaping (Double) -> String = { Sparkline.defaultValueString($0) },
         indexLabel: ((Int) -> String)? = nil
     ) {
@@ -45,6 +48,7 @@ public struct Sparkline: View {
         self.showsArea = showsArea
         self.showsHead = showsHead
         self.showsHover = showsHover
+        self.scrubTapThrough = scrubTapThrough
         self.valueFormat = valueFormat
         self.indexLabel = indexLabel
     }
@@ -126,22 +130,19 @@ public struct Sparkline: View {
                         container: geo.size,
                         tooltip: ChartTooltip(
                             value: valueFormat(values[idx]),
-                            label: indexLabel?(idx) ?? "sample \(idx + 1)",
+                            label: indexLabel?(idx),
                             accent: color
                         )
                     )
                 }
             }
             .animation(StrandMotion.fade, value: hoverX)
-            .contentShape(Rectangle())
-            .onContinuousHover(coordinateSpace: .local) { phase in
-                guard showsHover else { return }
-                switch phase {
-                case .active(let location): hoverX = location.x
-                case .ended: hoverX = nil
-                }
-            }
-            // The line is pointer-hover only (dead on touch); give VoiceOver a
+            // Hover, click-drag on macOS, touch-and-hold then drag on iOS (#58).
+            .chartScrub($hoverX, enabled: showsHover, tapThrough: scrubTapThrough)
+            .chartScrubHaptic(showsHover ? hoverX.flatMap {
+                ChartHoverMath.nearestIndex(toX: $0, count: values.count, width: geo.size.width)
+            } : nil)
+            // A per-sample readout needs a pointer or a held finger; give VoiceOver a
             // spoken summary of the series so the trend isn't silent on iPhone.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(axSummary))

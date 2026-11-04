@@ -74,7 +74,7 @@ enum XiaomiImporter {
         for d in result.days {
             add(d.day, "steps", d.steps.map(Double.init))
             add(d.day, "distance_m", d.distanceM)
-            add(d.day, "energy_kcal", d.activeKcal)
+            add(d.day, "active_kcal", d.activeKcal)
             add(d.day, "rhr", d.restingHr.map(Double.init))
             add(d.day, "avg_hr", d.avgHr.map(Double.init))
             add(d.day, "max_hr", d.maxHr.map(Double.init))

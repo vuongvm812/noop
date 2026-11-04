@@ -96,7 +96,7 @@ final class GarminAnalyticsTests: XCTestCase {
         day.lightMin = 270
         day.remMin = 90
         day.awakeMin = 30
-        day.efficiencyPct = 93.8
+        day.efficiency = 0.938
         ingest.days = [day]
         // Stage timeline in the sleepSession vocabulary: light / deep / light / rem / wake, 8 h.
         let seg: [(Int, Int, String)] = [
@@ -104,7 +104,7 @@ final class GarminAnalyticsTests: XCTestCase {
         let stages = "[" + seg.map {
             "{\"start\":\(sleepStart + $0.0 * 60),\"end\":\(sleepStart + $0.1 * 60),\"stage\":\"\($0.2)\"}"
         }.joined(separator: ",") + "]"
-        ingest.sleeps = [CachedSleepSession(startTs: sleepStart, endTs: sleepEnd, efficiency: 93.8,
+        ingest.sleeps = [CachedSleepSession(startTs: sleepStart, endTs: sleepEnd, efficiency: 0.938,
                                             restingHr: nil, avgHrv: watchHrv(i), stagesJSON: stages)]
         return ingest
     }

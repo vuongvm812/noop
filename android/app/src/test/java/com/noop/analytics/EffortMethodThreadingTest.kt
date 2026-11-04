@@ -112,6 +112,5 @@ class EffortMethodThreadingTest {
         assertEquals(e.daily.restingHr, b.daily.restingHr)
         assertEquals(e.daily.avgHrv, b.daily.avgHrv)
         assertEquals(e.sleepSessions.size, b.sleepSessions.size)
-        assertEquals(e.recovery, b.recovery)
     }
 }

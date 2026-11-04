@@ -5,6 +5,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.stateDescription
+import java.util.Locale
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -1247,23 +1251,77 @@ private fun PhysiologyStack(live: LiveState, activeConnection: Boolean) {
     }
 }
 
+/** The thread point nearest [x] on a strip [width] px wide, matching [LiquidRender]'s 10 px side inset. */
+internal fun rrThreadIndexAt(count: Int, width: Float, x: Float): Int? {
+    if (count < 2 || width <= RR_THREAD_PAD * 2) return null
+    return chartScrubNearestIndex(chartScrubIndexFractions(count), width - RR_THREAD_PAD * 2, x - RR_THREAD_PAD)
+}
+
+/** Where [LiquidRender]'s thread draws interval [index] of [values] on a [w]×[h] px strip. */
+internal fun rrThreadPoint(values: List<Int>, index: Int, w: Float, h: Float): Offset {
+    val mn = values.min().toDouble()
+    val span = maxOf(10.0, values.max() - mn)
+    val x = RR_THREAD_PAD + index * (w - 2 * RR_THREAD_PAD) / (values.size - 1)
+    val y = h - RR_THREAD_PAD - ((values[index] - mn) / span * (h - 2 * RR_THREAD_PAD)).toFloat()
+    return Offset(x, y)
+}
+
+/**
+ * The callout for interval [index]: its length ("812 ms"), and when it ended relative to the latest beat,
+ * the sum of the intervals after it ("−2.4 s", "0.0 s" for the latest). Intervals are back to back, so
+ * that sum is exact elapsed time; no clock time exists for them.
+ */
+internal fun rrScrubReadout(values: List<Int>, index: Int): Pair<String, String>? {
+    val v = values.getOrNull(index) ?: return null
+    val afterMs = values.drop(index + 1).sumOf { it.toLong() }
+    val secs = String.format(Locale.US, "%.1f", afterMs / 1000.0)
+    return "$v ms" to (if (afterMs == 0L) "$secs s" else "−$secs s")
+}
+
+private const val RR_THREAD_PAD = 10f
+
 /** The recent R-R buffer as a live liquid THREAD — the beat-by-beat trace with a travelling glint +
  *  endpoint pulse (a single HR number can look frozen; a flowing thread can't). R-R intervals ARE the
  *  time between heartbeats, so the buffer is a genuine beat-by-beat series; the thread auto-normalises its
  *  own min/max, so the raw ms values feed it directly. Empty state shows a muted flat thread + the
- *  "Waiting…" caption. Same data binding (live.rrRecent) as the bar strip this replaced. */
+ *  "Waiting…" caption. Same data binding (live.rrRecent) as the bar strip this replaced.
+ *
+ *  Scrub cursor (#58): drag sideways, or touch and hold, to snap to an interval; the callout names it in ms
+ *  and how long before the latest beat it ended ("−2.4 s"). The gesture is keyed on nothing that changes
+ *  per beat, so a drag in progress survives new intervals arriving under it. */
 @Composable
 private fun RRStrip(rrRecent: List<Int>) {
     val values = rrRecent.takeLast(18)
+    var scrubX by remember { mutableStateOf<Float?>(null) }
+    var width by remember { mutableStateOf(0f) }
+    val paints = rememberChartScrubPaints()
+    val index = scrubX?.let { rrThreadIndexAt(values.size, width, it) }
+    val readout = index?.let { rrScrubReadout(values, it) }
+    ChartScrubHaptic(index)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (values.size >= 2) {
             // Live thread — flows (glint + pulse) as new intervals land. Heart-pink (LiquidThread default).
-            LiquidThread(
-                bpm = values.map { it.toDouble() },
-                animated = true,
-                height = 58.dp,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .onSizeChanged { width = it.width.toFloat() }
+                    .chartScrub(Unit, onRelease = { scrubX = null }) { scrubX = it }
+                    .semantics { readout?.let { stateDescription = "${it.first}, ${it.second}" } },
+            ) {
+                LiquidThread(
+                    bpm = values.map { it.toDouble() },
+                    animated = true,
+                    height = 58.dp,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (index != null && readout != null) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val pt = rrThreadPoint(values, index, size.width, size.height)
+                        drawScrubCursor(pt.x, pt.y, liquidHeartPink, readout.first, readout.second, paints)
+                    }
+                }
+            }
         } else {
             // Empty / single-sample state: a muted flat hairline placeholder at the same height, so the
             // card doesn't jump when the first pair of intervals arrives and the thread takes over.

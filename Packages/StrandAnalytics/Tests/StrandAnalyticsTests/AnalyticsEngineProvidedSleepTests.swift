@@ -107,7 +107,6 @@ final class AnalyticsEngineProvidedSleepTests: XCTestCase {
             skinTempAnchorRaw: nil,
             spo2: [],
             profile: profile,
-            baselines: AnalyticsEngine.ProfileBaselines(),
             maxHROverride: nil,
             tzOffsetSeconds: 0,
             wristOff: [],

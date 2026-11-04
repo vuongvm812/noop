@@ -1,14 +1,11 @@
 import XCTest
 @testable import StrandAnalytics
 
-/// #1005 (backfill storm): the analyzeRecent per-day cache signature folds the HRV baseline's CONFIDENCE
-/// TIER (`ScoreConfidence.charge`), NOT baselines1's raw value, so a value-only drift during a history
-/// backfill no longer drops the whole cache each offload chunk. `chargeConfidence` is the only cached,
-/// non-pass-2-recomputed field that depends on baselines1, and it reads ONLY the HRV baseline's
-/// usable/trusted STATUS. This pins the property the fix relies on: the charge tier is invariant to the
-/// baseline's VALUE (baseline/spread) and changes only on a genuine STATUS/tier transition. If a future
-/// edit makes `charge` depend on the baseline value, this fails — flagging that the cache sig would churn
-/// again. Twin of the Android ScoreConfidenceCacheSigTest.
+/// #1005 (backfill storm): the Charge confidence tier (`ScoreConfidence.charge`) reads ONLY the HRV
+/// baseline's usable/trusted STATUS, never its value. This pins that property: the charge tier is
+/// invariant to the baseline's VALUE (baseline/spread) and changes only on a genuine STATUS/tier
+/// transition. (Since #53 pass 1 reads no baselines at all, so no cache signature carries one.) Twin of
+/// the Android ScoreConfidenceCacheSigTest.
 final class ScoreConfidenceCacheSigTests: XCTestCase {
 
     private func hrv(_ baseline: Double, _ spread: Double, _ nValid: Int,

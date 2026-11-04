@@ -15,14 +15,23 @@ import Foundation
 // Overnight HRV: the watch's own last-night average (FIT 370) when present, else the mean of the 5-minute
 // HRV values (FIT 371) inside the night's sleep blocks. Beat intervals (FIT 290) are not used: their
 // decode is an unconfirmed candidate (GarminWellness), so they never reach rrInterval or this resolver.
-// Respiration: the mean of the watch's respiration samples (FIT 297) inside the sleep blocks.
+// Respiration: the watch day's stored overnight value (`WhoopStore.garminNightMean`, FIT 297 samples
+// inside the night that ends that day), the SAME number the row and the `resp_rate` series carry (#52).
 //
 // Pure, no I/O. Kotlin twin: android/app/src/main/java/com/noop/analytics/GarminScoringInputs.kt, held
 // byte-identical by the oracle in GarminScoringInputsTests / GarminScoringInputsTest.
 public enum GarminScoringInputs {
 
-    /// Fewest in-sleep samples a mean is formed from. Five-minute HRV values: 3 = a quarter hour of sleep.
-    public static let minNightSamples = 3
+    /// Fewest in-sleep samples a mean is formed from on its own: twelve five-minute HRV values is an hour of
+    /// sleep (#53; three, a quarter hour, let a sliver of the night stand for all of it).
+    public static let minNightSamples = 12
+
+    /// Alternatively, the samples may cover at least this fraction of the sleep window (each sample standing
+    /// for `sampleIntervalSec`), so a short but fully sampled night still resolves.
+    public static let minNightCoverage = 0.5
+
+    /// The watch's sampling interval for the coverage rule: its overnight HRV values are five-minute values.
+    public static let sampleIntervalSec = 300
 
     /// One timestamped watch sample (unix seconds, value in the kind's unit).
     public struct Sample: Equatable, Sendable {
@@ -68,8 +77,9 @@ public enum GarminScoringInputs {
         public let respRateSource: FusionSource?
     }
 
-    /// Mean of the samples inside any of `nights` (inclusive bounds), or nil under `minNightSamples`. Each
-    /// sample counts once even when blocks overlap. Non-finite and non-positive values are skipped.
+    /// Mean of the samples inside any of `nights` (inclusive bounds), or nil unless there are at least
+    /// `minNightSamples` of them or they cover `minNightCoverage` of the sleep window (#53). Each sample
+    /// counts once even when blocks overlap. Non-finite and non-positive values are skipped.
     /// Kotlin twin: `GarminScoringInputs.nightMean`.
     public static func nightMean(_ samples: [Sample], nights: [Night]) -> Double? {
         var sum = 0.0
@@ -80,15 +90,38 @@ public enum GarminScoringInputs {
                 n += 1
             }
         }
-        return n >= minNightSamples ? sum / Double(n) : nil
+        guard n > 0 else { return nil }
+        if n >= minNightSamples { return sum / Double(n) }
+        let window = sleepSeconds(nights)
+        guard window > 0, Double(n * sampleIntervalSec) >= minNightCoverage * Double(window) else { return nil }
+        return sum / Double(n)
+    }
+
+    /// Seconds covered by the union of `nights` (overlapping blocks counted once).
+    /// Kotlin twin: `GarminScoringInputs.sleepSeconds`.
+    static func sleepSeconds(_ nights: [Night]) -> Int {
+        let sorted = nights.filter { $0.end > $0.start }.sorted { $0.start < $1.start }
+        var total = 0
+        var curStart = 0, curEnd = 0, open = false
+        for b in sorted {
+            if open && b.start <= curEnd {
+                curEnd = max(curEnd, b.end)
+            } else {
+                if open { total += curEnd - curStart }
+                curStart = b.start; curEnd = b.end; open = true
+            }
+        }
+        if open { total += curEnd - curStart }
+        return total
     }
 
     /// Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. `computed*` are NOOP's own
     /// estimates from the raw streams (what `analyzeDay` produced); the watch values come from its stored
-    /// day row and samples. Every fact is decided by `FusionResolver` over the two readings.
+    /// day row (`watchRespRateBpm` is that row's stored overnight respiration), and the HRV fallback from its
+    /// samples. Every fact is decided by `FusionResolver` over the two readings.
     /// Kotlin twin: `GarminScoringInputs.resolve`.
     public static func resolve(computedRestingHr: Int?, computedHrv: Double?, computedResp: Double?,
-                               watch: WatchDay?, hrvSamples: [Sample], respSamples: [Sample],
+                               watch: WatchDay?, hrvSamples: [Sample], watchRespRateBpm: Double?,
                                nights: [Night]) -> Resolution {
         // Kotlin twin: `GarminScoringInputs.pick`.
         func pick(_ key: String, watch w: Double?, computed c: Double?) -> FusedMetricPoint? {
@@ -110,7 +143,7 @@ public enum GarminScoringInputs {
         default: basis = .computed
         }
 
-        let resp = pick("resp_rate", watch: nightMean(respSamples, nights: nights), computed: computedResp)
+        let resp = pick("resp_rate", watch: watchRespRateBpm, computed: computedResp)
 
         return Resolution(
             restingHr: rhr.map { Int($0.value.rounded()) },
@@ -139,6 +172,28 @@ public enum GarminScoringInputs {
     /// carries no experimental label: it shows "calibrating" while its baselines are not usable, the same
     /// as WHOOP. Setting this back to `false` restores the label on both platforms.
     public static let effortValidated = true
+
+    /// How long a watch VO2max still stands for a week (#51). The watch re-estimates it only after an
+    /// activity that qualifies, so its latest value is its current one for weeks at a time.
+    public static let watchVo2maxMaxAgeDays = 28
+
+    /// The watch's own VO2max for the week keyed `weekKey` ("yyyy-MM-dd"): its latest positive point on or
+    /// before that day and within `watchVo2maxMaxAgeDays` of it, or nil. The VO2max card prefers it over
+    /// NOOP's estimate (`IntelligenceEngine.fitnessAgeRows`). Kotlin twin: `GarminScoringInputs.watchVo2max`.
+    public static func watchVo2max(_ points: [(day: String, value: Double)], weekKey: String) -> Double? {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let f = DateFormatter()
+        f.calendar = utc
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = utc.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        guard let week = f.date(from: weekKey),
+              let oldest = utc.date(byAdding: .day, value: -(watchVo2maxMaxAgeDays - 1), to: week) else { return nil }
+        let from = f.string(from: oldest)
+        return points.filter { $0.day >= from && $0.day <= weekKey && $0.value > 0 && $0.value.isFinite }
+            .max { $0.day < $1.day }?.value
+    }
 
     /// True when an Effort score whose inputs came from `sourceId` (registry `brand`) must carry the
     /// experimental label. Kotlin twin: `GarminScoringInputs.effortIsExperimental`.

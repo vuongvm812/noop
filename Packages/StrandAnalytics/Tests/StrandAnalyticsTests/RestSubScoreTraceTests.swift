@@ -12,8 +12,8 @@ final class RestSubScoreTraceTests: XCTestCase {
         XCTAssertTrue(line.hasPrefix("rest "), line)
         XCTAssertTrue(line.contains("wDur=0.5"))
         XCTAssertTrue(line.contains("wEff=0.2"))
-        XCTAssertTrue(line.contains("wRestor=0.2"))
-        XCTAssertTrue(line.contains("wConsist=0.1"))
+        XCTAssertTrue(line.contains("wRestor=0.15"))
+        XCTAssertTrue(line.contains("wConsist=0.15"))
         XCTAssertTrue(line.contains("group=1"))
         XCTAssertFalse(line.contains("\u{2014}"))
     }

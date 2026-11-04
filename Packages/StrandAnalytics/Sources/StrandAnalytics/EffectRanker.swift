@@ -18,6 +18,11 @@ import Foundation
 //      min(nWith, nWithout) ≥ 5).
 //   4. Keep, per (b, o), the lag L* with the LARGEST |cohensD| among lags whose effect
 //      computed AND cleared the significance group gate, carrying L* as the lead/lag.
+//   5. Multiple comparisons: every (b, o, L) test that cleared the group gate is one member of
+//      the feed's family. Benjamini–Hochberg adjusts their p-values together, and a row is
+//      `significant` only when its chosen lag's q-value is < α. `rankFamily` takes every outcome
+//      the feed can show, so the family is behaviours × outcomes × lags; `rank` is the
+//      single-outcome case (behaviours × lags).
 //
 // HONESTY (effect-size first, not stargazing): the primary signal is the effect SIZE +
 // n + a ScoreConfidence tier, never a bare "significant" stamp. The lag search is capped
@@ -107,55 +112,79 @@ public enum EffectRanker {
                             controls: [String: Set<String>],
                             outcomeByDay: [String: Double],
                             outcome: String) -> [RankedEffect] {
-        var rows: [RankedEffect] = []
-        // Sort behaviour names so the build order is deterministic regardless of dict order.
-        for name in behaviors.keys.sorted() {
-            let days = behaviors[name]!
-            // Absent from `controls` means no control group, which yields nothing — see
-            // BehaviorInsights.effect. Failing closed is deliberate: a caller that forgets loses the
-            // insight rather than getting one measured against every unlogged day.
-            if let row = bestLag(behaviorDays: days, controlDays: controls[name] ?? [],
-                                 outcomeByDay: outcomeByDay,
-                                 behavior: name, outcome: outcome) {
-                rows.append(row)
+        rankFamily(behaviors: behaviors, controls: controls,
+                   outcomes: [outcome: outcomeByDay])[outcome] ?? []
+    }
+
+    /// Rank every behaviour against EVERY outcome in `outcomes` (label → day series), with the
+    /// Benjamini–Hochberg family spanning behaviours × outcomes × lags. Returns the ranked rows
+    /// per outcome label; an outcome with no usable row maps to an empty list.
+    public static func rankFamily(behaviors: [String: Set<String>],
+                                  controls: [String: Set<String>],
+                                  outcomes: [String: [String: Double]]) -> [String: [RankedEffect]] {
+        struct Candidate { let outcome: String; let behavior: String; let lag: Int; let effect: BehaviorEffect }
+        var candidates: [Candidate] = []
+        // Sorted iteration so the family order (and so tie handling) is deterministic.
+        for outcome in outcomes.keys.sorted() {
+            let outcomeByDay = outcomes[outcome]!
+            let shiftedByLag = lagSet.map { shiftedOutcome(outcomeByDay, byLag: $0) }
+            for name in behaviors.keys.sorted() {
+                let days = behaviors[name]!
+                // Absent from `controls` means no control group, which yields nothing — see
+                // BehaviorInsights.effect. Failing closed is deliberate: a caller that forgets loses
+                // the insight rather than getting one measured against every unlogged day.
+                let controlDays = controls[name] ?? []
+                for (k, lag) in lagSet.enumerated() {
+                    guard let e = BehaviorInsights.effect(behaviorDays: days,
+                                                          controlDays: controlDays,
+                                                          outcomeByDay: shiftedByLag[k],
+                                                          behavior: name,
+                                                          outcome: outcome) else { continue }
+                    // Group gate: a lag only competes (and only joins the family) if both sides
+                    // clear the significance minimum, so a 2-day lag can't win on a fluke.
+                    guard Swift.min(e.nWith, e.nWithout) >= BehaviorInsights.minGroupForSignificance
+                    else { continue }
+                    candidates.append(Candidate(outcome: outcome, behavior: name, lag: lag, effect: e))
+                }
             }
         }
-        return sorted(rows)
+        let q = StatTests.benjaminiHochberg(candidates.map { $0.effect.pApprox })
+
+        var best: [String: [String: (lag: Int, effect: BehaviorEffect)]] = [:]
+        for (i, c) in candidates.enumerated() {
+            let e = c.effect.adjusted(q: q[i])
+            if let cur = best[c.outcome]?[c.behavior] {
+                // Largest |cohensD| wins; ties break to the SMALLER lag (prefer same-day /
+                // shorter lead over a longer one when the effect size is identical).
+                let better = abs(e.cohensD) > abs(cur.effect.cohensD)
+                    || (abs(e.cohensD) == abs(cur.effect.cohensD) && c.lag < cur.lag)
+                if better { best[c.outcome, default: [:]][c.behavior] = (c.lag, e) }
+            } else {
+                best[c.outcome, default: [:]][c.behavior] = (c.lag, e)
+            }
+        }
+        var out: [String: [RankedEffect]] = [:]
+        for outcome in outcomes.keys {
+            let rows = (best[outcome] ?? [:]).map { name, chosen in
+                RankedEffect(behavior: name, outcome: outcome, lag: chosen.lag, effect: chosen.effect,
+                             confidence: confidence(forPairs: Swift.min(chosen.effect.nWith,
+                                                                       chosen.effect.nWithout)))
+            }
+            out[outcome] = sorted(rows)
+        }
+        return out
     }
 
     /// Find the best-lag RankedEffect for ONE behaviour against ONE outcome, or nil when no
-    /// lag in `lagSet` yields a computable effect that clears the group gate.
+    /// lag in `lagSet` yields a computable effect that clears the group gate. The family here is
+    /// that behaviour's lags (Benjamini–Hochberg across them).
     public static func bestLag(behaviorDays: Set<String>,
                                controlDays: Set<String>,
                                outcomeByDay: [String: Double],
                                behavior: String,
                                outcome: String) -> RankedEffect? {
-        var best: (lag: Int, effect: BehaviorEffect)?
-        for lag in lagSet {
-            let shifted = shiftedOutcome(outcomeByDay, byLag: lag)
-            guard let e = BehaviorInsights.effect(behaviorDays: behaviorDays,
-                                                  controlDays: controlDays,
-                                                  outcomeByDay: shifted,
-                                                  behavior: behavior,
-                                                  outcome: outcome) else { continue }
-            // Group gate: a lag only competes if both sides clear the significance minimum,
-            // so a 2-day lag can't win on a fluke. (Mirrors BehaviorInsights.significant's n-gate.)
-            guard Swift.min(e.nWith, e.nWithout) >= BehaviorInsights.minGroupForSignificance else { continue }
-
-            if let cur = best {
-                // Largest |cohensD| wins; ties break to the SMALLER lag (prefer same-day /
-                // shorter lead over a longer one when the effect size is identical).
-                let better = abs(e.cohensD) > abs(cur.effect.cohensD)
-                    || (abs(e.cohensD) == abs(cur.effect.cohensD) && lag < cur.lag)
-                if better { best = (lag, e) }
-            } else {
-                best = (lag, e)
-            }
-        }
-        guard let chosen = best else { return nil }
-        let pairs = Swift.min(chosen.effect.nWith, chosen.effect.nWithout)
-        return RankedEffect(behavior: behavior, outcome: outcome, lag: chosen.lag,
-                            effect: chosen.effect, confidence: confidence(forPairs: pairs))
+        rankFamily(behaviors: [behavior: behaviorDays], controls: [behavior: controlDays],
+                   outcomes: [outcome: outcomeByDay])[outcome]?.first
     }
 
     // MARK: - Lag alignment

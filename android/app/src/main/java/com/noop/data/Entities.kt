@@ -453,7 +453,10 @@ data class ScoreInputProvenanceRow(
  *  from the user's current profile because a waist measurement may have changed since they were scored. */
 enum class Vo2MaxEstimator(val provenanceId: String) {
     NES("nes"),
-    UTH("uth");
+    UTH("uth"),
+
+    /** The Garmin watch's own estimate (FIT MAX_MET_DATA), preferred when the watch has one (#51). */
+    GARMIN("garmin");
 
     companion object {
         fun fromProvenanceId(value: String?): Vo2MaxEstimator? = entries.firstOrNull {
@@ -825,6 +828,24 @@ data class GarminSyncedFileEntity(
     val ts: Long,
     val size: Long,
     val ingestedAt: Long,
+)
+
+/**
+ * One Garmin activity type's largest cumulative MONITORING counters on one local day (v44 /
+ * MIGRATION_43_44, #51). Swift `garminActivityPeak` (WhoopStore Database.swift
+ * `v50-garmin-activity-peak-total-energy`). A watch file may carry only the types whose counters moved,
+ * so the day's totals are summed over these rows rather than taken from one file. [steps] is null for
+ * types whose counter is not steps. Field order matches the GRDB column order.
+ */
+@Entity(tableName = "garminActivityPeak", primaryKeys = ["deviceId", "day", "activityType"])
+data class GarminActivityPeakEntity(
+    val deviceId: String,
+    val day: String,
+    val activityType: Int,
+    val steps: Int?,
+    val distanceM: Double?,
+    val totalKcal: Double?,
+    val activeKcal: Double?,
 )
 
 /**

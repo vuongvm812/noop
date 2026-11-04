@@ -30,9 +30,9 @@ import kotlin.math.roundToLong
  * Faithful Kotlin port of StrandAnalytics/AnalyticsEngine.swift (verified on macOS).
  * Same algorithm, same constants, same thresholds; Kotlin-ized types, Double math.
  *
- * Given a day's raw streams + a user profile + personal baselines, it runs the
- * individual analyzers (SleepStager / RecoveryScorer / StrainScorer / WorkoutDetector
- * / Baselines) and assembles a [com.noop.data.DailyMetric] (Room cache shape) plus the
+ * Given a day's raw streams + a user profile, it runs the
+ * individual analyzers (SleepStager / StrainScorer / WorkoutDetector)
+ * and assembles a [com.noop.data.DailyMetric] (Room cache shape) plus the
  * detected [DetectedSleep] sessions.
  *
  * This is a PURE function over its inputs — it does NOT touch the database
@@ -323,9 +323,9 @@ object AnalyticsEngine {
      * @param hr/rr/resp/gravity the day's raw streams (the wider window around the
      *   night may be passed; sleep detection finds the in-bed span itself).
      * @param profile user profile (age/sex/weight/height) for HRmax + calories.
-     * @param baselines personal baselines for recovery normalization.
      * @param maxHROverride explicit HRmax (bpm) to use for strain/zones; null →
      *   Tanaka from profile.age.
+     * Swift twin: `AnalyticsEngine.analyzeDay`.
      */
     fun analyzeDay(
         day: String,
@@ -358,8 +358,7 @@ object AnalyticsEngine {
         daySteps: List<StepSample>? = null,
         dayGravity: List<GravitySample>? = null,
         // Wear-gated nightly skin-temp mean is harvested here (baseline-independent); IntelligenceEngine
-        // seeds a personal baseline from these means across nights and re-derives skinTempDevC in pass 2
-        // (same two-pass shape as avgHrv→recovery). (PR #85)
+        // resolves each day's own skin baseline and derives skinTempDevC in pass 2 (#53). (PR #85)
         skinTemp: List<SkinTempSample> = emptyList(),
         // Device family that wrote [skinTemp], so the raw→°C conversion picks the right scale (#938):
         // 5/MG banks CENTIDEGREES (raw/100), the WHOOP 4.0 v24 field is a RAW ADC on a different scale.
@@ -384,8 +383,10 @@ object AnalyticsEngine {
         // empty keeps pure-function callers/tests + non-4.0 nights null.
         spo2: List<Spo2Sample> = emptyList(),
         profile: UserProfile,
-        baselines: ProfileBaselines = ProfileBaselines(),
         maxHROverride: Double? = null,
+        // Observed HRmax evidence for this day's 90-day window ([StrainScorer.observedHRmaxEvidence]).
+        // Null keeps the override-else-Tanaka behaviour.
+        hrmaxEvidence: Double? = null,
         // Wall-clock UTC offset (seconds) for the sleep detector's daytime false-sleep guard (#90).
         // Default 0 keeps pure-function callers/tests on UTC; IntelligenceEngine passes the device's
         // real offset.
@@ -777,17 +778,11 @@ object AnalyticsEngine {
         @Suppress("UNUSED_VARIABLE") val sleepStart = matched.minOfOrNull { it.start }
         @Suppress("UNUSED_VARIABLE") val sleepEnd = matched.maxOfOrNull { it.end }
 
-        // ── Skin-temperature deviation (offline) ──────────────────────────────
-        // Wear-gated in-bed mean (baseline-independent, harvested every pass) + the deviation against
-        // the personal baseline. In pass 1 baselines.skinTemp is null so the deviation is null and the
-        // mean is harvested; IntelligenceEngine seeds the baseline from those means and re-derives the
-        // deviation in pass 2 (mirrors avgHrv→recovery). Computed BEFORE Charge so the Charge skin-temp
-        // penalty can read it. APPROXIMATE. (PR #85)
+        // ── Skin temperature (offline) ────────────────────────────────────────
+        // Wear-gated in-bed mean, baseline-independent like avgHrv. IntelligenceEngine resolves each day's
+        // own skin baseline in its second pass (#53) and derives the deviation there, with Charge. (PR #85)
         val nightlySkinTempC = wornNightlySkinTempC(matched, hr, skinTemp, skinTempFamily, skinTempAnchorRaw,
             wornToleranceSec = skinTempWornToleranceSec)
-        val skinTempDevC: Double? = nightlySkinTempC?.let { v ->
-            baselines.skinTemp?.takeIf { it.usable }?.let { round2(Baselines.deviation(v, it).delta) }
-        }
 
         // ── Raw SpO2 (WHOOP 4.0 v24 PPG ADC) ──────────────────────────────────
         // Nightly red/IR ADC means over the detected in-bed spans, or null when the night carried no raw
@@ -796,9 +791,9 @@ object AnalyticsEngine {
         val nightlySpo2Raw = nightlySpo2RawMeans(matched, spo2)
 
         // ── Rest (sleep_performance composite, 0–100) ─────────────────────────
-        // Replaces the bare efficiency proxy: duration-vs-personal-need 0.50 + efficiency 0.20 +
-        // restorative (deep+REM)/asleep 0.20 + consistency 0.10. Stored under the sleep_performance
-        // key. null when there is no asleep time. (Charge/Effort/Rest)
+        // duration-vs-need 0.50 + efficiency 0.20 + restorative (deep+REM)/asleep 0.15 + consistency 0.15,
+        // restorative targets by age. null when there is no asleep time. Mirrors Swift.
+        val restAge: Int? = if (profile.age > 0) profile.age.toInt() else null
         val rest: Double? = if (matched.isEmpty()) null else RestScorer.rest(
             asleepSeconds = tstS,
             efficiency = efficiency,
@@ -806,6 +801,7 @@ object AnalyticsEngine {
             remSeconds = remS,
             sleepNeedHours = sleepNeedHours,
             consistency = sleepConsistency,
+            age = restAge,
         )
         // #345: gravity-sparse computed ONCE — reused by the sleep-motion trace below AND the Rest
         // confidence guard, so the two can never diverge and isGravitySparse runs only once per day.
@@ -819,7 +815,7 @@ object AnalyticsEngine {
                     tstSeconds = tstS, inBedSeconds = inBedS, efficiency = efficiency,
                     restorativeSeconds = deepS + remS,
                     needHours = sleepNeedHours ?: RestScorer.defaultSleepNeedHours,
-                    consistency = sleepConsistency, deepSeconds = deepS,
+                    consistency = sleepConsistency, deepSeconds = deepS, age = restAge,
                     groupFragments = mainGroup.size, groupInBedSeconds = inBedS))
             }
             // #319: the motion-coverage + staging context behind the Rest number, so a high score on a poor
@@ -843,33 +839,18 @@ object AnalyticsEngine {
             }
         }
 
-        // ── Recovery / Charge ─────────────────────────────────────────────────
-        var recovery: Double? = null
-        val hrvVal = avgHRVDaily
-        val rhrVal = restingHRDaily
-        val hrvBase = baselines.hrv
-        if (hrvVal != null && rhrVal != null && hrvBase != null) {
-            // Charge "Rest quality" term reads the Rest composite ÷100 (0..1), not raw efficiency.
-            val sleepPerf = rest?.let { it / 100.0 }
-            recovery = RecoveryScorer.recovery(
-                hrv = hrvVal,
-                rhr = rhrVal.toDouble(),
-                resp = respRateDaily, // term drops + renormalizes when null / no baseline
-                hrvBaseline = hrvBase,
-                rhrBaseline = baselines.restingHR,
-                respBaseline = baselines.resp,
-                sleepPerf = sleepPerf,
-                skinTempDev = skinTempDevC, // symmetric penalty; term drops + renormalizes when null
-            )
-        }
+        // Recovery / "Charge" is NOT scored here: it needs the day's own trailing baselines, which the
+        // engine resolves per day in its second pass (#53, [IntelligenceEngine]). Every field this pass
+        // produces is baseline-independent.
 
         // ── Strain ("Effort") — cardiovascular load over the full CALENDAR day ──
         // Integrate dayHr ([localMidnight, +24h), clamped to now for today) when supplied so Effort
         // covers the WHOLE day — an afternoon/evening workout lands in today's Effort same-day instead
         // of being cut off at the night window's ≈ noon bound, and the prior evening's HR no longer
         // bleeds in. Falls back to the night hr for pure-function callers/tests.
-        val effMaxHR: Double? = maxHROverride
-            ?: if (profile.age > 0) StrainScorer.tanakaHRmax(profile.age) else null
+        // One resolver for the day's Effort, its workouts and its calories (#54).
+        val hrmaxResolved = StrainScorer.resolveHRmax(maxHROverride, profile.age, hrmaxEvidence)
+        val effMaxHR: Double? = hrmaxResolved.first
         val restForStrain = restingHRDaily?.toDouble() ?: StrainScorer.defaultRestingHR
         val strain = StrainScorer.strain(
             hr = dayHr ?: hr,
@@ -899,8 +880,7 @@ object AnalyticsEngine {
                     // null there would put this line in direct contradiction with the `effort score`
                     // line above it, which prints that substituted number, about the same day.
                     hrmax = effMaxHR ?: StrainScorer.defaultMaxHR().toDouble(),
-                    hrmaxSource = if (maxHROverride != null) "override"
-                    else if (profile.age > 0) "tanaka" else "default",
+                    hrmaxSource = hrmaxResolved.second,
                     tanaka = if (profile.age > 0) StrainScorer.tanakaHRmax(profile.age) else null,
                     observedPeak = hrForPeak.maxOfOrNull { it.bpm }?.toDouble(),
                     restingHR = restForStrain,
@@ -1019,25 +999,22 @@ object AnalyticsEngine {
             // and silently retired the #1879 note. Deriving it from `hrOnly` states what the flag has
             // always meant and is independent of how the physiology set is chosen.
             sleepHrOnly = if (matched.isEmpty()) null else matched.all { it.hrOnly },
-            recovery = recovery,
+            recovery = null,
             strain = strain,
             exerciseCount = workouts.size,
             spo2Pct = null,
-            skinTempDevC = skinTempDevC,
+            skinTempDevC = null,
             respRateBpm = respRateDaily,
             steps = stepsTotal,
             activeKcalEst = activeKcalEst,
             spo2Red = nightlySpo2Raw?.first,
             spo2Ir = nightlySpo2Raw?.second,
             avgSdnn = avgSDNNDaily,
-            // The ABSOLUTE this pass's deviation was derived from (#1636). Set HERE, beside
-            // skinTempDevC, so the engine's own row is symmetric: any path that persists this
-            // row directly keeps both thermal values, not just the one.
+            // The ABSOLUTE the second pass derives the deviation from (#1636).
             skinTempC = nightlySkinTempC,
         )
 
         // ── Per-score confidence tiers (mirror Swift ScoreConfidence.derive decisions) ──
-        val chargeConfidence = ScoreConfidence.forCharge(recovery, baselines.hrv)
         val effortConfidence = ScoreConfidence.forEffort(strain, hr.size)
         // Rest confidence with H9 + the #345 sparse-motion guard: downgrade to low-confidence a night whose
         // deep+REM share is implausibly low on a high-efficiency night (H9 staging miss) OR that was staged
@@ -1086,11 +1063,9 @@ object AnalyticsEngine {
             daily = daily,
             sleepSessions = matched,
             workouts = workouts,
-            recovery = recovery,
             strain = strain,
             rest = rest,
             nightlySkinTempC = nightlySkinTempC,
-            chargeConfidence = chargeConfidence,
             effortConfidence = effortConfidence,
             restConfidence = restConfidence,
             sessionMotionByStart = sessionMotionByStart,
@@ -1531,65 +1506,90 @@ object AnalyticsEngine {
 /*
  * RestScorer — NOOP "Rest" (sleep_performance) composite, 0–100.
  *
- * Faithful Kotlin mirror of the Swift Rest composite (AnalyticsEngine / RestScorer). Keep every
- * constant and the weight set byte-identical to Swift — parity tests enforce it.
+ * Faithful Kotlin mirror of Swift `AnalyticsEngine.Rest`. Every constant, the weight set AND the
+ * arithmetic order are byte-identical to Swift (oracle-pinned in RestRoundingOracleTest, #55):
  *
- *   Rest = 0.50·duration + 0.20·efficiency + 0.20·restorative + 0.10·consistency
+ *   Rest = 0.50·duration + 0.20·efficiency + 0.15·restorative + 0.15·consistency
  *
- * Each sub-component is itself on 0–100:
- *   duration     — asleep hours / personal need, clamped at 100 (8 h default, refined by recent avg).
- *   efficiency   — asleep / in-bed (0..1) × 100.
- *   restorative  — (deep + REM) / asleep share, normalized by a healthy target share, clamped 100.
- *   consistency  — sleep/wake regularity (0..1) × 100; when the caller has no history it is null and
- *                  the term DROPS, renormalizing the remaining weights (same discipline as recovery).
+ * Each sub-score is on 0..1; the weighted sum is scaled ×10000, rounded half away from zero (Swift
+ * `.rounded()`), then ÷100. Computing the terms on 0..100 and rounding ×100 (the old shape) disagreed
+ * with Swift by 0.01 on a fraction of inputs.
+ *   duration     — asleep / the night's need (SleepScoring funnel: base + strain + carried debt).
+ *   efficiency   — asleep / in-bed (0..1).
+ *   restorative  — (deep + REM) / asleep vs an age target (0.40 adults, 0.45 under 18), scaled by a
+ *                  deep-adequacy factor (target 0.13, 0.10 from 60). Unknown deep → factor 1.0.
+ *   consistency  — Sleep Regularity Index ÷ 100 (SleepRegularity); null → neutral 0.5.
  *
  * Outputs APPROXIMATE — not WHOOP's proprietary Sleep Performance.
  */
 object RestScorer {
 
-    /** Component weights (sum 1.0 when all present). Byte-identical to Swift. */
+    /** Component weights (sum 1.0). Byte-identical to Swift. */
     const val wDuration: Double = 0.50
     const val wEfficiency: Double = 0.20
-    const val wRestorative: Double = 0.20
-    const val wConsistency: Double = 0.10
+    const val wRestorative: Double = 0.15
+    const val wConsistency: Double = 0.15
 
-    /** Default personal sleep need (hours) before any recent-average refinement. */
+    /** Cold-start nightly sleep need (hours) before any history exists. Swift `defaultNeedHours`. */
     const val defaultSleepNeedHours: Double = 8.0
 
-    /**
-     * Minimum trailing nights before a personal sleep-need estimate is trusted; below this the
-     * population default is used (cold-start honesty — never learn a need from a few nights). Mirrors
-     * Swift `AnalyticsEngine.Rest.minNeedNights`.
-     */
+    /** Minimum trailing nights before a personal sleep-need estimate is trusted. Swift parity. */
     const val minNeedNights: Int = 7
 
-    /** Hard cap on personalized need (h): beyond typical adult need even for genuine long sleepers.
-     *  Mirrors Swift `AnalyticsEngine.Rest.maxNeedHours`. */
+    /** Hard cap on personalized base need (h). Swift `maxNeedHours`. */
     const val maxNeedHours: Double = 9.5
 
+    /** Adult "full marks" restorative (deep+REM) share. Swift `restorativeTarget`. */
+    const val restorativeTargetShare: Double = 0.40
+
+    /** Under-18 restorative target. Swift `restorativeTargetYouth`. */
+    const val restorativeTargetYouth: Double = 0.45
+
+    /** Deep share earning full restorative credit (adults under 60). Swift parity. */
+    const val deepShareTarget: Double = 0.13
+
+    /** Deep-share target from age 60. Swift `deepShareTargetOlder`. */
+    const val deepShareTargetOlder: Double = 0.10
+
+    /** Most the restorative term is scaled down when deep is ~absent. Swift parity. */
+    const val deepFloorFactor: Double = 0.5
+
+    /** Neutral consistency (fraction) used when the caller supplies no regularity signal. Swift parity. */
+    const val NEUTRAL_CONSISTENCY: Double = 0.5
+
+    /** The per-night inputs a Rest score is computed against. Mirrors Swift `Rest.Context`. */
+    data class Context(val needHours: Double, val consistency: Double?, val age: Int?) {
+        companion object {
+            val coldStart = Context(needHours = defaultSleepNeedHours, consistency = null, age = null)
+        }
+    }
+
+    /** Restorative target for an age (null/unknown → adult). Swift `restorativeTarget(age:)`. */
+    fun restorativeTarget(age: Int?): Double =
+        if (age != null && age > 0 && age < 18) restorativeTargetYouth else restorativeTargetShare
+
+    /** Deep-share target for an age (null/unknown → under-60 adult). Swift `deepShareTarget(age:)`. */
+    fun deepShareTarget(age: Int?): Double =
+        if (age != null && age >= 60) deepShareTargetOlder else deepShareTarget
+
     /**
-     * Population TARGET nightly sleep need (hours) for an age (NSF/AASM recommended-range midpoint).
-     * Used as a FLOOR: the personal estimate can only adjust it UP for genuine long sleepers, NEVER
-     * below the population target — so a chronic under-sleeper's need can't drift toward their own
-     * deficit (which would falsely erase their sleep debt and read a short night as "Strong").
-     * Deliberately the target, not the minimum: flooring at the low end of the range would understate
-     * a sleep-deprived (vs genuinely short-sleeping) user's deficit. Byte-identical to Swift
-     * `AnalyticsEngine.Rest.populationNeedFloorHours`.
+     * Minimum recommended nightly sleep (hours) for an age: the FLOOR of the personal base need.
+     * AASM/SRS adult ≥ 7 h (Watson 2015); 8 h for 13–17, 9 h under 13 (Paruthi 2016). Byte-identical
+     * to Swift `populationNeedFloorHours`.
      */
     fun populationNeedFloorHours(age: Int?): Double {
-        if (age == null || age <= 0) return 8.0   // unknown → adult target
-        return if (age < 18) 9.0 else 8.0         // children/teens ~9 (NSF 8–12); adults & older ~8 (NSF 7–9)
+        if (age == null || age <= 0) return 7.0
+        return when {
+            age < 13 -> 9.0
+            age < 18 -> 8.0
+            else -> 7.0
+        }
     }
 
     /**
-     * Personalized nightly sleep need (hours), population-ANCHORED and age-floored (T1). The personal
-     * component is the user's UPPER-QUARTILE nightly duration over the trailing window — what they
-     * sleep on their less-restricted nights, NOT their average (which a chronic deficit drags down) —
-     * floored at the age-appropriate population TARGET and capped at [maxNeedHours]. So it only ever
-     * ADJUSTS UP for genuine long sleepers, never below the target. Fewer than [minNeedNights] scorable
-     * nights → the population default (cold-start). Zero/negative entries (no-data days) are dropped and
-     * do not count toward the minimum. Byte-identical to Swift
-     * `AnalyticsEngine.Rest.personalizedNeedHours`.
+     * Personal base sleep need (hours): upper quartile of the trailing nightly durations, floored at the
+     * age minimum, capped at [maxNeedHours]; fewer than [minNeedNights] usable nights → the cold-start
+     * default (never below the floor). Byte-identical to Swift `personalizedNeedHours`.
      */
     fun personalizedNeedHours(nightlyHours: List<Double>, age: Int?): Double {
         val floor = populationNeedFloorHours(age)
@@ -1605,74 +1605,68 @@ object RestScorer {
         return minOf(maxOf(q, floor), maxNeedHours)
     }
 
-    /**
-     * Healthy restorative (deep + REM) share of asleep time. A share at/above this earns full
-     * restorative credit; below it scales linearly. ~0.50 reflects ~20% deep + ~25–30% REM in a
-     * well-structured night.
-     */
-    const val restorativeTargetShare: Double = 0.50
+    /** Swift `Double.rounded()`: to nearest, ties away from zero. */
+    internal fun swiftRounded(x: Double): Double {
+        val a = Math.abs(x)
+        val t = Math.floor(a)
+        val r = if (a - t >= 0.5) t + 1.0 else t
+        return if (x < 0.0) -r else r
+    }
 
     /**
-     * Deep-sleep share of asleep time that earns FULL restorative credit (~13% is the healthy floor
-     * for adults; below it the restorative term scales down toward [deepFloorFactor]). DEEP honesty
-     * (Reddit HRV/sleep report): pooling deep+REM let a night with normal REM but almost no DEEP earn
-     * near-full restorative credit (Rest read 95+ with little deep). Byte-identical to Swift.
-     */
-    const val deepShareTarget: Double = 0.13
-
-    /** Most the restorative term is scaled down when deep is ~absent — half, never zeroed, so a
-     *  low-deep night reads honestly without the whole night tanking. Swift parity. */
-    const val deepFloorFactor: Double = 0.5
-
-    /** Neutral consistency (fraction) used when the caller supplies no regularity signal. Swift parity. */
-    const val NEUTRAL_CONSISTENCY: Double = 0.5
-
-    /**
-     * Rest composite [0,100], or null when there is no asleep time.
-     *
-     * @param asleepSeconds total sleep time (TST) for the night, seconds.
-     * @param efficiency asleep / in-bed in [0,1].
-     * @param deepSeconds deep-stage seconds.
-     * @param remSeconds REM-stage seconds.
-     * @param sleepNeedHours personal need (hours); null → [defaultSleepNeedHours].
-     * @param consistency sleep/wake regularity in [0,1]; null drops the term + renormalizes.
+     * Rest composite [0,100] in Swift's arithmetic order, or null when there is no asleep time.
+     * Byte-identical to Swift `Rest.composite(tstSeconds:…)`; `remSeconds` is added to deep to form
+     * the restorative seconds exactly as the Swift callers do.
      */
     fun rest(
         asleepSeconds: Double,
         efficiency: Double,
-        deepSeconds: Double,
+        deepSeconds: Double?,
         remSeconds: Double,
         sleepNeedHours: Double? = null,
         consistency: Double? = null,
+        age: Int? = null,
     ): Double? {
         if (asleepSeconds <= 0.0) return null
+        return composite(
+            tstSeconds = asleepSeconds,
+            efficiency = efficiency,
+            restorativeSeconds = (deepSeconds ?: 0.0) + remSeconds,
+            needHours = sleepNeedHours ?: defaultSleepNeedHours,
+            consistency = consistency,
+            deepSeconds = deepSeconds,
+            age = age,
+        )
+    }
 
-        val asleepHours = asleepSeconds / 3600.0
-        // Parity: Swift Rest.composite and Kotlin's own subScoreLine both floor need at 0.1 h (not 1e-9).
-        val needHours = (sleepNeedHours ?: defaultSleepNeedHours).coerceAtLeast(0.1)
-
-        // Duration vs personal need (clamped at 100 — sleeping past need does not over-credit).
-        val durationScore = min(100.0, asleepHours / needHours * 100.0)
-        // Efficiency (0..1 → 0..100), clamped.
-        val efficiencyScore = (efficiency * 100.0).coerceIn(0.0, 100.0)
-        // Restorative share vs healthy target (clamped at 100), then scaled by a gentle deep-adequacy
-        // factor in [deepFloorFactor, 1]: full once deep ≥ target share, ramping to the floor as
-        // deep → 0, so a near-zero-deep night loses up to half this term (~10 pts) — honest, not
-        // tanking, no fabricated stages. Mirrors Swift Rest.composite EXACTLY.
-        val restorativeShare = (deepSeconds + remSeconds) / asleepSeconds
-        val deepAdequacy = ((deepSeconds / asleepSeconds) / deepShareTarget).coerceIn(0.0, 1.0)
-        val deepFactor = deepFloorFactor + (1.0 - deepFloorFactor) * deepAdequacy
-        val restorativeScore = min(100.0, restorativeShare / restorativeTargetShare * 100.0) * deepFactor
-
-        // Consistency uses a NEUTRAL 0.5 (→50) when the caller supplies none — matching the Swift
-        // Rest.composite EXACTLY (parity is required; Swift adds a neutral term, it does NOT drop +
-        // renormalize). Weights sum to 1.0 so the weighted sum is already on 0..100.
-        val consistencyScore = ((consistency ?: NEUTRAL_CONSISTENCY) * 100.0).coerceIn(0.0, 100.0)
+    /** Swift `Rest.composite(tstSeconds:inBedSeconds:efficiency:restorativeSeconds:needHours:consistency:deepSeconds:age:)`. */
+    fun composite(
+        tstSeconds: Double,
+        efficiency: Double,
+        restorativeSeconds: Double,
+        needHours: Double,
+        consistency: Double?,
+        deepSeconds: Double?,
+        age: Int?,
+    ): Double {
+        fun clamp01(x: Double) = maxOf(0.0, minOf(1.0, x))
+        val restorTarget = restorativeTarget(age)
+        val deepTarget = deepShareTarget(age)
+        val needSeconds = maxOf(needHours, 0.1) * 3600.0
+        val durationScore = clamp01(tstSeconds / needSeconds)
+        val efficiencyScore = clamp01(efficiency)
+        val deepFactor = if (deepSeconds != null && tstSeconds > 0) {
+            val adequacy = clamp01((deepSeconds / tstSeconds) / deepTarget)
+            deepFloorFactor + (1.0 - deepFloorFactor) * adequacy
+        } else 1.0
+        val restorativeScore = if (tstSeconds > 0)
+            clamp01((restorativeSeconds / tstSeconds) / restorTarget) * deepFactor else 0.0
+        val consistencyScore = clamp01(consistency ?: NEUTRAL_CONSISTENCY)
         val weighted = wDuration * durationScore +
             wEfficiency * efficiencyScore +
             wRestorative * restorativeScore +
             wConsistency * consistencyScore
-        return (weighted * 100.0).roundToInt() / 100.0
+        return swiftRounded(weighted * 10000.0) / 100.0
     }
 
     /**
@@ -1730,6 +1724,7 @@ object RestScorer {
     fun subScoreLine(
         tstSeconds: Double, inBedSeconds: Double, efficiency: Double, restorativeSeconds: Double,
         needHours: Double, consistency: Double?, deepSeconds: Double?,
+        age: Int? = null,
         groupFragments: Int, groupInBedSeconds: Double,
     ): String {
         fun clamp01(x: Double) = maxOf(0.0, minOf(1.0, x))
@@ -1737,21 +1732,18 @@ object RestScorer {
         val needSeconds = maxOf(needHours, 0.1) * 3600.0
         val durationScore = clamp01(tstSeconds / needSeconds)
         val efficiencyScore = clamp01(efficiency)
-        val deepFactor = if (deepSeconds != null && tstSeconds > 0 && deepShareTarget > 0) {
-            val adequacy = clamp01((deepSeconds / tstSeconds) / deepShareTarget)
+        val deepFactor = if (deepSeconds != null && tstSeconds > 0) {
+            val adequacy = clamp01((deepSeconds / tstSeconds) / deepShareTarget(age))
             deepFloorFactor + (1.0 - deepFloorFactor) * adequacy
         } else 1.0
         val restorativeScore = if (tstSeconds > 0)
-            clamp01((restorativeSeconds / tstSeconds) / restorativeTargetShare) * deepFactor else 0.0
+            clamp01((restorativeSeconds / tstSeconds) / restorativeTarget(age)) * deepFactor else 0.0
         val consistencyScore = clamp01(consistency ?: NEUTRAL_CONSISTENCY)
-        // Reuse the real scorer for the composite (cannot diverge). `rest()` takes deep + REM separately;
-        // restorative = deep + REM, so REM = restorative - deep. null deep -> 0 deep (no-adequacy path).
-        val composite = rest(
-            asleepSeconds = tstSeconds, efficiency = efficiency,
-            deepSeconds = deepSeconds ?: 0.0,
-            remSeconds = restorativeSeconds - (deepSeconds ?: 0.0),
-            sleepNeedHours = needHours, consistency = consistency,
-        ) ?: 0.0
+        // Reuse the real scorer for the composite (cannot diverge), exactly as Swift does.
+        val composite = composite(
+            tstSeconds = tstSeconds, efficiency = efficiency, restorativeSeconds = restorativeSeconds,
+            needHours = needHours, consistency = consistency, deepSeconds = deepSeconds, age = age,
+        )
         return "rest composite=${r2(composite)} " +
             "dur=${r2(durationScore)}*wDur=$wDuration " +
             "eff=${r2(efficiencyScore)}*wEff=$wEfficiency " +
@@ -1761,22 +1753,22 @@ object RestScorer {
     }
 
     /**
-     * Rest composite [0,100] derived from a persisted [DailyMetric] (the pass-2 / display path — raw
-     * streams are gone but the night's totals remain). null when there's no sleep. Single source of
-     * truth so the persisted sleep_performance series and the Charge "Rest quality" term agree. Mirrors
-     * Swift `AnalyticsEngine.Rest.composite(daily:)`.
+     * Rest composite [0,100] from a persisted [DailyMetric] and the night's [Context]. null when there's
+     * no sleep. A null `deepMin` is UNKNOWN (factor 1.0), not zero deep (#55). Mirrors Swift
+     * `AnalyticsEngine.Rest.composite(daily:context:)`.
      */
-    fun restFromDaily(daily: DailyMetric, consistency: Double? = null): Double? {
+    fun restFromDaily(daily: DailyMetric, context: Context = Context.coldStart): Double? {
         val tstMin = daily.totalSleepMin ?: return null
         val eff = daily.efficiency ?: return null
         if (tstMin <= 0.0) return null
-        return rest(
-            asleepSeconds = tstMin * 60.0,
+        return composite(
+            tstSeconds = tstMin * 60.0,
             efficiency = eff,
-            deepSeconds = (daily.deepMin ?: 0.0) * 60.0,
-            remSeconds = (daily.remMin ?: 0.0) * 60.0,
-            sleepNeedHours = null,
-            consistency = consistency,
+            restorativeSeconds = (daily.deepMin ?: 0.0) * 60.0 + (daily.remMin ?: 0.0) * 60.0,
+            needHours = context.needHours,
+            consistency = context.consistency,
+            deepSeconds = daily.deepMin?.let { it * 60.0 },
+            age = context.age,
         )
     }
 }

@@ -56,7 +56,6 @@ class GarminMetricStorageMigrationTest {
     fun migration_versionPair_is42to43() {
         assertEquals(42, WhoopDatabase.MIGRATION_42_43.startVersion)
         assertEquals(43, WhoopDatabase.MIGRATION_42_43.endVersion)
-        assertEquals(43, WhoopDatabase.SCHEMA_VERSION)
     }
 
     /** The stored `kind` strings are shared with Swift: this is the list `GarminMetricStorageTests.
@@ -67,6 +66,7 @@ class GarminMetricStorageMigrationTest {
             listOf(
                 "stress", "body_battery", "respiration_bpm", "spo2_pct",
                 "intensity_moderate_min", "intensity_vigorous_min", "active_kcal", "hrv_ms", "sleep_score",
+                "aerobic_training_effect", "anaerobic_training_effect", "training_load",
             ),
             DeviceMetricKind.entries.map { it.wire },
         )

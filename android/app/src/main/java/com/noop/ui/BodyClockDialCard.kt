@@ -1,6 +1,14 @@
 package com.noop.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -108,11 +116,48 @@ fun BodyClockDialCard(
                 }
             }
 
+            // Scrub cursor (#58): touch and hold the dial, then drag, to read an arc. The arc whose band is
+            // nearer the finger wins, and the callout names its clock range and which arc it is.
+            val is24h = ClockPrefs.uses24Hour(LocalContext.current)
+            val paints = rememberChartScrubPaints()
+            val arcNames = listOf(
+                uiString(R.string.l10n_body_clock_dial_card_last_night_6eaba4dd),
+                uiString(R.string.l10n_body_clock_dial_card_your_clock_1b91f5ee),
+            )
+            val arcHours = listOf(actualBedHour to actualWakeHour, ideal.bedHour to ideal.wakeHour)
+            var touch by remember { mutableStateOf<Offset?>(null) }
+            var canvasSize by remember { mutableStateOf(Size.Zero) }
+            val scrubArc = touch?.let { t ->
+                bodyClockArcAt(t, canvasSize, with(density) { 1.dp.toPx() })
+            }
+            val scrubText = scrubArc?.let { i ->
+                val (from, to) = arcHours[i]
+                // The reference arc is an activity fit: five-minute steps, as the caption below uses.
+                val step = if (i == BODY_CLOCK_ARC_IDEAL) 5 else 1
+                "${bodyClockHourLabel(from, is24h, step)}–${bodyClockHourLabel(to, is24h, step)}"
+            }
+            ChartScrubHaptic(scrubArc)
+
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
-                    .semantics { contentDescription = dialLabel },
+                    .onSizeChanged { canvasSize = Size(it.width.toFloat(), it.height.toFloat()) }
+                    .pointerInput(Unit) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { touch = it },
+                            onDragEnd = { touch = null },
+                            onDragCancel = { touch = null },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                touch = change.position
+                            },
+                        )
+                    }
+                    .semantics {
+                        contentDescription = dialLabel
+                        scrubArc?.let { stateDescription = listOfNotNull(arcNames[it], scrubText).joinToString(", ") }
+                    },
             ) {
                 val side = min(size.width, size.height)
                 val centre = Offset(size.width / 2f, size.height / 2f)
@@ -240,6 +285,20 @@ fun BodyClockDialCard(
                         draw(Size(glyph, glyph), colorFilter = ColorFilter.tint(hue))
                     }
                 }
+
+                // The scrubbed arc: a dot at its middle, and the callout naming its range.
+                if (scrubArc != null && scrubText != null) {
+                    val (from, to) = arcHours[scrubArc]
+                    val radius = if (scrubArc == BODY_CLOCK_ARC_IDEAL) reference else night
+                    val mid = Math.toRadians(hourAngleDegrees(from + sweepHours(from, to) / 2.0))
+                    val at = Offset(
+                        centre.x + (cos(mid) * radius).toFloat(),
+                        centre.y + (sin(mid) * radius).toFloat(),
+                    )
+                    drawCircle(color = Palette.surfaceBase, radius = 5.dp.toPx(), center = at)
+                    drawCircle(color = hue, radius = 3.dp.toPx(), center = at)
+                    drawScrubCallout(at.x, at.y, scrubText, arcNames[scrubArc], paints)
+                }
             }
 
             DialLegend(hue)
@@ -287,6 +346,34 @@ private fun LegendItem(colour: androidx.compose.ui.graphics.Color, dashed: Boole
         Spacer(Modifier.width(5.dp))
         Text(label, style = NoopType.footnote, color = Palette.textTertiary)
     }
+}
+
+/** Index of the actual night's arc in the dial's scrub, and of the body clock's reference arc. */
+internal const val BODY_CLOCK_ARC_NIGHT = 0
+internal const val BODY_CLOCK_ARC_IDEAL = 1
+
+/**
+ * Which arc a touch at [t] on a dial canvas of [size] reads: the one whose band radius is nearer the
+ * touch's distance from the centre (ties go to the night arc). The bands are the drawing's own:
+ * reference = rim − 31 dp, night = rim − 45 dp, both scaled by rim / 90 dp, rim = side / 2 − 10 dp.
+ * [dp] is one dp in px. Null on an empty canvas.
+ */
+internal fun bodyClockArcAt(t: Offset, size: Size, dp: Float): Int? {
+    val side = min(size.width, size.height)
+    if (side <= 0f || dp <= 0f) return null
+    val rim = side / 2f - 10f * dp
+    val scale = rim / (90f * dp)
+    val reference = rim - 31f * dp * scale
+    val night = rim - 45f * dp * scale
+    val r = kotlin.math.hypot(t.x - size.width / 2f, t.y - size.height / 2f)
+    return if (kotlin.math.abs(r - night) <= kotlin.math.abs(r - reference)) BODY_CLOCK_ARC_NIGHT else BODY_CLOCK_ARC_IDEAL
+}
+
+/** A fractional clock [hour] as "23:10" / "11:10 PM", rounded to [stepMinutes] (wrapping past midnight). */
+internal fun bodyClockHourLabel(hour: Double, is24h: Boolean, stepMinutes: Int = 1): String {
+    val total = ((hour * 60.0 / stepMinutes).roundToInt() * stepMinutes).mod(24 * 60)
+    return java.time.LocalTime.of(total / 60, total % 60)
+        .format(java.time.format.DateTimeFormatter.ofPattern(com.noop.analytics.ClockFormat.hourMinutePattern(is24h), java.util.Locale.US))
 }
 
 /** A unix second as a fractional LOCAL clock hour — the dial's only input beyond the phase estimate. */

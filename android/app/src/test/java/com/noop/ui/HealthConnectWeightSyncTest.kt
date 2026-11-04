@@ -1,6 +1,7 @@
 package com.noop.ui
 
 import android.content.SharedPreferences
+import com.noop.analytics.WeightLog
 import com.noop.analytics.WeightReading
 import com.noop.data.AppleDaily
 import org.junit.Assert.assertEquals
@@ -68,6 +69,51 @@ class HealthConnectWeightSyncTest {
     }
 
     // In-memory SharedPreferences reproducing the read/write contract ProfileStore relies on.
+    // #57: the profile weight (read by calorie / BMR math) follows the newest logged weight, and with
+    // "Use weight from Health Connect" on, the newest of the diary and Health Connect, the diary on a tie.
+
+    @Test
+    fun profileFollowsTheNewestLoggedWeight() {
+        val profile = ProfileStore(FakeSharedPreferences())
+        profile.weightKg = 80.0
+        val logged = listOf(WeightLog.Entry("2026-10-01", 79.0), WeightLog.Entry("2026-10-04", 78.2))
+        assertEquals(78.2, WeightLogStore.applyToProfile(profile, logged, emptyList())!!, 1e-9)
+        assertEquals(78.2, profile.weightKg, 1e-4)
+    }
+
+    @Test
+    fun anEmptyDiaryLeavesTheProfileAlone() {
+        val profile = ProfileStore(FakeSharedPreferences())
+        profile.weightKg = 80.0
+        assertNull(WeightLogStore.applyToProfile(profile, emptyList(), emptyList()))
+        assertEquals(80.0, profile.weightKg, 1e-4)
+    }
+
+    @Test
+    fun aNewerHealthConnectWeighInKeepsTheProfileAndALoggedTieWins() {
+        val profile = ProfileStore(FakeSharedPreferences())
+        profile.weightKg = 80.0
+        val logged = listOf(WeightLog.Entry("2026-10-04", 78.2))
+        assertNull(WeightLogStore.applyToProfile(profile, logged, listOf(WeightReading("2026-10-05", 77.0))))
+        assertEquals(80.0, profile.weightKg, 1e-4)
+        assertEquals(78.2, WeightLogStore.applyToProfile(profile, logged, listOf(WeightReading("2026-10-04", 77.0)))!!, 1e-9)
+    }
+
+    @Test
+    fun healthConnectSyncYieldsToALoggedWeightOnTheSameDayOrLater() {
+        val profile = ProfileStore(FakeSharedPreferences())
+        profile.weightKg = 80.0
+        profile.useHealthConnectWeight = true
+        val rows = listOf(hcDay("2026-10-04", 77.0))
+        assertNull(HealthConnectWeightSync.apply(profile, rows, listOf(WeightLog.Entry("2026-10-04", 78.2))))
+        assertEquals(80.0, profile.weightKg, 1e-4)
+        assertEquals(
+            WeightReading("2026-10-04", 77.0),
+            HealthConnectWeightSync.apply(profile, rows, listOf(WeightLog.Entry("2026-10-03", 78.2))),
+        )
+        assertEquals(77.0, profile.weightKg, 1e-4)
+    }
+
     private class FakeSharedPreferences : SharedPreferences {
         private val map = HashMap<String, Any?>()
         override fun getInt(key: String, defValue: Int): Int = map[key] as? Int ?: defValue

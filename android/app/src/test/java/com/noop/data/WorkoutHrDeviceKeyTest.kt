@@ -147,4 +147,16 @@ class WorkoutHrDeviceKeyTest {
             viaCanonicalConstant.contains("whoop-aabbcc"),
         )
     }
+
+    /** #50: a Garmin row reads the watch's own trace, stored under the watch id that is also its source. */
+    @Test fun `garmin row reads HR under the watch id, not the worn strap`() {
+        assertEquals(
+            listOf("garmin-1234"),
+            WhoopRepository.workoutHrDeviceIds("garmin-1234", "garmin-1234", "whoop-aabbcc"),
+        )
+        assertEquals(
+            com.noop.ui.WorkoutSource.GARMIN, com.noop.ui.WorkoutEditing.classify("garmin-1234"))
+        assertEquals(
+            com.noop.ui.WorkoutSource.APPLE, com.noop.ui.WorkoutEditing.classify("garmin-import"))
+    }
 }

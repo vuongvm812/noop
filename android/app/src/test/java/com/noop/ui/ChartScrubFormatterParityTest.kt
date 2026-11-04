@@ -11,7 +11,7 @@ import org.junit.Test
  *
  * `formatValue` was added for #463, when Trends' Effort chart tapped to the stored 0–100 number beside
  * a 0–21 axis. Only that call site was wired up, so every other scrubbable chart kept the default —
- * [lineChartSelectionLabel]'s fallback, which collapses near-integers and otherwise prints one decimal.
+ * [lineChartSelectionParts]'s fallback, which collapses near-integers and otherwise prints one decimal.
  * The reporter's screenshot is the same defect on the screens #463 never reached: a rounded headline
  * with a one-decimal graph beneath it.
  *
@@ -19,6 +19,9 @@ import org.junit.Test
  * so a future caller that forgets one has a written statement of what goes wrong.
  */
 class ChartScrubFormatterParityTest {
+
+    /** The callout's value line, the part these tests are about. */
+    private fun value(raw: Double, format: ((Double) -> String)?): String = lineChartSelectionParts(raw, format).first
 
     /**
      * Vital Signs detail: `detail.format` is `it.roundToInt().toString()` for the rounded metrics, and
@@ -37,15 +40,15 @@ class ChartScrubFormatterParityTest {
     fun theDefaultDisagreesWithARoundedHeadline() {
         // An HRV of 62.4 is a "62" everywhere on the Vital Signs detail screen except, until now, the
         // graph — which is exactly what the report shows.
-        assertEquals("62.4", lineChartSelectionLabel(62.4, null))
-        assertEquals("62 ms", lineChartSelectionLabel(62.4, roundedMetric))
-        assertNotEquals(lineChartSelectionLabel(62.4, null), lineChartSelectionLabel(62.4, roundedMetric))
+        assertEquals("62.4", value(62.4, null))
+        assertEquals("62 ms", value(62.4, roundedMetric))
+        assertNotEquals(value(62.4, null), value(62.4, roundedMetric))
     }
 
     @Test
     fun aRoundedMetricAgreesWithItsGraphAcrossTheRange() {
         for ((raw, expected) in listOf(62.4 to "62 ms", 72.5 to "73 ms", 99.9 to "100 ms", 0.4 to "0 ms")) {
-            assertEquals(expected, lineChartSelectionLabel(raw, roundedMetric))
+            assertEquals(expected, value(raw, roundedMetric))
         }
     }
 
@@ -55,15 +58,15 @@ class ChartScrubFormatterParityTest {
      */
     @Test
     fun theDefaultCollapsesAnExactValueThatTheScreenSpellsOut() {
-        assertEquals("2", lineChartSelectionLabel(2.0, null))
-        assertEquals("2.0", lineChartSelectionLabel(2.0, stressScore))
+        assertEquals("2", value(2.0, null))
+        assertEquals("2.0", value(2.0, stressScore))
     }
 
     /** Sleep hours carry a unit; the bare number was a different reading, not a rounder one. */
     @Test
     fun sleepHoursKeepTheirUnit() {
-        assertEquals("7.3", lineChartSelectionLabel(7.3, null))
-        assertEquals("7.3 h", lineChartSelectionLabel(7.3, sleepHours))
+        assertEquals("7.3", value(7.3, null))
+        assertEquals("7.3 h", value(7.3, sleepHours))
     }
 
     /**
@@ -75,13 +78,13 @@ class ChartScrubFormatterParityTest {
     @Test
     fun anAxisConvertedMetricDisagreedOnTheValueItself() {
         val toWhoopScale: (Double) -> String = { UnitFormatter.effortDisplay(it, EffortScale.WHOOP) }
-        assertEquals("59", lineChartSelectionLabel(59.0, null))          // raw, as the chart used to say
-        assertEquals("12.4", lineChartSelectionLabel(59.0, toWhoopScale)) // what the axis says
+        assertEquals("59", value(59.0, null))          // raw, as the chart used to say
+        assertEquals("12.4", value(59.0, toWhoopScale)) // what the axis says
     }
 
-    /** A day label still prefixes the formatted value, so #691's date context survives the fix. */
+    /** The day label rides beside the formatted value, so #691's date context survives the fix. */
     @Test
-    fun theDayLabelStillPrefixesTheFormattedValue() {
-        assertEquals("16 Jul · 62 ms", lineChartSelectionLabel(62.4, roundedMetric, pointLabel = "16 Jul"))
+    fun theDayLabelSitsBesideTheFormattedValue() {
+        assertEquals("62 ms" to "16 Jul", lineChartSelectionParts(62.4, roundedMetric, pointLabel = "16 Jul"))
     }
 }

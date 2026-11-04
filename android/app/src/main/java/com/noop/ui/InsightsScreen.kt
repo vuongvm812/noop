@@ -57,9 +57,10 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import com.noop.analytics.Correlation
+import com.noop.analytics.CorrelationEngine
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 import com.noop.analytics.BehaviorEffect
 import com.noop.analytics.EffectRanker
 
@@ -131,9 +132,11 @@ private data class Relationship(
     val blurb: String,
     val r: Double,
     val n: Int,
+    /** Two-sided p from the shared engine (Student-t, autocorrelation-corrected n; 1.0 below minPairs). */
+    val p: Double,
 ) {
-    /** Crude significance flag for |r| with n pairs (rough p < 0.05 threshold). */
-    val significant: Boolean get() = n >= 4 && abs(r) >= significanceThreshold(n)
+    /** Same rule as the Swift Insights pill: p < 0.05. */
+    val significant: Boolean get() = p < 0.05
 }
 
 /** The fully-computed insight inputs for the current data, recomputed off recentDays. */
@@ -1606,35 +1609,35 @@ private fun computeRelationships(model: InsightModel): List<Relationship> {
     fun series(o: Outcome) = model.seriesByOutcome[o] ?: emptyList()
     val out = mutableListOf<Relationship>()
 
-    pearsonAligned(series(Outcome.Hrv), series(Outcome.Recovery))?.let { (r, n) ->
+    pearsonAligned(series(Outcome.Hrv), series(Outcome.Recovery))?.let { c ->
         out.add(
             Relationship(
                 "hrv-rec", "HRV ↔ Charge",
-                "Heart-rate variability as the engine behind your charge score.", r, n,
+                "Heart-rate variability as the engine behind your charge score.", c.r, c.n, c.pApprox,
             ),
         )
     }
-    pearsonAligned(series(Outcome.Sleep), series(Outcome.Recovery))?.let { (r, n) ->
+    pearsonAligned(series(Outcome.Sleep), series(Outcome.Recovery))?.let { c ->
         out.add(
             Relationship(
                 "sleep-rec", "Rest ↔ Charge",
-                "How closely a good night tracks next-morning charge.", r, n,
+                "How closely a good night tracks next-morning charge.", c.r, c.n, c.pApprox,
             ),
         )
     }
-    pearsonAligned(series(Outcome.Rhr), series(Outcome.Recovery))?.let { (r, n) ->
+    pearsonAligned(series(Outcome.Rhr), series(Outcome.Recovery))?.let { c ->
         out.add(
             Relationship(
                 "rhr-rec", "Resting HR ↔ Charge",
-                "A lower resting heart rate usually means a higher charge.", r, n,
+                "A lower resting heart rate usually means a higher charge.", c.r, c.n, c.pApprox,
             ),
         )
     }
-    pearsonLagged(series(Outcome.Recovery), lagDays = 1)?.let { (r, n) ->
+    pearsonLagged(series(Outcome.Recovery), lagDays = 1)?.let { c ->
         out.add(
             Relationship(
                 "rec-lag", "Charge → Next-day charge",
-                "How much one day's charge carries into the next.", r, n,
+                "How much one day's charge carries into the next.", c.r, c.n, c.pApprox,
             ),
         )
     }
@@ -1644,52 +1647,16 @@ private fun computeRelationships(model: InsightModel): List<Relationship> {
 
 // MARK: - Statistics (pooled-SD Cohen's d, Pearson r)
 
-/** Pearson r over two (day,value) series aligned on shared days. Returns (r, n) or
- *  null if fewer than 3 overlapping pairs or no variance. */
+/** Pearson over two (day,value) series aligned on shared days — the shared engine, as on Apple. */
 private fun pearsonAligned(
     xs: List<Pair<String, Double>>,
     ys: List<Pair<String, Double>>,
-): Pair<Double, Int>? {
-    val ym = ys.toMap()
-    val pairs = xs.mapNotNull { (day, x) -> ym[day]?.let { x to it } }
-    return pearson(pairs)
-}
+): Correlation? = CorrelationEngine.pearson(CorrelationEngine.alignByDay(xs, ys))
 
-/** Pearson r of a series against itself shifted forward by [lagDays] days.
- *  Uses index offset on the ordered series (days are oldest → newest). */
-private fun pearsonLagged(series: List<Pair<String, Double>>, lagDays: Int): Pair<Double, Int>? {
-    if (series.size <= lagDays) return null
-    val pairs = (0 until series.size - lagDays).map { i ->
-        series[i].second to series[i + lagDays].second
-    }
-    return pearson(pairs)
-}
-
-/** Pearson correlation of paired samples. Null with <3 pairs or no variance. */
-private fun pearson(pairs: List<Pair<Double, Double>>): Pair<Double, Int>? {
-    val n = pairs.size
-    if (n < 3) return null
-    val mx = pairs.sumOf { it.first } / n
-    val my = pairs.sumOf { it.second } / n
-    var sxy = 0.0
-    var sxx = 0.0
-    var syy = 0.0
-    for ((x, y) in pairs) {
-        val dx = x - mx
-        val dy = y - my
-        sxy += dx * dy
-        sxx += dx * dx
-        syy += dy * dy
-    }
-    val denom = sqrt(sxx * syy)
-    if (denom <= 0.0 || !denom.isFinite()) return null
-    return (sxy / denom).coerceIn(-1.0, 1.0) to n
-}
-
-/** Rough |r| threshold for "p < 0.05" at n pairs (critical r for a two-tailed test,
- *  approximated by 2 / sqrt(n), a standard rule-of-thumb). Honest, not exact. */
-private fun significanceThreshold(n: Int): Double =
-    if (n < 4) 1.1 else (2.0 / sqrt(n.toDouble())).coerceAtMost(1.0)
+/** A series against itself [lagDays] CALENDAR days later (Swift `CorrelationEngine.lagged`); the old
+ *  index offset paired across gaps in the history. */
+private fun pearsonLagged(series: List<Pair<String, Double>>, lagDays: Int): Correlation? =
+    CorrelationEngine.lagged(series, series, lagDays)
 
 // MARK: - Text + colour helpers
 

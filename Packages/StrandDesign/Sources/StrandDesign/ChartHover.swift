@@ -68,9 +68,14 @@ public struct ChartTooltip: View {
 /// Estimates the tooltip's size, then flips/clamps so it never spills off-edge.
 public struct ChartTooltipPlacement {
 
+    /// Space between a short strip's top edge and the tooltip floated above it.
+    static let floatGap: CGFloat = 4
+
     /// Compute the tooltip centre for an anchor (typically the highlighted point
     /// or the cursor), given the tooltip's measured size and the chart bounds.
-    /// Prefers to sit above-and-right of the anchor, flipping when near an edge.
+    /// Prefers to sit above-and-right of the anchor, flipping when near an edge. A strip shorter than the
+    /// tooltip (an inline sparkline) cannot hold it without covering the line it reads, so there the
+    /// tooltip floats just above the strip instead (#58).
     public static func position(
         anchor: CGPoint,
         tooltipSize: CGSize,
@@ -80,13 +85,18 @@ public struct ChartTooltipPlacement {
         let halfW = tooltipSize.width / 2
         let halfH = tooltipSize.height / 2
 
-        // Default: above the anchor.
-        var y = anchor.y - gap - halfH
-        if y - halfH < 0 {
-            // Not enough room above — drop below.
-            y = anchor.y + gap + halfH
+        var y: CGFloat
+        if container.height < tooltipSize.height + gap {
+            y = -halfH - floatGap
+        } else {
+            // Default: above the anchor.
+            y = anchor.y - gap - halfH
+            if y - halfH < 0 {
+                // Not enough room above — drop below.
+                y = anchor.y + gap + halfH
+            }
+            y = min(max(y, halfH), max(halfH, container.height - halfH))
         }
-        y = min(max(y, halfH), max(halfH, container.height - halfH))
 
         // Default: centred on the anchor x, clamped to bounds.
         var x = anchor.x

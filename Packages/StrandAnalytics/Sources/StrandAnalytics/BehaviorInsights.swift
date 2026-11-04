@@ -15,10 +15,12 @@ import Foundation
 //   - pApprox : a two-sided p-value from Welch's t-test (unequal variances),
 //       t  = (m1 − m2) / sqrt(s1²/n1 + s2²/n2),
 //       df = (s1²/n1 + s2²/n2)² / ( (s1²/n1)²/(n1−1) + (s2²/n2)²/(n2−1) )  [Welch–Satterthwaite],
-//     converted to a tail probability with a normal approximation (deterministic,
-//     no special-function tables; slightly understates p for small samples).
-//   - significant : pApprox < 0.05 AND min(nWith, nWithout) ≥ 5 (guards against
-//     spurious "significance" from a handful of days).
+//     converted to a two-sided Student-t tail on that df (StatTests).
+//   - pAdjusted : the Benjamini–Hochberg q-value across the feed's family of tests (`rank`
+//     adjusts across every behaviour it ranks; EffectRanker across behaviours × outcomes × lags).
+//     A single `effect` call is a family of one, so pAdjusted == pApprox there.
+//   - significant : pAdjusted < 0.05 AND min(nWith, nWithout) ≥ 5 (guards against
+//     spurious "significance" from a handful of days or from testing many behaviours).
 //
 // Effect direction is carried by the SIGN of delta / cohensD: a behavior that
 // lowers the outcome yields negative values. `rank` orders behaviors by |cohensD|
@@ -46,14 +48,16 @@ public struct BehaviorEffect: Equatable, Sendable {
     public let nWithout: Int
     /// Cohen's d using the pooled SD (signed; sign matches delta).
     public let cohensD: Double
-    /// Two-sided p-value (Welch t-test, normal approximation).
+    /// Two-sided p-value (Welch t-test, Student-t tail on the Welch–Satterthwaite df).
     public let pApprox: Double
-    /// pApprox < 0.05 AND min(nWith, nWithout) ≥ 5.
+    /// pAdjusted < 0.05 AND min(nWith, nWithout) ≥ 5.
     public let significant: Bool
+    /// Benjamini–Hochberg q-value across the family this effect was ranked in (== pApprox alone).
+    public let pAdjusted: Double
 
     public init(behavior: String, outcome: String, meanWith: Double, meanWithout: Double,
                 delta: Double, pctChange: Double?, nWith: Int, nWithout: Int,
-                cohensD: Double, pApprox: Double, significant: Bool) {
+                cohensD: Double, pApprox: Double, significant: Bool, pAdjusted: Double? = nil) {
         self.behavior = behavior
         self.outcome = outcome
         self.meanWith = meanWith
@@ -65,6 +69,18 @@ public struct BehaviorEffect: Equatable, Sendable {
         self.cohensD = cohensD
         self.pApprox = pApprox
         self.significant = significant
+        self.pAdjusted = pAdjusted ?? pApprox
+    }
+
+    /// This effect re-judged against a family-adjusted q-value.
+    /// Kotlin twin: `BehaviorEffect.adjusted`.
+    public func adjusted(q: Double) -> BehaviorEffect {
+        BehaviorEffect(behavior: behavior, outcome: outcome, meanWith: meanWith,
+                       meanWithout: meanWithout, delta: delta, pctChange: pctChange,
+                       nWith: nWith, nWithout: nWithout, cohensD: cohensD, pApprox: pApprox,
+                       significant: q < BehaviorInsights.alpha
+                           && Swift.min(nWith, nWithout) >= BehaviorInsights.minGroupForSignificance,
+                       pAdjusted: q)
     }
 }
 
@@ -72,7 +88,7 @@ public enum BehaviorInsights {
 
     /// Minimum group size (each side) for an effect to be flagged significant.
     public static let minGroupForSignificance: Int = 5
-    /// Significance threshold on the approximate p-value.
+    /// Significance threshold on the (family-adjusted) p-value.
     public static let alpha: Double = 0.05
 
     // MARK: - Single behavior effect
@@ -140,13 +156,17 @@ public enum BehaviorInsights {
 
     /// Compute effects for every behavior in `behaviors` against one outcome and
     /// return them sorted by |cohensD| descending, with significant effects first.
-    /// Behaviors that don't yield a computable effect are dropped.
+    /// Behaviors that don't yield a computable effect are dropped. Significance is judged on the
+    /// Benjamini–Hochberg q-value across the behaviours that cleared the group-size gate (the tests
+    /// that could have been declared); the rest keep q = 1.
+    /// Kotlin twin: `EffectRanker.rankNoLag`.
     public static func rank(behaviors: [String: Set<String>],
                             controls: [String: Set<String>],
                             outcomeByDay: [String: Double],
                             outcome: String) -> [BehaviorEffect] {
         var effects: [BehaviorEffect] = []
-        for (name, days) in behaviors {
+        for name in behaviors.keys.sorted() {
+            let days = behaviors[name]!
             // A behaviour absent from `controls` has no controls and yields nothing — failing CLOSED, so
             // a caller that forgets loses the insight rather than getting a wrong one measured against
             // every day the user never opened the journal.
@@ -156,12 +176,26 @@ public enum BehaviorInsights {
                 effects.append(e)
             }
         }
+        effects = adjustFamily(effects)
         return effects.sorted { a, b in
             if a.significant != b.significant { return a.significant }  // significant first
             let la = abs(a.cohensD), lb = abs(b.cohensD)
             if la != lb { return la > lb }                              // bigger effect first
             return a.behavior < b.behavior                             // stable tiebreak
         }
+    }
+
+    /// Apply Benjamini–Hochberg across `effects`. The family is the effects that cleared the
+    /// group-size gate, in the order given; effects below the gate get q = 1.
+    /// Kotlin twin: `EffectRanker.adjustFamily`.
+    static func adjustFamily(_ effects: [BehaviorEffect]) -> [BehaviorEffect] {
+        let gated = effects.indices.filter {
+            Swift.min(effects[$0].nWith, effects[$0].nWithout) >= minGroupForSignificance
+        }
+        let q = StatTests.benjaminiHochberg(gated.map { effects[$0].pApprox })
+        var out = effects.map { $0.adjusted(q: 1.0) }
+        for (k, i) in gated.enumerated() { out[i] = effects[i].adjusted(q: q[k]) }
+        return out
     }
 
     // MARK: - Sentence
@@ -215,17 +249,11 @@ public enum BehaviorInsights {
         return (m1 - m2) / sp
     }
 
-    /// Two-sided Welch t-test p-value with a normal-approximation tail.
-    /// Returns 1.0 (no evidence) when neither group has a usable standard error.
+    /// Two-sided Welch t-test p-value (Student-t tail, Welch–Satterthwaite df).
+    /// No spread anywhere: identical means → 1.0; differing means → 0.0.
     static func welchP(m1: Double, v1: Double, n1: Int,
                        m2: Double, v2: Double, n2: Int) -> Double {
-        let se2 = v1 / Double(n1) + v2 / Double(n2)
-        guard se2 > 0 else {
-            // No spread anywhere: identical means → p=1; differing means → p≈0.
-            return m1 == m2 ? 1.0 : 0.0
-        }
-        let t = (m1 - m2) / se2.squareRoot()
-        return 2.0 * (1.0 - CorrelationEngine.normalCDF(abs(t)))
+        StatTests.welchP(m1: m1, v1: v1, n1: n1, m2: m2, v2: v2, n2: n2)
     }
 
     // MARK: - Formatting helpers

@@ -112,32 +112,16 @@ final class AnalyticsEngineTests: XCTestCase {
         XCTAssertEqual(result.cachedSleep[0].restingHr, 50)
     }
 
-    func testAnalyzeDayColdStartRecoveryNil() {
-        // No baselines supplied → recovery is nil (cold-start gate).
+    func testAnalyzeDayLeavesChargeToTheSecondPass() {
+        // #53: Charge needs the day's own trailing baselines, which the engine resolves per day in its
+        // second pass, so the per-day analysis never scores it.
         let day = "2021-06-16"
         let n = night(endDay: day, hours: 7)
         let result = AnalyticsEngine.analyzeDay(
             day: day, hr: n.hr, rr: n.rr, gravity: n.gravity,
             profile: UserProfile(age: 30))
         XCTAssertNil(result.daily.recovery)
-        XCTAssertNil(result.recovery)
-    }
-
-    func testAnalyzeDayWithBaselinesProducesRecovery() {
-        let day = "2021-06-17"
-        let n = night(endDay: day, hours: 7)
-        // Trusted HRV + RHR baselines around the values this night will produce.
-        let hrvBase = Baselines.foldHistory(Array(repeating: 10.0, count: 14), cfg: Baselines.hrvCfg)
-        let rhrBase = Baselines.foldHistory(Array(repeating: 50.0, count: 14), cfg: Baselines.restingHRCfg)
-        XCTAssertTrue(hrvBase.usable)
-        let result = AnalyticsEngine.analyzeDay(
-            day: day, hr: n.hr, rr: n.rr, gravity: n.gravity,
-            profile: UserProfile(age: 30),
-            baselines: AnalyticsEngine.ProfileBaselines(hrv: hrvBase, restingHR: rhrBase))
-        XCTAssertNotNil(result.recovery)
-        XCTAssertEqual(result.daily.recovery, result.recovery)
-        XCTAssertGreaterThanOrEqual(result.recovery!, 0)
-        XCTAssertLessThanOrEqual(result.recovery!, 100)
+        XCTAssertNil(result.daily.skinTempDevC)
     }
 
     func testAnalyzeDayNoMatchingNight() {
@@ -165,7 +149,8 @@ final class AnalyticsEngineTests: XCTestCase {
     func testAnalyzeDayPopulatesParityFields() throws {
         // The Android-parity computations must land on the DailyMetric when the streams are
         // supplied: RSA respiration from RR, daily steps from the cumulative @57 counter,
-        // whole-day HR-only calories, and the wear-gated skin-temp deviation (usable baseline).
+        // whole-day HR-only calories, and the wear-gated nightly skin-temp mean (the second pass
+        // derives the deviation from it against the day's own skin baseline).
         let day = "2021-06-21"
         let n = night(endDay: day, hours: 7)
         // RSA-modulated RR replacing the square-wave fixture: mean 1200 ms (HR 50), ±40 ms at
@@ -183,21 +168,17 @@ final class AnalyticsEngineTests: XCTestCase {
         // Step counter: morning movement after wake, inside the same UTC day → 250 steps.
         let steps = [StepSample(ts: n.end + 600, counter: 100),
                      StepSample(ts: n.end + 1200, counter: 350)]
-        let skinBase = Baselines.foldHistory([33.5, 33.4, 33.6, 33.5],
-                                             cfg: Baselines.metricCfg["skin_temp"]!)
-        XCTAssertTrue(skinBase.usable)
         let result = AnalyticsEngine.analyzeDay(
             day: day, hr: n.hr, rr: rr, gravity: n.gravity, steps: steps, skinTemp: skin,
-            profile: UserProfile(age: 30),
-            baselines: AnalyticsEngine.ProfileBaselines(skinTemp: skinBase))
+            profile: UserProfile(age: 30))
         XCTAssertEqual(result.sleepSessions.count, 1)
         XCTAssertEqual(result.daily.steps, 250)
         XCTAssertGreaterThan(try XCTUnwrap(result.daily.activeKcalEst), 0)
         // RSA respiration recovered from the in-bed RR (≈15 bpm planted, ±3 tolerance).
         XCTAssertEqual(try XCTUnwrap(result.daily.respRateBpm), 15.0, accuracy: 3.0)
-        // Wear-gated nightly mean (34 °C plateau) + a positive deviation vs the ~33.5 °C baseline.
+        // Wear-gated nightly mean (34 °C plateau), banked on the row for the second pass.
         XCTAssertEqual(try XCTUnwrap(result.nightlySkinTempC), 34.0, accuracy: 1e-9)
-        XCTAssertGreaterThan(try XCTUnwrap(result.daily.skinTempDevC), 0.2)
+        XCTAssertEqual(result.daily.skinTempC, result.nightlySkinTempC)
     }
 
     /// End-to-end for the wake-time-edit feature (#318): the REAL stager detects a night and assigns it
@@ -401,7 +382,8 @@ final class AnalyticsEngineTests: XCTestCase {
             tstSeconds: 4 * 3600, inBedSeconds: 5 * 3600, efficiency: 0.8,
             restorativeSeconds: 1 * 3600, needHours: 8.0, consistency: 0.5)
         XCTAssertEqual(withNil, withHalf, accuracy: 1e-9)
-        XCTAssertEqual(withNil, 56.0, accuracy: 1e-9)
+        // 0.50·0.5 + 0.20·0.8 + 0.15·(0.25/0.40) + 0.15·0.5 = 0.57875 → 57.88
+        XCTAssertEqual(withNil, 57.88, accuracy: 1e-9)
     }
 
     func testAnalyzeDayPopulatesRestAndConfidence() {
@@ -416,7 +398,6 @@ final class AnalyticsEngineTests: XCTestCase {
         XCTAssertGreaterThan(result.restScore!, 0)
         XCTAssertLessThanOrEqual(result.restScore!, 100)
         XCTAssertNotEqual(result.restConfidence, .calibrating)  // a session exists
-        XCTAssertEqual(result.chargeConfidence, .calibrating)   // no HRV baseline
         XCTAssertEqual(result.effortConfidence, .solid)         // 7 h of 1 Hz HR ≫ 1 h
     }
 

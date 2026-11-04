@@ -104,8 +104,8 @@ class GarminAnalyticsEngineTest {
             deviceMetric = metrics,
             days = listOf(GarminDayRollup(dayKey(wake), wake, wake + 86_400, steps = 6_000 + i * 500,
                 restingHr = watchRhr(i), avgHrvMs = watchHrv(i), totalSleepMin = 450.0, deepMin = 90.0,
-                lightMin = 270.0, remMin = 90.0, awakeMin = 30.0, efficiencyPct = 93.8)),
-            sleeps = listOf(GarminSleepRow(sleepStart, sleepEnd, 93.8, null, watchHrv(i), stages)),
+                lightMin = 270.0, remMin = 90.0, awakeMin = 30.0, efficiency = 0.938)),
+            sleeps = listOf(GarminSleepRow(sleepStart, sleepEnd, 0.938, null, watchHrv(i), stages)),
         )
     }
 

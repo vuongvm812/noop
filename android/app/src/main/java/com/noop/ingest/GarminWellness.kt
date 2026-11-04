@@ -11,7 +11,7 @@ package com.noop.ingest
  * Message and field numbers, scales and units are protocol facts re-derived (no code, literals or
  * fixtures copied) from Gadgetbridge's FIT profile and importer (AGPLv3, at edbea98c), per the
  * facts-vs-code rule in docs/CONTRIBUTING.md. The per-message field table is in the Swift file's
- * header. In short: 55 MONITORING, 103 MONITORING_INFO, 211 MONITORING_HR_DATA, 227 STRESS_LEVEL
+ * header. In short: 55 MONITORING, 103 MONITORING_INFO, 211 MONITORING_HR_DATA, 227 STRESS_LEVEL, 229 MAX_MET_DATA
  * (+ Body Battery), 269 SPO2_DATA, 273/274/275 sleep info / raw rows / levels, 297 RESPIRATION_RATE,
  * 346 SLEEP_ASSESSMENT, 370 HRV_STATUS_SUMMARY, 371 HRV_VALUE.
  *
@@ -19,11 +19,16 @@ package com.noop.ingest
  * imported by Gadgetbridge, so their scales and units are unconfirmed. They decode raw into the
  * `*Candidate` fields and must not back a shipped metric until checked against the watch.
  *
+ * Plausible ranges (#52): SpO2 70-100 %, respiration 4-60 breaths/min (raw 400-6000), HRV values 5-300 ms
+ * (raw 640-38400); a value outside is dropped. Same bounds as `GarminSyncStore.GARMIN_SPO2_MIN` etc.
+ *
  * Timestamps: only field 253 and compressed-timestamp headers move the running timestamp. MONITORING
  * may carry `timestamp_16`, resolved forward from the previous monitoring time across a 0xFFFF
  * rollover. Cumulative MONITORING counters reset at local midnight per activity type; a day's total is
- * the sum over types of each type's largest value that day ([GarminWellnessParser.dailyTotals]); a record
- * stamped exactly at local midnight still carries the day that just ended.
+ * the sum over types of each type's largest value that day ([GarminWellnessParser.dailyTotals]), steps
+ * over the step types only ([GarminWellnessParser.STEP_ACTIVITY_TYPES]); a record stamped exactly at local
+ * midnight still carries the day that just ended. `calories` (field 1) is the day's TOTAL energy, resting
+ * metabolic rate included; `active_calories` (field 19) is the part above it.
  */
 data class GarminWellnessSamples(
     /** Local time minus UTC, in seconds, from the file's own local timestamps; null when it has none. */
@@ -31,12 +36,13 @@ data class GarminWellnessSamples(
     val monitoring: List<Monitoring> = emptyList(),
     /** Folded with [utcOffsetS], or UTC when the file carries no offset. */
     val dailyActivity: List<DailyActivity> = emptyList(),
-    val restingMetabolicRate: List<TimedInt> = emptyList(),
     val restingHeartRate: List<TimedInt> = emptyList(),
     val stress: List<TimedInt> = emptyList(),
     val bodyBattery: List<TimedInt> = emptyList(),
     val spo2: List<Spo2> = emptyList(),
     val respiration: List<TimedDouble> = emptyList(),
+    /** The watch's own VO2max estimates (MAX_MET_DATA), mL/kg/min, stamped at their update time. */
+    val vo2max: List<TimedDouble> = emptyList(),
     val sleepLevels: List<TimedInt> = emptyList(),
     /** The watch's sleep window markers (EVENT 74), in file order: value 0 is a start, 1 a stop. */
     val sleepMarks: List<TimedInt> = emptyList(),
@@ -74,8 +80,17 @@ data class GarminWellnessSamples(
         val vigorousMin: Int?,
     )
 
+    /** One activity type's largest cumulative MONITORING counters on one local day; type -1 = none given. */
+    data class DailyTypePeak(
+        val day: String,
+        val activityType: Int,
+        val cycles: Int?,
+        val distanceM: Double?,
+        val calories: Int?,
+        val activeCalories: Int?,
+    )
     data class DailyActivity(val day: String, val steps: Int?, val distanceM: Double?, val calories: Int?, val activeCalories: Int?)
-    data class Spo2(val ts: Long, val percent: Int, val confidence: Int?, val mode: Int?)
+    data class Spo2(val ts: Long, val percent: Int)
     data class SleepRaw(val ts: Long, val heartRate: Double?, val movement: Double?)
 
     /**
@@ -129,7 +144,7 @@ data class GarminWellnessSamples(
     )
 
     val isEmpty: Boolean
-        get() = monitoring.isEmpty() && restingMetabolicRate.isEmpty() && restingHeartRate.isEmpty() &&
+        get() = monitoring.isEmpty() && restingHeartRate.isEmpty() && vo2max.isEmpty() &&
             stress.isEmpty() && bodyBattery.isEmpty() && spo2.isEmpty() && respiration.isEmpty() &&
             sleepLevels.isEmpty() && sleepRaw.isEmpty() && sleepAssessments.isEmpty() && hrvSummaries.isEmpty() &&
             hrvValues.isEmpty() && beatIntervalsCandidate.isEmpty() && skinTempRawCandidate.isEmpty() &&
@@ -145,13 +160,23 @@ object GarminWellnessParser {
     val candidateMessages: Set<Int> get() = setOf(290, 397, 398)
 
     /**
-     * Folds cumulative MONITORING counters into local-day totals: per day, each activity type's
-     * largest value of each counter, summed over activity types. A record stamped exactly at local
-     * midnight carries the day that just ended (the watch writes its final totals at 00:00:00 before
-     * the counters reset), so it counts toward the previous day. The counters only rise within a day,
-     * so the largest value is the day's total even when records arrive out of order.
+     * FIT activity types whose MONITORING `cycles` counter is a step count: generic (0), running (1),
+     * walking (6), sedentary (8), and a record with no type (-1). Cycling (2), swimming (5) and fitness
+     * equipment (4) count revolutions, strokes or repetitions in the same field; transition (3) and the
+     * "all" summary type (254) would double-count a sport's own counter (#51).
+     * Swift twin: `GarminWellnessParser.stepActivityTypes`.
      */
-    fun dailyTotals(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyActivity> {
+    val STEP_ACTIVITY_TYPES: Set<Int> = setOf(-1, 0, 1, 6, 8)
+
+    /**
+     * Folds cumulative MONITORING counters into per-(local day, activity type) peaks: each counter's
+     * largest value. A record stamped exactly at local midnight carries the day that just ended (the
+     * watch writes its final totals at 00:00:00 before the counters reset), so it counts toward the
+     * previous day. The counters only rise within a day, so the largest value is the type's day total
+     * even when records arrive out of order. Sorted by day, then activity type.
+     * Swift twin: `GarminWellnessParser.dailyTypePeaks`.
+     */
+    fun dailyTypePeaks(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyTypePeak> {
         class Peak { var cycles: Int? = null; var distance: Double? = null; var calories: Int? = null; var active: Int? = null }
         val byDay = HashMap<String, HashMap<Int, Peak>>()
         for (r in records) {
@@ -163,13 +188,26 @@ object GarminWellnessParser {
             r.calories?.let { peak.calories = maxOf(peak.calories ?: it, it) }
             r.activeCalories?.let { peak.active = maxOf(peak.active ?: it, it) }
         }
+        return byDay.keys.sorted().flatMap { day ->
+            byDay.getValue(day).entries.sortedBy { it.key }.map { (type, p) ->
+                GarminWellnessSamples.DailyTypePeak(day, type, p.cycles, p.distance, p.calories, p.active)
+            }
+        }
+    }
+
+    /**
+     * Local-day totals: the sum over activity types of each type's peak ([dailyTypePeaks]). Steps sum
+     * only [STEP_ACTIVITY_TYPES]. Swift twin: `GarminWellnessParser.dailyTotals`.
+     */
+    fun dailyTotals(records: List<GarminWellnessSamples.Monitoring>, utcOffsetS: Int): List<GarminWellnessSamples.DailyActivity> {
+        val byDay = dailyTypePeaks(records, utcOffsetS).groupBy { it.day }
         return byDay.keys.sorted().map { day ->
             // Sum in activity-type order so the floating-point total is platform-independent.
-            val peaks = byDay.getValue(day).entries.sortedBy { it.key }.map { it.value }
-            val steps = peaks.mapNotNull { it.cycles }
-            val distances = peaks.mapNotNull { it.distance }
+            val peaks = byDay.getValue(day)
+            val steps = peaks.filter { it.activityType in STEP_ACTIVITY_TYPES }.mapNotNull { it.cycles }
+            val distances = peaks.mapNotNull { it.distanceM }
             val calories = peaks.mapNotNull { it.calories }
-            val active = peaks.mapNotNull { it.active }
+            val active = peaks.mapNotNull { it.activeCalories }
             GarminWellnessSamples.DailyActivity(
                 day = day,
                 steps = if (steps.isEmpty()) null else steps.sum(),
@@ -182,6 +220,12 @@ object GarminWellnessParser {
 
     /** Rows further apart than this, with no sleep window around them, are two nights. */
     const val FALLBACK_NIGHT_GAP_S = 4 * 3600L
+
+    /**
+     * The lowest SPO2_DATA mode kept: 0 (off wrist) and 1 (a manual spot check) are not background
+     * readings (#52). Swift twin: `GarminWellnessParser.spo2MinBackgroundMode`.
+     */
+    const val SPO2_MIN_BACKGROUND_MODE = 2
 
     /**
      * Folds a file's SLEEP_LEVEL rows ([GarminWellnessSamples.sleepLevels]) into nights. A night is the
@@ -269,12 +313,12 @@ object GarminWellnessParser {
             utcOffsetS = d.utcOffsetS,
             monitoring = d.monitoring,
             dailyActivity = dailyTotals(d.monitoring, d.utcOffsetS ?: 0),
-            restingMetabolicRate = d.restingMetabolicRate,
             restingHeartRate = d.restingHeartRate,
             stress = d.stress,
             bodyBattery = d.bodyBattery,
             spo2 = d.spo2,
             respiration = d.respiration,
+            vo2max = d.vo2max,
             sleepLevels = d.sleepLevels,
             sleepMarks = d.sleepMarks,
             sleepRaw = d.sleepRaw,
@@ -370,12 +414,12 @@ object GarminWellnessParser {
 
         var utcOffsetS: Int? = null
         val monitoring = ArrayList<GarminWellnessSamples.Monitoring>()
-        val restingMetabolicRate = ArrayList<GarminWellnessSamples.TimedInt>()
         val restingHeartRate = ArrayList<GarminWellnessSamples.TimedInt>()
         val stress = ArrayList<GarminWellnessSamples.TimedInt>()
         val bodyBattery = ArrayList<GarminWellnessSamples.TimedInt>()
         val spo2 = ArrayList<GarminWellnessSamples.Spo2>()
         val respiration = ArrayList<GarminWellnessSamples.TimedDouble>()
+        val vo2max = ArrayList<GarminWellnessSamples.TimedDouble>()
         val sleepLevels = ArrayList<GarminWellnessSamples.TimedInt>()
         val sleepMarks = ArrayList<GarminWellnessSamples.TimedInt>()
         val sleepRaw = ArrayList<GarminWellnessSamples.SleepRaw>()
@@ -429,13 +473,14 @@ object GarminWellnessParser {
                     sleepMarks.add(GarminWellnessSamples.TimedInt(ts, type))
                 }
                 55 -> monitoring(m)
-                103 -> {
-                    noteOffset(m.u(0), running)
-                    if (m.u(5) == null) return
-                    val ts = unix(running)
-                    val rmr = range(m.u(5), 1, 20_000)
-                    if (ts == null || rmr == null) return drop()
-                    restingMetabolicRate.add(GarminWellnessSamples.TimedInt(ts, rmr))
+                // Field 5, resting_metabolic_rate, is not read: field 1 `calories` of the same file's
+                // MONITORING totals already includes it (#51). Swift twin: the 103 case.
+                103 -> noteOffset(m.u(0), running)
+                229 -> {
+                    val ts = unix(m.u(0) ?: running)
+                    val raw = range(m.u(2), 100, 900)
+                    if (ts == null || raw == null) return drop()
+                    vo2max.add(GarminWellnessSamples.TimedDouble(ts, raw / 10.0))
                 }
                 211 -> {
                     val ts = unix(running)
@@ -450,9 +495,10 @@ object GarminWellnessParser {
                 }
                 269 -> {
                     val ts = unix(running)
-                    val pct = range(m.u(0), 1, 100)
+                    val pct = range(m.u(0), 70, 100)
                     if (ts == null || pct == null) return drop()
-                    spo2.add(GarminWellnessSamples.Spo2(ts, pct, m.value(1), m.value(2)))
+                    val mode = m.value(2)
+                    if (mode == null || mode >= SPO2_MIN_BACKGROUND_MODE) spo2.add(GarminWellnessSamples.Spo2(ts, pct))
                 }
                 273 -> {
                     noteOffset(m.u(2), running)
@@ -471,8 +517,8 @@ object GarminWellnessParser {
                 }
                 297 -> {
                     val ts = unix(running)
-                    val raw = m.s(0)
-                    if (ts == null || raw == null || raw <= 0) return drop()
+                    val raw = range(m.s(0), 400, 6000)
+                    if (ts == null || raw == null) return drop()
                     respiration.add(GarminWellnessSamples.TimedDouble(ts, raw.toDouble() / 100))
                 }
                 346 -> sleepAssessment(m)
@@ -487,7 +533,7 @@ object GarminWellnessParser {
                 }
                 371 -> {
                     val ts = unix(running)
-                    val v = m.u(0)
+                    val v = range(m.u(0), 640, 38_400)
                     if (ts == null || v == null) return drop()
                     hrvValues.add(GarminWellnessSamples.TimedDouble(ts, v.toDouble() / 128))
                 }

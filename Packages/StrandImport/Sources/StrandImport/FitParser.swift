@@ -30,7 +30,9 @@ import Foundation
 //                     avg/max_heart_rate(15/16).
 //   • session (18)  — whole-activity summary: sport(5), start_time(2), total_distance(9),
 //                     total_calories(11), total_ascent(22), avg/max_heart_rate(16/17),
-//                     total_elapsed_time(7).
+//                     total_elapsed_time(7), and the watch's own reference values
+//                     total_training_effect(24) and total_anaerobic_training_effect(137) (u8, scale 10)
+//                     and training_load_peak(168) (s32, scale 65536).
 //
 // The record walk lives in `FitRecordStream`, shared with the Garmin wellness decoder
 // (`GarminWellness.swift`), which reads the monitoring, sleep, HRV, stress and other health messages
@@ -91,6 +93,9 @@ private struct FitDecoder {
     private var sessionAscent: Double?
     private var sessionAvgHr: Int?
     private var sessionMaxHr: Int?
+    private var sessionAerobicTE: Double?
+    private var sessionAnaerobicTE: Double?
+    private var sessionTrainingLoad: Double?
 
     private var lapDistanceSum = 0.0
     private var lapCalorieSum = 0.0
@@ -244,6 +249,18 @@ private struct FitDecoder {
                 if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
                     sessionMaxHr = ActivityFileImporter.validHr(Double(v))
                 }
+            case 24: // total_training_effect (u8, scale 10)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
+                    sessionAerobicTE = Self.trainingEffect(v, size: f.size)
+                }
+            case 137: // total_anaerobic_training_effect (u8, scale 10)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
+                    sessionAnaerobicTE = Self.trainingEffect(v, size: f.size)
+                }
+            case 168: // training_load_peak (s32, scale 65536)
+                if let v = intField(at: offset, size: f.size, bigEndian: def.bigEndian) {
+                    sessionTrainingLoad = Self.trainingLoad(v, size: f.size)
+                }
             default:
                 break
             }
@@ -293,6 +310,20 @@ private struct FitDecoder {
         case 10: return "Training"
         default: return nil
         }
+    }
+
+    /// A Training Effect byte as the 0.0-5.0 score, or nil for the invalid sentinel or an out-of-range value.
+    /// Kotlin twin: `FitDecoder.trainingEffect`.
+    static func trainingEffect(_ v: UInt64, size: Int) -> Double? {
+        guard size == 1, v <= 50 else { return nil }
+        return Double(v) / 10
+    }
+
+    /// A training-load field as the watch's load figure, or nil for the invalid sentinel, a negative value
+    /// or a field of the wrong width. Kotlin twin: `FitDecoder.trainingLoad`.
+    static func trainingLoad(_ v: Int64, size: Int) -> Double? {
+        guard size == 4, v != 0x7FFF_FFFF, v >= 0 else { return nil }
+        return Double(v) / 65_536
     }
 
     static func validSteps(_ v: UInt64, size: Int) -> Int? {
@@ -362,7 +393,10 @@ private struct FitDecoder {
             route: ActivityFileImporter.cappedRoute(route),
             // #137: the real per-record HR series, via the SHARED extractor so FIT persists a
             // byte-identical HR stream to the GPX/TCX paths (and the Kotlin twin).
-            hrSamples: ActivityFileImporter.hrSamples(from: samples)
+            hrSamples: ActivityFileImporter.hrSamples(from: samples),
+            aerobicTrainingEffect: sessionAerobicTE,
+            anaerobicTrainingEffect: sessionAnaerobicTE,
+            trainingLoad: sessionTrainingLoad
         )
         return ActivityFileImportResult(activity: activity, kind: .fit, skipped: skipped)
     }
