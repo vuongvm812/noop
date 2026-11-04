@@ -2568,7 +2568,7 @@ object IntelligenceEngine {
                     .map { GarminScoringInputs.Sample(it.ts, it.value) }
             }
             // Respiration is the row's stored overnight value (#52), the one Trends shows for the day.
-            val r = GarminScoringInputs.resolve(
+            val r = GarminScoringInputs.attributedTo(GarminScoringInputs.resolve(
                 computedRestingHr = res.daily.restingHr,
                 computedHrv = res.daily.avgHrv,
                 computedResp = res.daily.respRateBpm,
@@ -2576,8 +2576,7 @@ object IntelligenceEngine {
                 hrvSamples = hrv,
                 watchRespRateBpm = watchRow?.respRateBpm,
                 nights = nights,
-                watchSource = watchSource,
-            )
+            ), watchSource)
             val daily = res.daily.copy(restingHr = r.restingHr, avgHrv = r.avgHrv, respRateBpm = r.respRateBpm)
             scoredNights[i] = res.copy(daily = daily)
             nightlyHrvByDay[day] = daily.avgHrv

@@ -95,15 +95,12 @@ public enum DeviceBrandCatalog {
         all.first { deviceId.hasPrefix($0.idPrefix + "-") }?.sourceKind == .oura
     }
 
-    /// The source kinds of a paired WATCH: a device whose own vitals, sleep stages, stress and workouts are
-    /// primary on the days it owns. Twin of Kotlin `DeviceBrandCatalog.WATCH_SOURCE_KINDS`.
-    public static let watchSourceKinds: Set<SourceKind> = [.garmin, .huawei]
-
-    /// The watch brand row whose "<idPrefix>-" a stored source id carries, or nil. The brand's own export
+    /// The watch brand row (a `.garmin` or `.huawei` kind, as Kotlin `DeviceBrandCatalog.WATCH_SOURCE_KINDS`)
+    /// whose "<idPrefix>-" a stored source id carries, or nil. The brand's own export
     /// import ("<idPrefix>-import") never matches; a "-noop" computed sibling does (see
     /// `watchSpec(forDeviceId:)`). Twin of Kotlin `DeviceBrandCatalog.watchSpecForSource`.
     public static func watchSpec(forSource sourceId: String) -> DeviceBrandSpec? {
-        guard let spec = all.first(where: { watchSourceKinds.contains($0.sourceKind) && sourceId.hasPrefix($0.idPrefix + "-") })
+        guard let spec = all.first(where: { [.garmin, .huawei].contains($0.sourceKind) && sourceId.hasPrefix($0.idPrefix + "-") })
         else { return nil }
         return sourceId == spec.idPrefix + "-import" ? nil : spec
     }

@@ -75,11 +75,15 @@ class HuaweiWatchGatesTest {
 
     @Test
     fun vitalsResolveToTheBandsOwnValues() {
-        val r = GarminScoringInputs.resolve(
+        val garminDay = GarminScoringInputs.resolve(
             computedRestingHr = 58, computedHrv = 31.75, computedResp = 14.2,
             watch = GarminScoringInputs.WatchDay(49, 52.5), hrvSamples = emptyList(), watchRespRateBpm = 15.0,
-            nights = emptyList(), watchSource = FusionSource.HUAWEI_WATCH,
+            nights = emptyList(),
         )
+        assertEquals(garminDay, GarminScoringInputs.attributedTo(garminDay, FusionSource.GARMIN_WATCH))
+        val r = GarminScoringInputs.attributedTo(garminDay, FusionSource.HUAWEI_WATCH)
+        assertEquals(garminDay.copy(restingHrSource = FusionSource.HUAWEI_WATCH, avgHrvSource = FusionSource.HUAWEI_WATCH,
+            respRateSource = FusionSource.HUAWEI_WATCH), r)
         assertEquals(49, r.restingHr)
         assertEquals(FusionSource.HUAWEI_WATCH, r.restingHrSource)
         assertEquals(52.5, r.avgHrv!!, 0.0)
