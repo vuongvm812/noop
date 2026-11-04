@@ -361,6 +361,8 @@ private fun WeeklyMetric.labelRes(): Int = when (this) {
     WeeklyMetric.REST -> R.string.today_metric_rest
     WeeklyMetric.RHR -> R.string.today_metric_resting_hr
     WeeklyMetric.HRV -> R.string.today_metric_hrv
+    // The later metrics are not rendered by this card yet (#90 adds their rows and names).
+    else -> R.string.today_metric_charge
 }
 
 private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale): String {

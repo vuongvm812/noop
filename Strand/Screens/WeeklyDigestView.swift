@@ -123,6 +123,9 @@ extension WeeklyMetric {
         case .rest:   return String(localized: "Rest")
         case .rhr:    return String(localized: "Resting HR")
         case .hrv:    return String(localized: "HRV")
+        // The later metrics are not rendered by this card yet (#90 adds their rows and
+        // localised names); the English narration label stands in until then.
+        default:      return label
         }
     }
 }
@@ -172,6 +175,7 @@ struct WeeklyDigestContent: View {
         case .rest:   return .rest
         case .hrv:    return .rest    // HRV shares the Rest / periwinkle world
         case .rhr:    return .stress
+        default:      return .charge   // not rendered yet (#90)
         }
     }
 
