@@ -74,7 +74,9 @@ object StressToday {
         noopTimeline: List<Point>,
         noopDayMean: Double?,
     ): Reading? {
-        val garmin = garminReading(garminSamples, garminWatchDay, garminImportDay, watchSource(activeDeviceId))
+        val source = watchSource(activeDeviceId)
+        val garmin = garminReading(garminSamples, garminWatchDay, garminImportDay)
+            ?.let { if (source == Source.GARMIN) it else it.copy(source = source) }
         val noop = noopReading(noopTimeline, noopDayMean)
         return if (prefersWatch(activeDeviceId)) garmin ?: noop else noop ?: garmin
     }
@@ -100,9 +102,7 @@ object StressToday {
      * never disagree; only a day with no samples falls back to a stored daily value, the watch day before
      * the imported one. Swift twin: `StressToday.garminReading`.
      */
-    internal fun garminReading(
-        samples: List<Point>, watchDay: Double?, importDay: Double?, source: Source = Source.GARMIN,
-    ): Reading? {
+    internal fun garminReading(samples: List<Point>, watchDay: Double?, importDay: Double?): Reading? {
         val points = samples
             .filter { it.level.isFinite() && it.level >= 0.0 && it.level <= GARMIN_MAX }
             .sortedBy { it.ts }
@@ -110,7 +110,7 @@ object StressToday {
             .firstOrNull { it.isFinite() && it >= 0.0 && it <= GARMIN_MAX }
         val average = if (points.isEmpty()) stored else points.sumOf { it.level } / points.size
         average ?: return null
-        return Reading(source, points.lastOrNull(), average, points)
+        return Reading(Source.GARMIN, points.lastOrNull(), average, points)
     }
 
     /** The NOOP half: the scored timeline, its last point and the day mean [DaytimeStress] computed.

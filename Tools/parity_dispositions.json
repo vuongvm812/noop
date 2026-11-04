@@ -1158,6 +1158,110 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::HUAWEI_STRESS_KEY",
+      "identity_sha256": "6b45cb52f50f33567d299fb1bc70281054cdcef9287a2c4887935ba02a746fa9",
+      "platform": "kotlin",
+      "rationale": "The stored daily-average key of a Huawei band's own stress (twin of garmin_stress). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::forWatchKind/1#1",
+      "identity_sha256": "bb7cc1a4e5b21550ee0dfa5ddec0dc28921a0de4abe89c5a700e8bdfbf1b05f5",
+      "platform": "kotlin",
+      "rationale": "Maps a catalog watch SourceKind (garmin, huawei) onto its fusion source for the brand-driven watch resolver. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::isWatchId/1#1",
+      "identity_sha256": "16d616c2910484ef80cffec3219f3cd0055ed3367fcd3c5724676148184e16ce",
+      "platform": "kotlin",
+      "rationale": "Brand-driven paired-watch check (Garmin or Huawei) that replaces Garmin-only id gates on Android. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::watchBrand/1#1",
+      "identity_sha256": "5c251c0752560840dca564c84fba0ad0fe44c31d60e33bbf4e8a0579ffee6e86",
+      "platform": "kotlin",
+      "rationale": "The one resolver naming a paired watch's brand (GARMIN_WATCH / HUAWEI_WATCH) from its registry id via DeviceBrandCatalog. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/GarminWorkoutEffort.kt::watchBrand/1#1",
+      "identity_sha256": "d23af317303ded4e20034ff972fe33e69eac69a83e51e85e1ca794eedea22303",
+      "platform": "kotlin",
+      "rationale": "Names the watch brand whose history sync stored a workout row, so Huawei workouts classify and score as watch workouts. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::vo2MaxProvenance/5#1",
+      "identity_sha256": "9b084eb879236610d35829db05a64ca07f41a1c72bfa55d33dac9aa87bed995b",
+      "platform": "kotlin",
+      "rationale": "Kotlin-only VO2max provenance writer (already Kotlin-only at arity 4) now takes the watch estimator so a Huawei estimate is tagged huawei. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::watchEstimatorFor/1#1",
+      "identity_sha256": "1a3aa77fdd1866ed392dd1e4a94fafd536db977e99d5906581abfd9c1d814195",
+      "platform": "kotlin",
+      "rationale": "Picks the VO2max provenance tag (garmin / huawei) for the resolved active watch. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::prefersWatch/1#1",
+      "identity_sha256": "fc1d2334abda8022581b735914bfb04bac6f16b99bcca8937a58049933403080",
+      "platform": "kotlin",
+      "rationale": "Asks a watch's own stress first for any watch brand (Garmin or Huawei); Garmin semantics stay prefersGarmin's. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::watchSource/1#1",
+      "identity_sha256": "5a79f9ca02e11a1cf833f0b5cfb7fcf8043388f30f8892437c617bc56fe23579",
+      "platform": "kotlin",
+      "rationale": "Names the stress source a watch reading carries for the active device (HUAWEI for a Huawei band, else GARMIN). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/Entities.kt::forWatch/1#1",
+      "identity_sha256": "f6e677465480ebd5ff50f51aa73384fa750ba78bb78b2f871001ab45b170c008",
+      "platform": "kotlin",
+      "rationale": "Maps a watch fusion source onto its VO2max estimator tag (GARMIN / HUAWEI). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/GarminScoringInputs.kt::attributedTo/2#1",
+      "identity_sha256": "8097620bc49725921c9e3c6328f7f8f7e1de90f5866445bbdd727daeacd15caf",
+      "platform": "kotlin",
+      "rationale": "Credits a watch-owned day's resolved vitals to the Huawei band instead of Garmin without changing the shared Garmin resolve. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::isWatch@property#1",
+      "identity_sha256": "9da7446f3fcc839d10f10a249914ccc57657adac67c2e52ca496b53bb806ffe0",
+      "platform": "kotlin",
+      "rationale": "True for the paired-watch fusion sources (GARMIN_WATCH, HUAWEI_WATCH); HUAWEI_WATCH itself is Kotlin-only. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::watchIdPrefix@property#1",
+      "identity_sha256": "4e0fb39b146f13541d4bc118fee0c029769c76ecc6b6816d711d32ac841acba2",
+      "platform": "kotlin",
+      "rationale": "The catalog id prefix of a watch fusion source, used to read that brand's own export namespace. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::EARLIEST_TS",
       "identity_sha256": "12be9268be3cdffc2f91c56808c64fb55c42b3d591361368c2041024f08ccaaa",
       "platform": "kotlin",
