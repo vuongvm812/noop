@@ -104,6 +104,19 @@ class ExperimentalDriversTest {
     }
 
     @Test
+    fun recogniseHuawei() {
+        for (name in listOf("HUAWEI Band 10-A1B", "Huawei Band 10")) {
+            val brand = ExperimentalBrand.recognise(name)
+            assertEquals(name, ExperimentalBrand.HUAWEI, brand)
+            assertEquals(name, SourceKind.huawei, brand?.sourceKind)
+            assertEquals(name, "huawei", brand?.idPrefix)
+            assertEquals(name, false, brand?.canStreamLiveHR)   // no live HR stream in NOOP yet
+        }
+        // Not every Huawei name is the Band 10, and no other brand claims it.
+        assertNull(ExperimentalBrand.recognise("HUAWEI WATCH GT 4"))
+    }
+
+    @Test
     fun unknownNameIsNull() {
         // A Polar HR strap is the GENERIC path, not this experimental tier.
         assertNull(ExperimentalBrand.recognise("Polar H10"))
@@ -159,5 +172,17 @@ class ExperimentalDriversTest {
         assertFalse(SourceCoordinator.isWhoop(watch))
         assertFalse(SourceCoordinator.isWhoop("garmin-2", listOf(watch)))
         assertEquals(SourceKind.garmin, ExperimentalBrand.GARMIN.sourceKind)
+    }
+
+    /** A Huawei Band 10 row is non-WHOOP; the coordinator holds it on the not-yet-connectable placeholder. */
+    @Test
+    fun huaweiRowIsHuaweiKindNonWhoop() {
+        val band = row("huawei-1", "Huawei", SourceKind.huawei)
+        assertFalse(SourceCoordinator.isWhoop(band))
+        assertFalse(SourceCoordinator.isWhoop("huawei-1", listOf(band)))
+        assertEquals("huawei", SourceKind.huawei.name)
+        val placeholder = HuaweiPlaceholderSource("huawei-1")
+        assertTrue(placeholder.needsPairing.value)
+        assertFalse(placeholder.isConnectable)
     }
 }

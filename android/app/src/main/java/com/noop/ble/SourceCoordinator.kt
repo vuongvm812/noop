@@ -429,7 +429,8 @@ class SourceCoordinator(
      * Build the isolated [LiveHrSource] for a device from its registered `sourceKind` — the ONE place that
      * maps a kind to a concrete driver. An FTMS gym machine runs the FtmsSource; an EXPERIMENTAL Huami
      * device (Amazfit / Zepp / Mi Band) runs the HuamiHrSource; an EXPERIMENTAL Oura ring runs the
-     * OuraLiveSource; a Garmin watch runs the GarminSource; everything else is a generic HR
+     * OuraLiveSource; a Garmin watch runs the GarminSource; a Huawei Band 10 holds the
+     * HuaweiPlaceholderSource until its driver lands; everything else is a generic HR
      * strap on StandardHrSource. Adding a brand adds ONE arm
      * here (plus a conforming source); nothing else in the coordinator changes. Returns the source WITHOUT
      * connecting — the caller ([switchToStrap]) does the connect-by-address-else-scan bring-up. Mirrors
@@ -461,6 +462,8 @@ class SourceCoordinator(
             }
             SourceKind.oura.name -> makeOuraSource(id, ctx, row)
             SourceKind.garmin.name -> makeGarminSource(id, ctx, row)
+            // Wave 1 placeholder: reports needs-pairing and never runs a strap profile at the band.
+            SourceKind.huawei.name -> HuaweiPlaceholderSource(id, straplog)
             else -> {
                 val repo = requireNotNull(repository) { "SourceCoordinator.repository is required to persist strap samples" }
                 StandardHrSource(

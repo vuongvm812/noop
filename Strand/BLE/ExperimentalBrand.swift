@@ -5,7 +5,7 @@ import WhoopStore
 ///
 /// This is a thin TYPED VIEW over `DeviceBrandCatalog` (the pure, `swift test`-covered single source of
 /// truth in WhoopStore): the advertised-name tokens and capability facts live there once, and this enum
-/// only names the four custom-protocol families so the drivers can switch on them (`== .garmin`, etc.).
+/// only names the custom-protocol families so the drivers can switch on them (`== .garmin`, etc.).
 /// Amazfit, Mi Band and Oura are the experimental tier; Garmin is supported (#43). The type keeps its
 /// historical name. Deliberately conservative: a name we don't recognise returns `nil` rather than a wrong
 /// guess. NOTHING here fabricates data — it only labels a discovered peripheral so the add-device flow can
@@ -24,6 +24,9 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
     /// Oura ring. No open live health stream — proprietary, syncs to Oura's own app. The driver makes
     /// the detection attempt and then points honestly at file import.
     case oura
+    /// Huawei Band 10. A supported watch source (not the experimental tier); its pairing and sync are
+    /// Android-only in this fork, so on Apple platforms the coordinator reports it as unavailable.
+    case huawei
 
     /// Best-effort brand from an advertised name. Returns `nil` for an unrecognised name, OR for a name the
     /// catalog recognises as a generic standard-HR strap (Polar / Wahoo / …) — `ExperimentalBrand` names
@@ -42,6 +45,7 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
         case .miBand:  return "Mi Band"
         case .garmin:  return "Garmin"
         case .oura:    return "Oura"
+        case .huawei:  return "Huawei"
         }
     }
 
@@ -73,6 +77,7 @@ public enum ExperimentalBrand: String, CaseIterable, Sendable, Equatable {
         case "Mi Band": self = .miBand
         case "Garmin":  self = .garmin
         case "Oura":    self = .oura
+        case "Huawei":  self = .huawei
         default:        return nil
         }
     }

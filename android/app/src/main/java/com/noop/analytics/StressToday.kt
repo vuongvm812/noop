@@ -19,7 +19,8 @@ package com.noop.analytics
  */
 object StressToday {
 
-    enum class Source(val raw: String) { GARMIN("garmin"), NOOP("noop") }
+    /** [HUAWEI]: a Huawei Band 10's own 0-100 stress score, read the same way as [GARMIN] (Kotlin-only). */
+    enum class Source(val raw: String) { GARMIN("garmin"), NOOP("noop"), HUAWEI("huawei") }
 
     /** One timestamped level on the reading's own scale. */
     data class Point(val ts: Long, val level: Double)
@@ -33,8 +34,8 @@ object StressToday {
         /** The intraday series for the sparkline, oldest first. Empty when no samples exist. */
         val points: List<Point>,
     ) {
-        /** 100 for Garmin, 3 for NOOP. */
-        val scaleMax: Double get() = if (source == Source.GARMIN) GARMIN_MAX else NOOP_MAX
+        /** 100 for a watch (Garmin, Huawei), 3 for NOOP. */
+        val scaleMax: Double get() = if (source == Source.NOOP) NOOP_MAX else GARMIN_MAX
     }
 
     /**
@@ -47,6 +48,9 @@ object StressToday {
 
     /** Garmin's highest stress value. Anything outside 0..100 is a watch sentinel and is ignored. */
     const val GARMIN_MAX = 100.0
+
+    /** The stored daily-average key of a Huawei band's own stress (the twin of `garmin_stress`). */
+    const val HUAWEI_STRESS_KEY = "huawei_stress"
 
     /** NOOP's highest stress value (the 0-3 proxy). */
     const val NOOP_MAX = 3.0
@@ -70,10 +74,20 @@ object StressToday {
         noopTimeline: List<Point>,
         noopDayMean: Double?,
     ): Reading? {
-        val garmin = garminReading(garminSamples, garminWatchDay, garminImportDay)
+        val garmin = garminReading(garminSamples, garminWatchDay, garminImportDay, watchSource(activeDeviceId))
         val noop = noopReading(noopTimeline, noopDayMean)
-        return if (prefersGarmin(activeDeviceId)) garmin ?: noop else noop ?: garmin
+        return if (prefersWatch(activeDeviceId)) garmin ?: noop else noop ?: garmin
     }
+
+    /** The source a watch reading carries for [activeDeviceId]: [Source.HUAWEI] for a paired Huawei band,
+     *  else [Source.GARMIN] (the active Garmin, or a Garmin export behind any other device). */
+    fun watchSource(activeDeviceId: String): Source =
+        if (FusionSource.watchBrand(activeDeviceId) == FusionSource.HUAWEI_WATCH) Source.HUAWEI else Source.GARMIN
+
+    /** True when the active device is a watch brand (Garmin, Huawei), so its own stress answers before
+     *  NOOP's. Garmin semantics are [prefersGarmin]'s. */
+    fun prefersWatch(activeDeviceId: String): Boolean =
+        prefersGarmin(activeDeviceId) || watchSource(activeDeviceId) == Source.HUAWEI
 
     /**
      * True when the active device is a Garmin, so its own stress answers before NOOP's. A loader uses it to
@@ -86,7 +100,9 @@ object StressToday {
      * never disagree; only a day with no samples falls back to a stored daily value, the watch day before
      * the imported one. Swift twin: `StressToday.garminReading`.
      */
-    internal fun garminReading(samples: List<Point>, watchDay: Double?, importDay: Double?): Reading? {
+    internal fun garminReading(
+        samples: List<Point>, watchDay: Double?, importDay: Double?, source: Source = Source.GARMIN,
+    ): Reading? {
         val points = samples
             .filter { it.level.isFinite() && it.level >= 0.0 && it.level <= GARMIN_MAX }
             .sortedBy { it.ts }
@@ -94,7 +110,7 @@ object StressToday {
             .firstOrNull { it.isFinite() && it >= 0.0 && it <= GARMIN_MAX }
         val average = if (points.isEmpty()) stored else points.sumOf { it.level } / points.size
         average ?: return null
-        return Reading(Source.GARMIN, points.lastOrNull(), average, points)
+        return Reading(source, points.lastOrNull(), average, points)
     }
 
     /** The NOOP half: the scored timeline, its last point and the day mean [DaytimeStress] computed.

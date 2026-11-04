@@ -28,6 +28,10 @@ class GarminScoringInputsTest {
         MetricArbitrationPolicy.MetricKind.OTHER to "other",
     )
 
+    /** The sources the Swift twin knows. [FusionSource.HUAWEI_WATCH] is Kotlin-only (fork), so it is not in
+     *  the Swift oracle; HuaweiWatchGatesTest pins its rows against Garmin's instead. */
+    private val swiftSources = FusionSource.entries.filterNot { it == FusionSource.HUAWEI_WATCH }
+
     private fun fmt(v: Double?): String = v?.let { String.format(Locale.ROOT, "%.4f", it) } ?: "nil"
 
     private fun s(ts: Long, v: Double) = GarminScoringInputs.Sample(ts, v)
@@ -37,14 +41,14 @@ class GarminScoringInputsTest {
         for (kind in MetricArbitrationPolicy.MetricKind.entries) {
             val tol = MetricArbitrationPolicy.tolerance(kind)
             lines.add("tol ${swiftKind[kind]} ${fmt(tol.agree)} ${fmt(tol.minorDelta)} ${tol.isPercent}")
-            for (source in FusionSource.entries) {
+            for (source in swiftSources) {
                 lines.add(
                     "tier ${swiftKind[kind]} ${source.id} ${MetricArbitrationPolicy.tier(kind, source)} " +
                         MetricArbitrationPolicy.reason(kind, source),
                 )
             }
         }
-        for (source in FusionSource.entries) {
+        for (source in swiftSources) {
             lines.add("source ${source.id} ${MetricArbitrationPolicy.sourcePriority(source)} ${source.displayName}")
         }
         for (key in listOf(

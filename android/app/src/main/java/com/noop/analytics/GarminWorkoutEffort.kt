@@ -14,14 +14,18 @@ import com.noop.data.HrSample
 object GarminWorkoutEffort {
 
     /**
-     * True for a workout row stored by the Garmin history sync: its source is the watch's registry id,
-     * minted as "garmin-<uuid>". The Garmin export import ("garmin-import") is a different source and
-     * carries no watch trace, so it is excluded. Swift twin: `GarminWorkoutEffort.isWatchSource`.
+     * True for a workout row stored by a watch's history sync: its source is the watch's registry id,
+     * minted as "garmin-<uuid>" or "huawei-<uuid>". The brand's export import ("garmin-import") is a
+     * different source and carries no watch trace, so it is excluded. Swift twin:
+     * `GarminWorkoutEffort.isWatchSource` (Garmin only).
      */
-    fun isWatchSource(source: String): Boolean {
-        val s = source.lowercase()
-        return s.startsWith("garmin-") && s != "garmin-import"
-    }
+    fun isWatchSource(source: String): Boolean = watchBrand(source) != null
+
+    /** The watch brand ([FusionSource.GARMIN_WATCH], [FusionSource.HUAWEI_WATCH]) whose history sync stored
+     *  a workout row with this [source], or null. Case-insensitive, like [isWatchSource]. */
+    fun watchBrand(source: String): FusionSource? =
+        com.noop.data.DeviceBrandCatalog.watchSpecForSource(source.lowercase())
+            ?.let { FusionSource.forWatchKind(it.sourceKind) }
 
     /**
      * Row limit for the Effort pass's workout read: no cap. The read is ascending by start, so any cap

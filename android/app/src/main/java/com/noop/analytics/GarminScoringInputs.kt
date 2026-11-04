@@ -106,16 +106,17 @@ object GarminScoringInputs {
     }
 
     /** Swift twin: the nested `pick` in `GarminScoringInputs.resolve`. */
-    private fun pick(key: String, watch: Double?, computed: Double?): FusedMetricPoint? {
+    private fun pick(key: String, watch: Double?, computed: Double?, watchSource: FusionSource): FusedMetricPoint? {
         val inputs = ArrayList<FusionInput>()
-        if (watch != null && watch.isFinite() && watch > 0) inputs.add(FusionInput(FusionSource.GARMIN_WATCH, watch))
+        if (watch != null && watch.isFinite() && watch > 0) inputs.add(FusionInput(watchSource, watch))
         if (computed != null && computed.isFinite() && computed > 0) {
             inputs.add(FusionInput(FusionSource.NOOP_COMPUTED, computed))
         }
         return FusionResolver.resolve(key, inputs)
     }
 
-    /** Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. */
+    /** Resolve one watch-owned day's resting HR, overnight HRV and respiration. [watchSource] is the owning
+     *  watch's brand ([FusionSource.watchBrand]); Garmin by default, the only brand the Swift twin knows. */
     fun resolve(
         computedRestingHr: Int?,
         computedHrv: Double?,
@@ -124,19 +125,20 @@ object GarminScoringInputs {
         hrvSamples: List<Sample>,
         watchRespRateBpm: Double?,
         nights: List<Night>,
+        watchSource: FusionSource = FusionSource.GARMIN_WATCH,
     ): Resolution {
-        val rhr = pick("rhr", watch?.restingHr?.toDouble(), computedRestingHr?.toDouble())
+        val rhr = pick("rhr", watch?.restingHr?.toDouble(), computedRestingHr?.toDouble(), watchSource)
 
         val lastNight = watch?.lastNightHrvMs?.takeIf { it.isFinite() && it > 0 }
         val overnight = if (lastNight == null) nightMean(hrvSamples, nights) else null
-        val hrv = pick("hrv", lastNight ?: overnight, computedHrv)
-        val basis = when (hrv?.winningSource) {
-            FusionSource.GARMIN_WATCH -> if (lastNight != null) HrvBasis.WATCH_LAST_NIGHT else HrvBasis.WATCH_OVERNIGHT
-            null -> HrvBasis.NONE
+        val hrv = pick("hrv", lastNight ?: overnight, computedHrv, watchSource)
+        val basis = when {
+            hrv == null -> HrvBasis.NONE
+            hrv.winningSource.isWatch -> if (lastNight != null) HrvBasis.WATCH_LAST_NIGHT else HrvBasis.WATCH_OVERNIGHT
             else -> HrvBasis.COMPUTED
         }
 
-        val resp = pick("resp_rate", watchRespRateBpm, computedResp)
+        val resp = pick("resp_rate", watchRespRateBpm, computedResp, watchSource)
 
         return Resolution(
             // Swift `Double.rounded()` rounds half away from zero; so does Math.round for these positive values.
@@ -151,12 +153,12 @@ object GarminScoringInputs {
     }
 
     /**
-     * The baseline era cut for HRV and resting HR (#459) when a Garmin watch is part of the history, as
-     * [Baselines.deviceEraEpoch] computes it; 0 when no day is a Garmin day, which keeps every non-Garmin
-     * history byte-identical. Pairs are (day, sourceId).
+     * The baseline era cut for HRV and resting HR (#459) when a watch brand (Garmin, Huawei) is part of the
+     * history, as [Baselines.deviceEraEpoch] computes it; 0 when no day is a watch-brand day, which keeps
+     * every other history byte-identical. Pairs are (day, sourceId).
      */
     fun baselineEraEpoch(sourceDays: List<Pair<String, String>>): Double {
-        if (sourceDays.none { Baselines.brandBucket(it.second) == "garmin" }) return 0.0
+        if (sourceDays.none { Baselines.brandBucket(it.second) in Baselines.WATCH_BRAND_BUCKETS }) return 0.0
         return Baselines.deviceEraEpoch(sourceDays)
     }
 
@@ -222,7 +224,7 @@ object GarminScoringInputs {
     /** True when an Effort whose inputs came from [sourceId] (registry [brand]) carries the experimental label. */
     fun effortIsExperimental(sourceId: String, brand: String?): Boolean {
         if (EFFORT_VALIDATED) return false
-        if (FusionSource.isGarminWatchId(sourceId)) return true
+        if (FusionSource.isWatchId(sourceId)) return true
         return brand != null && brand.equals("Garmin", ignoreCase = true) && sourceId != "garmin-import"
     }
 }

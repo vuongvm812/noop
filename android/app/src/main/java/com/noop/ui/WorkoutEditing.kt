@@ -16,7 +16,7 @@ import kotlin.math.roundToInt
  */
 
 /** Origin of a workout row, classified from its stored `source` column. */
-enum class WorkoutSource { WHOOP, APPLE, DETECTED, MANUAL, LIFTING, ACTIVITY_FILE, GARMIN }
+enum class WorkoutSource { WHOOP, APPLE, DETECTED, MANUAL, LIFTING, ACTIVITY_FILE, GARMIN, HUAWEI }
 
 object WorkoutEditing {
 
@@ -32,9 +32,14 @@ object WorkoutEditing {
             s == "manual" -> WorkoutSource.MANUAL
             s == "lifting" -> WorkoutSource.LIFTING       // imported Hevy / Liftosaur strength session
             s == "activity-file" -> WorkoutSource.ACTIVITY_FILE // imported GPX / TCX / FIT activity file
-            // Garmin history sync (#50): the watch's registry id "garmin-<uuid>". Before the "whoop"
-            // catch, as on Swift.
-            com.noop.analytics.GarminWorkoutEffort.isWatchSource(s) -> WorkoutSource.GARMIN
+            // A watch's history sync (#50): the watch's registry id "garmin-<uuid>" / "huawei-<uuid>". Before
+            // the "whoop" catch, as on Swift.
+            com.noop.analytics.GarminWorkoutEffort.isWatchSource(s) ->
+                if (com.noop.analytics.GarminWorkoutEffort.watchBrand(s) == com.noop.analytics.FusionSource.HUAWEI_WATCH) {
+                    WorkoutSource.HUAWEI
+                } else {
+                    WorkoutSource.GARMIN
+                }
             s.contains("whoop") -> WorkoutSource.WHOOP
             else -> WorkoutSource.APPLE
         }
@@ -292,6 +297,7 @@ object WorkoutEditing {
         WorkoutSource.LIFTING -> "lifting"
         WorkoutSource.ACTIVITY_FILE -> "activityFile"
         WorkoutSource.GARMIN -> "garmin"
+        WorkoutSource.HUAWEI -> "huawei"
     }
 
     /**
@@ -573,7 +579,7 @@ object WorkoutMerge {
     fun isMergeable(row: WorkoutRow): Boolean = when (WorkoutEditing.classify(row.source)) {
         WorkoutSource.MANUAL, WorkoutSource.DETECTED -> true
         WorkoutSource.WHOOP, WorkoutSource.APPLE, WorkoutSource.LIFTING, WorkoutSource.ACTIVITY_FILE,
-        WorkoutSource.GARMIN -> false
+        WorkoutSource.GARMIN, WorkoutSource.HUAWEI -> false
     }
 
     /** True when a set of selected rows can be merged: two or more, and every one is mergeable. */
