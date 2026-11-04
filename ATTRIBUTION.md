@@ -132,6 +132,33 @@ numbers.
   from NOOP's own runs on a Forerunner 165. Nothing from Gadgetbridge beyond the protocol facts above, at
   the same pinned commit.
 
+## Huawei band protocol (fork, Android only)
+NOOP's Huawei transport and authentication code (`android/.../com/noop/huawei/protocol/`,
+`android/.../com/noop/huawei/auth/`) is **re-derived** Kotlin written from **protocol facts**: the Link
+Protocol frame (`5A | len | 00/slice flag | sid | cid | TLV | CRC-16/XMODEM`) and its slicing, the TLV
+VarInt, the `{7C, 7D, 7E}` encryption envelope and its AES-GCM/AES-CBC and IV-counter rules, the
+LinkParams / SecurityNegotiation / PinCode / Auth / BondParams / Bond / HiChain message layouts and key
+schedules, and the capability packet layouts (SupportedServices, SupportedCommands, ExpandCapabilities,
+SettingRelated, ProductInfo, Battery).
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org): consulted for those facts at commit
+  `6e4220682feb6917a5644304d9d7c760f30b6eaf`, chiefly `devices/huawei/HuaweiPacket.java`, `HuaweiTLV.java`,
+  `HuaweiCrypto.java`, `packets/DeviceConfig.java`, `util/CryptoUtils.java`,
+  `service/devices/huawei/HuaweiSupportProvider.java` and `requests/Get*Request.java`. Licensed
+  **AGPL-3.0**; NOOP copies none of its code.
+- **Vendor constants** taken from those Gadgetbridge files and committed verbatim because every band
+  expects them: the digest secrets v1/v2/v3, the bond mixing keys `SECRET_KEY_1/2` (v1 and v2/3), the
+  challenge/response message bytes, the HiChain `GROUP_ID`, and the HiChain strings (`com.huawei.health`,
+  `com.huawei.devicegroupmanage`, `health_group_name`, the version strings, and the HKDF/AAD labels
+  `hichain_iso_session_key`, `hichain_return_key`, `hichain_iso_exchange`, `hichain_iso_result`). They live
+  in `HuaweiVendorConstants` (`HuaweiAuthCrypto.kt`).
+- **Test vectors**: the expected byte literals in `HuaweiTlvTest`, `HuaweiFramingTest`,
+  `HuaweiDeviceConfigTest`, `HuaweiAuthPacketsTest` and `GadgetbridgeHuaweiVectors` reproduce
+  Gadgetbridge's `TestHuaweiPacket`, `TestHuaweiTLV`, `TestVarInt` and `packets/TestDeviceConfig` at the
+  same commit, used as protocol test vectors with attribution. The HMAC, HKDF and PBKDF2 vectors are
+  RFC 4231, RFC 5869 and RFC 7914; the GCM known answer is NIST test case 2.
+- **Not validated on hardware.** Nothing here has been run against a Huawei Band 10; every value remains an
+  unvalidated candidate until checked on a real band. Honor PAKE / STS framing is not implemented.
+
 ## Huawei Band 10 metric decoders (fork)
 - **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org), consulted at commit
   `6e4220682feb6917a5644304d9d7c760f30b6eaf`, licensed **AGPL-3.0**. The Kotlin decoders under

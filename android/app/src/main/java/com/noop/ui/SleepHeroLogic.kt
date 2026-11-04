@@ -126,13 +126,19 @@ internal fun heroPerformanceScore(
 internal fun restHeroSource(
     imported: ImportedSleepSeries, wakeDay: String?, activeIsOura: Boolean = false,
     activeIsGarmin: Boolean = false,
+    activeWatch: FusionSource? = garminOrNull(activeIsGarmin),
 ): String = when {
     wakeDay != null && imported.performance[wakeDay] != null -> "Whoop"
     activeIsOura -> "Oura"
-    // A paired Garmin watch provides its own staged night (#47). Mirrors macOS SleepView.deviceSourceKey.
-    activeIsGarmin -> "Garmin"
+    // A paired watch provides its own staged night (#47). Mirrors macOS SleepView.deviceSourceKey.
+    activeWatch != null -> activeWatch.displayName
     else -> "On-device"
 }
+
+/** The active watch the sleep helpers take: [activeWatch] is the brand-driven input
+ *  ([FusionSource.watchBrand] of the active id); the Boolean `activeIsGarmin` form maps onto it. */
+private fun garminOrNull(activeIsGarmin: Boolean): FusionSource? =
+    if (activeIsGarmin) FusionSource.GARMIN_WATCH else null
 
 /**
  * The stage-card subtitle's provenance suffix for a real (≥2-segment) hypnogram. An Oura night is the ring's
@@ -140,9 +146,12 @@ internal fun restHeroSource(
  * caption instead of the "approx. stages (on-device)" one that describes NOOP's sparse-motion staging.
  * Mirrors the macOS SleepView / StagesCard `stageCaption`.
  */
-internal fun stageProvenanceCaption(activeIsOura: Boolean, activeIsGarmin: Boolean): String = when {
+internal fun stageProvenanceCaption(
+    activeIsOura: Boolean, activeIsGarmin: Boolean = false,
+    activeWatch: FusionSource? = garminOrNull(activeIsGarmin),
+): String = when {
     activeIsOura -> " · raw on-device stages"
-    activeIsGarmin -> " · Garmin watch stages"
+    activeWatch != null -> " · ${activeWatch.displayName} watch stages"
     else -> " · approx. stages (on-device)"
 }
 
@@ -153,10 +162,14 @@ internal fun stageProvenanceCaption(activeIsOura: Boolean, activeIsGarmin: Boole
  * of "On-device", matching iOS SleepView.nightSource. WHOOP / Apple imports keep their own badge (#47).
  */
 internal fun mainSleepSourceBadge(
-    base: Pair<String, Color>, deviceId: String, activeIsOura: Boolean, activeIsGarmin: Boolean,
-): Pair<String, Color> = when {
-    FusionSource.isGarminWatchId(deviceId) -> "Garmin" to Palette.restColor
-    base.first == "On-device" && activeIsOura -> "Oura" to Palette.restColor
-    base.first == "On-device" && activeIsGarmin -> "Garmin" to Palette.restColor
-    else -> base
+    base: Pair<String, Color>, deviceId: String, activeIsOura: Boolean, activeIsGarmin: Boolean = false,
+    activeWatch: FusionSource? = garminOrNull(activeIsGarmin),
+): Pair<String, Color> {
+    val nightWatch = FusionSource.watchBrand(deviceId)
+    return when {
+        nightWatch != null -> nightWatch.displayName to Palette.restColor
+        base.first == "On-device" && activeIsOura -> "Oura" to Palette.restColor
+        base.first == "On-device" && activeWatch != null -> activeWatch.displayName to Palette.restColor
+        else -> base
+    }
 }

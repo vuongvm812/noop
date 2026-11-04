@@ -9,8 +9,8 @@ import com.noop.data.SourceKind
  * Faithful Kotlin twin of Strand/BLE/ExperimentalBrand.swift. A thin TYPED VIEW over [DeviceBrandCatalog]
  * (the pure, JVM-unit-tested single source of truth in com.noop.data): the advertised-name tokens and
  * capability facts live there once, and this enum only names the four custom-protocol families so the
- * drivers can switch on them. Amazfit, Mi Band and Oura are the experimental tier; Garmin is supported
- * (#43). The type keeps its historical name. Deliberately conservative: an unrecognised name returns null
+ * drivers can switch on them. Amazfit, Mi Band and Oura are the experimental tier; Garmin (#43) and
+ * Huawei are supported. The type keeps its historical name. Deliberately conservative: an unrecognised name returns null
  * rather than a wrong guess. NOTHING here fabricates data — it only labels a discovered peripheral so the
  * add-device flow can show the honest per-brand guidance. US English throughout.
  */
@@ -27,7 +27,11 @@ enum class ExperimentalBrand(val displayBrand: String) {
     GARMIN("Garmin"),
     /** Oura ring. No open live health stream — proprietary, syncs to Oura's app. The driver makes the
      *  detection attempt, then points honestly at file import. */
-    OURA("Oura");
+    OURA("Oura"),
+    /** Huawei Band 10. A supported watch source like [GARMIN] (not the experimental tier); no live HR
+     *  stream in NOOP yet. Its protocol driver lands separately, so the coordinator reports it as not yet
+     *  connectable ([HuaweiPlaceholderSource]). */
+    HUAWEI("Huawei");
 
     /** Whether this brand can stream LIVE heart rate at all, derived from the catalog (false for Oura — no
      *  open live stream — so the wizard routes it to import). false if the catalog row is somehow missing. */

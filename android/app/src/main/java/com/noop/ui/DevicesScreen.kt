@@ -1742,7 +1742,7 @@ private fun deviceIcon(device: PairedDeviceRow): ImageVector = when {
     device.sourceKind == SourceKind.ftms.name -> Icons.AutoMirrored.Filled.DirectionsRun
     device.sourceKind == SourceKind.huami.name -> Icons.Filled.GraphicEq
     device.sourceKind == SourceKind.oura.name -> Icons.Filled.Circle
-    isGarminWatch(device) -> Icons.Filled.Watch
+    watchSourceOf(device) != null -> Icons.Filled.Watch
     SourceCoordinator.isWhoop(device) -> Icons.Filled.Watch
     else -> Icons.Filled.FavoriteBorder
 }
@@ -1761,8 +1761,15 @@ private data class DeviceCapabilityProfile(
     val footnote: String,      // one short honest caveat line ("*" estimates + the SpO₂/steps notes)
 )
 
-/** A Garmin watch paired over its own GFDI protocol (not one added through Broadcast Heart Rate). */
-internal fun isGarminWatch(device: PairedDeviceRow): Boolean = device.sourceKind == SourceKind.garmin.name
+/** A Garmin watch paired over its own GFDI protocol (not one added through Broadcast Heart Rate). Routed
+ *  through the one watch resolver; a Huawei band is a watch too but has no panel yet. */
+internal fun isGarminWatch(device: PairedDeviceRow): Boolean =
+    watchSourceOf(device) == com.noop.analytics.FusionSource.GARMIN_WATCH
+
+/** The watch brand of a paired watch row (by its stored kind), or null for any other device. */
+internal fun watchSourceOf(device: PairedDeviceRow): com.noop.analytics.FusionSource? =
+    SourceKind.entries.firstOrNull { it.name == device.sourceKind }
+        ?.let { com.noop.analytics.FusionSource.forWatchKind(it) }
 
 private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
     // Garmin watch over GFDI: history files + live channels, read-only.

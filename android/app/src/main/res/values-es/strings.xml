@@ -2194,6 +2194,7 @@
     <string name="today_section_supplements">Suplementos</string>
     <string name="today_section_stress">Estrés</string>
     <string name="stress_summary_source_garmin">Estrés de Garmin</string>
+    <string name="stress_summary_source_huawei">Estrés de Huawei</string>
     <string name="stress_summary_source_noop">Estrés de NOOP</string>
     <string name="stress_summary_latest">Más reciente</string>
     <string name="stress_summary_average">Media de hoy</string>
@@ -2227,6 +2228,7 @@
     <string name="today_source_fitbit">Dispositivo Fitbit</string>
     <string name="today_effort_experimental">Esfuerzo experimental</string>
     <string name="today_source_garmin">Reloj Garmin</string>
+    <string name="today_source_huawei">Pulsera Huawei</string>
     <string name="today_source_workout_files">Archivos de entrenamiento</string>
     <string name="today_source_joiner">" + "</string>
     <string name="today_readiness_push">Exígete</string>

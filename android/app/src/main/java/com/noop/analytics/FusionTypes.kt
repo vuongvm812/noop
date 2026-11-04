@@ -41,6 +41,13 @@ enum class FusionSource(val id: String, val displayName: String) {
      */
     GARMIN_WATCH("garmin-watch", "Garmin"),
 
+    /**
+     * A Huawei Band 10 synced over its own protocol. Kotlin-only (fork). Same role as [GARMIN_WATCH]: rows
+     * live under the band's registry id ("huawei-<suffix>"), the band's own values are primary, and NOOP
+     * computes Charge / Effort / Rest from them.
+     */
+    HUAWEI_WATCH("huawei-watch", "Huawei"),
+
     /** Nutrition CSV import (single-source passthrough — calories/macros). */
     NUTRITION_CSV("nutrition-csv", "Nutrition"),
 
@@ -51,18 +58,42 @@ enum class FusionSource(val id: String, val displayName: String) {
     companion object {
         /**
          * Map a STORED source id (a dailyMetric deviceId / resolver source) onto its fusion source. A paired
-         * Garmin watch is stored under its registry id, so it cannot round-trip through [id]; every other
-         * source does. Swift twin: `FusionSource.forStoredSourceId`.
+         * watch is stored under its registry id, so it cannot round-trip through [id]; every other source
+         * does. Swift twin: `FusionSource.forStoredSourceId` (Garmin only; Huawei is Kotlin-only).
          */
         fun forStoredSourceId(id: String): FusionSource? {
-            if (isGarminWatchId(id)) return GARMIN_WATCH
+            watchBrand(id)?.let { return it }
             return entries.firstOrNull { it.id == id }
         }
 
         /** True for a paired Garmin watch's registry id. Swift twin: `FusionSource.isGarminWatchId`. */
-        fun isGarminWatchId(id: String): Boolean =
-            id.startsWith("garmin-") && id != "garmin-import" && !id.endsWith("-noop")
+        fun isGarminWatchId(id: String): Boolean = watchBrand(id) == GARMIN_WATCH
+
+        /** True for any paired watch's registry id (Garmin or Huawei). */
+        fun isWatchId(id: String): Boolean = watchBrand(id) != null
+
+        /**
+         * The ONE resolver for "is this device id a paired watch, and which brand": [GARMIN_WATCH] for
+         * "garmin-<suffix>", [HUAWEI_WATCH] for "huawei-<suffix>", null for anything else (a brand export
+         * import, a "-noop" computed sibling, a strap, a ring). Backed by [com.noop.data.DeviceBrandCatalog].
+         */
+        fun watchBrand(id: String): FusionSource? =
+            com.noop.data.DeviceBrandCatalog.watchSpecForDeviceId(id)?.let { forWatchKind(it.sourceKind) }
+
+        /** The fusion source of a watch [kind] from [com.noop.data.DeviceBrandCatalog.WATCH_SOURCE_KINDS]. */
+        internal fun forWatchKind(kind: com.noop.data.SourceKind): FusionSource? = when (kind) {
+            com.noop.data.SourceKind.garmin -> GARMIN_WATCH
+            com.noop.data.SourceKind.huawei -> HUAWEI_WATCH
+            else -> null
+        }
     }
+
+    /** True for a paired-watch source ([GARMIN_WATCH], [HUAWEI_WATCH]). */
+    val isWatch: Boolean get() = this == GARMIN_WATCH || this == HUAWEI_WATCH
+
+    /** The catalog id prefix of a watch source ("garmin", "huawei"); null for every other source. */
+    val watchIdPrefix: String?
+        get() = com.noop.data.DeviceBrandCatalog.all.firstOrNull { forWatchKind(it.sourceKind) == this }?.idPrefix
 }
 
 /**

@@ -33,18 +33,30 @@ internal object StressTodayLoader {
             repo.deviceMetricSamples(activeDeviceId, DeviceMetricKind.STRESS, window.fromEpochSecond, nowSeconds)
         }.getOrDefault(emptyList()).map { StressToday.Point(it.ts, it.value) }
         val watchDay = runCatching {
-            repo.metricSeries(activeDeviceId, GarminSyncStore.GARMIN_STRESS_KEY, day, day)
+            repo.metricSeries(activeDeviceId, watchStressKey(activeDeviceId), day, day)
         }.getOrNull()?.lastOrNull()?.value
         val importDay = runCatching {
-            repo.metricSeries("garmin-import", "stress", day, day)
+            repo.metricSeries(watchStressImportId(activeDeviceId), "stress", day, day)
         }.getOrNull()?.lastOrNull()?.value
 
         val garminOnly = StressToday.resolve(activeDeviceId, samples, watchDay, importDay, emptyList(), null)
-        // The watch answered for a Garmin wearer: NOOP's own score would lose anyway, so do not pay for it.
-        if (garminOnly != null && StressToday.prefersGarmin(activeDeviceId)) return garminOnly
+        // The watch answered for a watch wearer: NOOP's own score would lose anyway, so do not pay for it.
+        if (garminOnly != null && StressToday.prefersWatch(activeDeviceId)) return garminOnly
 
         val curve = StressWidgetProducer.todayCurve(repo, activeDeviceId, personalBaseline, nowSeconds, zone)
         val timeline = curve?.points.orEmpty().mapNotNull { p -> p.level?.let { StressToday.Point(p.ts, it) } }
         return StressToday.resolve(activeDeviceId, samples, watchDay, importDay, timeline, curve?.dayMean)
     }
+
+    /** The stored daily-average stress key for [activeDeviceId]'s brand: `huawei_stress` for a Huawei band,
+     *  `garmin_stress` otherwise (a WHOOP id simply has no row under it). */
+    fun watchStressKey(activeDeviceId: String): String = when (StressToday.watchSource(activeDeviceId)) {
+        StressToday.Source.HUAWEI -> StressToday.HUAWEI_STRESS_KEY
+        else -> GarminSyncStore.GARMIN_STRESS_KEY
+    }
+
+    /** The export import whose stored stress fills a day with no samples: the active watch brand's own
+     *  export ("<prefix>-import"), else the Garmin export. A brand with no export importer reads nothing. */
+    fun watchStressImportId(activeDeviceId: String): String =
+        (com.noop.analytics.FusionSource.watchBrand(activeDeviceId)?.watchIdPrefix ?: "garmin") + "-import"
 }

@@ -1235,7 +1235,7 @@ object IntelligenceEngine {
                     // watch matched the import exclusion and never handed its own night over (found by
                     // GarminAnalyticsEngineTest). Swift's gate compares to the canonical "my-whoop" instead;
                     // only the watch is let through here, so every other owner keeps its current behaviour.
-                    (owner != importedDeviceId || FusionSource.isGarminWatchId(owner)) && stored.isNotEmpty() -> {
+                    (owner != importedDeviceId || FusionSource.isWatchId(owner)) && stored.isNotEmpty() -> {
                         dayDiag(SleepStagerTrace.hrOnlyGateLine(
                             day = day, attempted = false, reason = "stored-hypnogram",
                             gravRows = grav.size, storedNights = stored.size,
@@ -1255,7 +1255,7 @@ object IntelligenceEngine {
                     // Garmin child 9: the watch stages its own nights and is primary for sleep, so a day with
                     // no stored watch night has no night; staging one from its heart rate invented 43-hour
                     // "nights" from run HR on real Forerunner 165 days. Mirrors Swift.
-                    FusionSource.isGarminWatchId(owner) -> {
+                    FusionSource.isWatchId(owner) -> {
                         dayDiag(SleepStagerTrace.hrOnlyGateLine(
                             day = day, attempted = false, reason = "watch-stages-its-own-sleep",
                             gravRows = grav.size, storedNights = 0,
@@ -2190,7 +2190,7 @@ object IntelligenceEngine {
         if (faPts.isNotEmpty()) {
             repo.upsertMetricSeriesWithProvenance(
                 rows = faPts,
-                provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId, faWatchVo2),
+                provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId, faWatchVo2, watchEstimatorFor(faWatchId)),
             )
         }
         faWatchId?.let { persistWatchVo2maxHistory(repo, it, computedId, faSatKey) }
@@ -2354,7 +2354,7 @@ object IntelligenceEngine {
             s == "lifting" -> "lifting"
             s == "activity-file" -> "activityFile"
             s == "apple-health" || s == "apple_health" || s == "health-connect" -> "apple"
-            GarminWorkoutEffort.isWatchSource(s) -> "garmin"
+            GarminWorkoutEffort.isWatchSource(s) -> GarminWorkoutEffort.watchBrand(s)?.watchIdPrefix ?: "garmin"
             s.contains("whoop") -> "strap"
             else -> "apple"
         }
@@ -2553,7 +2553,7 @@ object IntelligenceEngine {
             val res = scoredNights[i]
             val day = res.daily.day
             val owner = ownerByDay[day] ?: continue
-            if (!FusionSource.isGarminWatchId(owner)) continue
+            val watchSource = FusionSource.watchBrand(owner) ?: continue
             val nights = if (res.mainNightBlocks.isEmpty()) {
                 res.sleepSessions.map { GarminScoringInputs.Night(it.start, it.end) }
             } else {
@@ -2568,7 +2568,7 @@ object IntelligenceEngine {
                     .map { GarminScoringInputs.Sample(it.ts, it.value) }
             }
             // Respiration is the row's stored overnight value (#52), the one Trends shows for the day.
-            val r = GarminScoringInputs.resolve(
+            val r = GarminScoringInputs.attributedTo(GarminScoringInputs.resolve(
                 computedRestingHr = res.daily.restingHr,
                 computedHrv = res.daily.avgHrv,
                 computedResp = res.daily.respRateBpm,
@@ -2576,7 +2576,7 @@ object IntelligenceEngine {
                 hrvSamples = hrv,
                 watchRespRateBpm = watchRow?.respRateBpm,
                 nights = nights,
-            )
+            ), watchSource)
             val daily = res.daily.copy(restingHr = r.restingHr, avgHrv = r.avgHrv, respRateBpm = r.respRateBpm)
             scoredNights[i] = res.copy(daily = daily)
             nightlyHrvByDay[day] = daily.avgHrv
@@ -2738,9 +2738,9 @@ object IntelligenceEngine {
         return out
     }
 
-    /** The paired Garmin watches among the registry candidates, sorted. Swift: `garminWatchSources`. */
+    /** The paired watches (Garmin, Huawei) among the registry candidates, sorted. Swift: `garminWatchSources`. */
     private fun garminWatchIds(candidatePriorities: List<Pair<String, Int>>): List<String> =
-        candidatePriorities.map { it.first }.filter { FusionSource.isGarminWatchId(it) }.sorted()
+        candidatePriorities.map { it.first }.filter { FusionSource.isWatchId(it) }.sorted()
 
     /** The Recovery-domain trace line for one Garmin-owned day. Byte-identical to Swift `garminVitalsLine`. */
     internal fun garminVitalsLine(day: String, r: GarminScoringInputs.Resolution): String {
@@ -3237,10 +3237,14 @@ object IntelligenceEngine {
     suspend fun watchVo2max(repo: WhoopRepository, deviceId: String, satKey: String): Double? =
         activeGarminWatchId(repo, deviceId)?.let { garminWatchVo2max(repo, it, satKey) }
 
-    /** The registry's active device (else [deviceId]) when it is a Garmin watch, else null (#70).
-     *  Swift twin: `IntelligenceEngine.activeGarminWatchId`. */
+    /** The registry's active device (else [deviceId]) when it is a paired watch (Garmin or Huawei), else
+     *  null (#70). Swift twin: `IntelligenceEngine.activeGarminWatchId` (Garmin only). */
     suspend fun activeGarminWatchId(repo: WhoopRepository, deviceId: String): String? =
-        (repo.activeDeviceId() ?: deviceId).takeIf { FusionSource.isGarminWatchId(it) }
+        (repo.activeDeviceId() ?: deviceId).takeIf { FusionSource.isWatchId(it) }
+
+    /** The VO₂max provenance tag for the resolved watch [watchId]: its own brand, else Garmin. */
+    private fun watchEstimatorFor(watchId: String?): Vo2MaxEstimator =
+        watchId?.let { FusionSource.watchBrand(it) }?.let { Vo2MaxEstimator.forWatch(it) } ?: Vo2MaxEstimator.GARMIN
 
     /** [watchVo2max] for an already resolved [watchId]. Swift twin: `IntelligenceEngine.garminWatchVo2max`. */
     suspend fun garminWatchVo2max(repo: WhoopRepository, watchId: String, satKey: String): Double? =
@@ -3250,7 +3254,9 @@ object IntelligenceEngine {
      *  has none ([GarminScoringInputs.vo2maxPoints]). Swift twin: `IntelligenceEngine.garminVo2maxPoints`. */
     private suspend fun garminVo2maxPoints(repo: WhoopRepository, watchId: String, to: String): List<Pair<String, Double>> {
         val watch = repo.metricSeries(watchId, "vo2max", "0000-01-01", to).map { it.day to it.value }
-        val imported = repo.metricSeries("garmin-import", "vo2max", "0000-01-01", to).map { it.day to it.value }
+        // The same brand's own export ("garmin-import"); a brand with no export importer reads nothing.
+        val importId = (FusionSource.watchBrand(watchId)?.watchIdPrefix ?: "garmin") + "-import"
+        val imported = repo.metricSeries(importId, "vo2max", "0000-01-01", to).map { it.day to it.value }
         return GarminScoringInputs.vo2maxPoints(watch, imported)
     }
 
@@ -3259,13 +3265,13 @@ object IntelligenceEngine {
      *  so an export imported after pairing shows Garmin's numbers in the VO₂max history. [watchId] is the
      *  resolved active watch ([activeGarminWatchId]). Idempotent. Swift twin: `IntelligenceEngine.persistWatchVo2maxHistory`. */
     suspend fun persistWatchVo2maxHistory(repo: WhoopRepository, watchId: String, computedId: String, beforeWeek: String) {
-        if (!FusionSource.isGarminWatchId(watchId)) return
+        val brand = FusionSource.watchBrand(watchId) ?: return
         val weeks = GarminScoringInputs.watchVo2maxWeeks(garminVo2maxPoints(repo, watchId, beforeWeek), beforeWeek)
         if (weeks.isEmpty()) return
         repo.upsertMetricSeriesWithProvenance(
             rows = weeks.map { (week, v) -> MetricSeriesRow(deviceId = computedId, day = week, key = "vo2max_est", value = v) },
             provenance = weeks.map { (week, _) ->
-                ScoreInputProvenanceRow(deviceId = computedId, day = week, key = "vo2max_est", sourceId = Vo2MaxEstimator.GARMIN.provenanceId)
+                ScoreInputProvenanceRow(deviceId = computedId, day = week, key = "vo2max_est", sourceId = Vo2MaxEstimator.forWatch(brand).provenanceId)
             },
         )
     }
@@ -3275,13 +3281,14 @@ object IntelligenceEngine {
      *  profile because changing/removing a waist is a legitimate transition between estimators. */
     fun vo2MaxProvenance(
         rows: List<MetricSeriesRow>, waistCm: Double, computedId: String, watchVo2max: Double? = null,
+        watchEstimator: Vo2MaxEstimator = Vo2MaxEstimator.GARMIN,
     ): List<ScoreInputProvenanceRow> = rows.firstOrNull { it.key == "vo2max_est" }?.let { point ->
         listOf(
             ScoreInputProvenanceRow(
                 deviceId = computedId,
                 day = point.day,
                 key = point.key,
-                sourceId = (if (watchVo2max != null) Vo2MaxEstimator.GARMIN else Vo2MaxEstimator.forWaistCm(waistCm)).provenanceId,
+                sourceId = (if (watchVo2max != null) watchEstimator else Vo2MaxEstimator.forWaistCm(waistCm)).provenanceId,
             ),
         )
     }.orEmpty()
@@ -3306,9 +3313,10 @@ object IntelligenceEngine {
         val watchVo2 = watchVo2max(repo, importedDeviceId, satKey)
         val rows = fitnessAgeRows(gate7, profile, computedId, satKey, watchVo2)
         if (rows.isNotEmpty()) {
+            val watchEstimator = watchEstimatorFor(activeGarminWatchId(repo, importedDeviceId))
             repo.upsertMetricSeriesWithProvenance(
                 rows = rows,
-                provenance = vo2MaxProvenance(rows, profile.waistCm, computedId, watchVo2),
+                provenance = vo2MaxProvenance(rows, profile.waistCm, computedId, watchVo2, watchEstimator),
             )
         }
         return rows.isNotEmpty()

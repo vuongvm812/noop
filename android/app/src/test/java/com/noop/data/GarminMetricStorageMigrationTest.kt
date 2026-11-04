@@ -68,8 +68,19 @@ class GarminMetricStorageMigrationTest {
                 "intensity_moderate_min", "intensity_vigorous_min", "active_kcal", "hrv_ms", "sleep_score",
                 "aerobic_training_effect", "anaerobic_training_effect", "training_load",
             ),
-            DeviceMetricKind.entries.map { it.wire },
+            DeviceMetricKind.entries.filterNot { it in KOTLIN_ONLY_KINDS }.map { it.wire },
         )
+    }
+
+    /** Kinds with no Swift twin yet (fork, Android-first), so outside the Swift-pinned list above. */
+    @Test
+    fun kotlinOnlyKindsAreAppendedAfterTheSwiftList() {
+        assertEquals(listOf("skin_temp_c"), KOTLIN_ONLY_KINDS.map { it.wire })
+        assertEquals(KOTLIN_ONLY_KINDS, DeviceMetricKind.entries.takeLast(KOTLIN_ONLY_KINDS.size))
+    }
+
+    private companion object {
+        val KOTLIN_ONLY_KINDS = listOf(DeviceMetricKind.SKIN_TEMP_C)
     }
 
     /** A batch carrying ONLY watch metrics is not empty; `insert` early-returns on empty and would bank

@@ -2114,6 +2114,7 @@
     <string name="today_section_supplements">补充剂</string>
     <string name="today_section_stress">压力</string>
     <string name="stress_summary_source_garmin">Garmin 压力</string>
+    <string name="stress_summary_source_huawei">Huawei 压力</string>
     <string name="stress_summary_source_noop">NOOP 压力</string>
     <string name="stress_summary_latest">最新</string>
     <string name="stress_summary_average">今日平均</string>
@@ -2147,6 +2148,7 @@
     <string name="today_source_fitbit">Fitbit 设备</string>
     <string name="today_effort_experimental">负荷（实验性）</string>
     <string name="today_source_garmin">Garmin 手表</string>
+    <string name="today_source_huawei">Huawei 手环</string>
     <string name="today_source_workout_files">训练文件</string>
     <string name="today_source_joiner">" + "</string>
     <string name="today_readiness_push">加大强度</string>

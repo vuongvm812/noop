@@ -456,7 +456,10 @@ enum class Vo2MaxEstimator(val provenanceId: String) {
     UTH("uth"),
 
     /** The Garmin watch's own estimate (FIT MAX_MET_DATA), preferred when the watch has one (#51). */
-    GARMIN("garmin");
+    GARMIN("garmin"),
+
+    /** The Huawei Band 10's own estimate, preferred the same way when the band has one. */
+    HUAWEI("huawei");
 
     companion object {
         fun fromProvenanceId(value: String?): Vo2MaxEstimator? = entries.firstOrNull {
@@ -464,6 +467,10 @@ enum class Vo2MaxEstimator(val provenanceId: String) {
         }
 
         fun forWaistCm(waistCm: Double): Vo2MaxEstimator = if (waistCm > 0.0) NES else UTH
+
+        /** The estimator tag of a watch source; Garmin for anything that is not the Huawei band. */
+        fun forWatch(watch: com.noop.analytics.FusionSource): Vo2MaxEstimator =
+            if (watch == com.noop.analytics.FusionSource.HUAWEI_WATCH) HUAWEI else GARMIN
     }
 }
 
