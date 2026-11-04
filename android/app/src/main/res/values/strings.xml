@@ -3049,6 +3049,17 @@
     <string name="huawei_panel_sync_now">Sync now</string>
     <string name="huawei_panel_pair_again">Pair again</string>
     <string name="huawei_live_no_hr">Live heart rate is not available on this band. NOOP syncs its history instead.</string>
+    <string name="huawei_panel_syncing_stage">Syncing: %1$s</string>
+    <string name="huawei_sync_stage_settings">settings</string>
+    <string name="huawei_sync_stage_steps">steps and heart rate</string>
+    <string name="huawei_sync_stage_sleep">sleep</string>
+    <string name="huawei_sync_stage_stress">stress</string>
+    <string name="huawei_sync_stage_dictionary">HRV and skin temperature</string>
+    <string name="huawei_sync_stage_workouts">workouts</string>
+    <string name="huawei_sync_stage_storing">saving</string>
+    <string name="huawei_panel_sync_error">Last sync incomplete: %1$s</string>
+    <string name="huawei_profile_captures">Sleep stages · Resting HR · HRV · SpO₂ · Stress · Steps · Workouts</string>
+    <string name="huawei_profile_footnote">No live heart rate. NOOP syncs the band\'s history; it changes only reversible settings (measurement switches, clock) and deletes nothing.</string>
     <string name="huawei_tc_auth_mode">Auth mode</string>
     <string name="huawei_tc_auth_version">Auth version</string>
     <string name="huawei_tc_cipher">Cipher</string>

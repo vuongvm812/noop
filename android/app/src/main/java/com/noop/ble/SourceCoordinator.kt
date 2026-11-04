@@ -105,7 +105,7 @@ class SourceCoordinator(
     private val garminLiveSink: (com.noop.garmin.GarminLiveSnapshot?) -> Unit = {},
     /** A Garmin history sync stored new files: run the same refresh + analysis a completed WHOOP offload runs. */
     private val onGarminHistoryStored: () -> Unit = {},
-    /** Runs a Huawei band's history sync once its link is authenticated. No-op until the sync engine is wired. */
+    /** Runs a Huawei band's history sync once its link is READY ([com.noop.huawei.HuaweiHistorySync] in production). */
     private val huaweiSyncRunner: com.noop.huawei.HuaweiSyncRunner = com.noop.huawei.HuaweiSyncRunner.NONE,
     /** Push the latest instantaneous speed/cadence/power from a connected standard fitness sensor
      *  (RSC/CSC/CPS), read ADDITIVELY alongside HR by [StandardHrSource], into the live state the in-workout
@@ -576,11 +576,12 @@ class SourceCoordinator(
      * Build the source for a Huawei Band 10 (`huawei`). Credentials come from the encrypted [HuaweiKeyStore];
      * a first pairing runs only when the wizard armed one in [HuaweiPairingRequests]. Battery rides the same
      * [batterySink]; the band's model name corrects the registry label. Per-connect readouts appear only while
-     * the Connection or Sources Test Centre domain is active; auth failures and mode changes always log.
+     * the Connection or Sources Test Centre domain is active; auth failures and mode changes always log. The
+     * [huaweiSyncRunner] stores history; its watermarks, last attempt and empty streak live in [com.noop.data.HuaweiSyncPrefs]
+     * under this band's id (so a re-key or forget moves or drops them), and [com.noop.huawei.HuaweiRadioPolicy] reads them.
      */
     private fun makeHuaweiSource(id: String, ctx: Context, row: PairedDeviceRow?): HuaweiSource {
-        val prefs = ctx.getSharedPreferences(HUAWEI_SYNC_PREFS, Context.MODE_PRIVATE)
-        val lastKey = "lastAt.$id"
+        val prefs = com.noop.data.HuaweiSyncPrefs.of(ctx)
         val source = HuaweiSource(
             deviceId = id,
             gatt = AndroidHuaweiGatt(ctx, straplog),
@@ -597,8 +598,10 @@ class SourceCoordinator(
                 val model = info.productModel
                 if (model.isNotBlank() && model != row?.model) scope.launch { runCatching { registry.setModel(id, model) } }
             },
-            onSynced = { at -> prefs.edit().putLong(lastKey, at).apply() },
-            initialLastSyncAt = if (prefs.contains(lastKey)) prefs.getLong(lastKey, 0) else null,
+            onSynced = { at -> prefs.setCompletedAt(id, at) },
+            initialLastSyncAt = prefs.completedAt(id),
+            lastSyncAttemptAt = { prefs.lastSyncAt(id) },
+            emptyStreak = { prefs.emptyStreak(id) },
         )
         HuaweiPairingRequests.take(id)?.let { source.beginFirstPairing(it) }
         return source
@@ -812,9 +815,6 @@ class SourceCoordinator(
     }
 
     companion object {
-        /** Plain prefs holding each Huawei band's last completed sync time. */
-        private const val HUAWEI_SYNC_PREFS = "noop_huawei_sync"
-
         /** Whether a finished Garmin sync stored anything new (only then does it trigger a re-analysis). */
         fun garminSyncStoredHistory(summary: com.noop.garmin.GarminSyncSummary): Boolean = summary.downloaded > 0
 

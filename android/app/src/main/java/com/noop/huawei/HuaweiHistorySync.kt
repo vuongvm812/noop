@@ -29,7 +29,8 @@ import kotlinx.coroutines.withTimeout
 // Protocol facts (re-derived, no code copied) from Gadgetbridge (AGPL-3.0):
 // `service/devices/huawei/HuaweiSupportProvider.java` (fetchActivityData), `HuaweiWorkoutSyncManager.java`,
 // `p2p/HuaweiP2PDataDictionarySyncService.java`, `p2p/HuaweiBaseP2PService.java`,
-// `devices/huawei/packets/{FitnessData,Workout,P2P}.java`, `devices/huawei/HuaweiState.java`.
+// `devices/huawei/packets/{FitnessData,Workout,P2P}.java`, `devices/huawei/HuaweiState.java`,
+// `HuaweiTruSleepParser.java` (sleep_state.bin) and `HuaweiFileDownloadManager.java`.
 // Kotlin-only; Swift twin deferred (fork).
 
 /** What one sync did. [stored] is false when nothing reached the database. */
@@ -58,26 +59,42 @@ class HuaweiHistorySync(
     }
 
     /** One full sync. Each stream runs on its own; a failure in one leaves the others and its own watermark. */
-    suspend fun run(link: HuaweiLink, caps: HuaweiCapabilities, deviceId: String): HuaweiSyncSummary {
+    override suspend fun run(
+        link: HuaweiLink,
+        capabilities: HuaweiCapabilities,
+        deviceId: String,
+        progress: (HuaweiSyncStage) -> Unit,
+    ): HuaweiSyncSummary {
         val now = clock()
-        val session = Session(link, caps, deviceId, now)
+        val session = Session(link, capabilities, deviceId, now)
+        progress(HuaweiSyncStage.SETTINGS)
         session.enableSwitchesOnce()
+        progress(HuaweiSyncStage.STEPS)
         session.syncSteps()
+        progress(HuaweiSyncStage.SLEEP)
         session.syncLegacySleep()
         session.syncSleepFile()
+        session.syncSleepState()
+        progress(HuaweiSyncStage.STRESS)
         session.syncStress()
+        progress(HuaweiSyncStage.DICTIONARY)
         session.syncDictionary()
+        progress(HuaweiSyncStage.WORKOUTS)
         session.syncWorkouts()
 
         val batch = HuaweiWatchIngest.Batch(
             minutes = session.minutes, sleepSpans = session.sleepSpans, nights = session.nights,
+            sleepFrames = session.sleepFrames,
             stress = session.stress, dictionary = session.dictionary, workouts = session.workouts,
             utcOffsetS = utcOffset(now), nowTs = now,
         )
         val counts = linkedMapOf(
             "minutes" to batch.minutes.size, "sleep_records" to batch.sleepSpans.size, "nights" to batch.nights.size,
+            "sleep_frames" to batch.sleepFrames.size,
             "stress" to batch.stress.size, "dictionary" to batch.dictionary.size, "workouts" to batch.workouts.size,
+            "pace_blocks" to batch.workouts.sumOf { it.pace.size },
         )
+        progress(HuaweiSyncStage.STORING)
         val stored = try {
             store(deviceId, batch)
         } catch (e: Exception) {
@@ -96,6 +113,7 @@ class HuaweiHistorySync(
         val minutes = ArrayList<HuaweiFitnessDecoder.MinuteSample>()
         val sleepSpans = ArrayList<HuaweiFitnessDecoder.SleepSpan>()
         val nights = ArrayList<HuaweiSleepFileDecoder.Night>()
+        val sleepFrames = ArrayList<HuaweiSleepFileDecoder.StateFrame>()
         val stress = ArrayList<HuaweiStressDecoder.Entry>()
         val dictionary = ArrayList<HuaweiDictionaryDecoder.Sample>()
         val workouts = ArrayList<HuaweiWatchIngest.Workout>()
@@ -215,6 +233,26 @@ class HuaweiHistorySync(
                     is HuaweiFileOutcome.Failed -> { failures.add("sleep_file: ${r.reason}"); return@stream }
                 }
                 done[HuaweiDataType.SLEEP_FILE] = now
+            }
+        }
+
+        /**
+         * TruSleep `sleep_state.bin` on a band with TruSleep (07/16) but without expand bit 143: its time frames
+         * are sleep ranges with no stages, which the fold keeps only where no other record covers the night.
+         * Over 0x2C when 01/31 has the TruSleep file bit, else 0x0A.
+         */
+        suspend fun syncSleepState() {
+            if (!caps.supports(0x07, 0x16) || caps.hasExpand(EXPAND_NEW_SLEEP)) return
+            stream("sleep_state") {
+                val start = since(HuaweiDataType.SLEEP_STATE) - 86_400
+                val request = HuaweiFileRequest("sleep_state.bin", HuaweiFileRequest.TYPE_SLEEP_STATE, start, now,
+                    oldSyncType = HuaweiFileRequest.OLD_SLEEP)
+                when (val r = files.download(request, newSync = caps.settings?.truSleepFileSync == true)) {
+                    is HuaweiFileOutcome.Downloaded -> sleepFrames.addAll(HuaweiSleepFileDecoder.stateFile(r.bytes))
+                    HuaweiFileOutcome.Empty -> Unit
+                    is HuaweiFileOutcome.Failed -> { failures.add("sleep_state: ${r.reason}"); return@stream }
+                }
+                done[HuaweiDataType.SLEEP_STATE] = now
             }
         }
 
@@ -345,7 +383,7 @@ class HuaweiHistorySync(
             }
         }
 
-        private inner class WorkoutHeader(val number: Int, val dataCount: Int)
+        private inner class WorkoutHeader(val number: Int, val dataCount: Int, val paceCount: Int)
 
         /**
          * 17/07 over [start, end]. A band error, or a count that disagrees with its own list, splits the range
@@ -358,7 +396,9 @@ class HuaweiHistorySync(
             val list = if (code == null && reply.contains(0x81)) {
                 val c = reply.tlv(0x81)
                 val count = if (c.contains(0x02)) c.u16(0x02) else 0
-                val items = c.tlvs(0x85).map { WorkoutHeader(it.u16(0x06), if (it.contains(0x07)) it.u16(0x07) else 0) }
+                val items = c.tlvs(0x85).map {
+                    WorkoutHeader(it.u16(0x06), if (it.contains(0x07)) it.u16(0x07) else 0, if (it.contains(0x08)) it.u16(0x08) else 0)
+                }
                 items.takeIf { it.size == count }
             } else null
             if (list != null) return list
@@ -391,6 +431,17 @@ class HuaweiHistorySync(
                 val innerBitmap = if (c.contains(0x09)) c.unsigned(0x09).toInt() else DEFAULT_INNER_BITMAP
                 samples.addAll(HuaweiWorkoutDecoder.samples(header, data, innerBitmap, innerLength))
             }
+            val pace = ArrayList<HuaweiWorkoutDecoder.PaceBlock>()
+            if (caps.supports(0x17, 0x0C)) {
+                for (index in 0 until h.paceCount) {
+                    val reply = ask(HuaweiCommand.WORKOUT_PACE, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, h.number).putShort(0x08, index)))
+                    if (!reply.contains(0x81)) continue
+                    val c = reply.tlv(0x81)
+                    // A reply for another workout or block is skipped, as Gadgetbridge's pace sync skips it.
+                    if (!c.contains(0x02) || c.u16(0x02) != h.number || !c.contains(0x08) || c.u16(0x08) != index) continue
+                    pace.addAll(c.tlvs(0x83).mapNotNull { HuaweiWorkoutDecoder.paceBlock(fields(it)) })
+                }
+            }
             var gps = emptyList<HuaweiWorkoutDecoder.GpsPoint>()
             if (caps.settings?.gpsFileSync == true) {
                 when (val r = files.download(HuaweiFileRequest("${h.number}_gps.bin", HuaweiFileRequest.TYPE_GPS), newSync = true)) {
@@ -399,7 +450,7 @@ class HuaweiHistorySync(
                     is HuaweiFileOutcome.Failed -> failures.add("workout gps: ${r.reason}")
                 }
             }
-            return HuaweiWatchIngest.Workout(totals, samples, gps)
+            return HuaweiWatchIngest.Workout(totals, samples, gps, pace)
         }
 
         // MARK: helpers

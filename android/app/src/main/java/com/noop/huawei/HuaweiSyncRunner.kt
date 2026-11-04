@@ -23,18 +23,45 @@ data class HuaweiCapabilities(
     fun supports(serviceId: Int, commandId: Int): Boolean = commands[serviceId]?.contains(commandId) == true
 }
 
+/** The part of a history sync in progress, for the device panel. */
+enum class HuaweiSyncStage {
+    /** The one-time measurement switches. */
+    SETTINGS,
+    STEPS,
+    SLEEP,
+    STRESS,
+    DICTIONARY,
+    WORKOUTS,
+    /** Writing the batch to the database. */
+    STORING,
+}
+
 /**
- * The seam between the BLE source and the history sync engine. The source calls [sync] once the link is
- * authenticated and READY (on connect and on "Sync now"), with the encrypted [link], what the band
- * reported in [capabilities], and the registry [deviceId] rows must be stored under. A normal return marks
- * the sync complete; a throw is logged and leaves the last-sync time unchanged. The source never runs two
- * syncs at once.
+ * The seam between the BLE source and the history sync engine. The source calls [run] once the link is
+ * authenticated and READY (on connect, on app foreground, on its periodic timer and on "Sync now", each
+ * gated by [HuaweiRadioPolicy]), with the encrypted [link], what the band reported in [capabilities], and
+ * the registry [deviceId] rows must be stored under. A normal return marks the sync complete; a throw is
+ * logged and leaves the last-sync time unchanged. The source never runs two syncs at once.
  */
 fun interface HuaweiSyncRunner {
     suspend fun sync(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String)
 
+    /**
+     * One sync that reports each [HuaweiSyncStage] it enters to [progress] and returns what it did, or null
+     * when this runner keeps no summary (the default, which just calls [sync]).
+     */
+    suspend fun run(
+        link: HuaweiLink,
+        capabilities: HuaweiCapabilities,
+        deviceId: String,
+        progress: (HuaweiSyncStage) -> Unit = {},
+    ): HuaweiSyncSummary? {
+        sync(link, capabilities, deviceId)
+        return null
+    }
+
     companion object {
-        /** Until the sync engine is wired: connects, reads device info, syncs nothing. */
+        /** Connects, reads device info, syncs nothing (tests, and a coordinator built without a runner). */
         val NONE: HuaweiSyncRunner = HuaweiSyncRunner { _, _, _ -> }
     }
 }
@@ -44,6 +71,8 @@ enum class HuaweiDataType(val key: String) {
     STEPS("steps"),
     SLEEP("sleep"),
     SLEEP_FILE("sleep_file"),
+    /** TruSleep `sleep_state.bin`, fetched only on a band without expand bit 143. */
+    SLEEP_STATE("sleep_state"),
     STRESS("stress"),
     WORKOUTS("workouts"),
 }
@@ -61,6 +90,7 @@ interface HuaweiSyncCursor {
     fun setDictionaryCursorMs(deviceId: String, dictClass: Int, ms: Long)
     fun switchesEnabled(deviceId: String): Boolean
     fun setSwitchesEnabled(deviceId: String)
+    /** When the last sync attempt started (the radio policy's floor reads it). */
     fun lastSyncAt(deviceId: String): Long?
     fun emptyStreak(deviceId: String): Int
     fun recordSyncOutcome(deviceId: String, at: Long, empty: Boolean)

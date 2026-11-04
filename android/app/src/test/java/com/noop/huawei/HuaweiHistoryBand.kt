@@ -17,13 +17,14 @@ import com.noop.huawei.protocol.HuaweiTlv
  * 0x0A, answers P2P dictionary requests as band pushes, and can stay silent or misreport on cue. Every
  * request it received is kept, decrypted, in [received].
  */
-class HuaweiHistoryBand(val script: Script) : FakeHuaweiLink.Peer {
+class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null) : FakeHuaweiLink.Peer {
 
     class StepRecord(val baseTs: Long, val minutes: List<Pair<Int, ByteArray>>)
 
     class DictRecord(val dictClass: Int, val startMs: Long, val endMs: Long, val valueId: Int, val value: Double)
 
-    class Workout(val number: Int, val totals: HuaweiTlv, val pages: List<HuaweiTlv>)
+    /** [pace] is one 17/0C reply container per pace index (`02`/`08` are filled in by the band). */
+    class Workout(val number: Int, val totals: HuaweiTlv, val pages: List<HuaweiTlv>, val pace: List<HuaweiTlv> = emptyList())
 
     class Script(
         val steps: List<StepRecord> = emptyList(),
@@ -51,7 +52,8 @@ class HuaweiHistoryBand(val script: Script) : FakeHuaweiLink.Peer {
     val received = mutableListOf<Received>()
 
     private val key = ByteArray(16) { (it * 7 + 3).toByte() }
-    private val cipher = HuaweiCipher(key, useGcm = false, ivSource = HuaweiCounterIvSource(0x2000, SeededHuaweiRandom(5)))
+    /** The band's session cipher: [SimulatedHuaweiBand]'s after a real handshake, else a fixed test key. */
+    private val cipher = sessionCipher ?: HuaweiCipher(key, useGcm = false, ivSource = HuaweiCounterIvSource(0x2000, SeededHuaweiRandom(5)))
     private val assembler = HuaweiFrameAssembler()
     private var fileIds = 0
     private val openFiles = HashMap<Int, ByteArray>()
@@ -66,7 +68,12 @@ class HuaweiHistoryBand(val script: Script) : FakeHuaweiLink.Peer {
         val frame = frames.flatMap { assembler.feed(it) }.single()
         val raw = HuaweiTlv.parse(frame.body)
         val tlv = HuaweiPacketCodec.decodeTlv(frame, cipher)
-        received.add(Received(frame.serviceId, frame.commandId, tlv, HuaweiCipher.isEnvelope(raw)))
+        return answerDecoded(frame, tlv, HuaweiCipher.isEnvelope(raw))
+    }
+
+    /** One already reassembled and decrypted request (from [SimulatedHuaweiBand], which owns the session). */
+    fun answerDecoded(frame: HuaweiFrame, tlv: HuaweiTlv, encrypted: Boolean): List<ByteArray>? {
+        received.add(Received(frame.serviceId, frame.commandId, tlv, encrypted))
         if (frame.serviceId to frame.commandId in script.silentOn) return null
         return answer(frame, tlv)
     }
@@ -140,7 +147,7 @@ class HuaweiHistoryBand(val script: Script) : FakeHuaweiLink.Peer {
                 val end = c.u32(0x04)
                 val list = script.workouts.filter { w -> w.totals.u32(0x04) in start..end }
                 val out = HuaweiTlv().putShort(0x02, list.size + if (end - start > script.workoutListBreaksAbove) 1 else 0)
-                for (w in list) out.put(0x85, HuaweiTlv().putShort(0x06, w.number).putShort(0x07, w.pages.size).putShort(0x08, 0))
+                for (w in list) out.put(0x85, HuaweiTlv().putShort(0x06, w.number).putShort(0x07, w.pages.size).putShort(0x08, w.pace.size))
                 reply(sid, cid, HuaweiTlv().put(0x81, out))
             }
             0x17 to 0x08 -> {
@@ -151,6 +158,14 @@ class HuaweiHistoryBand(val script: Script) : FakeHuaweiLink.Peer {
                 val c = t.tlv(0x81)
                 val w = script.workouts.single { it.number == c.u16(0x02) }
                 reply(sid, cid, HuaweiTlv().put(0x81, w.pages[c.u16(0x03)]))
+            }
+            0x17 to 0x0C -> {
+                val c = t.tlv(0x81)
+                val w = script.workouts.single { it.number == c.u16(0x02) }
+                val index = c.u16(0x08)
+                val body = HuaweiTlv().putShort(0x02, w.number).putShort(0x08, index)
+                for (e in w.pace[index].entries) body.put(e.tag, e.value)
+                reply(sid, cid, HuaweiTlv().put(0x81, body))
             }
             else -> error("the band was sent %02X/%02X".format(sid, cid))
         }

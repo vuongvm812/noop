@@ -996,6 +996,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val salvageProbeLifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
         override fun onActivityResumed(activity: android.app.Activity) {
             ble.salvageProbeIfBondLoopPaused()
+            // A Huawei band syncs on foreground too; its radio policy's event floor throttles repeated resumes.
+            huaweiSource.value?.onForeground()
             // #386 self-heal: nudge the analyze loop so a night the killed overnight tick never scored is
             // caught up now. Gated + coalesced downstream, so a healthy resume costs one fingerprint read.
             analyzeKick.trySend(Unit)

@@ -21,8 +21,10 @@ import com.noop.huawei.decode.HuaweiWorkoutDecoder
  *
  * Per-minute heart rate → hrSample; SpO2, HRV, stress, the band's sleep score, Training Effect and
  * training load → deviceMetricSample; TruSleep nights (or, without any, the legacy light / deep records)
- * → sleepSession with a stage timeline; day totals (summed per-minute steps, distance and energy, the
- * latest resting HR, the main night) → [GarminDayRollup]; workouts → [WorkoutDraft]. A timestamp that
+ * → sleepSession with a stage timeline, and `sleep_state.bin` frames no other record covers → an
+ * unstaged sleepSession (bounds only); day totals (summed per-minute steps, distance and energy, the
+ * latest resting HR, the main night) → [GarminDayRollup]; workouts → [WorkoutDraft]. Workout pace blocks
+ * (17/0C) are decoded but not stored: no workout column or series holds per-unit pace, and none is added. A timestamp that
  * cannot be placed (before [EARLIEST_TS] or more than a day past `nowTs`) is dropped, never shifted.
  */
 object HuaweiWatchIngest {
@@ -53,6 +55,8 @@ object HuaweiWatchIngest {
         val minutes: List<HuaweiFitnessDecoder.MinuteSample> = emptyList(),
         val sleepSpans: List<HuaweiFitnessDecoder.SleepSpan> = emptyList(),
         val nights: List<HuaweiSleepFileDecoder.Night> = emptyList(),
+        /** TruSleep `sleep_state.bin` frames: sleep bounds with no stages. */
+        val sleepFrames: List<HuaweiSleepFileDecoder.StateFrame> = emptyList(),
         val stress: List<HuaweiStressDecoder.Entry> = emptyList(),
         val dictionary: List<HuaweiDictionaryDecoder.Sample> = emptyList(),
         val workouts: List<Workout> = emptyList(),
@@ -60,11 +64,12 @@ object HuaweiWatchIngest {
         val nowTs: Long,
     )
 
-    /** One workout's decoded parts; [gps] is its track file, empty when it had none. */
+    /** One workout's decoded parts; [gps] is its track file, empty when it had none; [pace] its 17/0C blocks. */
     data class Workout(
         val totals: HuaweiWorkoutDecoder.Totals,
         val samples: List<HuaweiWorkoutDecoder.Sample> = emptyList(),
         val gps: List<HuaweiWorkoutDecoder.GpsPoint> = emptyList(),
+        val pace: List<HuaweiWorkoutDecoder.PaceBlock> = emptyList(),
     )
 
     /** A metric whose kind enum entry has not landed yet (see [SKIN_TEMP_WIRE]). */
@@ -100,16 +105,20 @@ object HuaweiWatchIngest {
         val workouts: List<WorkoutDraft>,
     )
 
-    /** One night in the fold's own terms: bounds, its stage spans, and the band's figures for it. */
+    /**
+     * One night in the fold's own terms: bounds, its stage spans, and the band's figures for it. An
+     * [unstaged] night (a `sleep_state.bin` frame) is asleep from start to end with no stage breakdown.
+     */
     private data class FoldNight(
         val start: Long,
         val end: Long,
         val stages: List<HuaweiSleepFileDecoder.Stage>,
         val score: Int?,
         val avgHrv: Double?,
+        val unstaged: Boolean = false,
     ) {
         fun seconds(vararg names: String) = stages.filter { it.stage in names }.sumOf { it.end - it.start }
-        val asleepS get() = seconds("light", "deep", "rem")
+        val asleepS get() = if (unstaged) end - start else seconds("light", "deep", "rem")
     }
 
     fun fold(b: Batch): Ingest {
@@ -187,11 +196,18 @@ object HuaweiWatchIngest {
             if (asleep <= 0) continue
             val key = dayOf(n.end)
             if (asleep > (mainNight[key]?.asleepS ?: 0L)) mainNight[key] = n
-            sleeps.add(GarminSleepRow(n.start, n.end, GarminWatchIngest.efficiency(asleep, n.seconds("wake")), null,
+            sleeps.add(if (n.unstaged) GarminSleepRow(n.start, n.end, null, null, null, null)
+            else GarminSleepRow(n.start, n.end, GarminWatchIngest.efficiency(asleep, n.seconds("wake")), null,
                 n.avgHrv, stagesJSON(n)))
         }
         for ((key, n) in mainNight) {
             val asleep = n.asleepS
+            if (n.unstaged) {
+                // Bounds only: total sleep, no stage minutes and no efficiency the band never reported.
+                days[key] = day(key).copy(totalSleepMin = asleep / 60.0, deepMin = null, lightMin = null, remMin = null,
+                    awakeMin = null, efficiency = null)
+                continue
+            }
             val awake = n.seconds("wake")
             days[key] = day(key).copy(
                 totalSleepMin = asleep / 60.0, deepMin = n.seconds("deep") / 60.0, lightMin = n.seconds("light") / 60.0,
@@ -239,6 +255,12 @@ object HuaweiWatchIngest {
             group.add(HuaweiSleepFileDecoder.Stage(from, s.endTs, name))
         }
         flush()
+        // Last, the band's sleep_state frames, only where no TruSleep night or legacy record covers them.
+        for (f in b.sleepFrames.sortedBy { it.startTs }) {
+            if (f.endTs <= f.startTs || !placeable(f.startTs) || !placeable(f.endTs)) continue
+            if (out.any { f.startTs < it.end && f.endTs > it.start }) continue
+            out.add(FoldNight(f.startTs, f.endTs, emptyList(), null, null, unstaged = true))
+        }
         return out.sortedBy { it.start }
     }
 

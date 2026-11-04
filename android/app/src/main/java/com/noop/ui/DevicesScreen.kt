@@ -1796,6 +1796,15 @@ private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
             footnote = uiString(R.string.l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd),
         )
     }
+    // Huawei band over its own protocol: history sync only, no live heart rate.
+    if (isHuaweiBand(device)) {
+        return DeviceCapabilityProfile(
+            displayModel = device.model,
+            captures = uiString(R.string.huawei_profile_captures),
+            powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2),
+            footnote = uiString(R.string.huawei_profile_footnote),
+        )
+    }
     // FTMS gym machine: a live machine + (when reported) HR session, recorded via the existing
     // live-workout path. Effort-scored only when the machine actually reports heart rate.
     if (device.sourceKind == SourceKind.ftms.name) {

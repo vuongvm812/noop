@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.R
 import com.noop.ble.HuaweiConnectReadout
 import com.noop.ble.HuaweiSource
+import com.noop.huawei.HuaweiSyncStage
 import com.noop.huawei.protocol.HuaweiHex
 
 /** Pure helpers behind the Huawei band panel, the wizard and the Test Centre card. */
@@ -42,6 +43,17 @@ internal object HuaweiBandUi {
             HuaweiSource.LinkPhase.NEEDS_PAIRING -> R.string.huawei_panel_status_needs_pairing
             HuaweiSource.LinkPhase.FAILED -> R.string.huawei_panel_status_failed
         }
+    }
+
+    @StringRes
+    fun stageRes(stage: HuaweiSyncStage): Int = when (stage) {
+        HuaweiSyncStage.SETTINGS -> R.string.huawei_sync_stage_settings
+        HuaweiSyncStage.STEPS -> R.string.huawei_sync_stage_steps
+        HuaweiSyncStage.SLEEP -> R.string.huawei_sync_stage_sleep
+        HuaweiSyncStage.STRESS -> R.string.huawei_sync_stage_stress
+        HuaweiSyncStage.DICTIONARY -> R.string.huawei_sync_stage_dictionary
+        HuaweiSyncStage.WORKOUTS -> R.string.huawei_sync_stage_workouts
+        HuaweiSyncStage.STORING -> R.string.huawei_sync_stage_storing
     }
 
     /** "Sync now" is offered whenever it does something: a sync when READY, a reconnect after a stop. */
@@ -83,7 +95,8 @@ internal object HuaweiBandUi {
 
 /**
  * The Huawei band panel under the active band's device card: model, firmware, battery, link phase, last
- * sync, "Sync now" and "Pair again" (which opens the pairing wizard; pairing never starts from here).
+ * sync, the stage of a sync in flight, the last sync's error, "Sync now" and "Pair again" (which opens the
+ * pairing wizard; pairing never starts from here).
  */
 @Composable
 internal fun HuaweiBandPanel(viewModel: AppViewModel, onPairAgain: () -> Unit, modifier: Modifier = Modifier) {
@@ -94,6 +107,8 @@ internal fun HuaweiBandPanel(viewModel: AppViewModel, onPairAgain: () -> Unit, m
     val battery by s.battery.collectAsStateWithLifecycle()
     val product by s.product.collectAsStateWithLifecycle()
     val lastSyncAt by s.lastSyncAt.collectAsStateWithLifecycle()
+    val stage by s.syncStage.collectAsStateWithLifecycle()
+    val syncError by s.lastSyncError.collectAsStateWithLifecycle()
 
     NoopCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.space10)) {
@@ -113,6 +128,13 @@ internal fun HuaweiBandPanel(viewModel: AppViewModel, onPairAgain: () -> Unit, m
                 style = NoopType.subhead,
                 color = Palette.textSecondary,
             )
+            stage?.let { st ->
+                Text(uiString(R.string.huawei_panel_syncing_stage, uiString(HuaweiBandUi.stageRes(st))),
+                    style = NoopType.subhead, color = Palette.textSecondary)
+            }
+            if (stage == null) syncError?.let { err ->
+                Text(uiString(R.string.huawei_panel_sync_error, err), style = NoopType.footnote, color = Palette.statusWarning)
+            }
             NoopButton(
                 text = uiString(R.string.huawei_panel_sync_now),
                 leadingIcon = Icons.Filled.Sync,

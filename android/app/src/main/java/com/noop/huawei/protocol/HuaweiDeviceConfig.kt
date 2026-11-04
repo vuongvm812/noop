@@ -150,6 +150,38 @@ object HuaweiDeviceConfig {
         }
     }
 
+    /**
+     * Set the band's clock (01/05): `{01 unix seconds u32, 02 offset}`. The offset is two bytes, whole hours
+     * (with 0x80 added when the zone is west of UTC) then minutes as Java's signed `offset / 60 % 60`, so a
+     * negative half-hour zone sends its minutes byte two's-complement, as Gadgetbridge's
+     * `HuaweiUtil.getTimeAndZoneId` does (AGPL-3.0, read for the layout only). Reversible: the next set, or
+     * the band's own settings, replace it.
+     */
+    object SetTime {
+        fun request(unixSeconds: Long, utcOffsetSeconds: Int): HuaweiRequest {
+            val hours = if (utcOffsetSeconds < 0) -utcOffsetSeconds / 3600 + 128 else utcOffsetSeconds / 3600
+            val minutes = utcOffsetSeconds / 60 % 60
+            val offset = byteArrayOf(hours.toByte(), minutes.toByte())
+            return HuaweiRequest.of(HuaweiCommand.SET_TIME, HuaweiTlv().putInt(0x01, unixSeconds.toInt()).put(0x02, offset))
+        }
+    }
+
+    /**
+     * The user's Huawei account id (AccountRelated 0x1A): 1A/05 `{01 id, [03 01]}` on a band that supports
+     * 1A/05 and 1A/06, else 1A/01 `{01 id}`; tag 3 only when the band reports expand bit 0xAC. Gadgetbridge
+     * `SendAccountRequest` / `SendExtendedAccountRequest` / `packets/AccountRelated` (AGPL-3.0, facts only).
+     */
+    object Account {
+        const val EXPAND_DIFF_ACCOUNT_PAIRING = 0xAC
+
+        fun request(accountId: String, extended: Boolean, pairingOptimisation: Boolean): HuaweiRequest {
+            val t = HuaweiTlv().put(0x01, accountId.toByteArray(Charsets.US_ASCII))
+            if (!extended) return HuaweiRequest.of(HuaweiCommand.ACCOUNT, t)
+            if (pairingOptimisation) t.putByte(0x03, 1)
+            return HuaweiRequest.of(HuaweiCommand.ACCOUNT_EXTENDED, t)
+        }
+    }
+
     object ProductInfo {
         /** The BLE tag set: hardware/software/serial/model/name and the reserved tags the band expects asked. */
         private val BLE_TAGS = intArrayOf(0x01, 0x02, 0x07, 0x09, 0x0A, 0x11, 0x12, 0x16, 0x1A, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23)

@@ -2988,6 +2988,17 @@
     <string name="huawei_panel_sync_now">Sincronizza ora</string>
     <string name="huawei_panel_pair_again">Abbina di nuovo</string>
     <string name="huawei_live_no_hr">La frequenza cardiaca in tempo reale non è disponibile su questo bracciale. NOOP ne sincronizza invece la cronologia.</string>
+    <string name="huawei_panel_syncing_stage">Sincronizzazione: %1$s</string>
+    <string name="huawei_sync_stage_settings">impostazioni</string>
+    <string name="huawei_sync_stage_steps">passi e frequenza cardiaca</string>
+    <string name="huawei_sync_stage_sleep">sonno</string>
+    <string name="huawei_sync_stage_stress">stress</string>
+    <string name="huawei_sync_stage_dictionary">HRV e temperatura cutanea</string>
+    <string name="huawei_sync_stage_workouts">allenamenti</string>
+    <string name="huawei_sync_stage_storing">salvataggio</string>
+    <string name="huawei_panel_sync_error">Ultima sincronizzazione incompleta: %1$s</string>
+    <string name="huawei_profile_captures">Fasi del sonno · FC a riposo · HRV · SpO₂ · Stress · Passi · Allenamenti</string>
+    <string name="huawei_profile_footnote">Nessuna frequenza cardiaca dal vivo. NOOP sincronizza la cronologia della band; modifica solo impostazioni reversibili (interruttori di misura, orologio) e non elimina nulla.</string>
     <string name="huawei_tc_auth_mode">Modalità di autenticazione</string>
     <string name="huawei_tc_auth_version">Versione di autenticazione</string>
     <string name="huawei_tc_cipher">Cifratura</string>

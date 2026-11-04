@@ -49,6 +49,14 @@ class SimulatedHuaweiBand(val config: Config, seed: Long = 99) : FakeHuaweiLink.
         /** Corrupt the CRC of the reply to `(sid, cid)`. */
         val badCrcOn: Set<Pair<Int, Int>> = emptySet(),
         val supportedServices: Set<Int> = setOf(0x01, 0x07, 0x0A, 0x16),
+        /** SupportedCommands 01/03: service → commands answered 1; null answers 01/03 with an error. */
+        val supportedCommands: Map<Int, Set<Int>>? = null,
+        /** ExpandCapabilities 01/37 bitmap. */
+        val expand: ByteArray = byteArrayOf(0x05, 0x00, 0x01),
+        /** SettingRelated 01/31 file-sync bits (0x02 TruSleep, 0x04 RRI, 0x08 GPS). */
+        val settingBits: Int = 0x0E,
+        /** History served after authentication, over the session key ([HuaweiHistoryBand]). */
+        val history: HuaweiHistoryBand.Script? = null,
     ) {
         companion object {
             fun normal() = Config(deviceSupportType = 0)
@@ -59,6 +67,10 @@ class SimulatedHuaweiBand(val config: Config, seed: Long = 99) : FakeHuaweiLink.
     }
 
     private val random = SeededHuaweiRandom(seed)
+    private var historyBand: HuaweiHistoryBand? = null
+
+    /** The history side's received requests, once a session reached it. */
+    val historyReceived: List<HuaweiHistoryBand.Received> get() = historyBand?.received.orEmpty()
     private val assembler = HuaweiFrameAssembler()
     private val serverNonce = random.nextBytes(16)
 
@@ -107,6 +119,12 @@ class SimulatedHuaweiBand(val config: Config, seed: Long = 99) : FakeHuaweiLink.
         val tlv = HuaweiPacketCodec.decodeTlv(frame, sessionCipher)
         received.add(frame to tlv)
         if (key in config.silentOn) return null
+        val script = config.history
+        if (script != null && frame.serviceId !in setOf(0x01, 0x1A) && key !in config.errorCodes) {
+            val band = historyBand ?: HuaweiHistoryBand(script, checkNotNull(sessionCipher) { "history before a session" })
+                .also { historyBand = it }
+            return band.answerDecoded(frame, tlv, HuaweiCipher.isEnvelope(raw))
+        }
         val code = config.errorCodes[key]
         val reply = if (code != null) {
             HuaweiTlv().put(HuaweiTlv.TAG_RESULT, HuaweiBytes.u32(code))
@@ -126,6 +144,7 @@ class SimulatedHuaweiBand(val config: Config, seed: Long = 99) : FakeHuaweiLink.
     }
 
     private fun answer(frame: HuaweiFrame, tlv: HuaweiTlv): HuaweiTlv? {
+        if (frame.serviceId == 0x1A) return HuaweiTlv().putInt(HuaweiTlv.TAG_RESULT, HuaweiTlv.RESULT_OK.toInt())
         check(frame.serviceId == 0x01) { "unexpected service ${frame.serviceId}" }
         return when (frame.commandId) {
             0x01 -> linkParams()
@@ -144,10 +163,27 @@ class SimulatedHuaweiBand(val config: Config, seed: Long = 99) : FakeHuaweiLink.
             }
             0x07 -> HuaweiTlv().putString(0x03, "HW-1").putString(0x07, "10.0.0.120").putString(0x0A, "Band 10\u0000\u0000\u0000")
             0x08 -> HuaweiTlv().putByte(0x01, 77)
-            0x37 -> HuaweiTlv().put(0x01, byteArrayOf(0x05, 0x00, 0x01))
-            0x31 -> HuaweiTlv().putByte(0x02, 0x0E)
+            0x03 -> config.supportedCommands?.let { supported -> supportedCommands(tlv, supported) }
+                ?: HuaweiTlv().put(HuaweiTlv.TAG_RESULT, HuaweiBytes.u32(0x00019001))
+            0x05 -> HuaweiTlv().putInt(HuaweiTlv.TAG_RESULT, HuaweiTlv.RESULT_OK.toInt())
+            0x37 -> HuaweiTlv().put(0x01, config.expand)
+            0x31 -> HuaweiTlv().putByte(0x02, config.settingBits)
             else -> HuaweiTlv().put(HuaweiTlv.TAG_RESULT, HuaweiBytes.u32(0x00019001))
         }
+    }
+
+    /** `81{02 service, 04 bitmap}` per asked service, 1 for each asked command in [supported]. */
+    private fun supportedCommands(tlv: HuaweiTlv, supported: Map<Int, Set<Int>>): HuaweiTlv {
+        val out = HuaweiTlv()
+        var service = -1
+        for (e in tlv.tlv(0x81).entries) when (e.tag) {
+            0x02 -> service = e.value[0].toInt() and 0xFF
+            0x03 -> {
+                val have = supported[service].orEmpty()
+                out.putByte(0x02, service).put(0x04, ByteArray(e.value.size) { if ((e.value[it].toInt() and 0xFF) in have) 1 else 0 })
+            }
+        }
+        return HuaweiTlv().put(0x81, out)
     }
 
     private fun linkParams(): HuaweiTlv = HuaweiTlv()

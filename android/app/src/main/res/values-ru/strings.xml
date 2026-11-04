@@ -2915,6 +2915,17 @@
     <string name="huawei_panel_sync_now">Синхронизировать</string>
     <string name="huawei_panel_pair_again">Повторить сопряжение</string>
     <string name="huawei_live_no_hr">Пульс в реальном времени на этом браслете недоступен. Вместо этого NOOP синхронизирует его историю.</string>
+    <string name="huawei_panel_syncing_stage">Синхронизация: %1$s</string>
+    <string name="huawei_sync_stage_settings">настройки</string>
+    <string name="huawei_sync_stage_steps">шаги и пульс</string>
+    <string name="huawei_sync_stage_sleep">сон</string>
+    <string name="huawei_sync_stage_stress">стресс</string>
+    <string name="huawei_sync_stage_dictionary">ВСР и температура кожи</string>
+    <string name="huawei_sync_stage_workouts">тренировки</string>
+    <string name="huawei_sync_stage_storing">сохранение</string>
+    <string name="huawei_panel_sync_error">Последняя синхронизация не завершена: %1$s</string>
+    <string name="huawei_profile_captures">Фазы сна · Пульс в покое · ВСР · SpO₂ · Стресс · Шаги · Тренировки</string>
+    <string name="huawei_profile_footnote">Нет пульса в реальном времени. NOOP синхронизирует историю браслета; меняет только обратимые настройки (переключатели измерений, часы) и ничего не удаляет.</string>
     <string name="huawei_tc_auth_mode">Режим аутентификации</string>
     <string name="huawei_tc_auth_version">Версия аутентификации</string>
     <string name="huawei_tc_cipher">Шифр</string>

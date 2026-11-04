@@ -1,7 +1,10 @@
 package com.noop.ble
 
 import com.noop.huawei.HuaweiCapabilities
+import com.noop.huawei.HuaweiRadioPolicy
 import com.noop.huawei.HuaweiSyncRunner
+import com.noop.huawei.HuaweiSyncStage
+import com.noop.huawei.HuaweiSyncTrigger
 import com.noop.huawei.auth.HuaweiAuthError
 import com.noop.huawei.auth.HuaweiAuthMachine
 import com.noop.huawei.auth.HuaweiAuthMode
@@ -91,10 +94,15 @@ object HuaweiPairingRequests {
  * Huawei Band 10 source over the band's own protocol (`com.noop.huawei`). Kotlin-only; no Swift twin yet.
  *
  * Each connection: open the GATT link ([HuaweiGatt]), authenticate with the stored key ([HuaweiAuthMachine]
- * in reconnect mode), read ProductInfo 01/07 and Battery 01/08, ask which services and commands the band
- * supports (01/02, 01/03, 01/37, 01/31), report READY and hand the authenticated link to the
+ * in reconnect mode), read ProductInfo 01/07, set the band's clock (01/05), read Battery 01/08, ask which
+ * services and commands the band supports (01/02, 01/03, 01/37, 01/31), send the user's optional Huawei
+ * account id (0x1A) when one was entered, report READY and hand the authenticated link to the
  * [HuaweiSyncRunner]. Battery pushes (01/27) update [battery] while connected. Every message is an
- * allowlisted [HuaweiRequest].
+ * allowlisted [HuaweiRequest]. Slices are capped at the negotiated ATT MTU ([HuaweiGattLink.capSliceToMtu]).
+ *
+ * History sync runs on READY, on [onForeground], on a periodic timer while connected and on [syncNow], each
+ * gated by [HuaweiRadioPolicy] (a manual sync always runs) and never two at once. [syncStage],
+ * [lastSyncAt] and [lastSyncError] are what the device panel shows.
  *
  * Pairing is never automatic. With no stored key the source goes straight to NEEDS_PAIRING without
  * touching the radio; a band that says it needs a fresh pairing does the same. Only [beginFirstPairing],
@@ -124,6 +132,11 @@ class HuaweiSource(
     /** A sync finished normally at this Unix second (persist it). */
     private val onSynced: (Long) -> Unit = {},
     initialLastSyncAt: Long? = null,
+    /** When the last sync attempt started, as the sync runner persisted it (the policy floor). */
+    private val lastSyncAttemptAt: () -> Long? = { null },
+    /** Consecutive syncs that found nothing (stretches the periodic floor). */
+    private val emptyStreak: () -> Int = { 0 },
+    private val utcOffsetSeconds: (Long) -> Int = { ts -> java.util.TimeZone.getDefault().getOffset(ts * 1000) / 1000 },
     private val random: HuaweiRandom = HuaweiRandom.secure,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val backoffMs: (Int) -> Long = ReconnectBackoff::nextDelayMs,
@@ -143,6 +156,12 @@ class HuaweiSource(
     val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
     private val _lastSyncAt = MutableStateFlow(initialLastSyncAt)
     val lastSyncAt: StateFlow<Long?> = _lastSyncAt.asStateFlow()
+    /** The stage of the sync in flight; null when none is running. */
+    private val _syncStage = MutableStateFlow<HuaweiSyncStage?>(null)
+    val syncStage: StateFlow<HuaweiSyncStage?> = _syncStage.asStateFlow()
+    /** Why the last sync did not complete fully, worded from what the runner reported; null after a clean one. */
+    private val _lastSyncError = MutableStateFlow<String?>(null)
+    val lastSyncError: StateFlow<String?> = _lastSyncError.asStateFlow()
 
     /** True while a first pairing waits for the user to confirm on the band. */
     private val _confirmingOnBand = MutableStateFlow(false)
@@ -167,6 +186,11 @@ class HuaweiSource(
     private var pushJob: Job? = null
     private var syncJob: Job? = null
     private var reconnectJob: Job? = null
+    private var periodicJob: Job? = null
+    /** Start of the last attempt this source made (seconds), alongside the runner's persisted one. */
+    private var attemptedAt: Long? = null
+    /** The band's own LinkParams slice size (before the MTU cap): the SupportedCommands request budget. */
+    private var bandSliceSize: Int = com.noop.huawei.protocol.HuaweiFraming.DEFAULT_SLICE_SIZE
 
     // LiveHrSource
 
@@ -208,7 +232,7 @@ class HuaweiSource(
     /** "Sync now": sync when READY; otherwise reconnect now (after FAILED or while backing off). */
     fun syncNow() = post {
         when (_linkPhase.value) {
-            LinkPhase.READY -> runSync("manual")
+            LinkPhase.READY -> requestSync(HuaweiSyncTrigger.MANUAL)
             LinkPhase.DISCONNECTED, LinkPhase.FAILED -> if (target != null) {
                 failedConnects = 0
                 reconnectJob?.cancel()
@@ -216,6 +240,11 @@ class HuaweiSource(
             }
             else -> say(false, "sync request ignored while ${_linkPhase.value}")
         }
+    }
+
+    /** The app came to the foreground: a sync, if READY and the event floor allows it. */
+    fun onForeground() = post {
+        if (_linkPhase.value == LinkPhase.READY) requestSync(HuaweiSyncTrigger.FOREGROUND)
     }
 
     // Connection
@@ -240,6 +269,7 @@ class HuaweiSource(
     }
 
     private fun linkUp(l: HuaweiGattLink, address: String, mtu: Int) {
+        l.capSliceToMtu(mtu)
         _linkPhase.value = LinkPhase.AUTHENTICATING
         _readout.value = _readout.value.copy(mtu = mtu, connects = _readout.value.connects + 1)
         say(false, "link up (MTU $mtu); authenticating")
@@ -281,7 +311,7 @@ class HuaweiSource(
                     keys.save(deviceId, base.copy(bond = result.bond))
                 }
                 if (grant != null) say(true, "first pairing complete (${result.mode})")
-                recordAuth(result)
+                recordAuth(result, l)
                 afterAuth(l)
             }
         }
@@ -297,6 +327,7 @@ class HuaweiSource(
                 }
                 .onFailure { say(true, "product info unreadable (${it.message})") }
         }
+        setTime(l)
         read(l, HuaweiDeviceConfig.Battery.request())?.let { tlv ->
             runCatching { HuaweiDeviceConfig.Battery.decode(tlv) }.onSuccess { battery(it) }
         }
@@ -305,6 +336,7 @@ class HuaweiSource(
         _readout.value = _readout.value.copy(capabilities = caps)
         say(false, "capabilities: services ${caps.services.sorted().joinToString(",") { "%02X".format(it) }}, " +
             "expand ${caps.expand?.raw?.let { HuaweiHex.encode(it) } ?: "none"}, settings ${caps.settings ?: "none"}")
+        sendAccount(l, caps)
         pushJob = scope.launch {
             l.pushes.collect { push ->
                 if (push.serviceId == HuaweiInbound.SERVICE_DEVICE_CONFIG && push.commandId == HuaweiInbound.BATTERY_LEVEL_CHANGED) {
@@ -316,7 +348,31 @@ class HuaweiSource(
         _readout.value = _readout.value.copy(lastFailure = null)
         _linkPhase.value = LinkPhase.READY
         say(true, "ready")
-        runSync("connect")
+        requestSync(HuaweiSyncTrigger.CONNECT)
+        startPeriodic()
+    }
+
+    /** The phone's time and UTC offset onto the band (01/05). A refusal is logged and the session goes on. */
+    private suspend fun setTime(l: HuaweiGattLink) {
+        val now = nowMs() / 1000
+        if (read(l, HuaweiDeviceConfig.SetTime.request(now, utcOffsetSeconds(now))) != null) say(false, "band clock set")
+    }
+
+    /**
+     * The 17-digit account id the user typed into the wizard, if any: 1A/05 when the band lists 1A/05 and
+     * 1A/06, else 1A/01 when it lists that. Nothing is sent without an id, and an id is never cleared.
+     */
+    private suspend fun sendAccount(l: HuaweiGattLink, caps: HuaweiCapabilities) {
+        val account = keys.load(deviceId)?.accountId?.takeIf { HuaweiKeyStore.isValidAccountId(it) } ?: return
+        val extended = caps.supports(0x1A, 0x05) && caps.supports(0x1A, 0x06)
+        if (!extended && !caps.supports(0x1A, 0x01)) {
+            say(true, "account id not sent: the band lists neither 1A/05 with 1A/06 nor 1A/01")
+            return
+        }
+        val optimisation = caps.expand?.has(HuaweiDeviceConfig.Account.EXPAND_DIFF_ACCOUNT_PAIRING) == true
+        if (read(l, HuaweiDeviceConfig.Account.request(account, extended, optimisation)) != null) {
+            say(false, "account id sent (${if (extended) "1A/05" else "1A/01"})")
+        }
     }
 
     private suspend fun readCapabilities(l: HuaweiGattLink): HuaweiCapabilities {
@@ -327,7 +383,7 @@ class HuaweiSource(
         val plan = CAPABILITY_COMMANDS.filterKeys { it in services }
         val commands = linkedMapOf<Int, Set<Int>>()
         if (plan.isNotEmpty()) {
-            val requests = runCatching { HuaweiDeviceConfig.SupportedCommands.requests(plan, l.config.sliceSize) }.getOrDefault(emptyList())
+            val requests = runCatching { HuaweiDeviceConfig.SupportedCommands.requests(plan, bandSliceSize) }.getOrDefault(emptyList())
             for (request in requests) {
                 read(l, request)?.let { runCatching { HuaweiDeviceConfig.SupportedCommands.decode(it, plan) }.getOrNull() }
                     ?.let { commands.putAll(it) }
@@ -366,18 +422,20 @@ class HuaweiSource(
         onBattery(b.level)
     }
 
-    private fun recordAuth(result: HuaweiAuthResult) {
+    private fun recordAuth(result: HuaweiAuthResult, l: HuaweiGattLink) {
         val p = result.linkParams
+        bandSliceSize = result.linkConfig.sliceSize
         _readout.value = _readout.value.copy(
             authMode = result.mode,
             authVersion = p.authVersion,
             deviceSupportType = p.deviceSupportType,
             encryptMethod = p.encryptMethod,
             cipher = result.linkConfig.cipher?.let { if (it.useGcm) "AES-GCM" else "AES-CBC" },
-            sliceSize = result.linkConfig.sliceSize,
+            // The slice actually used: the band's, capped at the negotiated MTU.
+            sliceSize = l.config.sliceSize,
         )
         say(false, "authenticated: mode ${result.mode}, auth version ${p.authVersion}, support type ${p.deviceSupportType}, " +
-            "encrypt method ${p.encryptMethod}, slice ${result.linkConfig.sliceSize}, installed key ${result.installedKey}")
+            "encrypt method ${p.encryptMethod}, slice ${result.linkConfig.sliceSize} (used ${l.config.sliceSize}), installed key ${result.installedKey}")
     }
 
     private fun authFailed(error: HuaweiAuthError, firstPairing: Boolean) {
@@ -433,7 +491,9 @@ class HuaweiSource(
         sessionJob?.cancel(); sessionJob = null
         pushJob?.cancel(); pushJob = null
         syncJob?.cancel(); syncJob = null
+        periodicJob?.cancel(); periodicJob = null
         _syncing.value = false
+        _syncStage.value = null
         _confirmingOnBand.value = false
         pairingInFlight = false
         link?.close(reason)
@@ -453,29 +513,58 @@ class HuaweiSource(
         }
     }
 
-    private fun runSync(trigger: String) {
+    /** A sync for [trigger] when READY, none is running and [HuaweiRadioPolicy] allows it. */
+    private fun requestSync(trigger: HuaweiSyncTrigger) {
         val l = link ?: return
         if (_linkPhase.value != LinkPhase.READY) return
         if (syncJob?.isActive == true) {
             say(false, "sync ($trigger) skipped; one is running")
             return
         }
+        val now = nowMs() / 1000
+        val last = listOfNotNull(lastSyncAttemptAt(), attemptedAt).maxOrNull()
+        val streak = emptyStreak()
+        if (!HuaweiRadioPolicy.shouldSync(trigger, now, last, streak)) {
+            say(false, "sync ($trigger) held by the floor (last ${last?.let { now - it } ?: -1} s ago, empty streak $streak)")
+            return
+        }
+        attemptedAt = now
         val caps = capabilities
         syncJob = scope.launch {
             _syncing.value = true
             try {
                 say(false, "sync ($trigger) starting")
-                syncRunner.sync(l, caps, deviceId)
-                val at = nowMs() / 1000
-                _lastSyncAt.value = at
-                onSynced(at)
-                say(false, "sync ($trigger) finished")
+                val summary = syncRunner.run(l, caps, deviceId) { stage -> _syncStage.value = stage }
+                if (summary != null && !summary.stored) {
+                    _lastSyncError.value = "not stored" + summary.failures.joinToString("; ", prefix = ": ").takeIf { summary.failures.isNotEmpty() }.orEmpty()
+                    say(true, "sync ($trigger) finished without storing")
+                } else {
+                    val at = nowMs() / 1000
+                    _lastSyncAt.value = at
+                    onSynced(at)
+                    _lastSyncError.value = summary?.failures?.takeIf { it.isNotEmpty() }?.joinToString("; ")
+                    say(false, "sync ($trigger) finished")
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                _lastSyncError.value = "${e.javaClass.simpleName}: ${e.message}"
                 say(true, "sync ($trigger) failed (${e.javaClass.simpleName}: ${e.message})")
             } finally {
                 _syncing.value = false
+                _syncStage.value = null
+            }
+        }
+    }
+
+    /** While READY: one PERIODIC request per floor, stretched by the empty streak, the policy deciding each. */
+    private fun startPeriodic() {
+        periodicJob?.cancel()
+        periodicJob = scope.launch {
+            while (true) {
+                val wait = HuaweiRadioPolicy.PERIODIC_FLOOR_SECONDS * HuaweiRadioPolicy.syncBackoff(emptyStreak())
+                delay((wait * 1000).toLong())
+                requestSync(HuaweiSyncTrigger.PERIODIC)
             }
         }
     }
@@ -494,15 +583,15 @@ class HuaweiSource(
         /**
          * Services asked about in SupportedServices: device config, fitness data, workout, the two file
          * download services, stress (0x20) and P2P (0x34), the last two gating history sync's stress file
-         * and data-dictionary streams (#82). Ids re-derived from Gadgetbridge's packet classes (AGPL-3.0, read for facts
+         * and data-dictionary streams (#82), and AccountRelated (0x1A), which gates sending the account id. Ids re-derived from Gadgetbridge's packet classes (AGPL-3.0, read for facts
          * only); unvalidated on a Band 10.
          */
-        val CAPABILITY_SERVICES: List<Int> = listOf(0x01, 0x07, 0x0A, 0x17, 0x2C, 0x20, 0x34)
+        val CAPABILITY_SERVICES: List<Int> = listOf(0x01, 0x07, 0x0A, 0x17, 0x2C, 0x20, 0x34, 0x1A)
 
         /**
          * Commands asked about per supported service (SupportedCommands 01/03), from the same source. History
          * sync (#82) gates on 07/0A-0D (step and legacy sleep history), 17/01 (workouts), 20/09 (automatic
-         * stress) and 34/01 (P2P), so those are asked too.
+         * stress), 34/01 (P2P) and 17/0C (pace), so those are asked too, as are 1A/01, 1A/05 and 1A/06 (account).
          */
         val CAPABILITY_COMMANDS: Map<Int, ByteArray> = linkedMapOf(
             0x01 to bytes(0x02, 0x03, 0x07, 0x08, 0x27, 0x31, 0x37),
@@ -513,6 +602,7 @@ class HuaweiSource(
             0x2C to bytes(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07),
             0x20 to bytes(0x09),
             0x34 to bytes(0x01),
+            0x1A to bytes(0x01, 0x05, 0x06),
         )
 
         private fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }

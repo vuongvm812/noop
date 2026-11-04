@@ -2990,6 +2990,17 @@
     <string name="huawei_panel_sync_now">立即同步</string>
     <string name="huawei_panel_pair_again">重新配对</string>
     <string name="huawei_live_no_hr">此手环不提供实时心率。NOOP 会改为同步其历史数据。</string>
+    <string name="huawei_panel_syncing_stage">正在同步：%1$s</string>
+    <string name="huawei_sync_stage_settings">设置</string>
+    <string name="huawei_sync_stage_steps">步数和心率</string>
+    <string name="huawei_sync_stage_sleep">睡眠</string>
+    <string name="huawei_sync_stage_stress">压力</string>
+    <string name="huawei_sync_stage_dictionary">心率变异性和皮肤温度</string>
+    <string name="huawei_sync_stage_workouts">锻炼</string>
+    <string name="huawei_sync_stage_storing">正在保存</string>
+    <string name="huawei_panel_sync_error">上次同步未完成：%1$s</string>
+    <string name="huawei_profile_captures">睡眠阶段 · 静息心率 · 心率变异性 · 血氧 · 压力 · 步数 · 锻炼</string>
+    <string name="huawei_profile_footnote">无实时心率。NOOP 同步手环的历史数据；仅更改可撤销的设置（测量开关、时钟），不删除任何内容。</string>
     <string name="huawei_tc_auth_mode">认证模式</string>
     <string name="huawei_tc_auth_version">认证版本</string>
     <string name="huawei_tc_cipher">加密方式</string>

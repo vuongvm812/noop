@@ -63,8 +63,27 @@ class HuaweiGattLink(
 
     val isClosed: Boolean get() = synchronized(stateLock) { closedReason != null }
 
+    /** The largest slice one FE01 write carries (ATT MTU minus its 3-byte header); null until [capSliceToMtu]. */
+    @Volatile
+    private var sliceCap: Int? = null
+
     override fun configure(config: HuaweiLinkConfig) {
-        codec.config = config
+        codec.config = capped(config)
+    }
+
+    /**
+     * Caps every later slice at the negotiated ATT [mtu], so one slice is one write: the band's LinkParams
+     * slice size (0xF4 by default) is larger than a 23-byte default MTU leaves room for. Never below
+     * [HuaweiFraming.MIN_SLICE_SIZE].
+     */
+    fun capSliceToMtu(mtu: Int) {
+        sliceCap = maxSliceForMtu(mtu)
+        codec.config = capped(codec.config)
+    }
+
+    private fun capped(config: HuaweiLinkConfig): HuaweiLinkConfig {
+        val cap = sliceCap ?: return config
+        return if (config.sliceSize > cap) config.copy(sliceSize = cap) else config
     }
 
     override suspend fun request(request: HuaweiRequest): HuaweiTlv = sendLock.withLock {
@@ -145,5 +164,10 @@ class HuaweiGattLink(
     companion object {
         /** Above the 30 s first-pairing confirmation window, so only a caller's own timeout normally fires. */
         const val DEFAULT_CEILING_MS = 40_000L
+
+        /** ATT write header: opcode + handle. */
+        const val ATT_HEADER = 3
+
+        fun maxSliceForMtu(mtu: Int): Int = maxOf(mtu - ATT_HEADER, HuaweiFraming.MIN_SLICE_SIZE)
     }
 }

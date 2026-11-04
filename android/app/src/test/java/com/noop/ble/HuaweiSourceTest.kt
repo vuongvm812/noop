@@ -2,7 +2,10 @@ package com.noop.ble
 
 import com.noop.huawei.FakeHuaweiLink
 import com.noop.huawei.HuaweiCapabilities
+import com.noop.huawei.HuaweiRadioPolicy
 import com.noop.huawei.HuaweiSyncRunner
+import com.noop.huawei.HuaweiSyncStage
+import com.noop.huawei.HuaweiSyncSummary
 import com.noop.huawei.SeededHuaweiRandom
 import com.noop.huawei.SimulatedHuaweiBand
 import com.noop.huawei.auth.HuaweiAuthMode
@@ -102,6 +105,8 @@ class HuaweiSourceTest {
         config: SimulatedHuaweiBand.Config,
         stored: HuaweiStoredKey? = HuaweiStoredKey(identity, HuaweiBondRecord(HuaweiAuthMode.NORMAL, secret, null), null),
         runner: HuaweiSyncRunner? = null,
+        lastAttempt: () -> Long? = { null },
+        streak: () -> Int = { 0 },
     ): Harness {
         val band = SimulatedHuaweiBand(config)
         val gatt = FakeHuaweiGatt(backgroundScope, band)
@@ -118,6 +123,9 @@ class HuaweiSourceTest {
             detail = { true },
             random = SeededHuaweiRandom(7),
             nowMs = { testScheduler.currentTime + 1_700_000_000_000L },
+            lastSyncAttemptAt = lastAttempt,
+            emptyStreak = streak,
+            utcOffsetSeconds = { 0 },
         )
         return Harness(band, gatt, keys, source, lines, syncs)
     }
@@ -156,9 +164,9 @@ class HuaweiSourceTest {
         assertEquals(listOf(id), h.syncs.map { it.second })
         assertNotNull(h.source.lastSyncAt.value)
         assertTrue("reconnect must not install a key", keyInstalls(h.band).isEmpty())
-        // The order the brief names: auth, then product info, battery, then the capability reads.
+        // Auth, then product info, the clock (01/05), battery, then the capability reads.
         val after = h.band.received.map { it.first.commandId }.dropWhile { it != 0x07 }
-        assertEquals(listOf(0x07, 0x08, 0x02, 0x03), after.take(4))
+        assertEquals(listOf(0x07, 0x05, 0x08, 0x02, 0x03), after.take(5))
     }
 
     @Test fun batteryPushUpdatesTheLevel() = runTest {
@@ -381,7 +389,109 @@ class HuaweiSourceTest {
         settle()
         assertEquals(HuaweiSource.LinkPhase.READY, h.source.linkPhase.value)
         assertNull(h.source.lastSyncAt.value)
-        assertTrue(h.lines.any { "sync (connect) failed" in it })
+        assertTrue(h.lines.any { "sync (CONNECT) failed" in it })
+        assertEquals("IllegalStateException: boom", h.source.lastSyncError.value)
+        assertNull(h.source.syncStage.value)
+    }
+
+    @Test fun foregroundSyncWaitsForTheEventFloorAndManualDoesNot() = runTest {
+        val h = harness(bonded)
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        assertEquals(1, h.syncs.size)
+        h.source.onForeground()
+        settle()
+        assertEquals("held inside the 90 s event floor", 1, h.syncs.size)
+        h.source.syncNow()
+        settle()
+        assertEquals("a manual sync always runs", 2, h.syncs.size)
+        advanceTimeBy(HuaweiRadioPolicy.EVENT_FLOOR_SECONDS * 1000)
+        h.source.onForeground()
+        settle()
+        assertEquals(3, h.syncs.size)
+    }
+
+    @Test fun periodicSyncRunsAtTheFloorWhileReadyAndStopsOnDisconnect() = runTest {
+        val h = harness(bonded)
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        advanceTimeBy(HuaweiRadioPolicy.PERIODIC_FLOOR_SECONDS * 1000)
+        runCurrent()
+        assertEquals(2, h.syncs.size)
+        h.source.stop()
+        settle()
+        advanceTimeBy(HuaweiRadioPolicy.PERIODIC_FLOOR_SECONDS * 3000)
+        runCurrent()
+        assertEquals(2, h.syncs.size)
+    }
+
+    @Test fun anEmptyStreakStretchesThePeriodicFloor() = runTest {
+        // The empty streak comes from the sync prefs; 3 empty syncs in a row double the periodic floor.
+        val h = harness(bonded, streak = { 3 })
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        advanceTimeBy(HuaweiRadioPolicy.PERIODIC_FLOOR_SECONDS * 1000)
+        runCurrent()
+        assertEquals("the backed-off floor is 30 min", 1, h.syncs.size)
+        advanceTimeBy(HuaweiRadioPolicy.PERIODIC_FLOOR_SECONDS * 1000)
+        runCurrent()
+        assertEquals(2, h.syncs.size)
+    }
+
+    @Test fun progressStagesAndPartialFailuresReachThePanel() = runTest {
+        val stages = mutableListOf<HuaweiSyncStage>()
+        val runner = object : HuaweiSyncRunner {
+            override suspend fun sync(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String) = Unit
+            override suspend fun run(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String,
+                                     progress: (HuaweiSyncStage) -> Unit): HuaweiSyncSummary {
+                progress(HuaweiSyncStage.STEPS)
+                stages.add(HuaweiSyncStage.STEPS)
+                return HuaweiSyncSummary(stored = true, counts = mapOf("minutes" to 1), failures = listOf("stress: no reply"))
+            }
+        }
+        val h = harness(bonded, runner = runner)
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        assertEquals(listOf(HuaweiSyncStage.STEPS), stages)
+        assertNotNull("a partial sync still counts as synced", h.source.lastSyncAt.value)
+        assertEquals("stress: no reply", h.source.lastSyncError.value)
+        assertNull(h.source.syncStage.value)
+    }
+
+    @Test fun slicesAreCappedAtTheNegotiatedMtu() = runTest {
+        val h = harness(bonded)
+        h.gatt.mtu = 23
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        assertEquals(HuaweiSource.LinkPhase.READY, h.source.linkPhase.value)
+        assertEquals(20, h.source.readout.value.sliceSize)
+        assertTrue("every write fits one ATT payload", h.gatt.written.all { it.size <= 20 })
+        assertTrue("capability reads still go out", h.band.received.any { it.first.commandId == 0x03 })
+    }
+
+    @Test fun theAccountIdIsSentOnlyWhenTheUserEnteredOne() = runTest {
+        val account = "12345678901234567"
+        val config = bonded.copy(supportedServices = setOf(0x01, 0x07, 0x1A), supportedCommands = mapOf(0x1A to setOf(0x05, 0x06)))
+        val h = harness(config, stored = HuaweiStoredKey(identity, HuaweiBondRecord(HuaweiAuthMode.NORMAL, secret, null), account))
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        val sent = h.band.received.filter { it.first.serviceId == 0x1A }
+        assertEquals(listOf(0x05), sent.map { it.first.commandId })
+        assertEquals(account, sent.single().second.string(0x01))
+
+        val none = harness(config)
+        none.source.connect(none.band.config.bandAddress)
+        settle()
+        assertTrue(none.band.received.none { it.first.serviceId == 0x1A })
+    }
+
+    @Test fun theBandClockIsSetToThePhonesTime() = runTest {
+        val h = harness(bonded)
+        h.source.connect(h.band.config.bandAddress)
+        settle()
+        val set = h.band.received.single { it.first.serviceId == 0x01 && it.first.commandId == 0x05 }.second
+        assertTrue(kotlin.math.abs(set.u32(0x01) - 1_700_000_000L) < 60)
+        assertEquals(2, set.bytes(0x02).size)
     }
 
     @Test fun authModeChangeIsAlwaysLogged() = runTest {

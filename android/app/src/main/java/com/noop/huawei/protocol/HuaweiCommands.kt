@@ -3,8 +3,12 @@ package com.noop.huawei.protocol
 // MARK: - The send allowlist
 //
 // HuaweiRequest is the ONLY thing a HuaweiLink sends, and it can only be built for a HuaweiCommand. A
-// command with no entry here cannot be sent. Every entry is in Device Config (service 0x01) and is a
-// read, a pairing step, or the session handshake.
+// command with no entry here cannot be sent. Every entry is a read, a pairing step, the session
+// handshake, a band → phone file download, or one of the reversible writes listed below.
+//
+// Reversible writes (each can be undone on the band or by the next write): the three measurement switches
+// (only ever "on"), the clock (01/05, the phone's time and UTC offset) and the user's own Huawei account id
+// (1A/01, 1A/05, only the 17-digit id the user typed into the pairing wizard).
 //
 // Deliberately ABSENT, and not to be added (BLE safety contract, docs/CONTRIBUTING.md):
 //   - factory reset 01/0D;
@@ -23,6 +27,8 @@ enum class HuaweiCommand(val serviceId: Int, val commandId: Int, val encrypted: 
     LINK_PARAMS(0x01, 0x01, encrypted = false, sliced = false),
     SUPPORTED_SERVICES(0x01, 0x02, encrypted = true, sliced = true),
     SUPPORTED_COMMANDS(0x01, 0x03, encrypted = true, sliced = true),
+    /** Set the band's clock: `{01 unix seconds u32, 02 UTC offset hours|0x80 sign, minutes}`. */
+    SET_TIME(0x01, 0x05, encrypted = true, sliced = true),
     PRODUCT_INFO(0x01, 0x07, encrypted = true, sliced = true),
     BATTERY_LEVEL(0x01, 0x08, encrypted = true, sliced = true),
     BOND(0x01, 0x0E, encrypted = false, sliced = true),
@@ -47,6 +53,7 @@ enum class HuaweiCommand(val serviceId: Int, val commandId: Int, val encrypted: 
     WORKOUT_COUNT(0x17, 0x07, encrypted = true, sliced = true),
     WORKOUT_TOTALS(0x17, 0x08, encrypted = true, sliced = true),
     WORKOUT_DATA(0x17, 0x0A, encrypted = true, sliced = true),
+    WORKOUT_PACE(0x17, 0x0C, encrypted = true, sliced = true),
     WORKOUT_CAPABILITY(0x17, 0x15, encrypted = true, sliced = true),
 
     // File download, band → phone only ("old sync" 0x0A, "new sync" 0x2C). No upload service is listed.
@@ -61,6 +68,10 @@ enum class HuaweiCommand(val serviceId: Int, val commandId: Int, val encrypted: 
     /** The block request when the band's 2C/03 reply says it cannot take it encrypted (tag 5). */
     FILE2C_BLOCK_PLAIN(0x2C, 0x04, encrypted = false, sliced = true),
     FILE2C_DONE(0x2C, 0x06, encrypted = true, sliced = true),
+
+    // AccountRelated (0x1A): the optional account id, only as the 17 digits the user entered.
+    ACCOUNT(0x1A, 0x01, encrypted = true, sliced = true),
+    ACCOUNT_EXTENDED(0x1A, 0x05, encrypted = true, sliced = true),
 
     /** P2P (0x34/0x01), only between the packages in [HuaweiRequest.P2P_PACKAGES]. */
     P2P(0x34, 0x01, encrypted = true, sliced = true),
@@ -115,6 +126,8 @@ class HuaweiRequest private constructor(val command: HuaweiCommand, tlv: HuaweiT
             require(!needsFirstPairing(command, tlv)) { "$command with this payload needs a first-pairing grant" }
             require(command !in SWITCHES || isSwitchOn(tlv)) { "$command may only switch the measurement on" }
             require(command != HuaweiCommand.P2P || isDictionaryP2P(tlv)) { "P2P is limited to the data-dictionary sync" }
+            require(command != HuaweiCommand.SET_TIME || isSetTime(tlv)) { "SET_TIME carries exactly a time and an offset" }
+            require(command !in ACCOUNT_COMMANDS || isAccount(command, tlv)) { "$command carries only a 17-digit account id" }
             return HuaweiRequest(command, tlv)
         }
 
@@ -123,6 +136,29 @@ class HuaweiRequest private constructor(val command: HuaweiCommand, tlv: HuaweiT
             val e = tlv.entries.singleOrNull() ?: return false
             val v = e.value
             return e.tag == 0x01 && (v.size == 1 || v.size == 4) && v.any { it.toInt() != 0 }
+        }
+
+        val ACCOUNT_COMMANDS = setOf(HuaweiCommand.ACCOUNT, HuaweiCommand.ACCOUNT_EXTENDED)
+
+        /** Exactly tag 1 (4 bytes) then tag 2 (2 bytes). */
+        fun isSetTime(tlv: HuaweiTlv): Boolean {
+            val e = tlv.entries
+            return e.size == 2 && e[0].tag == 0x01 && e[0].value.size == 4 && e[1].tag == 0x02 && e[1].value.size == 2
+        }
+
+        /**
+         * Tag 1 holding 17 ASCII digits; the extended form may add tag 3 = 1 (the band's "different account
+         * pairing optimisation" flag). Never an empty or cleared account.
+         */
+        fun isAccount(command: HuaweiCommand, tlv: HuaweiTlv): Boolean {
+            val e = tlv.entries
+            val id = e.firstOrNull()?.takeIf { it.tag == 0x01 }?.value?.toString(Charsets.US_ASCII) ?: return false
+            if (id.length != 17 || !id.all { it in '0'..'9' }) return false
+            return when (e.size) {
+                1 -> true
+                2 -> command == HuaweiCommand.ACCOUNT_EXTENDED && e[1].tag == 0x03 && e[1].value.contentEquals(byteArrayOf(1))
+                else -> false
+            }
         }
 
         /** A ping, data or ack between two [P2P_PACKAGES], each tag at most once. */

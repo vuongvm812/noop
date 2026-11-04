@@ -37,6 +37,11 @@ class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor {
             .apply()
     }
 
+    /** When a sync of [deviceId] last finished normally (the device panel's "Last sync"); null before the first. */
+    fun completedAt(deviceId: String): Long? = long(deviceId, "completedAt")
+
+    fun setCompletedAt(deviceId: String, at: Long) = putLong(deviceId, "completedAt", at)
+
     /** Moves every key of [from] onto [to] (replacing [to]'s), so a re-keyed band keeps its watermarks. */
     fun moveDeviceState(from: String, to: String) {
         if (from == to) return

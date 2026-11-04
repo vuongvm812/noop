@@ -277,13 +277,71 @@ class HuaweiHistorySyncRoomTest {
         assertTrue(summary.failures.toString(), summary.failures.isEmpty())
         assertTrue(s.band.received.any { it.serviceId == 0x0A && it.commandId == 0x04 })
         assertTrue(s.band.received.none { it.serviceId == 0x2C })
-        val init = s.band.received.first { it.serviceId == 0x0A && it.commandId == 0x01 }.tlv
-        assertEquals(0x04, init.byte(0x02))
+        val inits = s.band.received.filter { it.serviceId == 0x0A && it.commandId == 0x01 }.map { it.tlv }
+        // Without expand bit 143 the TruSleep sleep_state.bin is asked for too (type 1), then the RRI file (type 4).
+        assertEquals(listOf(0x01, 0x04), inits.map { it.byte(0x02) })
+        val init = inits.last()
         assertEquals(today - 14 * 86_400 + 43_200, init.tlv(0x8F).u32(0x10))
         assertEquals(listOf(30.0), metric(DeviceMetricKind.STRESS).map { it.second })
         val sleep = rows("SELECT startTs, endTs FROM sleepSession WHERE deviceId = ?", band).single()
         assertEquals(listOf(nightStart, nightStart + 9_000), sleep)
         assertEquals(150.0, rows("SELECT totalSleepMin FROM dailyMetric WHERE deviceId = ? AND day = ?", band, todayKey).single()[0])
+    }
+
+    @Test
+    fun sleepStateFramesFillOnlyNightsNothingElseCovers() {
+        val legacy = listOf(listOf(
+            0x06 to HuaweiFixtures.be().i32(nightStart).i16(90).build(),
+            0x07 to HuaweiFixtures.be().i32(nightStart + 5_400).i16(60).build(),
+        ))
+        val earlier = yesterday - 3_600
+        // Two TruSleep frames: one over the legacy night (dropped), one the night before (kept, unstaged).
+        val state = HuaweiFixtures.le().i32(nightStart).i32(nightEnd).padTo(16)
+            .i32(earlier).i32(earlier + 28_800).padTo(32).build()
+        val s = session(script(files = mapOf("sleep_state.bin" to state), legacySleep = legacy))
+        val summary = sync(s, caps(legacySleep = true, sleepFile = false))
+        assertEquals(2, summary.counts["sleep_frames"])
+        assertTrue(s.band.received.any { it.serviceId == 0x2C && it.commandId == 0x01 && it.tlv.string(0x01) == "sleep_state.bin" })
+        assertTrue("no sequence_data without bit 143", s.band.received.none { it.serviceId == 0x2C && it.tlv.contains(0x01) && it.tlv.string(0x01) == "sequence_data" })
+        val sleeps = rows("SELECT startTs, endTs, efficiency, stagesJSON FROM sleepSession WHERE deviceId = ? ORDER BY startTs", band)
+        assertEquals(listOf(listOf<Any?>(earlier, earlier + 28_800, null, null), listOf<Any?>(nightStart, nightStart + 9_000)),
+            sleeps.map { if (it[0] == earlier) it else it.take(2) })
+        val day = rows("SELECT totalSleepMin, deepMin, lightMin, remMin, efficiency FROM dailyMetric WHERE deviceId = ? AND day = ?",
+            band, "2025-11-01").single()
+        assertEquals(listOf<Any?>(480.0, null, null, null, null), day)
+        assertEquals(now, prefs.lastSync(band, HuaweiDataType.SLEEP_STATE))
+    }
+
+    @Test
+    fun aBandWithNewSleepNeverAsksForSleepState() {
+        val s = session(script())
+        sync(s)
+        assertTrue(s.band.received.none { it.serviceId == 0x2C && it.commandId == 0x01 && it.tlv.string(0x01) == "sleep_state.bin" })
+    }
+
+    @Test
+    fun workoutPaceBlocksAreFetchedButNotStored() {
+        val w = workout()
+        val pace = listOf(
+            HuaweiTlv().put(0x83, HuaweiTlv().putShort(0x04, 1).putByte(0x05, 0).putInt(0x06, 330).putShort(0x07, 4)),
+            HuaweiTlv().put(0x83, HuaweiTlv().putShort(0x04, 2).putByte(0x05, 0).putInt(0x06, 345)),
+        )
+        val base = script()
+        val withPace = HuaweiHistoryBand.Script(steps = base.steps, files = base.files, dictionary = base.dictionary,
+            workouts = listOf(HuaweiHistoryBand.Workout(w.number, w.totals, w.pages, pace)))
+        val c = caps()
+        val s = session(withPace)
+        val summary = sync(s, c.copy(commands = c.commands + (0x17 to c.commands.getValue(0x17) + 0x0C)))
+        assertTrue(summary.failures.toString(), summary.failures.isEmpty())
+        assertEquals(2, summary.counts["pace_blocks"])
+        val asked = s.band.received.filter { it.serviceId == 0x17 && it.commandId == 0x0C }.map { it.tlv.tlv(0x81) }
+        assertEquals(listOf(0, 1), asked.map { it.u16(0x08) })
+        assertTrue(asked.all { it.u16(0x02) == 1 })
+        // No column holds per-unit pace: the workout row is the one the same sync stores without pace.
+        val row = rows("SELECT sport, distanceM, energyKcal, steps, avgHr, maxHr, zonesJSON, notes FROM workout WHERE deviceId = ?", band).single()
+        db.clearAllTables(); prefs.dropDeviceState(band)
+        sync(session(script()))
+        assertEquals(rows("SELECT sport, distanceM, energyKcal, steps, avgHr, maxHr, zonesJSON, notes FROM workout WHERE deviceId = ?", band).single(), row)
     }
 
     @Test

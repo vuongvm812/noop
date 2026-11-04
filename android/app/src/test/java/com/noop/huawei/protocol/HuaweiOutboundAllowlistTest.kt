@@ -1,5 +1,6 @@
 package com.noop.huawei.protocol
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -20,6 +21,8 @@ class HuaweiOutboundAllowlistTest {
         // download over 0x0A and 0x2C (the 2C block request appears twice: encrypted and plaintext), P2P.
         0x07 to 0x0A, 0x07 to 0x0B, 0x07 to 0x0C, 0x07 to 0x0D, 0x07 to 0x17, 0x07 to 0x23, 0x07 to 0x24,
         0x17 to 0x07, 0x17 to 0x08, 0x17 to 0x0A, 0x17 to 0x15,
+        // Glue (#83): the clock, workout pace reads, the optional account id.
+        0x01 to 0x05, 0x17 to 0x0C, 0x1A to 0x01, 0x1A to 0x05,
         0x0A to 0x01, 0x0A to 0x02, 0x0A to 0x03, 0x0A to 0x04, 0x0A to 0x06,
         0x2C to 0x01, 0x2C to 0x03, 0x2C to 0x04, 0x2C to 0x06,
         0x34 to 0x01,
@@ -51,6 +54,41 @@ class HuaweiOutboundAllowlistTest {
             assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putInt(1, 0)) }
             assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putBoolean(1, true).putByte(2, 5)) }
             assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv()) }
+        }
+    }
+
+    @Test fun setTimeCarriesOnlyATimeAndAnOffset() {
+        val ok = HuaweiDeviceConfig.SetTime.request(1_700_000_000L, 3_600)
+        assertEquals(HuaweiCommand.SET_TIME, ok.command)
+        assertEquals(1_700_000_000L, ok.tlv.u32(0x01))
+        assertArrayEquals(byteArrayOf(1, 0), ok.tlv.bytes(0x02))
+        // West of UTC: hours + 0x80, minutes as Java's signed remainder (-3:30 -> 0x83, -30).
+        assertArrayEquals(byteArrayOf(0x83.toByte(), (-30).toByte()), HuaweiDeviceConfig.SetTime.request(0, -12_600).tlv.bytes(0x02))
+        assertArrayEquals(byteArrayOf(5, 30), HuaweiDeviceConfig.SetTime.request(0, 19_800).tlv.bytes(0x02))
+        assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(HuaweiCommand.SET_TIME, HuaweiTlv().putInt(1, 5)) }
+        assertThrows(IllegalArgumentException::class.java) {
+            HuaweiRequest.of(HuaweiCommand.SET_TIME, HuaweiTlv().putInt(1, 5).putShort(2, 0).putByte(3, 1))
+        }
+    }
+
+    @Test fun accountCarriesOnlyASeventeenDigitId() {
+        val id = "12345678901234567"
+        assertEquals(HuaweiCommand.ACCOUNT, HuaweiDeviceConfig.Account.request(id, extended = false, pairingOptimisation = true).command)
+        val ext = HuaweiDeviceConfig.Account.request(id, extended = true, pairingOptimisation = true)
+        assertEquals(HuaweiCommand.ACCOUNT_EXTENDED, ext.command)
+        assertEquals(id, ext.tlv.string(0x01))
+        assertEquals(1, ext.tlv.byte(0x03))
+        assertFalse(HuaweiDeviceConfig.Account.request(id, extended = true, pairingOptimisation = false).tlv.contains(0x03))
+        for (bad in listOf("", "1234", "1234567890123456X", "123456789012345678")) {
+            for (c in listOf(HuaweiCommand.ACCOUNT, HuaweiCommand.ACCOUNT_EXTENDED)) {
+                assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putString(1, bad)) }
+            }
+        }
+        // Clearing the account (an empty tag 1, or a lone 00) is never sent.
+        assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(HuaweiCommand.ACCOUNT, HuaweiTlv().put(1)) }
+        assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(HuaweiCommand.ACCOUNT_EXTENDED, HuaweiTlv().putByte(1, 0)) }
+        assertThrows(IllegalArgumentException::class.java) {
+            HuaweiRequest.of(HuaweiCommand.ACCOUNT, HuaweiTlv().putString(1, id).putByte(3, 1))
         }
     }
 
