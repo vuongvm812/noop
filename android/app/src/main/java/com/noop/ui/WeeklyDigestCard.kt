@@ -29,6 +29,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -38,6 +41,9 @@ import com.noop.analytics.WeeklyDigestInputs
 import com.noop.analytics.WeeklyDigestWatchSeries
 import com.noop.analytics.WeeklyDigest
 import com.noop.analytics.WeeklyDigestEngine
+import com.noop.analytics.WeeklyDigestSection
+import com.noop.analytics.WeeklyDigestSectionRows
+import com.noop.analytics.sections
 import com.noop.analytics.WeeklyMetric
 import com.noop.analytics.WeeklyMetricSummary
 import com.noop.data.DailyMetric
@@ -200,6 +206,12 @@ fun WeeklyDigestContent(digest: WeeklyDigest, compact: Boolean = false) {
             rows.forEach { MetricRow(it, effortScale) }
         }
 
+        // The metrics after the headline five, grouped; a row only when it has data this week (#90).
+        WeeklyDigestEngine.sections(digest).forEach { group ->
+            HorizontalDivider(color = Palette.hairline)
+            SectionBlock(group, effortScale)
+        }
+
         if (!compact) {
             HorizontalDivider(color = Palette.hairline)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -266,6 +278,51 @@ private fun MetricRow(s: WeeklyMetricSummary, effortScale: EffortScale) {
 }
 
 @Composable
+private fun SectionBlock(group: WeeklyDigestSectionRows, effortScale: EffortScale) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            uiString(group.section.titleRes()),
+            style = NoopType.caption,
+            color = Palette.textTertiary,
+            modifier = Modifier.semantics { heading() },
+        )
+        group.rows.forEach { row ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                MetricRow(row, effortScale)
+                val progress = row.targetProgress
+                val target = row.metric.spec.weeklyTarget
+                if (progress != null && target != null) TargetBar(progress, row.thisValue, target)
+            }
+        }
+    }
+}
+
+/** Progress toward a weekly goal (intensity minutes vs 150). */
+@Composable
+private fun TargetBar(progress: Double, value: Double, target: Double) {
+    val label = uiString(R.string.weekly_digest_target_progress, value.roundToInt(), target.roundToInt())
+    Column(
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.clearAndSetSemantics { contentDescription = label },
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .background(Palette.hairline, RoundedCornerShape(Metrics.cornerPill)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(progress.coerceIn(0.0, 1.0).toFloat())
+                    .height(6.dp)
+                    .background(Palette.effortColor, RoundedCornerShape(Metrics.cornerPill)),
+            )
+        }
+        Text(label, style = NoopType.footnote, color = Palette.textTertiary)
+    }
+}
+
+@Composable
 private fun DeltaChip(s: WeeklyMetricSummary) {
     val tone = chipTone(s)
     val arrow: ImageVector = when {
@@ -306,12 +363,40 @@ internal fun meanText(s: WeeklyMetricSummary, effortScale: EffortScale): String 
         return "${UnitFormatter.effortDisplay(s.thisWeek.mean, effortScale)} / " +
             UnitFormatter.effortScaleMax(effortScale)
     }
+    if (s.metric !in HEADLINE_METRICS) return valueText(s)
     val v = s.thisWeek.mean.roundToInt()
     return if (s.metric.unit.isEmpty()) "$v" else "$v ${s.metric.unit}"
 }
 
+/** The headline five, whose rows keep their original formatting. */
+private val HEADLINE_METRICS = WeeklyMetric.values().take(5).toSet()
+
+/**
+ * The this-week figure for a non-headline metric: the mean, total or latest reading per its
+ * roll-up, with its unit (#90). Units that read the same in every language stay verbatim.
+ * Mirrors Swift `WeeklyDigestValueText.value`.
+ */
+internal fun valueText(s: WeeklyMetricSummary): String {
+    if (!s.hasData) return "—"
+    val spec = s.metric.spec
+    val n = digestNumber(s.thisValue, spec.decimals)
+    return when (s.metric) {
+        WeeklyMetric.SLEEP_DURATION -> uiString(R.string.weekly_digest_value_hours, n)
+        WeeklyMetric.INTENSITY_MINUTES, WeeklyMetric.DEEP_SLEEP, WeeklyMetric.REM_SLEEP ->
+            uiString(R.string.weekly_digest_value_minutes, s.thisValue.roundToInt())
+        WeeklyMetric.SKIN_TEMP_DEVIATION -> "${if (s.thisValue > 0) "+" else ""}$n °C"
+        else -> if (spec.unit.isEmpty() || spec.unit == "steps") n else "$n ${spec.unit}"
+    }
+}
+
+/** Whole number, or one decimal with a "." separator (as Swift's `%.1f`). */
+internal fun digestNumber(x: Double, decimals: Int): String =
+    if (decimals == 0) "${x.roundToInt()}" else String.format(java.util.Locale.ROOT, "%.1f", x)
+
 internal fun deltaText(s: WeeklyMetricSummary): String {
     if (s.weekOverWeek.current.n == 0 || s.weekOverWeek.previous.n == 0) return "new"
+    // A metric already in % or a ±deviation reads its change in its own units (#90).
+    if (!s.metric.spec.percentChange) return digestNumber(abs(s.wowDelta), 1)
     val pct = s.weekOverWeek.pctChange
     // Sub-1% (or unpercentable) moves read "<1%", matching Swift. The old fallback printed the raw
     // points delta: a bare "0.1", and for Effort a stored 0-100 figure the scale toggle never saw.
@@ -339,8 +424,31 @@ private fun WeeklyMetric.labelRes(): Int = when (this) {
     WeeklyMetric.REST -> R.string.today_metric_rest
     WeeklyMetric.RHR -> R.string.today_metric_resting_hr
     WeeklyMetric.HRV -> R.string.today_metric_hrv
-    // The later metrics are not rendered by this card yet (#90 adds their rows and names).
-    else -> R.string.today_metric_charge
+    WeeklyMetric.STEPS -> R.string.weekly_digest_metric_steps
+    WeeklyMetric.ACTIVE_KCAL -> R.string.weekly_digest_metric_active_kcal
+    WeeklyMetric.INTENSITY_MINUTES -> R.string.weekly_digest_metric_intensity_minutes
+    WeeklyMetric.SLEEP_DURATION -> R.string.weekly_digest_metric_sleep_duration
+    WeeklyMetric.SLEEP_EFFICIENCY -> R.string.weekly_digest_metric_sleep_efficiency
+    WeeklyMetric.DEEP_SLEEP -> R.string.weekly_digest_metric_deep_sleep
+    WeeklyMetric.REM_SLEEP -> R.string.weekly_digest_metric_rem_sleep
+    WeeklyMetric.SLEEP_SCORE -> R.string.weekly_digest_metric_sleep_score
+    WeeklyMetric.SPO2 -> R.string.weekly_digest_metric_spo2
+    WeeklyMetric.RESPIRATION -> R.string.weekly_digest_metric_respiration
+    WeeklyMetric.SKIN_TEMP_DEVIATION -> R.string.weekly_digest_metric_skin_temp
+    WeeklyMetric.STRESS -> R.string.weekly_digest_metric_stress
+    WeeklyMetric.BODY_BATTERY_RECHARGE -> R.string.weekly_digest_metric_body_battery_recharge
+    WeeklyMetric.TRAINING_LOAD -> R.string.weekly_digest_metric_training_load
+    WeeklyMetric.VO2MAX -> R.string.weekly_digest_metric_vo2max
+}
+
+/** The localized heading for a card section. */
+@StringRes
+private fun WeeklyDigestSection.titleRes(): Int = when (this) {
+    WeeklyDigestSection.ACTIVITY -> R.string.weekly_digest_section_activity
+    WeeklyDigestSection.SLEEP -> R.string.weekly_digest_section_sleep
+    WeeklyDigestSection.OVERNIGHT_VITALS -> R.string.weekly_digest_section_overnight_vitals
+    WeeklyDigestSection.STRESS_ENERGY -> R.string.weekly_digest_section_stress_energy
+    WeeklyDigestSection.TRAINING -> R.string.weekly_digest_section_training
 }
 
 private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale): String {

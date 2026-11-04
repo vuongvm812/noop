@@ -2938,4 +2938,28 @@
     <string name="huawei_tc_slice_size">Размер фрагмента</string>
     <string name="huawei_tc_capability_bits">Биты возможностей</string>
     <string name="huawei_tc_services">Сервисы</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">Активность</string>
+    <string name="weekly_digest_section_sleep">Сон</string>
+    <string name="weekly_digest_section_overnight_vitals">Ночные показатели</string>
+    <string name="weekly_digest_section_stress_energy">Стресс и энергия</string>
+    <string name="weekly_digest_section_training">Тренировки</string>
+    <string name="weekly_digest_metric_steps">Шаги</string>
+    <string name="weekly_digest_metric_active_kcal">Активные калории</string>
+    <string name="weekly_digest_metric_intensity_minutes">Минуты интенсивности</string>
+    <string name="weekly_digest_metric_sleep_duration">Продолжительность сна</string>
+    <string name="weekly_digest_metric_sleep_efficiency">Эффективность сна</string>
+    <string name="weekly_digest_metric_deep_sleep">Глубокий сон</string>
+    <string name="weekly_digest_metric_rem_sleep">Фаза REM</string>
+    <string name="weekly_digest_metric_sleep_score">Оценка сна</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">Дыхание</string>
+    <string name="weekly_digest_metric_skin_temp">Температура кожи</string>
+    <string name="weekly_digest_metric_stress">Стресс</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Восстановление Body Battery</string>
+    <string name="weekly_digest_metric_training_load">Тренировочная нагрузка</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s ч</string>
+    <string name="weekly_digest_value_minutes">%1$d мин</string>
+    <string name="weekly_digest_target_progress">%1$d из %2$d мин</string>
 </resources>

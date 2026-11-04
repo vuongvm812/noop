@@ -3013,4 +3013,28 @@
     <string name="huawei_tc_slice_size">分片大小</string>
     <string name="huawei_tc_capability_bits">能力位</string>
     <string name="huawei_tc_services">服务</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">活动</string>
+    <string name="weekly_digest_section_sleep">睡眠</string>
+    <string name="weekly_digest_section_overnight_vitals">夜间体征</string>
+    <string name="weekly_digest_section_stress_energy">压力与能量</string>
+    <string name="weekly_digest_section_training">训练</string>
+    <string name="weekly_digest_metric_steps">步数</string>
+    <string name="weekly_digest_metric_active_kcal">活动卡路里</string>
+    <string name="weekly_digest_metric_intensity_minutes">强度分钟数</string>
+    <string name="weekly_digest_metric_sleep_duration">睡眠时长</string>
+    <string name="weekly_digest_metric_sleep_efficiency">睡眠效率</string>
+    <string name="weekly_digest_metric_deep_sleep">深睡</string>
+    <string name="weekly_digest_metric_rem_sleep">REM 睡眠</string>
+    <string name="weekly_digest_metric_sleep_score">睡眠评分</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">呼吸</string>
+    <string name="weekly_digest_metric_skin_temp">皮肤温度</string>
+    <string name="weekly_digest_metric_stress">压力</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Body Battery 充能</string>
+    <string name="weekly_digest_metric_training_load">训练负荷</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s 小时</string>
+    <string name="weekly_digest_value_minutes">%1$d 分钟</string>
+    <string name="weekly_digest_target_progress">%1$d / %2$d 分钟</string>
 </resources>

@@ -3042,4 +3042,28 @@
     <string name="huawei_tc_slice_size">Taille de tranche</string>
     <string name="huawei_tc_capability_bits">Bits de capacité</string>
     <string name="huawei_tc_services">Services</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">Activité</string>
+    <string name="weekly_digest_section_sleep">Sommeil</string>
+    <string name="weekly_digest_section_overnight_vitals">Signes vitaux nocturnes</string>
+    <string name="weekly_digest_section_stress_energy">Stress et énergie</string>
+    <string name="weekly_digest_section_training">Entraînement</string>
+    <string name="weekly_digest_metric_steps">Pas</string>
+    <string name="weekly_digest_metric_active_kcal">Calories actives</string>
+    <string name="weekly_digest_metric_intensity_minutes">Minutes d\'intensité</string>
+    <string name="weekly_digest_metric_sleep_duration">Durée du sommeil</string>
+    <string name="weekly_digest_metric_sleep_efficiency">Efficacité du sommeil</string>
+    <string name="weekly_digest_metric_deep_sleep">Sommeil profond</string>
+    <string name="weekly_digest_metric_rem_sleep">Sommeil paradoxal</string>
+    <string name="weekly_digest_metric_sleep_score">Score de sommeil</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">Respiration</string>
+    <string name="weekly_digest_metric_skin_temp">Température cutanée</string>
+    <string name="weekly_digest_metric_stress">Stress</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Recharge Body Battery</string>
+    <string name="weekly_digest_metric_training_load">Charge d\'entraînement</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s h</string>
+    <string name="weekly_digest_value_minutes">%1$d min</string>
+    <string name="weekly_digest_target_progress">%1$d sur %2$d min</string>
 </resources>

@@ -187,4 +187,17 @@ final class WeeklyDigestExtendedTests: XCTestCase {
         XCTAssertEqual(a.focalPoints,
                        ["You carried more Charge than you spent this week: there's room to push if you want it."])
     }
+
+    /// Sections list only the metrics with data this week, in the shared order (#90).
+    func testSectionsKeepOnlyRowsWithDataThisWeek() {
+        let d = WeeklyDigestEngine.build(byMetric: Self.thinBaselineFixture(), anchorDay: "2026-06-13")
+        let sections = WeeklyDigestEngine.sections(d)
+        XCTAssertEqual(sections.map(\.section), [.activity, .training])
+        XCTAssertEqual(sections[0].rows.map(\.metric), [.steps])
+        XCTAssertEqual(sections[1].rows.map(\.metric), [.vo2max])
+        let full = WeeklyDigestEngine.sections(
+            WeeklyDigestEngine.build(byMetric: Self.extendedFixture(), anchorDay: "2026-06-13"))
+        XCTAssertEqual(full.map(\.section), WeeklyDigestSection.allCases)
+        XCTAssertEqual(full.flatMap(\.rows).count, 15)
+    }
 }

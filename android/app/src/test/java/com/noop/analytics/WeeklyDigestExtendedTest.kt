@@ -112,6 +112,17 @@ class WeeklyDigestExtendedTest {
         )
     }
 
+    /** Sections list only the metrics with data this week, in the order Swift pins (#90). */
+    @Test fun sectionsKeepOnlyRowsWithDataThisWeek() {
+        val sections = WeeklyDigestEngine.sections(WeeklyDigestEngine.build(thinBaselineFixture(), "2026-06-13"))
+        assertEquals(listOf(WeeklyDigestSection.ACTIVITY, WeeklyDigestSection.TRAINING), sections.map { it.section })
+        assertEquals(listOf(WeeklyMetric.STEPS), sections[0].rows.map { it.metric })
+        assertEquals(listOf(WeeklyMetric.VO2MAX), sections[1].rows.map { it.metric })
+        val full = WeeklyDigestEngine.sections(WeeklyDigestEngine.build(extendedFixture(), "2026-06-13"))
+        assertEquals(WeeklyDigestSection.values().toList(), full.map { it.section })
+        assertEquals(15, full.sumOf { it.rows.size })
+    }
+
     private companion object {
         /** The original five, whose outputs the legacy tests pin. */
         val HEADLINE = listOf(WeeklyMetric.CHARGE, WeeklyMetric.EFFORT, WeeklyMetric.REST, WeeklyMetric.RHR, WeeklyMetric.HRV)

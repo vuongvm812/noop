@@ -754,3 +754,43 @@ public enum WeeklyDigestEngine {
     }
     static func round1(_ x: Double) -> Double { (x * 10).rounded() / 10 }
 }
+
+// MARK: - Card sections (#90)
+
+/// How the weekly card groups the metrics after the headline five. Shared with Android so
+/// both cards list the same rows in the same order. Kotlin twin: `WeeklyDigestSection`.
+public enum WeeklyDigestSection: String, CaseIterable, Sendable {
+    case activity
+    case sleep
+    case overnightVitals
+    case stressEnergy
+    case training
+
+    /// The section's metrics, in display order.
+    public var metrics: [WeeklyMetric] {
+        switch self {
+        case .activity:        return [.steps, .activeKcal, .intensityMinutes]
+        case .sleep:           return [.sleepDuration, .sleepEfficiency, .deepSleep, .remSleep, .sleepScore]
+        case .overnightVitals: return [.spo2, .respiration, .skinTempDeviation]
+        case .stressEnergy:    return [.stress, .bodyBatteryRecharge]
+        case .training:        return [.trainingLoad, .vo2max]
+        }
+    }
+}
+
+/// One section's rows: only the metrics that carried a reading this week.
+public struct WeeklyDigestSectionRows: Equatable, Sendable {
+    public let section: WeeklyDigestSection
+    public let rows: [WeeklyMetricSummary]
+}
+
+extension WeeklyDigestEngine {
+    /// The card's sections for `digest`: a row only when its metric has data this week, and
+    /// a section only when it has a row. Kotlin twin: `WeeklyDigestEngine.sections`.
+    public static func sections(_ digest: WeeklyDigest) -> [WeeklyDigestSectionRows] {
+        WeeklyDigestSection.allCases.compactMap { section in
+            let rows = section.metrics.compactMap { digest.summary($0) }.filter { $0.hasData }
+            return rows.isEmpty ? nil : WeeklyDigestSectionRows(section: section, rows: rows)
+        }
+    }
+}

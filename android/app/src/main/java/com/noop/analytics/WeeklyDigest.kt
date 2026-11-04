@@ -790,3 +790,43 @@ object WeeklyDigestEngine {
     private fun formatValue(x: Double, decimals: Int): String =
         if (decimals == 0) "${roundedInt(x)}" else "${round1(x) + 0.0}"
 }
+
+// MARK: - Card sections (#90)
+
+/**
+ * How the weekly card groups the metrics after the headline five, shared with Swift so both
+ * cards list the same rows in the same order. Swift twin: `WeeklyDigestSection`.
+ */
+enum class WeeklyDigestSection(val key: String) {
+    ACTIVITY("activity"),
+    SLEEP("sleep"),
+    OVERNIGHT_VITALS("overnightVitals"),
+    STRESS_ENERGY("stressEnergy"),
+    TRAINING("training");
+
+    /** The section's metrics, in display order. */
+    val metrics: List<WeeklyMetric>
+        get() = when (this) {
+            ACTIVITY -> listOf(WeeklyMetric.STEPS, WeeklyMetric.ACTIVE_KCAL, WeeklyMetric.INTENSITY_MINUTES)
+            SLEEP -> listOf(
+                WeeklyMetric.SLEEP_DURATION, WeeklyMetric.SLEEP_EFFICIENCY, WeeklyMetric.DEEP_SLEEP,
+                WeeklyMetric.REM_SLEEP, WeeklyMetric.SLEEP_SCORE,
+            )
+            OVERNIGHT_VITALS -> listOf(WeeklyMetric.SPO2, WeeklyMetric.RESPIRATION, WeeklyMetric.SKIN_TEMP_DEVIATION)
+            STRESS_ENERGY -> listOf(WeeklyMetric.STRESS, WeeklyMetric.BODY_BATTERY_RECHARGE)
+            TRAINING -> listOf(WeeklyMetric.TRAINING_LOAD, WeeklyMetric.VO2MAX)
+        }
+}
+
+/** One section's rows: only the metrics that carried a reading this week. */
+data class WeeklyDigestSectionRows(val section: WeeklyDigestSection, val rows: List<WeeklyMetricSummary>)
+
+/**
+ * The card's sections for [digest]: a row only when its metric has data this week, and a section
+ * only when it has a row. Swift twin: `WeeklyDigestEngine.sections`.
+ */
+fun WeeklyDigestEngine.sections(digest: WeeklyDigest): List<WeeklyDigestSectionRows> =
+    WeeklyDigestSection.values().mapNotNull { section ->
+        val rows = section.metrics.mapNotNull { digest.summary(it) }.filter { it.hasData }
+        if (rows.isEmpty()) null else WeeklyDigestSectionRows(section, rows)
+    }
