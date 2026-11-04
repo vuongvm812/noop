@@ -2092,8 +2092,12 @@
     <string name="score_state_title_calibrating">Calibrating</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Resumes in the morning</string>
     <string name="stress_screen_subtitle">Autonomic load across your waking day</string>
-    <string name="stress_timeline_caption_day">The line is each waking hour\'s 0–3 proxy, scored against your own calm hours today. The bar below splits your day into calm, moderate and high stress time.</string>
-    <string name="stress_timeline_caption_personal">The line is each waking hour\'s 0–3 proxy, scored against your personal daytime baseline (how your own days usually run). The bar below splits your day into calm, moderate and high stress time.</string>
+    <string name="stress_timeline_caption_day">The line is each hour\'s 0–3 proxy, scored against your own calm hours today. Night hours are shaded. The bar below splits your waking day into calm, moderate and high stress time.</string>
+    <string name="stress_timeline_caption_personal">The line is each hour\'s 0–3 proxy, scored against your personal daytime baseline (how your own days usually run). Night hours are shaded. The bar below splits your waking day into calm, moderate and high stress time.</string>
+    <string name="stress_intraday_line_low">Your latest hour reads calm.</string>
+    <string name="stress_intraday_line_medium">Your latest hour reads moderate, around your usual level.</string>
+    <string name="stress_intraday_line_high">Your latest hour reads high. A few minutes of paced breathing can help.</string>
+    <string name="stress_methodology_intraday">The gauge shows your latest scored hour, read the same way as the timeline. The daily trend compares each night\'s resting heart rate and HRV to your own 30-day baseline, and uses your recorded daily score where one exists. A higher heart rate and a lower HRV both push the score up. Both use a 0–3 scale: 0 is calm, 1.5 sits at your baseline, 3 is highly activated.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">%1$d hour excluded — you were moving.</item>
         <item quantity="other">%1$d hours excluded — you were moving.</item>

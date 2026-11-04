@@ -1942,8 +1942,12 @@
     <string name="score_state_title_calibrating">Kalibracja</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Wznowi się rano</string>
     <string name="stress_screen_subtitle">Obciążenie autonomiczne w ciągu dnia</string>
-    <string name="stress_timeline_caption_day">Linia pokazuje wskaźnik 0–3 dla każdej godziny czuwania, oceniany względem Twoich dzisiejszych spokojnych godzin. Pasek poniżej dzieli dzień na okresy niskiego, umiarkowanego i wysokiego stresu.</string>
-    <string name="stress_timeline_caption_personal">Linia pokazuje wskaźnik 0–3 dla każdej godziny czuwania, oceniany względem Twojej osobistej dziennej linii bazowej (typowego przebiegu Twoich dni). Pasek poniżej dzieli dzień na okresy niskiego, umiarkowanego i wysokiego stresu.</string>
+    <string name="stress_timeline_caption_day">Linia pokazuje wskaźnik 0–3 dla każdej godziny, oceniany względem Twoich dzisiejszych spokojnych godzin. Godziny nocne są zacienione. Pasek poniżej dzieli godziny czuwania na okresy niskiego, umiarkowanego i wysokiego stresu.</string>
+    <string name="stress_timeline_caption_personal">Linia pokazuje wskaźnik 0–3 dla każdej godziny, oceniany względem Twojej osobistej dziennej linii bazowej (typowego przebiegu Twoich dni). Godziny nocne są zacienione. Pasek poniżej dzieli godziny czuwania na okresy niskiego, umiarkowanego i wysokiego stresu.</string>
+    <string name="stress_intraday_line_low">Twoja ostatnia godzina jest spokojna.</string>
+    <string name="stress_intraday_line_medium">Twoja ostatnia godzina jest umiarkowana, w pobliżu Twojego zwykłego poziomu.</string>
+    <string name="stress_intraday_line_high">Twoja ostatnia godzina jest wysoka. Kilka minut spokojnego, miarowego oddychania może pomóc.</string>
+    <string name="stress_methodology_intraday">Wskaźnik pokazuje Twoją ostatnią ocenioną godzinę, odczytaną tak samo jak oś czasu. Trend dzienny porównuje tętno spoczynkowe i HRV z każdej nocy z Twoją 30-dniową linią bazową i korzysta z zapisanego wyniku dziennego, jeśli istnieje. Wyższe tętno i niższe HRV podnoszą wynik. Oba korzystają ze skali 0–3: 0 to spokój, 1,5 to Twoja linia bazowa, 3 to silna aktywacja.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">Wykluczono %1$d godzinę — wykryto ruch.</item>
         <item quantity="few">Wykluczono %1$d godziny — wykryto ruch.</item>

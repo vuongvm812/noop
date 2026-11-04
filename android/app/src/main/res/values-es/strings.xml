@@ -1953,8 +1953,12 @@
     <string name="score_state_title_calibrating">Calibrando</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Se reanuda por la mañana</string>
     <string name="stress_screen_subtitle">Carga autonómica durante las horas de vigilia</string>
-    <string name="stress_timeline_caption_day">La línea muestra el indicador de 0 a 3 de cada hora de vigilia, comparado con tus propias horas de calma de hoy. La barra inferior divide el día en periodos de estrés bajo, moderado y alto.</string>
-    <string name="stress_timeline_caption_personal">La línea muestra el indicador de 0 a 3 de cada hora de vigilia, comparado con tu referencia diurna personal (cómo suelen transcurrir tus días). La barra inferior divide el día en periodos de estrés bajo, moderado y alto.</string>
+    <string name="stress_timeline_caption_day">La línea muestra el indicador de 0 a 3 de cada hora, comparado con tus propias horas de calma de hoy. Las horas nocturnas aparecen sombreadas. La barra inferior divide tus horas de vigilia en periodos de estrés bajo, moderado y alto.</string>
+    <string name="stress_timeline_caption_personal">La línea muestra el indicador de 0 a 3 de cada hora, comparado con tu referencia diurna personal (cómo suelen transcurrir tus días). Las horas nocturnas aparecen sombreadas. La barra inferior divide tus horas de vigilia en periodos de estrés bajo, moderado y alto.</string>
+    <string name="stress_intraday_line_low">Tu última hora se ve tranquila.</string>
+    <string name="stress_intraday_line_medium">Tu última hora se ve moderada, en torno a tu nivel habitual.</string>
+    <string name="stress_intraday_line_high">Tu última hora se ve alta. Unos minutos de respiración pausada pueden ayudar.</string>
+    <string name="stress_methodology_intraday">El indicador muestra tu última hora evaluada, leída igual que la línea de tiempo. La tendencia diaria compara la frecuencia cardiaca en reposo y la VFC de cada noche con tu propia referencia de 30 días, y usa tu puntuación diaria registrada cuando existe. Una frecuencia cardiaca más alta y una VFC más baja elevan la puntuación. Ambos usan una escala de 0–3: 0 es calma, 1,5 está en tu referencia, 3 es muy activado.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">Se excluyó %1$d hora porque estabas en movimiento.</item>
         <item quantity="other">Se excluyeron %1$d horas porque estabas en movimiento.</item>

@@ -2040,8 +2040,12 @@
     <string name="score_state_title_calibrating">Calibrazione</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Riprende al mattino</string>
     <string name="stress_screen_subtitle">Carico autonomico durante le ore di veglia</string>
-    <string name="stress_timeline_caption_day">La linea è l\'indicatore 0–3 di ogni ora di veglia, calcolato rispetto alle tue ore tranquille di oggi. La barra sotto divide la giornata in tempo calmo, di stress moderato e di stress alto.</string>
-    <string name="stress_timeline_caption_personal">La linea mostra l\'indicatore da 0 a 3 per ogni ora di veglia, valutato rispetto al tuo riferimento diurno personale (l\'andamento abituale delle tue giornate). La barra sottostante divide la giornata in periodi di stress basso, moderato e alto.</string>
+    <string name="stress_timeline_caption_day">La linea mostra l\'indicatore da 0 a 3 per ogni ora, valutato rispetto alle tue ore tranquille di oggi. Le ore notturne sono ombreggiate. La barra sottostante divide le ore di veglia in periodi di stress basso, moderato e alto.</string>
+    <string name="stress_timeline_caption_personal">La linea mostra l\'indicatore da 0 a 3 per ogni ora, valutato rispetto al tuo riferimento diurno personale (l\'andamento abituale delle tue giornate). Le ore notturne sono ombreggiate. La barra sottostante divide le ore di veglia in periodi di stress basso, moderato e alto.</string>
+    <string name="stress_intraday_line_low">La tua ultima ora risulta calma.</string>
+    <string name="stress_intraday_line_medium">La tua ultima ora risulta moderata, vicina al tuo livello abituale.</string>
+    <string name="stress_intraday_line_high">La tua ultima ora risulta alta. Qualche minuto di respirazione cadenzata può aiutare.</string>
+    <string name="stress_methodology_intraday">L\'indicatore mostra la tua ultima ora valutata, letta come la timeline. L\'andamento giornaliero confronta la frequenza cardiaca a riposo e l\'HRV di ogni notte con il tuo riferimento di 30 giorni, e usa il punteggio giornaliero registrato quando esiste. Una frequenza cardiaca più alta e un\'HRV più bassa fanno salire il punteggio. Entrambi usano una scala 0–3: 0 è calmo, 1,5 è il tuo riferimento, 3 è molto attivato.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">%1$d ora esclusa — eri in movimento.</item>
         <item quantity="other">%1$d ore escluse — eri in movimento.</item>

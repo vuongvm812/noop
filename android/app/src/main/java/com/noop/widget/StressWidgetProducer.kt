@@ -33,10 +33,17 @@ internal object StressWidgetProducer {
     /** Today's curve, honest activity-masked hour count, and the local day they belong to. [dayMean] is
      *  `DaytimeStress.Result.dayMean`, which the Today stress card's resolver reads (#42). */
     data class Curve(
+        /** Waking points only: what the widget and the Today card draw and average (#94). */
         val points: List<StressPoint>,
         val epochDay: Long,
         val activityMaskedHours: Int,
         val dayMean: Double? = null,
+        /**
+         * The whole day, night hours included (#94): what the Stress tile, the pinned card and the Stress
+         * screen's summary read through [com.noop.ui.StressTodayLoader], so their latest level stays live
+         * overnight. Swift twin: `StressDayCurve.today`'s full `timeline`. Defaults to [points].
+         */
+        val dayPoints: List<StressPoint> = points,
     )
 
     /** What the last computation saw and produced, swapped in as ONE value.
@@ -52,6 +59,7 @@ internal object StressWidgetProducer {
         val points: List<StressPoint>,
         val activityMaskedHours: Int,
         val dayMean: Double?,
+        val dayPoints: List<StressPoint>,
     )
 
     /**
@@ -179,7 +187,9 @@ internal object StressWidgetProducer {
                 it.day == day && it.fingerprint == fingerprint
             }
             if (memoHit != null) {
-                return@runCatching Curve(memoHit.points, day, memoHit.activityMaskedHours, memoHit.dayMean)
+                return@runCatching Curve(
+                    memoHit.points, day, memoHit.activityMaskedHours, memoHit.dayMean, memoHit.dayPoints,
+                )
             }
 
             val hr = repo.hrSamplesUnion(deviceId, from, nowSeconds, limit = 200_000)
@@ -208,18 +218,23 @@ internal object StressWidgetProducer {
                     // double-count the half-step windows.
                 )
             }
-            val points = result.timeline.map {
-                // startTs is the wall-clock bucket start with the local shift already undone, so it
-                // is a true instant and formats correctly against the device's zone.
+            // startTs is the wall-clock bucket start with the local shift already undone, so it is a true
+            // instant and formats correctly against the device's zone.
+            val dayPoints = result.timeline.map {
                 StressPoint(ts = it.startTs, level = it.level, moving = it.maskedForActivity)
             }
+            // Waking hours only (#94): the widget and the Today card both average every point they carry
+            // (StressTrace.stats), and the day's average is a waking-hours figure. Night hours stay on the
+            // Stress screen's graph. Twin of the iOS WidgetPublish filter.
+            val points = dayPoints.filterIndexed { i, _ -> !result.timeline[i].asleep }
 
             memos = memos + (
                 personalBaseline to Memo(
                     fingerprint, day, personalBaseline, points, result.activityMaskedHours, result.dayMean,
+                    dayPoints,
                 )
             )
-            Curve(points, day, result.activityMaskedHours, result.dayMean)
+            Curve(points, day, result.activityMaskedHours, result.dayMean, dayPoints)
         }.getOrNull()
     }
 

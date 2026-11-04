@@ -1946,8 +1946,12 @@
     <string name="score_state_title_calibrating">A calibrar</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Retoma de manhã</string>
     <string name="stress_screen_subtitle">Carga autonómica ao longo do teu dia acordado</string>
-    <string name="stress_timeline_caption_day">A linha mostra o indicador de 0–3 de cada hora de vigília, avaliado em relação às tuas próprias horas calmas de hoje. A barra abaixo divide o teu dia em períodos de stress baixo, moderado e elevado.</string>
-    <string name="stress_timeline_caption_personal">A linha mostra o indicador de 0–3 de cada hora de vigília, avaliado em relação à tua linha de base diurna pessoal (como os teus dias costumam decorrer). A barra abaixo divide o teu dia em períodos de stress baixo, moderado e elevado.</string>
+    <string name="stress_timeline_caption_day">A linha mostra o indicador de 0–3 de cada hora, avaliado em relação às tuas próprias horas calmas de hoje. As horas noturnas aparecem sombreadas. A barra abaixo divide as tuas horas de vigília em períodos de stress baixo, moderado e elevado.</string>
+    <string name="stress_timeline_caption_personal">A linha mostra o indicador de 0–3 de cada hora, avaliado em relação à tua linha de base diurna pessoal (como os teus dias costumam decorrer). As horas noturnas aparecem sombreadas. A barra abaixo divide as tuas horas de vigília em períodos de stress baixo, moderado e elevado.</string>
+    <string name="stress_intraday_line_low">A tua última hora está calma.</string>
+    <string name="stress_intraday_line_medium">A tua última hora está moderada, perto do teu nível habitual.</string>
+    <string name="stress_intraday_line_high">A tua última hora está elevada. Alguns minutos de respiração ritmada podem ajudar.</string>
+    <string name="stress_methodology_intraday">O indicador mostra a tua última hora avaliada, lida da mesma forma que a linha temporal. A tendência diária compara a frequência cardíaca em repouso e a VFC de cada noite com a tua própria linha de base de 30 dias, e usa a tua pontuação diária registada quando existe. Uma frequência cardíaca mais alta e uma VFC mais baixa aumentam ambas a pontuação. Ambos usam uma escala de 0–3: 0 é calmo, 1,5 está na tua linha de base, 3 é muito ativado.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">Foi excluída %1$d hora — estiveste em movimento.</item>
         <item quantity="other">Foram excluídas %1$d horas — estiveste em movimento.</item>

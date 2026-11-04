@@ -59,6 +59,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.noop.analytics.DaytimeStress
 import com.noop.analytics.HrvFreqDomain
 import com.noop.analytics.StressIndex
+import com.noop.analytics.StressToday
 import com.noop.data.DailyMetric
 import com.noop.data.RrInterval
 import com.noop.widget.StressPoint
@@ -191,6 +192,22 @@ fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
     // derivation is O(n) over the full history, so we memoize on the inputs.
     val model = remember(days, stored) { StressModel.build(days, stored) }
 
+    // #94: today's stress reading from the ONE StressTodayLoader → StressToday.resolve funnel the Today tile
+    // and card read. Loaded once here and handed to both the summary card and the hero, so the two figures
+    // on this screen cannot come from two reads that disagree. Re-read when today's daytime curve moves.
+    var todayReading by remember { mutableStateOf<StressToday.Reading?>(null) }
+    var todayReadingLoaded by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(days, daytime, vm.activeStrapId) {
+        todayReading = runCatching {
+            StressTodayLoader.load(
+                vm.repo,
+                vm.activeStrapId,
+                personalBaseline = NoopPrefs.stressPersonalBaseline(context),
+            )
+        }.getOrNull()
+        todayReadingLoaded = true
+    }
+
     LazyScreenScaffold(
         title = uiString(R.string.l10n_stress_screen_stress_bad33342),
         subtitle = uiString(R.string.stress_screen_subtitle),
@@ -207,11 +224,14 @@ fun StressScreen(vm: AppViewModel, onBreathe: () -> Unit = {}) {
         // #42: today's latest level and average, from the SAME loader and resolver the Today card reads,
         // so the two cannot disagree. Shown in every state: a Garmin-only day has it even when the 0-3
         // model below has no history yet.
-        item { StressSummaryCard(vm, refreshKey = days) }
+        item { StressSummaryCard(todayReading, todayReadingLoaded) }
+        // #94: the hero and the intraday timeline are TODAY's, so they no longer wait on the 30-day
+        // history model: a new strap shows its first scored hour before any baseline exists.
+        StressTodayContent(
+            todayReading, daytime, daytimeUsesPersonalBaseline, stressIndex, freqHrv, onBreathe,
+        )
         when {
-            model != null -> StressContent(
-                model, daytime, daytimeUsesPersonalBaseline, stressIndex, freqHrv, onBreathe,
-            )
+            model != null -> StressHistoryContent(model)
             !storedLoaded -> item { StressLoading() }
             else -> item { StressEmpty() }
         }
@@ -299,36 +319,26 @@ private suspend fun loadDaytimeCore(
 // [LazyScreenScaffold] (only the rows on screen are composed). Same order, the SAME
 // `staggeredAppear(0..4)` indices, and the inter-section spacing is the scaffold's 20dp
 // `Arrangement.spacedBy` — identical to the eager ColumnScope it replaced.
-private fun androidx.compose.foundation.lazy.LazyListScope.StressContent(
-    model: StressModel,
+private fun androidx.compose.foundation.lazy.LazyListScope.StressTodayContent(
+    reading: StressToday.Reading?,
     daytime: DaytimeStress.Result?,
     daytimeUsesPersonalBaseline: Boolean,
     stressIndex: StressIndex.Components?,
     freqHrv: HrvFreqDomain.Bands?,
     onBreathe: () -> Unit,
 ) {
-    // 1 · HERO — the count-up PipBar + band + one plain-English line, all in one card
-    //     (the needle/semicircle gauge is gone, matching the iOS redesign: a big WHITE
-    //     CountUpText value with "of 3" + the band word beside it, over a band-tinted
-    //     PipBar on the 0…3 scale. Flat, crisp, no needle, no gauge, no glow, no scenic).
-    item { StressHeroCard(model, modifier = Modifier.staggeredAppear(0)) }
+    // 1 · HERO — today's latest intraday level in the liquid vessel (#94). Hidden while there is none: the
+    //     summary card above already says there is no reading yet, once.
+    val level = StressToday.tileLevel(reading)
+    if (reading != null && level != null) {
+        item { StressHeroCard(reading, level, modifier = Modifier.staggeredAppear(0)) }
+    }
 
     // 1b · ADVANCED HRV readouts (additive, on-demand). A separate, clearly-labelled card shown
     //      only when at least one engine returned a value. It sits BELOW the hero and never alters
     //      the hero, the markers or the timeline.
     if (hasAdvancedReadouts(stressIndex, freqHrv)) {
         item { StressAdvancedCard(stressIndex, freqHrv, modifier = Modifier.staggeredAppear(1)) }
-    }
-
-    // 2 · Today's markers — uniform fixed-height tiles, two-up.
-    item {
-        Column(
-            modifier = Modifier.staggeredAppear(1),
-            verticalArrangement = Arrangement.spacedBy(Metrics.gap),
-        ) {
-            SectionHeader("Today", overline = "Markers", trailing = "vs 30-day baseline")
-            StressTiles(model)
-        }
     }
 
     // 3 · Today's intraday timeline — when in the day stress ran high, + a passive Breathe
@@ -351,6 +361,23 @@ private fun androidx.compose.foundation.lazy.LazyListScope.StressContent(
         // Read finished and the day has no usable intraday HR. Staying silent is deliberate and unchanged:
         // an empty result is a fact about the day, not something still in flight.
         else -> Unit
+    }
+}
+
+/**
+ * The history half (#94): overnight markers against the 30-day baseline, the daily trend (stored
+ * `my-whoop` days kept as they are) and how the daily figures are built. Twin of iOS `historyContent`.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.StressHistoryContent(model: StressModel) {
+    // 2 · Today's markers — uniform fixed-height tiles, two-up.
+    item {
+        Column(
+            modifier = Modifier.staggeredAppear(1),
+            verticalArrangement = Arrangement.spacedBy(Metrics.gap),
+        ) {
+            SectionHeader("Today", overline = "Markers", trailing = "vs 30-day baseline")
+            StressTiles(model)
+        }
     }
 
     // 4 · Trend over the chosen window.
@@ -378,10 +405,18 @@ private val LIQUID_HERO_RADIUS = 26.dp
 // translucent-black hero surface so the vessel + white number stay crisp over the day-of-sky.
 
 @Composable
-private fun StressHeroCard(model: StressModel, modifier: Modifier = Modifier) {
-    val bandColor = StressRamp.color(model.score)
-    // The vessel fills on the SAME 0–3 scale the score uses (score / 3 → 0..1), tinted by the live band.
-    val fraction = (model.score / 3.0).coerceIn(0.0, 1.0)
+private fun StressHeroCard(reading: StressToday.Reading, level: Double, modifier: Modifier = Modifier) {
+    // On the reading's OWN scale: NOOP's 0-3 proxy, or a watch's 0-100. A band is named only for NOOP's
+    // scale, whose bands this screen defines; a watch's bands are its own and are not restated.
+    val fraction = (level / reading.scaleMax).coerceIn(0.0, 1.0)
+    val bandColor = StressRamp.color(fraction * 3.0)
+    val band = if (reading.source == StressToday.Source.NOOP) StressBand.forScore(level) else null
+    val formatted = formatStressSummaryValue(level, reading.source)
+    val spoken = if (band != null) {
+        uiString(R.string.stress_score_accessibility, formatted, band.title)
+    } else {
+        uiString(sourceLabelRes(reading.source)) + " " + formatted + stressScaleSuffix(reading.scaleMax)
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -399,27 +434,19 @@ private fun StressHeroCard(model: StressModel, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Overline("Stress monitor", modifier = Modifier.weight(1f))
-                StatePill(model.band.title, tone = model.band.tone, showsDot = true)
+                if (band != null) StatePill(band.title, tone = band.tone, showsDot = true)
             }
 
-            // The liquid vessel + the count-up value rolled over it, with "of 3" + the band word beside.
+            // The liquid vessel + the count-up value rolled over it, with the scale + the band word beside.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                // The band-tinted vessel with a WHITE count-up number over it — the HeroScoreVessel idiom.
-                // `animated` only once a real score is loaded (model != null here, so always a real value).
                 Box(
                     modifier = Modifier
                         .size(112.dp)
-                        .semantics {
-                            contentDescription = uiString(
-                                R.string.stress_score_accessibility,
-                                String.format(Locale.US, "%.1f", model.score),
-                                model.band.title,
-                            )
-                        },
+                        .semantics { contentDescription = spoken },
                     contentAlignment = Alignment.Center,
                 ) {
                     LiquidVessel(
@@ -431,8 +458,8 @@ private fun StressHeroCard(model: StressModel, modifier: Modifier = Modifier) {
                     // Count-up value over the vessel — white, tabular, a soft shadow for legibility, and
                     // hit-transparent so the tap reaches the vessel (splash). Mirrors HeroScoreVessel.
                     CountUpText(
-                        value = model.score,
-                        format = { String.format(Locale.US, "%.1f", it) },
+                        value = level,
+                        format = { formatStressSummaryValue(it, reading.source) },
                         style = NoopType.number(30f, weight = FontWeight.Bold)
                             .copy(shadow = Shadow(color = Color.Black.copy(alpha = 0.5f), offset = Offset(0f, 1f), blurRadius = 6f)),
                         color = Color.White,
@@ -446,31 +473,39 @@ private fun StressHeroCard(model: StressModel, modifier: Modifier = Modifier) {
                 ) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            model.band.title,
-                            style = NoopType.display(30f),
+                            band?.title ?: uiString(sourceLabelRes(reading.source)),
+                            style = if (band != null) NoopType.display(30f) else NoopType.headline,
                             color = bandColor,
                         )
                         Text(
-                            uiString(R.string.l10n_stress_screen_of_3_46203495),
+                            if (band != null) {
+                                uiString(R.string.l10n_stress_screen_of_3_46203495)
+                            } else {
+                                stressScaleSuffix(reading.scaleMax)
+                            },
                             style = NoopType.number(14f, FontWeight.Medium),
                             color = Palette.textTertiary,
                             modifier = Modifier.padding(start = 6.dp, bottom = 5.dp),
                         )
                     }
-                    Text(
-                        uiString(R.string.l10n_stress_screen_on_the_0_3_autonomic_load_8a0d5107),
-                        style = NoopType.footnote,
-                        color = Palette.textTertiary,
-                    )
+                    reading.latest?.let {
+                        Text(
+                            stressTimeLabel(it.ts),
+                            style = NoopType.footnote,
+                            color = Palette.textTertiary,
+                        )
+                    }
                 }
             }
 
-            // One plain-English line, full width under the vessel row.
-            Text(
-                model.explanation,
-                style = NoopType.subhead,
-                color = Palette.textSecondary,
-            )
+            // One plain-English line for NOOP's own scale, full width under the vessel row.
+            if (band != null) {
+                Text(
+                    uiString(band.intradayLineRes),
+                    style = NoopType.subhead,
+                    color = Palette.textSecondary,
+                )
+            }
         }
     }
 }
@@ -1023,6 +1058,9 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
 
     fun DrawScope.yFor(level: Double, topPad: Float, usable: Float): Float =
         topPad + (1f - (level / 3.0).coerceIn(0.0, 1.0).toFloat()) * usable
+    // Night hours (#94) sit on a faint sleep-tinted band, so a low overnight line reads as sleep rather than
+    // as an unusually calm afternoon. Twin of the iOS `DaytimeLoadLine.sleepBands`.
+    val sleepShade = Palette.sleepDeep.copy(alpha = 0.14f)
 
     Box(
         modifier = Modifier
@@ -1121,9 +1159,30 @@ private fun DaytimeStressLine(hours: List<DaytimeStress.HourPoint>) {
                     }
                     val strokeW = 3.dp.toPx()
                     val dotR = 2.5.dp.toPx()
+                    // Contiguous runs of asleep points, half a step either side of the first and last,
+                    // clamped to the chart area.
+                    val sleepBands = ArrayList<Pair<Float, Float>>()
+                    var s0 = -1
+                    for (k in 0..hours.size) {
+                        val asleep = k < hours.size && hours[k].asleep
+                        if (asleep && s0 < 0) s0 = k
+                        if (!asleep && s0 >= 0) {
+                            val x0 = (chartLeft + s0 * stepX - stepX / 2f).coerceAtLeast(chartLeft)
+                            val x1 = (chartLeft + (k - 1) * stepX + stepX / 2f).coerceAtMost(w)
+                            sleepBands.add(x0 to x1)
+                            s0 = -1
+                        }
+                    }
 
                     onDrawBehind {
                         if (w <= 0f || h <= 0f) return@onDrawBehind
+                        sleepBands.forEach { (x0, x1) ->
+                            drawRect(
+                                color = sleepShade,
+                                topLeft = Offset(x0, 0f),
+                                size = androidx.compose.ui.geometry.Size((x1 - x0).coerceAtLeast(1f), h),
+                            )
+                        }
                         // Y-axis: hairline grid lines + scale labels 0 / 1 / 2 / 3.
                         listOf(0.0, 1.0, 2.0, 3.0).forEach { lvl ->
                             val y = yForC(lvl)
@@ -1180,7 +1239,9 @@ private fun daytimeLineDescription(hours: List<DaytimeStress.HourPoint>): String
 
 @Composable
 private fun StressTotalsBar(day: DaytimeStress.Result) {
-    val scored = day.scored
+    // Waking hours only: night hours (#94) are drawn on the line but not counted, the same rule the day
+    // summaries in DaytimeStress follow. Twin of the iOS `StressTotals`.
+    val scored = day.scored.filter { !it.asleep }
     if (scored.isEmpty()) return
 
     val calm = scored.count { (it.level ?: 0.0) < 1.0 }
@@ -1296,16 +1357,8 @@ private fun hourLabel(hour: Int): String {
 @Composable
 private fun StressTiles(model: StressModel) {
     val tiles = listOf<@Composable (Modifier) -> Unit>(
-        { m ->
-            // Today's stress value, with its band as the caption.
-            StatTile(
-                modifier = m,
-                label = uiString(R.string.l10n_stress_screen_stress_bad33342),
-                value = String.format(Locale.US, "%.1f", model.score),
-                caption = "of 3 · ${model.band.title}",
-                accent = StressRamp.color(model.score),
-            )
-        },
+        // #94: no Stress tile here. Today's stress is the hero's intraday reading; the overnight score
+        // this tile used to print was a second, different "today" beside it.
         { m ->
             // Resting HR — an INCREASE is the stressful direction.
             MarkerTile(
@@ -1459,7 +1512,7 @@ private fun StressTrendSection(model: StressModel, modifier: Modifier = Modifier
                     )
                     HorizontalDivider(color = Palette.hairline)
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        TrendFooterItem("Today", String.format(Locale.US, "%.1f", model.score))
+                        // No "Today" entry (#94): today's stress is the intraday hero, not this daily series.
                         TrendFooterItem("Average", String.format(Locale.US, "%.1f", avg))
                         TrendFooterItem("Days", points.size.toString())
                     }
@@ -1511,16 +1564,12 @@ private fun StressMethodologyCard(model: StressModel, modifier: Modifier = Modif
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Overline("How this is computed")
             Text(
-                if (model.usingStored) {
-                    "Today's value is your recorded daily stress score (0-3)."
-                } else {
-                    "Stress is derived from two autonomic signals."
-                },
+                "Stress is derived from two autonomic signals.",
                 style = NoopType.body,
                 color = Palette.textPrimary,
             )
             Text(
-                uiString(R.string.l10n_stress_screen_we_compare_today_s_resting_heart_a9cd0955),
+                uiString(R.string.stress_methodology_intraday),
                 style = NoopType.subhead,
                 color = Palette.textSecondary,
             )
@@ -1622,6 +1671,14 @@ internal enum class StressBand(val title: String, val tone: StrandTone) {
     Low("LOW", StrandTone.Positive),
     Medium("MEDIUM", StrandTone.Warning),
     High("HIGH", StrandTone.Critical);
+
+    /** The hero's one line for today's latest intraday hour (#94). Swift twin: `StressBand.intradayLine`. */
+    val intradayLineRes: Int
+        get() = when (this) {
+            Low -> R.string.stress_intraday_line_low
+            Medium -> R.string.stress_intraday_line_medium
+            High -> R.string.stress_intraday_line_high
+        }
 
     companion object {
         fun forScore(score: Double): StressBand = when {

@@ -1971,8 +1971,12 @@
     <string name="score_state_title_calibrating">Calibration en cours</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Reprend le matin</string>
     <string name="stress_screen_subtitle">Charge autonome au fil de votre journée éveillée</string>
-    <string name="stress_timeline_caption_day">La ligne représente l\'indice 0–3 de chaque heure éveillée, évalué par rapport à vos propres heures calmes d\'aujourd\'hui. La barre ci-dessous répartit votre journée en périodes de stress faible, modéré et élevé.</string>
-    <string name="stress_timeline_caption_personal">La ligne représente l\'indice 0–3 de chaque heure éveillée, évalué par rapport à votre référence diurne personnelle (le déroulement habituel de vos journées). La barre ci-dessous répartit votre journée en périodes de stress faible, modéré et élevé.</string>
+    <string name="stress_timeline_caption_day">La ligne représente l\'indice 0–3 de chaque heure, évalué par rapport à vos propres heures calmes d\'aujourd\'hui. Les heures de nuit sont ombrées. La barre ci-dessous répartit vos heures d\'éveil en périodes de stress faible, modéré et élevé.</string>
+    <string name="stress_timeline_caption_personal">La ligne représente l\'indice 0–3 de chaque heure, évalué par rapport à votre référence diurne personnelle (le déroulement habituel de vos journées). Les heures de nuit sont ombrées. La barre ci-dessous répartit vos heures d\'éveil en périodes de stress faible, modéré et élevé.</string>
+    <string name="stress_intraday_line_low">Votre dernière heure est calme.</string>
+    <string name="stress_intraday_line_medium">Votre dernière heure est modérée, proche de votre niveau habituel.</string>
+    <string name="stress_intraday_line_high">Votre dernière heure est élevée. Quelques minutes de respiration rythmée peuvent aider.</string>
+    <string name="stress_methodology_intraday">La jauge affiche votre dernière heure évaluée, lue de la même façon que la chronologie. La tendance quotidienne compare la fréquence cardiaque au repos et la VFC de chaque nuit à votre propre référence sur 30 jours, et utilise votre score quotidien enregistré lorsqu\'il existe. Une fréquence cardiaque plus élevée et une VFC plus basse font toutes deux monter le score. Les deux utilisent une échelle de 0–3 : 0 est calme, 1,5 correspond à votre référence, 3 est très activé.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">%1$d heure exclue — vous étiez en mouvement.</item>
         <item quantity="other">%1$d heures exclues — vous étiez en mouvement.</item>
