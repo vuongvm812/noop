@@ -132,6 +132,23 @@ numbers.
   from NOOP's own runs on a Forerunner 165. Nothing from Gadgetbridge beyond the protocol facts above, at
   the same pinned commit.
 
+## Huawei Band 10 metric decoders (fork)
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org), consulted at commit
+  `6e4220682feb6917a5644304d9d7c760f30b6eaf`, licensed **AGPL-3.0**. The Kotlin decoders under
+  `android/app/src/main/java/com/noop/huawei/decode/` and the fold `HuaweiWatchIngest.kt` are
+  **re-derived** from protocol facts only: the FitnessData step-data feature bitmaps and field widths and
+  the legacy sleep record layout (`FitnessData.java`, `GetSleepDataRequest.java`); the sequence_data
+  sleep file layout, its summary value ids and the 8-byte stage records (`HuaweiSequenceDataFileParser.java`,
+  `HuaweiSequenceDataParserBase.java`, `HuaweiTrueSleepSequenceDataParser.java`, `HuaweiSleepSessionProvider.kt`);
+  the `sleep_state.bin` records (`HuaweiTruSleepParser.java`); the `rrisqi_data.bin` stress layout
+  (`HuaweiStressParser.java`); the P2P dictionary class / value ids 500044 / 500044831 (HRV RMSSD) and
+  400012 / 400012430 (skin temperature) with their value ranges (`p2p/dictionarysync/*`, `HuaweiDictTypes.java`);
+  the workout totals tags, data header, bitmap and inner-block widths and scales (`Workout.java`,
+  `HuaweiWorkoutGbParser.java`); and the GPS file layout and its 6378245 m radius (`HuaweiGpsParser.java`).
+  No code is copied. Byte vectors from Gadgetbridge's `TestFitnessData.java`, `TestWorkout.java` and
+  `TestHuaweiTruSleepParser.java` are used as expected literals in NOOP's tests, attributed there. Every
+  value is an unvalidated candidate: none of it has been checked on a Huawei Band 10.
+
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
 - **MarkdownUI** (`gonzalezreal/swift-markdown-ui`) — renders the AI Coach's Markdown
