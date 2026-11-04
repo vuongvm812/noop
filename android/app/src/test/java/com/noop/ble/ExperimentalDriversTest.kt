@@ -174,15 +174,12 @@ class ExperimentalDriversTest {
         assertEquals(SourceKind.garmin, ExperimentalBrand.GARMIN.sourceKind)
     }
 
-    /** A Huawei Band 10 row is non-WHOOP; the coordinator holds it on the not-yet-connectable placeholder. */
+    /** A Huawei Band 10 row is non-WHOOP; the coordinator routes it to its own HuaweiSource. */
     @Test
     fun huaweiRowIsHuaweiKindNonWhoop() {
         val band = row("huawei-1", "Huawei", SourceKind.huawei)
         assertFalse(SourceCoordinator.isWhoop(band))
         assertFalse(SourceCoordinator.isWhoop("huawei-1", listOf(band)))
         assertEquals("huawei", SourceKind.huawei.name)
-        val placeholder = HuaweiPlaceholderSource("huawei-1")
-        assertTrue(placeholder.needsPairing.value)
-        assertFalse(placeholder.isConnectable)
     }
 }

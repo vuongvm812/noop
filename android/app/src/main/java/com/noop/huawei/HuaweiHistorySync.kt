@@ -227,7 +227,7 @@ class HuaweiHistorySync(
                 val start = since(HuaweiDataType.STRESS)
                 val request = HuaweiFileRequest("rrisqi_data.bin", HuaweiFileRequest.TYPE_RRI, start, now,
                     oldSyncType = HuaweiFileRequest.OLD_RRI)
-                when (val r = files.download(request, newSync = caps.fileSync?.rriFileSync == true)) {
+                when (val r = files.download(request, newSync = caps.settings?.rriFileSync == true)) {
                     is HuaweiFileOutcome.Downloaded -> stress.addAll(HuaweiStressDecoder.rriFile(r.bytes))
                     HuaweiFileOutcome.Empty -> Unit
                     is HuaweiFileOutcome.Failed -> { failures.add("stress: ${r.reason}"); return@stream }
@@ -392,7 +392,7 @@ class HuaweiHistorySync(
                 samples.addAll(HuaweiWorkoutDecoder.samples(header, data, innerBitmap, innerLength))
             }
             var gps = emptyList<HuaweiWorkoutDecoder.GpsPoint>()
-            if (caps.fileSync?.gpsFileSync == true) {
+            if (caps.settings?.gpsFileSync == true) {
                 when (val r = files.download(HuaweiFileRequest("${h.number}_gps.bin", HuaweiFileRequest.TYPE_GPS), newSync = true)) {
                     is HuaweiFileOutcome.Downloaded -> gps = HuaweiWorkoutDecoder.gpsFile(r.bytes)
                     HuaweiFileOutcome.Empty -> Unit
@@ -418,6 +418,9 @@ class HuaweiHistorySync(
     }
 
     companion object {
+        /** True only when the band answered 01/37 with [bit] set. */
+        private fun HuaweiCapabilities.hasExpand(bit: Int): Boolean = expand?.has(bit) == true
+
         /** 01/37 expand-capability bits (Gadgetbridge `HuaweiState`). */
         const val EXPAND_SKIN_TEMPERATURE = 0x1D
         const val EXPAND_NEW_SLEEP = 143

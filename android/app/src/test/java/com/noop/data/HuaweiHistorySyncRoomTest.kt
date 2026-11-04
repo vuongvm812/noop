@@ -75,7 +75,7 @@ class HuaweiHistorySyncRoomTest {
         ),
         expand = if (sleepFile) expand(HuaweiHistorySync.EXPAND_NEW_SLEEP, HuaweiHistorySync.EXPAND_HRV, HuaweiHistorySync.EXPAND_SKIN_TEMPERATURE)
             else expand(HuaweiHistorySync.EXPAND_HRV, HuaweiHistorySync.EXPAND_SKIN_TEMPERATURE),
-        fileSync = HuaweiSettingRelated(truSleepFileSync = newSync, rriFileSync = newSync, gpsFileSync = false),
+        settings = HuaweiSettingRelated(truSleepFileSync = newSync, rriFileSync = newSync, gpsFileSync = false),
     )
 
     private fun sleepFile(): ByteArray {
@@ -305,7 +305,7 @@ class HuaweiHistorySyncRoomTest {
     fun emptyFilesAndMissingCapabilitiesStoreNothingAndStillAdvance() {
         val s = session(HuaweiHistoryBand.Script())
         val summary = sync(s, HuaweiCapabilities(commands = mapOf(0x07 to setOf(0x16), 0x20 to setOf(0x09)),
-            expand = expand(HuaweiHistorySync.EXPAND_NEW_SLEEP), fileSync = HuaweiSettingRelated(true, true, false)))
+            expand = expand(HuaweiHistorySync.EXPAND_NEW_SLEEP), settings = HuaweiSettingRelated(true, true, false)))
         assertTrue(summary.empty)
         assertTrue(summary.failures.isEmpty())
         assertEquals(now, prefs.lastSync(band, HuaweiDataType.SLEEP_FILE))
@@ -374,8 +374,8 @@ class HuaweiHistorySyncRoomTest {
 
     @Test
     fun deletingTheBandsDataDropsItsRowsAndItsWatermarks() = runBlocking {
-        val registry = DeviceRegistry(db)
-        registry.sideStates.add(prefs)
+        val registry = DeviceRegistry(db, moveCredentials = { from, to -> prefs.moveDeviceState(from, to) },
+            dropSyncState = { prefs.dropDeviceState(it) })
         sync(session(script()))
         assertTrue(snapshot().values.all { it.isNotEmpty() })
         registry.deleteDeviceData(band)
@@ -386,8 +386,8 @@ class HuaweiHistorySyncRoomTest {
 
     @Test
     fun aReKeyMovesTheBandsRowsAndItsWatermarks() = runBlocking {
-        val registry = DeviceRegistry(db)
-        registry.sideStates.add(prefs)
+        val registry = DeviceRegistry(db, moveCredentials = { from, to -> prefs.moveDeviceState(from, to) },
+            dropSyncState = { prefs.dropDeviceState(it) })
         registry.add(PairedDeviceRow(id = band, brand = "Huawei", model = "Band 10", nickname = null,
             sourceKind = "huawei", capabilities = "hr", status = "active", addedAt = 1, lastSeenAt = 1))
         sync(session(script()))

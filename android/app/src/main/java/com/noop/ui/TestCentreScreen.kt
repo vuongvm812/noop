@@ -225,6 +225,12 @@ fun TestCentreScreen(vm: AppViewModel, onOpenGroundTruthCollector: () -> Unit = 
 
         GarminTestCentreCard(vm)
 
+        if (TestCentre.from(LocalContext.current).active(TestDomain.CONNECTION) ||
+            TestCentre.from(LocalContext.current).active(TestDomain.SOURCES)
+        ) {
+            HuaweiTestCentreCard(vm)
+        }
+
         SettingsSectionTC(
             icon = Icons.AutoMirrored.Filled.DirectionsWalk,
             title = stringResource(R.string.ground_truth_title),

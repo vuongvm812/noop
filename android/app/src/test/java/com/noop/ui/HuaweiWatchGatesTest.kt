@@ -12,7 +12,6 @@ import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.MetricArbitrationPolicy
 import com.noop.analytics.StressToday
 import com.noop.ble.ExperimentalBrand
-import com.noop.ble.HuaweiPlaceholderSource
 import com.noop.ble.SourceCoordinator
 import com.noop.data.MetricSeriesRow
 import com.noop.data.PairedDeviceRow
@@ -182,7 +181,7 @@ class HuaweiWatchGatesTest {
     // MARK: - Brand plumbing + routing
 
     @Test
-    fun bandIsASupportedWatchThatIsNotYetConnectable() {
+    fun bandIsASupportedWatchRoutedToItsOwnSource() {
         val brand = ExperimentalBrand.recognise("HUAWEI Band 10-A1B")
         assertEquals(ExperimentalBrand.HUAWEI, brand)
         assertEquals(SourceKind.huawei, brand?.sourceKind)
@@ -193,14 +192,5 @@ class HuaweiWatchGatesTest {
         assertFalse(SourceCoordinator.isWhoop(row))
         assertEquals(FusionSource.HUAWEI_WATCH, watchSourceOf(row))
         assertFalse("the Garmin panel stays Garmin-only", isGarminWatch(row))
-        val lines = ArrayList<String>()
-        val placeholder = HuaweiPlaceholderSource(band) { lines.add(it) }
-        placeholder.connect("AA")
-        placeholder.scan()
-        placeholder.stop()
-        assertTrue(placeholder.needsPairing.value)
-        assertFalse(placeholder.isConnectable)
-        assertEquals(2, lines.size)
-        assertTrue(lines.all { it.startsWith(HuaweiPlaceholderSource.NOT_CONNECTABLE) })
     }
 }

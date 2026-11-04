@@ -29,8 +29,7 @@ enum class ExperimentalBrand(val displayBrand: String) {
      *  detection attempt, then points honestly at file import. */
     OURA("Oura"),
     /** Huawei Band 10. A supported watch source like [GARMIN] (not the experimental tier); no live HR
-     *  stream in NOOP yet. Its protocol driver lands separately, so the coordinator reports it as not yet
-     *  connectable ([HuaweiPlaceholderSource]). */
+     *  stream (the band has no realtime channel); history arrives through [HuaweiSource]. */
     HUAWEI("Huawei");
 
     /** Whether this brand can stream LIVE heart rate at all, derived from the catalog (false for Oura — no

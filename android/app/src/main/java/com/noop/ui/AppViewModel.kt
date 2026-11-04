@@ -435,7 +435,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         garminSource.value?.syncNow()
     }
 
-    /** The ingested-file ledger keys for one Garmin watch (Test Centre sync readout). */
+    /** The active Huawei band source (null unless a Huawei band is the active device): the pairing wizard,
+     *  the band panel, the Live note and the Test Centre read its flows. */
+    val huaweiSource: StateFlow<com.noop.ble.HuaweiSource?> = noopApp.sourceCoordinator.huaweiSource
+
+    /** "Sync now" on the Huawei band panel (a sync when connected, otherwise a reconnect). */
+    fun huaweiSyncNow() {
+        huaweiSource.value?.syncNow()
+    }
+
+    /** A discovery-only Huawei scanner for the wizard: lists bands, never connects, persists nothing. */
+    fun makeHuaweiScanner(): com.noop.ble.HuaweiScanner =
+        com.noop.ble.HuaweiScanner(appContext, log = { ble.externalLog(it) })
+
+    /**
+     * The pairing wizard's one entry into a Huawei first pairing. Stores the optional account id, then hands
+     * [grant] to the band's source: directly when that band is already the live source (a retry or "Pair
+     * again"), otherwise armed for the coordinator to pass on when it builds the source as the band becomes
+     * active.
+     */
+    suspend fun pairHuaweiBand(
+        device: com.noop.data.PairedDeviceRow,
+        accountId: String?,
+        grant: com.noop.huawei.protocol.HuaweiFirstPairingGrant,
+    ) {
+        runCatching { com.noop.ble.HuaweiKeyStore.of(appContext).setAccountId(device.id, accountId) }
+        val live = huaweiSource.value
+        if (live != null && live.deviceId == device.id) {
+            live.beginFirstPairing(grant)
+        } else {
+            com.noop.ble.HuaweiPairingRequests.arm(device.id, grant)
+            registerDevice(device, makeActive = true)
+        }
+    }
+
+
     suspend fun garminIngestedKeys(deviceId: String): Set<com.noop.garmin.GarminSyncFileKey> =
         runCatching {
             com.noop.data.GarminHistoryIngest.syncedKeys(

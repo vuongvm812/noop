@@ -7,10 +7,10 @@ import com.noop.huawei.HuaweiSyncCursor
 
 /**
  * Huawei history-sync state in the `noop_huawei_sync` SharedPreferences, every key prefixed by the band's
- * device id (`<deviceId>|…`), so a registry re-key or forget moves or drops one band's state alone
- * ([moveDeviceState], [dropDeviceState]). Kotlin-only; Swift twin deferred (fork).
+ * device id (`<deviceId>|…`), so a registry re-key or data wipe moves or drops one band's state alone
+ * ([moveDeviceState], [dropDeviceState], wired as [DeviceRegistry]'s hooks). Kotlin-only; Swift twin deferred (fork).
  */
-class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor, DeviceRegistry.DeviceSideState {
+class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor {
 
     private fun key(deviceId: String, name: String) = "$deviceId|$name"
 
@@ -38,7 +38,7 @@ class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor, 
     }
 
     /** Moves every key of [from] onto [to] (replacing [to]'s), so a re-keyed band keeps its watermarks. */
-    override fun moveDeviceState(from: String, to: String) {
+    fun moveDeviceState(from: String, to: String) {
         if (from == to) return
         val moved = prefs.all.filterKeys { it.startsWith("$from|") }
         if (moved.isEmpty()) return
@@ -58,7 +58,7 @@ class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor, 
     }
 
     /** Drops every key of [id], so a forgotten or wiped band starts again from the first backfill. */
-    override fun dropDeviceState(id: String) {
+    fun dropDeviceState(id: String) {
         val edit = prefs.edit()
         prefs.all.keys.filter { it.startsWith("$id|") }.forEach { edit.remove(it) }
         edit.apply()

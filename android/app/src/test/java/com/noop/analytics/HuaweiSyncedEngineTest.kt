@@ -124,7 +124,7 @@ class HuaweiSyncedEngineTest {
         return HuaweiCapabilities(
             commands = mapOf(0x07 to setOf(0x0A, 0x0B, 0x16), 0x34 to setOf(0x01)),
             expand = HuaweiExpandCapabilities(bits),
-            fileSync = HuaweiSettingRelated(truSleepFileSync = true, rriFileSync = true, gpsFileSync = false),
+            settings = HuaweiSettingRelated(truSleepFileSync = true, rriFileSync = true, gpsFileSync = false),
         )
     }
 

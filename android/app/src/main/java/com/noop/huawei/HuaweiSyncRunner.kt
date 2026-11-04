@@ -4,50 +4,39 @@ import com.noop.huawei.protocol.HuaweiExpandCapabilities
 import com.noop.huawei.protocol.HuaweiLink
 import com.noop.huawei.protocol.HuaweiSettingRelated
 
-// The seam between the Huawei BLE source (#81) and history sync (#82). Named in both briefs as
-// `HuaweiSyncRunner { suspend fun sync(link, capabilities, deviceId) }`; #81 calls it once the link is
-// authenticated and the capability exchange is done. Kotlin-only; Swift twin deferred (fork).
-
 /**
- * What the band said it can do, from the capability exchange: [commands] is service → supported command
- * ids (01/03), [expand] the 01/37 bitmap, [fileSync] the 01/31 file-sync bits. A missing part reads as
- * "not supported".
+ * What the band said it supports on this connection, gathered by the source before it reports READY.
+ * Every field can be empty or null: a band that refused (or never answered) one of the capability reads
+ * still reaches READY, and a sync engine must treat a missing answer as "unknown", not "unsupported".
  */
 data class HuaweiCapabilities(
+    /** Services the band answered 1 for in SupportedServices 01/02. */
+    val services: Set<Int> = emptySet(),
+    /** Service -> command ids the band answered 1 for in SupportedCommands 01/03. */
     val commands: Map<Int, Set<Int>> = emptyMap(),
+    /** ExpandCapabilities 01/37, or null when the band did not answer it. */
     val expand: HuaweiExpandCapabilities? = null,
-    val fileSync: HuaweiSettingRelated? = null,
+    /** SettingRelated 01/31 file-sync bits, or null when the band did not answer it. */
+    val settings: HuaweiSettingRelated? = null,
 ) {
+    /** True only when the band confirmed [commandId] under [serviceId]. */
     fun supports(serviceId: Int, commandId: Int): Boolean = commands[serviceId]?.contains(commandId) == true
+}
 
-    fun hasExpand(bit: Int): Boolean = expand?.has(bit) == true
+/**
+ * The seam between the BLE source and the history sync engine. The source calls [sync] once the link is
+ * authenticated and READY (on connect and on "Sync now"), with the encrypted [link], what the band
+ * reported in [capabilities], and the registry [deviceId] rows must be stored under. A normal return marks
+ * the sync complete; a throw is logged and leaves the last-sync time unchanged. The source never runs two
+ * syncs at once.
+ */
+fun interface HuaweiSyncRunner {
+    suspend fun sync(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String)
 
     companion object {
-        /**
-         * The commands history sync gates on, per service, for the 01/03 request: the same lists
-         * Gadgetbridge asks for (`DeviceConfig.java`), so a band answers them as it answers it.
-         */
-        val PROBE_COMMANDS: Map<Int, ByteArray> = linkedMapOf(
-            0x07 to bytes(0x01, 0x03, 0x05, 0x07, 0x08, 0x09, 0x0A, 0x0E, 0x10, 0x13, 0x16, 0x15, 0x17, 0x18, 0x1B, 0x1C,
-                0x1D, 0x1E, 0x21, 0x22, 0x23, 0x24, 0x25, 0x28, 0x29, 0x06, 0x1F),
-            0x0A to bytes(0x01, 0x09, 0x0A),
-            0x17 to bytes(0x01, 0x04, 0x06, 0x07, 0x0B, 0x0C, 0x10, 0x12, 0x15, 0x17),
-            0x20 to bytes(0x01, 0x02, 0x03, 0x04, 0x09, 0x0A),
-            0x34 to bytes(0x01),
-        )
-
-        private fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+        /** Until the sync engine is wired: connects, reads device info, syncs nothing. */
+        val NONE: HuaweiSyncRunner = HuaweiSyncRunner { _, _, _ -> }
     }
-}
-
-/** Runs one history sync over an authenticated link. */
-interface HuaweiSyncRunner {
-    suspend fun sync(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String)
-}
-
-/** Syncs nothing: the default until the real runner is wired in. */
-object NoopHuaweiSyncRunner : HuaweiSyncRunner {
-    override suspend fun sync(link: HuaweiLink, capabilities: HuaweiCapabilities, deviceId: String) = Unit
 }
 
 /** Each history stream with its own watermark. */

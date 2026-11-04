@@ -1462,22 +1462,6 @@
     {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistry.kt::dropDeviceState/1#1",
-      "identity_sha256": "d5d50a8dac4cc0d1e91b16abb25d1c073ac0159f719f7fc706417e3e437cf342",
-      "platform": "kotlin",
-      "rationale": "Huawei Band 10 sync-state hook on the device registry (dropDeviceState/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
-    },
-    {
-      "type": "platform_specific",
-      "kind": "add-unpaired-function",
-      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/DeviceRegistry.kt::moveDeviceState/2#1",
-      "identity_sha256": "73526c4b6783deb88e3e381617dbbff63c362e8595170629d8154989042cd254",
-      "platform": "kotlin",
-      "rationale": "Huawei Band 10 sync-state hook on the device registry (moveDeviceState/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
-    },
-    {
-      "type": "platform_specific",
-      "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::exec/2#1",
       "identity_sha256": "8ae4a21b16375e980caebe3db8b40657755e61b07db63c7f56116dc0b795f5bb",
       "platform": "kotlin",
