@@ -44,7 +44,8 @@ internal object StressTodayLoader {
         if (garminOnly != null && StressToday.prefersWatch(activeDeviceId)) return garminOnly
 
         val curve = StressWidgetProducer.todayCurve(repo, activeDeviceId, personalBaseline, nowSeconds, zone)
-        val timeline = curve?.points.orEmpty().mapNotNull { p -> p.level?.let { StressToday.Point(p.ts, it) } }
+        // The whole day (#94), night hours included, so the latest level stays live overnight.
+        val timeline = curve?.dayPoints.orEmpty().mapNotNull { p -> p.level?.let { StressToday.Point(p.ts, it) } }
         return StressToday.resolve(activeDeviceId, samples, watchDay, importDay, timeline, curve?.dayMean)
     }
 

@@ -586,14 +586,14 @@ fun TodayScreen(
     var showHostedEditor by remember { mutableStateOf(false) }
     var enabledHostedCards by remember { mutableStateOf(HostedCardPrefs.enabled(context)) }
 
-    // The pinned "Your cards" values (Stress / Fitness age / Vitality), surfaced on Today so the buried
+    // The pinned "Your cards" values (Fitness age / Vitality / VO2max), surfaced on Today so the buried
     // Explore features sit on the home screen (#582). The same merged resolvedSeries reads their detail
-    // screens use; null simply renders a dash on that card. Mirror the iOS Today lane's stressToday /
-    // fitnessAgeToday / vitalityToday loads (last resolved value over all history). Loaded off the main
-    // thread; re-read as the data grows.
+    // screens use; null simply renders a dash on that card. Mirror the iOS Today lane's fitnessAgeToday /
+    // vitalityToday loads (last resolved value over all history). Re-read as the data grows. The pinned
+    // Stress row is NOT read here any more (#94): it prints the intraday `stressReading` the Key Metrics
+    // tile prints (see below), not the overnight StressModel score.
     // #849: seed from the ViewModel cache so a re-mount restores the pinned-card numbers instead of flashing
-    // dashes while the heavy history-wide read is (now) skipped for unchanged data.
-    var stressToday by remember { mutableStateOf(viewModel.todayStressCache) }
+    // dashes while the history-wide read is skipped for unchanged data.
     var fitnessAgeToday by remember { mutableStateOf(viewModel.todayFitnessAgeCache) }
     var vo2maxToday by remember { mutableStateOf(viewModel.todayVo2maxCache) }
     var vitalityToday by remember { mutableStateOf(viewModel.todayVitalityCache) }
@@ -604,31 +604,12 @@ fun TodayScreen(
         val sig = days.hashCode()
         if (viewModel.todayCardsLoadedSig == sig) return@LaunchedEffect
         // Read each pinned card from the SAME source its own detail screen reads, the proven path that
-        // already shows real numbers there (and the resolution iOS's exploreSeries uses). Stress is derived
-        // from the imported strap data (StressScreen reads "my-whoop"); Fitness age + Vitality are
-        // NOOP-COMPUTED weekly scores the IntelligenceEngine writes under "<activeStrapId>-noop". Read them
-        // through the computed UNION (active strap's sibling + canonical "my-whoop-noop"), the same helper
-        // HealthScreen uses — a hardcoded "my-whoop-noop" misses a live-BLE strap's "whoop-<mac>-noop" (#349).
-        // Take the latest value (series are day-ascending), null → the card shows a dash, never a fabricated number.
-        // #753: build the SAME StressModel the detail screen (StressScreen) shows and take `model.score`,
-        // rather than the stress series' last banked row. StressModel.build prefers today's stored stress row
-        // but otherwise DERIVES today's score from the live `days` RHR/HRV baseline; the old `.lastOrNull()`
-        // read returned the latest *banked* day, so on a day with no stored stress row the pinned card sat on
-        // yesterday's number (e.g. "2") while the detail page moved on. Reading the stored series the same way
-        // StressScreen does (day → value, clamped 0–3) and feeding the same `days` ties the two together; both
-        // recompute off `days`, so the pinned card stays in sync. null (no usable signal) keeps the honest
-        // "Calibrating" placeholder, matching StressScreen's empty state.
-        // OFF the main thread. This reads the stress series over ALL history and then builds a model
-        // that is O(n) across it, and a LaunchedEffect body runs on the UI thread, so on an install with
-        // a long history it was holding frames on the home screen. The three reads below it are indexed
-        // single-row lookups and are left as they are.
-        stressToday = runCatching {
-            withContext(Dispatchers.Default) {
-                val stored = viewModel.repo.metricSeries("my-whoop", "stress", "0000-01-01", "9999-12-31")
-                    .associate { it.day to it.value.coerceIn(0.0, 3.0) }
-                StressModel.build(days, stored)?.score
-            }
-        }.getOrNull()
+        // already shows real numbers there (and the resolution iOS's exploreSeries uses). Fitness age +
+        // Vitality are NOOP-COMPUTED weekly scores the IntelligenceEngine writes under "<activeStrapId>-noop".
+        // Read them through the computed UNION (active strap's sibling + canonical "my-whoop-noop"), the same
+        // helper HealthScreen uses — a hardcoded "my-whoop-noop" misses a live-BLE strap's "whoop-<mac>-noop"
+        // (#349). Take the latest value (series are day-ascending), null → the card shows a dash, never a
+        // fabricated number. These are indexed single-row lookups.
         fitnessAgeToday = runCatching {
             viewModel.repo.latestMetricComputedUnion(viewModel.activeStrapId, "fitness_age")?.value
         }.getOrNull()
@@ -640,7 +621,6 @@ fun TodayScreen(
         }.getOrNull()
         // Cache the computed triple + signature so a later re-mount with unchanged data restores them and
         // short-circuits the history-wide read above.
-        viewModel.todayStressCache = stressToday
         viewModel.todayFitnessAgeCache = fitnessAgeToday
         viewModel.todayVo2maxCache = vo2maxToday
         viewModel.todayVitalityCache = vitalityToday
@@ -897,10 +877,12 @@ fun TodayScreen(
     LaunchedEffect(weightLogSeq) {
         weightLog = runCatching { WeightLogStore.entries(viewModel.repo) }.getOrDefault(emptyList())
     }
-    // #57: today's stress for the Key Metrics Stress tile, through the same StressTodayLoader the Stress
-    // screen's summary card reads, so the tile and the card print one reading. Today only.
+    // #57/#94: today's stress for the Key Metrics Stress tile AND the pinned "Your cards" Stress row,
+    // through the same StressTodayLoader the Stress screen's summary card reads, so all three print one
+    // reading. Today only.
     var stressReading by remember { mutableStateOf<StressToday.Reading?>(null) }
-    val stressTileShown = KeyMetric.STRESS in enabledKeyMetrics
+    val stressTileShown = KeyMetric.STRESS in enabledKeyMetrics ||
+        DashboardCard.STRESS in enabledDashboardCards
     LaunchedEffect(days, viewModel.activeStrapId, selectedDayOffset, stressTileShown) {
         stressReading = if (selectedDayOffset == 0 && stressTileShown) {
             runCatching {
@@ -1983,7 +1965,7 @@ fun TodayScreen(
                             hrvDay = lastHrvDay,
                             rhrDay = lastRestingHrDay,
                             respDay = lastRespDay,
-                            stress = stressToday,
+                            stress = if (selectedDayOffset == 0) stressReading else null,
                             fitnessAge = fitnessAgeToday,
                             vo2max = vo2maxToday,
                             vitality = vitalityToday,
@@ -4318,7 +4300,7 @@ private fun YourCardsSection(
     hrvDay: DailyMetric?,
     rhrDay: DailyMetric?,
     respDay: DailyMetric?,
-    stress: Double?,
+    stress: StressToday.Reading?,
     fitnessAge: Double?,
     vo2max: Double?,
     vitality: Double?,
@@ -4547,7 +4529,7 @@ private fun dashboardCardFraction(
     carriedDay: DailyMetric?,
     vitalsDay: DailyMetric?,
     respDay: DailyMetric?,
-    stress: Double?,
+    stress: StressToday.Reading?,
     fitnessAge: Double?,
     vo2max: Double?,
     vitality: Double?,
@@ -4557,7 +4539,8 @@ private fun dashboardCardFraction(
     fun over(v: Double?, ceiling: Double): Double? = v?.let { (it / ceiling).coerceIn(0.0, 1.0) }
     val vd = carriedDay ?: day
     return when (card) {
-        DashboardCard.STRESS -> over(stress, 3.0)
+        // #94: the intraday reading on its own scale, the same fill the Key Metrics tile draws.
+        DashboardCard.STRESS -> stressCardFraction(stress)
         DashboardCard.FITNESS_AGE -> if (fitnessAge != null) 0.5 else null
         DashboardCard.VO2MAX -> if (vo2max != null) 0.5 else null
         DashboardCard.VITALITY -> over(vitality, 100.0)
@@ -4606,7 +4589,7 @@ private fun dashboardCardValue(
     hrvDay: DailyMetric?,
     rhrDay: DailyMetric?,
     respDay: DailyMetric?,
-    stress: Double?,
+    stress: StressToday.Reading?,
     fitnessAge: Double?,
     vo2max: Double?,
     vitality: Double?,
@@ -4681,11 +4664,10 @@ private fun dashboardCardValue(
         DashboardCard.CALORIES ->
             withUnit(caloriesForDay?.let { intStringGrouped(it) } ?: NO_DATA)
         DashboardCard.STRESS ->
-            // #706/#684: Stress is baseline-relative, so until the strap has banked enough worn nights to
-            // seed the 30-day RHR/HRV baseline StressScreen reads, the front card has no number to show. The
-            // old `?: NO_DATA` rendered a bare dash that read like a broken card; show the honest calibrating
-            // state instead, matching the owner's reply on #706 and the StressScreen empty/calibrating copy.
-            stress?.let { it.roundToInt().toString() } ?: STRESS_CALIBRATING
+            // #94: today's INTRADAY reading, the same funnel and text as the Key Metrics tile ("1.4/3",
+            // "37/100"), not the overnight StressModel score. #706/#684: no reading yet keeps the honest
+            // calibrating state rather than a bare dash that reads like a broken card.
+            stressCardText(stress) ?: STRESS_CALIBRATING
         DashboardCard.FITNESS_AGE ->
             // Carries the bound symbol the Health hero uses (#2173), so a floored reading does not read
             // as an exact one here and as a bounded one there.

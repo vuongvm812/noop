@@ -55,7 +55,6 @@ struct LiquidTodayView: View {
     @State private var restScore: Double?          // sleep_performance, day-keyed
     /// Input providers for the three scores, keyed by recovery / strain / sleep_performance.
     @State private var heroProviderByMetric: [String: ScoreInputProvider] = [:]
-    @State private var stress: Double?             // StressModel(...).score, 0–3
     @State private var fitnessAge: Double?         // exploreSeries("fitness_age").last
     @State private var vo2max: Double?             // exploreSeries("vo2max_est").last (#1391)
     @State private var vitality: Double?           // exploreSeries("vitality").last
@@ -482,7 +481,7 @@ struct LiquidTodayView: View {
             await load()
         }
         // #57: the Weight tile re-reads on a diary write (weightLogSeq), the Stress tile on a refresh.
-        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)") {
+        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)-\(dashboardCardsRaw)") {
             await reloadKeyMetricExtras()
         }
         .sheet(isPresented: $showWeightLog) {
@@ -1019,8 +1018,10 @@ struct LiquidTodayView: View {
         case .stepsAverage30:
             RollingStepsAverageCard(day: selectedDayKey)
         case .stress:
+            // #94: today's INTRADAY reading, the same funnel and text as the Key Metrics tile.
             cardLink(.stress, title: card.title, sub: card.subtitle,
-                     value: stressText, tint: StrandPalette.accent, frac: fracOver(stress, 3))
+                     value: stressText, tint: StrandPalette.accent,
+                     frac: StressSummaryCard.cardFraction(selectedDayOffset == 0 ? stressReading : nil))
         case .fitnessAge:
             cardLink(.metric("fitness_age"), title: card.title, sub: card.subtitle,
                      // Bound symbol as on the Health hero (#2173), so a floored reading does not read
@@ -1811,7 +1812,6 @@ struct LiquidTodayView: View {
         liveTodayStrain = liveStrainLocal
 
         async let restA = repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
-        async let stressA = repo.series(key: "stress", source: "my-whoop")
         async let fitA = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
         async let vo2A = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
         async let vitA = repo.exploreSeries(key: "vitality", source: "my-whoop")
@@ -1846,9 +1846,6 @@ struct LiquidTodayView: View {
             todayValue: restByDay[selectedDayKey], lastDay: restSeries.last?.day,
             lastValue: restSeries.last?.value, isTodaySelected: selectedDayOffset == 0,
             todayKey: selectedDayKey)
-        // StressModel loops the full history to build its baseline — run it OFF the main actor so a big
-        // history doesn't stutter the UI. Snapshot the inputs (value types) into the detached task.
-        let storedStress = await stressA
         let daysSnapshot = repo.days
 
         // #430 parity: the day-keyed series the DETAILED Key-Metrics tiles graph — a trailing CALENDAR
@@ -1893,9 +1890,6 @@ struct LiquidTodayView: View {
                 .map { ($0.day, $0.value) },
             "weight": (await weightA).filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey },
         ]
-        stress = await Task.detached(priority: .utility) {
-            StressModel(days: daysSnapshot, stored: storedStress)?.score
-        }.value
         fitnessAge = (await fitA).last?.value   // history-wide latest banked (not day-scoped)
         vo2max = (await vo2A).last?.value        // #1391: latest banked VO₂max estimate
         vitality = (await vitA).last?.value
@@ -1975,7 +1969,8 @@ struct LiquidTodayView: View {
                 repo: repo,
                 personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
             )?.result
-            hostedStressHours = result?.timeline ?? []
+            // Waking hours only (#94), as the classic Today, the widget and the Android card draw it.
+            hostedStressHours = result?.timeline.filter { !$0.asleep } ?? []
             hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
         } else {
             hostedStressHours = []
@@ -2145,7 +2140,9 @@ struct LiquidTodayView: View {
         return unit.isEmpty ? n : "\(n) \(unit)"
     }
 
-    private var stressText: String { stress.map { String(Int($0.rounded())) } ?? String(localized: "Calibrating") }
+    private var stressText: String {
+        StressSummaryCard.cardText(selectedDayOffset == 0 ? stressReading : nil) ?? String(localized: "Calibrating")
+    }
 
     private var sleepText: String {
         guard let m = displayDay?.totalSleepMin else { return "–" }
@@ -2201,7 +2198,9 @@ struct LiquidTodayView: View {
     /// diary plus Apple Health weigh-ins the Weight tile resolves between. Twin of the classic TodayView's.
     private func reloadKeyMetricExtras() async {
         let enabled = Set(enabledKeyMetrics)
-        if enabled.contains(.stress), selectedDayOffset == 0 {
+        // #94: the pinned "Your cards" Stress row prints the same reading, so it loads it too.
+        if enabled.contains(.stress) || DashboardCardPrefs.decodeEnabled(dashboardCardsRaw).contains(.stress),
+           selectedDayOffset == 0 {
             stressReading = await StressTodayLoader.load(repo: repo)
         } else {
             stressReading = nil

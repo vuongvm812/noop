@@ -12,14 +12,8 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.noop.R
@@ -36,30 +30,18 @@ import kotlin.math.roundToInt
  *
  * The latest level, today's average, a small intraday sparkline and the source (Garmin's own 0-100
  * stress, or NOOP's 0-3 proxy), at the top of the Stress screen. The Today Key Metrics Stress tile (#57)
- * reads the SAME [StressTodayLoader] → [StressToday.resolve] and taps through to this screen, so the two
- * readouts cannot disagree. Twin of macOS `StressSummaryCard` (Strand/Screens/StressSummaryCard.swift).
+ * and the pinned "Your cards" Stress row (#94) read the SAME [StressTodayLoader] → [StressToday.resolve]
+ * and tap through to this screen, so the readouts cannot disagree. Twin of macOS `StressSummaryCard`
+ * (Strand/Screens/StressSummaryCard.swift).
  *
- * [refreshKey] re-reads when Today's data refreshes (a resume or sync moves it).
+ * [reading] is handed in by the Stress screen, which also draws its hero gauge from it (#94): one read,
+ * two figures, rather than two reads that could land a fingerprint apart.
  */
 @Composable
 fun StressSummaryCard(
-    viewModel: AppViewModel,
-    refreshKey: Any?,
+    reading: StressToday.Reading?,
+    loaded: Boolean,
 ) {
-    val context = LocalContext.current
-    var reading by remember { mutableStateOf<StressToday.Reading?>(null) }
-    var loaded by remember { mutableStateOf(false) }
-
-    LaunchedEffect(refreshKey, viewModel.activeStrapId) {
-        reading = runCatching {
-            StressTodayLoader.load(
-                viewModel.repo,
-                viewModel.activeStrapId,
-                personalBaseline = NoopPrefs.stressPersonalBaseline(context),
-            )
-        }.getOrNull()
-        loaded = true
-    }
 
     NoopCard(tint = Palette.stressColor) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -151,9 +133,27 @@ internal fun formatStressSummaryValue(value: Double, source: StressToday.Source)
     StressToday.Source.NOOP -> StressTrace.formatLevel(value)
 }
 
+/**
+ * The figure the Key Metrics Stress tile and the pinned "Your cards" Stress row both print (#94): the latest
+ * level on its own scale, "1.4/3" or "37/100", built from the same two parts the tile prints. Null when the
+ * reading has no level. Swift twin: `StressSummaryCard.cardText`.
+ */
+internal fun stressCardText(reading: StressToday.Reading?): String? {
+    val level = StressToday.tileLevel(reading) ?: return null
+    val r = reading ?: return null
+    return formatStressSummaryValue(level, r.source) + stressScaleSuffix(r.scaleMax)
+}
+
+/** The row's 0..1 fill for the same level, on the reading's own scale. Swift twin: `cardFraction`. */
+internal fun stressCardFraction(reading: StressToday.Reading?): Double? {
+    val level = StressToday.tileLevel(reading) ?: return null
+    val r = reading ?: return null
+    return (level / r.scaleMax).coerceIn(0.0, 1.0)
+}
+
 /** "/100" or "/3": the scale the figure is on. A number, so nothing to translate. */
 internal fun stressScaleSuffix(scaleMax: Double): String = "/" + scaleMax.toInt()
 
-private fun stressTimeLabel(ts: Long): String =
+internal fun stressTimeLabel(ts: Long): String =
     DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
         .format(Instant.ofEpochSecond(ts).atZone(ZoneId.systemDefault()))

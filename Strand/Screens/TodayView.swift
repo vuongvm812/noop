@@ -329,11 +329,11 @@ struct TodayView: View {
     @State private var appleDays: [AppleDaily] = []
     // Design Reset / #582, the pinned "Your cards" values (Stress / Fitness age / Vitality), surfaced
     // on Today so the buried Explore features sit on the home screen. Loaded in loadAll; nil hides the row.
-    @State private var stressToday: Double?
     @State private var fitnessAgeToday: Double?
     @State private var vo2maxToday: Double?   // #1391
-    /// #57: today's stress for the Key Metrics Stress tile, from the same `StressTodayLoader` the Stress
-    /// screen's summary card reads. Nil until loaded or when nothing scored today.
+    /// #57/#94: today's stress for the Key Metrics Stress tile AND the pinned "Your cards" Stress row, from
+    /// the same `StressTodayLoader` the Stress screen's summary card reads. Nil until loaded or when
+    /// nothing scored today.
     @State private var stressReading: StressToday.Reading?
     /// #57: the hand-logged weight diary and the Apple Health weigh-ins the Weight tile resolves between.
     @State private var weightLog: [WeightLog.Entry] = []
@@ -1584,8 +1584,9 @@ struct TodayView: View {
         // hydration fields. Cheap (one metricSeries row), never re-runs the heavy loads.
         .task(id: repo.hydrationSeq) { await reloadHydration() }
         // #57: the Weight tile re-reads on a diary write (weightLogSeq) as well as a data refresh, and the
-        // Stress tile re-reads on a refresh. Both are cheap next to loadAll.
-        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)") { await reloadKeyMetricExtras() }
+        // Stress tile re-reads on a refresh. Both are cheap next to loadAll. The pinned-cards selection is in
+        // the key too (#94): pinning the Stress row has to load the reading it prints.
+        .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)-\(dashboardCardsRaw)") { await reloadKeyMetricExtras() }
         .onChangeCompat(of: hydrationEnabled) { _ in Task { await reloadHydration() } }
         // #755: NO per-edge safety net here, on purpose. A deep offload segments into many slices that each
         // flip `backfilling` false→true, so re-running the heavy history-wide reads on that edge would re-fire
@@ -2797,7 +2798,10 @@ struct TodayView: View {
             // the 30-day RHR/HRV baseline StressView reads, there's no number to show. A bare ", " read like a
             // broken card; show the honest calibrating state instead, matching StressView's empty/calibrating
             // copy and the owner's reply on #706.
-            return stressToday.map { "\(Int($0.rounded()))" } ?? Self.calibratingPlaceholder
+            // #94: today's INTRADAY reading, the same funnel and the same text as the Key Metrics tile, not
+            // the overnight StressModel score. Today only: the reading is today's.
+            return StressSummaryCard.cardText(selectedDayOffset == 0 ? stressReading : nil)
+                ?? Self.calibratingPlaceholder
         case .fitnessAge:
             // Bound symbol as on the Health hero (#2173).
             return withUnit(fitnessAgeToday.map { "\(fitnessAgeBoundSymbol($0))\(Int($0.rounded()))" } ?? "—")
@@ -3966,11 +3970,11 @@ struct TodayView: View {
         }
     }
 
-    /// #57: load the Stress tile's reading (today only, and only when the tile is shown) and the weight
-    /// diary plus Apple Health weigh-ins the Weight tile resolves between.
+    /// #57: load the Stress reading (today only, and only when the tile or the pinned Stress row is shown)
+    /// and the weight diary plus Apple Health weigh-ins the Weight tile resolves between.
     private func reloadKeyMetricExtras() async {
         let enabled = Set(enabledKeyMetrics)
-        if enabled.contains(.stress), selectedDayOffset == 0 {
+        if enabled.contains(.stress) || enabledDashboardCards.contains(.stress), selectedDayOffset == 0 {
             stressReading = await StressTodayLoader.load(repo: repo)
         } else {
             stressReading = nil
@@ -4253,9 +4257,7 @@ struct TodayView: View {
             let level = StressToday.tileLevel(reading)
             StatTile(
                 label: "Stress",
-                value: level.flatMap { lv in
-                    reading.map { StressSummaryCard.format(lv, source: $0.source) + StressSummaryCard.scaleSuffix($0.scaleMax) }
-                } ?? "—",
+                value: StressSummaryCard.cardText(reading) ?? "—",
                 caption: reading.map { StressSummaryCard.sourceLabel($0.source) } ?? "",
                 accent: level == nil ? StrandPalette.textPrimary : StrandPalette.stressColor,
                 sparkline: reading.map { $0.points.map(\.level) },
@@ -4737,7 +4739,9 @@ struct TodayView: View {
             repo: repo,
             personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
         )?.result
-        hostedStressHours = result?.timeline ?? []
+        // Waking hours only (#94), the same series the widget and the Android card draw. The night hours
+        // are on the Stress screen's graph, shaded.
+        hostedStressHours = result?.timeline.filter { !$0.asleep } ?? []
         hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
     }
 
@@ -4833,17 +4837,6 @@ struct TodayView: View {
         async let appleDaysA         = repo.appleDailyRows()
         async let xStepsA            = repo.series(key: "steps", source: "xiaomi-band")
         async let xSleepA            = repo.series(key: "sleep_total_min", source: "xiaomi-band")
-        // #753: the pinned Stress card must read its number the SAME way StressView (the detail page) does,
-        // not off the merged stress series' last row. StressView builds `StressModel(days: repo.days,
-        // stored:)` and shows `model.score`, which PREFERS today's stored stress row but otherwise DERIVES
-        // today's score from the live `repo.days` RHR/HRV baseline. The old pinned read
-        // (`exploreSeries("stress").last`) returned the latest *banked* day instead, so when today had no
-        // stored stress row yet the pinned card sat on yesterday's number (e.g. "2") while the detail page
-        // moved to today's freshly-derived value. They diverged because they computed from different sources
-        // AND the pinned card never re-derived. Reading the SAME `repo.series` the detail uses, and building
-        // the SAME StressModel below, ties the pinned card to today's score; both then refresh on the shared
-        // `repo.refreshSeq` task key (loadAll's TodayLoadKey) and stay in sync.
-        async let stressStoredA      = repo.series(key: "stress", source: "my-whoop")
         async let fitnessAgeSeriesA  = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
         async let vo2maxSeriesA      = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
         async let vitalitySeriesA    = repo.exploreSeries(key: "vitality", source: "my-whoop")
@@ -4862,12 +4855,9 @@ struct TodayView: View {
         let xSteps = await xStepsA
         let xSleep = await xSleepA
         xiaomiDays = Set(xSteps.map(\.day) + xSleep.map(\.day)).count
-        // Your cards (#582 / Design Reset): Stress / Fitness age / Vitality for the pinned home cards.
-        // #753: Stress mirrors StressView. `StressModel(days:stored:).score` is TODAY's score (stored row
-        // preferred, else derived off the live RHR/HRV baseline), so the pinned card never lags the detail
-        // page on a day with no banked stress row. nil (no usable signal) keeps the honest "Calibrating"
-        // placeholder, matching StressView's empty state. Fitness age / Vitality keep their merged reads.
-        stressToday = StressModel(days: repo.days, stored: await stressStoredA)?.score
+        // Your cards (#582 / Design Reset): Fitness age / Vitality for the pinned home cards. Stress is not
+        // read here any more (#94): the pinned row prints the intraday `stressReading` the Key Metrics tile
+        // prints, loaded by `reloadKeyMetricExtras`, rather than the overnight StressModel score.
         fitnessAgeToday = (await fitnessAgeSeriesA).last?.value
         vo2maxToday = (await vo2maxSeriesA).last?.value   // #1391: latest banked VO₂max estimate
         vitalityToday = (await vitalitySeriesA).last?.value
@@ -4898,7 +4888,6 @@ struct TodayView: View {
             appleDays: appleDays,
             xiaomiDays: xiaomiDays,
             xiaomiSleeps: xiaomiSleeps,
-            stressToday: stressToday,
             fitnessAgeToday: fitnessAgeToday,
             vo2maxToday: vo2maxToday,
             vitalityToday: vitalityToday
@@ -4918,7 +4907,6 @@ struct TodayView: View {
         appleDays = c.appleDays
         xiaomiDays = c.xiaomiDays
         xiaomiSleeps = c.xiaomiSleeps
-        stressToday = c.stressToday
         fitnessAgeToday = c.fitnessAgeToday
         vo2maxToday = c.vo2maxToday
         vitalityToday = c.vitalityToday
@@ -5592,7 +5580,6 @@ struct TodayHistoryWideCache {
     let appleDays: [AppleDaily]
     let xiaomiDays: Int
     let xiaomiSleeps: Int
-    let stressToday: Double?
     let fitnessAgeToday: Double?
     let vo2maxToday: Double?
     let vitalityToday: Double?
