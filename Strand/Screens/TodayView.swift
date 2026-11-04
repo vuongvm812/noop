@@ -1587,6 +1587,19 @@ struct TodayView: View {
         // Stress tile re-reads on a refresh. Both are cheap next to loadAll. The pinned-cards selection is in
         // the key too (#94): pinning the Stress row has to load the reading it prints.
         .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)-\(dashboardCardsRaw)") { await reloadKeyMetricExtras() }
+        // #94: live banking does not bump `refreshSeq`, so the Stress tile, the pinned Stress row and the
+        // hosted curve also re-ask on a 10-minute tick while Today is on screen (the task ends when it is
+        // not). `StressDayCurve`'s heart-rate fingerprint gate makes an idle tick one indexed query.
+        .task(id: selectedDayOffset) {
+            guard selectedDayOffset == 0 else { return }
+            while !Task.isCancelled {
+                let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
+                let waitMs = StressDayCurve.msUntilNextTodayTick(nowMs: nowMs)
+                try? await Task.sleep(nanoseconds: UInt64(waitMs) * 1_000_000)
+                if Task.isCancelled { return }
+                await refreshLiveStress()
+            }
+        }
         .onChangeCompat(of: hydrationEnabled) { _ in Task { await reloadHydration() } }
         // #755: NO per-edge safety net here, on purpose. A deep offload segments into many slices that each
         // flip `backfilling` false→true, so re-running the heavy history-wide reads on that edge would re-fire
@@ -3967,6 +3980,16 @@ struct TodayView: View {
                 .accessibilityHint(Text("Log your weight"))
         default:
             tile
+        }
+    }
+
+    /// #94: the live tick's work. The hosted curve first, then the reading, so the reading's own call to
+    /// `StressDayCurve.today` lands on the memo the curve just filled rather than scoring the day twice.
+    private func refreshLiveStress() async {
+        guard selectedDayOffset == 0 else { return }
+        await loadHostedStress()
+        if Set(enabledKeyMetrics).contains(.stress) || enabledDashboardCards.contains(.stress) {
+            stressReading = await StressTodayLoader.load(repo: repo)
         }
     }
 
