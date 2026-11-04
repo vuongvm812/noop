@@ -2181,7 +2181,8 @@ object IntelligenceEngine {
         for (d in dailies) faGateByDay[d.day] = d
         val faGate7 = faGateByDay.values.sortedBy { it.day }.takeLast(7)
         val faSatKey = saturdayKeyOnOrBefore(newestDay)
-        val faWatchVo2 = watchVo2max(repo, importedDeviceId, faSatKey)
+        val faWatchId = activeGarminWatchId(repo, importedDeviceId)
+        val faWatchVo2 = faWatchId?.let { garminWatchVo2max(repo, it, faSatKey) }
         val faPts = fitnessAgeRows(faGate7, profile, computedId, faSatKey, faWatchVo2)
         // Strap-log proof: the RHR-night count the engine sees for the gate , should equal the "N of last 7
         // nights" the readiness card shows; `computed` says whether the value was (re)written this pass.
@@ -2192,6 +2193,7 @@ object IntelligenceEngine {
                 provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId, faWatchVo2),
             )
         }
+        faWatchId?.let { persistWatchVo2maxHistory(repo, it, computedId, faSatKey) }
 
         // ── Vitality / Body Age (Phase 7) , weekly, keyed to the week's Saturday ──
         // Roll the last 7 days' wearable signals into the mortality-hazard model; VitalityEngine gates on
@@ -3230,12 +3232,42 @@ object IntelligenceEngine {
     /** The active Garmin watch's own VO₂max for the week keyed [satKey], or null for any other device (#51).
      *  The watch is the registry's active device, not [deviceId]: the post-sync pass runs under the canonical
      *  "my-whoop" while a watch is active and would never find the watch's points (#70); [deviceId] is the
-     *  fallback when the registry names none. Swift twin: `IntelligenceEngine.watchVo2max`. */
-    suspend fun watchVo2max(repo: WhoopRepository, deviceId: String, satKey: String): Double? {
-        val watchId = repo.activeDeviceId() ?: deviceId
-        if (!FusionSource.isGarminWatchId(watchId)) return null
-        val points = repo.metricSeries(watchId, "vo2max", "0000-01-01", satKey).map { it.day to it.value }
-        return GarminScoringInputs.watchVo2max(points, satKey)
+     *  fallback when the registry names none. The watch's synced points come first; the Garmin export's fill
+     *  the days the watch lacks (#71). Swift twin: `IntelligenceEngine.watchVo2max`. */
+    suspend fun watchVo2max(repo: WhoopRepository, deviceId: String, satKey: String): Double? =
+        activeGarminWatchId(repo, deviceId)?.let { garminWatchVo2max(repo, it, satKey) }
+
+    /** The registry's active device (else [deviceId]) when it is a Garmin watch, else null (#70).
+     *  Swift twin: `IntelligenceEngine.activeGarminWatchId`. */
+    suspend fun activeGarminWatchId(repo: WhoopRepository, deviceId: String): String? =
+        (repo.activeDeviceId() ?: deviceId).takeIf { FusionSource.isGarminWatchId(it) }
+
+    /** [watchVo2max] for an already resolved [watchId]. Swift twin: `IntelligenceEngine.garminWatchVo2max`. */
+    suspend fun garminWatchVo2max(repo: WhoopRepository, watchId: String, satKey: String): Double? =
+        GarminScoringInputs.watchVo2max(garminVo2maxPoints(repo, watchId, satKey), satKey)
+
+    /** The Garmin VO₂max points on or before [to]: the watch's own, then the export's on the days the watch
+     *  has none ([GarminScoringInputs.vo2maxPoints]). Swift twin: `IntelligenceEngine.garminVo2maxPoints`. */
+    private suspend fun garminVo2maxPoints(repo: WhoopRepository, watchId: String, to: String): List<Pair<String, Double>> {
+        val watch = repo.metricSeries(watchId, "vo2max", "0000-01-01", to).map { it.day to it.value }
+        val imported = repo.metricSeries("garmin-import", "vo2max", "0000-01-01", to).map { it.day to it.value }
+        return GarminScoringInputs.vo2maxPoints(watch, imported)
+    }
+
+    /** Writes the Garmin VO₂max of every past week (before [beforeWeek]) the 28-day rule covers, tagged
+     *  `garmin` (#71). The current week goes through [fitnessAgeRows]; this pass covers the weeks before it,
+     *  so an export imported after pairing shows Garmin's numbers in the VO₂max history. [watchId] is the
+     *  resolved active watch ([activeGarminWatchId]). Idempotent. Swift twin: `IntelligenceEngine.persistWatchVo2maxHistory`. */
+    suspend fun persistWatchVo2maxHistory(repo: WhoopRepository, watchId: String, computedId: String, beforeWeek: String) {
+        if (!FusionSource.isGarminWatchId(watchId)) return
+        val weeks = GarminScoringInputs.watchVo2maxWeeks(garminVo2maxPoints(repo, watchId, beforeWeek), beforeWeek)
+        if (weeks.isEmpty()) return
+        repo.upsertMetricSeriesWithProvenance(
+            rows = weeks.map { (week, v) -> MetricSeriesRow(deviceId = computedId, day = week, key = "vo2max_est", value = v) },
+            provenance = weeks.map { (week, _) ->
+                ScoreInputProvenanceRow(deviceId = computedId, day = week, key = "vo2max_est", sourceId = Vo2MaxEstimator.GARMIN.provenanceId)
+            },
+        )
     }
 
     /** Method metadata for a newly computed VO₂max point. Empty when [rows] contains no VO₂max value.

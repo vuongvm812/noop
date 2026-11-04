@@ -184,7 +184,7 @@ object WearableExportImporter {
 
     internal fun detectBrand(files: Map<String, ByteArray>): Brand? {
         val names = files.keys
-        if (names.any { it.contains("sleepdata") || it.contains("di_connect") || it.contains("userbiometric") || it.contains("_summarizedactivities") }) return Brand.GARMIN
+        if (names.any { it.contains("sleepdata") || it.contains("di_connect") || it.contains("userbiometric") || it.contains("_summarizedactivities") || it.contains("maxmetdata") }) return Brand.GARMIN
         if (names.any { last(it).startsWith("sleep-") || last(it).startsWith("resting_heart_rate-") || last(it).startsWith("steps-") || it.contains("fitbit") }) return Brand.FITBIT
         if (names.any { it.contains("oura") }) return Brand.OURA
         // Oura CSV export (#857): the per-category files (`heartrate.csv` / `readiness.csv` / ...). Routing
@@ -637,9 +637,28 @@ object WearableExportImporter {
     /** A daily stress average on Garmin's 0-100 scale. Swift twin: `GarminExportParser.stress`. */
     private fun garminStress(v: Int?): Int? = v?.takeIf { it <= 100 }
 
+    /**
+     * True for a MaxMetData (VO2max) file, by name or by its `vo2MaxValue` records. Checked before the
+     * daily-summary branch, which would otherwise take it for a summary. Swift twin: `GarminExportParser.isMaxMet`.
+     */
+    private fun isGarminMaxMet(base: String, records: List<JSONObject>): Boolean =
+        base.lowercase().contains("maxmetdata") || records.any { it.has("vo2MaxValue") }
+
+    /**
+     * One day's VO2max from its MaxMetData records `(sport, value)`, which can span several files: the highest
+     * RUNNING value (what Garmin Connect shows), else the highest value of any sport. Non-positive values are
+     * ignored. Order-free, so file order cannot change it. Swift twin: `GarminExportParser.vo2max`.
+     */
+    internal fun garminVo2max(records: List<Pair<String?, Double>>): Double? {
+        val valid = records.filter { it.second > 0 && it.second.isFinite() }
+        val running = valid.filter { it.first?.uppercase() == "RUNNING" }
+        return (running.ifEmpty { valid }).maxOfOrNull { it.second }
+    }
+
     internal fun parseGarmin(files: Map<String, ByteArray>): Parsed {
         val byDay = LinkedHashMap<String, DayAcc>()
         val sleeps = ArrayList<SleepAcc>()
+        val vo2ByDay = HashMap<String, MutableList<Pair<String?, Double>>>()
         fun day(key: String) = byDay.getOrPut(key) { DayAcc(key) }
 
         for (name in garminFileOrder(files.keys)) {
@@ -649,7 +668,13 @@ object WearableExportImporter {
             val isSleep = base.contains("sleepdata") ||
                 records.any { it.has("deepSleepSeconds") || it.has("sleepStartTimestampGMT") || it.has("DeepSleepDurationInSeconds") }
 
-            if (isSleep) {
+            if (isGarminMaxMet(base, records)) {
+                for (r in records) {
+                    val key = r.strOpt("calendarDate") ?: continue
+                    val v = r.dblOpt("vo2MaxValue") ?: continue
+                    vo2ByDay.getOrPut(key) { ArrayList() }.add(r.strOpt("sport") to v)
+                }
+            } else if (isSleep) {
                 for (s in records) {
                     val session = garminSleep(s) ?: continue
                     val key = s.strOpt("calendarDate") ?: dayString(session.endTs)
@@ -680,6 +705,10 @@ object WearableExportImporter {
                     d.avgHrvMs = garminMetricValue(rec, "HRV") ?: d.avgHrvMs
                 }
             }
+        }
+        for ((key, records) in vo2ByDay) {
+            val v = garminVo2max(records) ?: continue
+            day(key).vo2max = v
         }
         return Parsed(byDay.values.sortedBy { it.day }, sleeps.sortedBy { it.startTs })
     }
@@ -917,7 +946,9 @@ object WearableExportImporter {
         val hints = listOf("sleep", "heart", "rate", "step", "stress", "activit", "readiness", "wellness",
             "rhr", "oura", "calorie", "spo2", "respiration", "temperature", "biometric", "summarizedactivities", "di_connect",
             // Garmin's newer export: daily summaries (UDSFile) and overnight HRV (healthStatusData).
-            "udsfile", "healthstatus")
+            "udsfile", "healthstatus",
+            // Garmin's VO2max history (DI-Connect-Metrics/MetricsMaxMetData_*.json).
+            "maxmetdata")
         return hints.any { name.contains(it) }
     }
 

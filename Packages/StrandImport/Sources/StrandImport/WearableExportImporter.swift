@@ -120,7 +120,7 @@ public struct WearableExportImporter {
         let names = Set(files.keys)
 
         // Garmin GDPR: the wellness folder + its *_sleepData.json / *_UserBioMetricProfileData files.
-        if names.contains(where: { $0.contains("sleepdata") || $0.contains("di_connect") || $0.contains("userbiometric") || $0.contains("_summarizedactivities") }) {
+        if names.contains(where: { $0.contains("sleepdata") || $0.contains("di_connect") || $0.contains("userbiometric") || $0.contains("_summarizedactivities") || $0.contains("maxmetdata") }) {
             return .garmin
         }
         // Fitbit Takeout: per-day sleep-*/resting_heart_rate-*/steps-* files under a Fitbit folder.
@@ -279,7 +279,9 @@ public struct WearableExportImporter {
                      "wellness", "rhr", "oura", "calorie", "spo2", "respiration", "temperature",
                      "biometric", "summarizedactivities", "di_connect",
                      // Garmin's newer export: daily summaries (UDSFile) and overnight HRV (healthStatusData).
-                     "udsfile", "healthstatus"]
+                     "udsfile", "healthstatus",
+                     // Garmin's VO2max history (DI-Connect-Metrics/MetricsMaxMetData_*.json).
+                     "maxmetdata"]
         return hints.contains(where: { name.contains($0) })
     }
 

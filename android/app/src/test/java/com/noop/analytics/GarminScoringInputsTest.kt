@@ -121,6 +121,25 @@ class GarminScoringInputsTest {
         for (week in listOf("2026-10-31", "2026-10-30", "2026-11-07", "2026-11-08", "2026-12-31", "bad")) {
             lines.add("vo2 $week ${GarminScoringInputs.watchVo2max(vo2Points, week)?.toString() ?: "nil"}")
         }
+        // #71: the watch's points first, the export's on the days the watch lacks; then every past week the
+        // 28-day rule covers.
+        val imported = listOf("2026-09-20" to 48.0, "2026-10-04" to 49.0, "2026-10-05" to 47.5,
+            "2026-10-06" to -1.0, "2026-09-01" to Double.NaN, "2026-09-02" to Double.POSITIVE_INFINITY)
+        val merged = GarminScoringInputs.vo2maxPoints(
+            listOf("2026-10-04" to 51.0, "2026-10-01" to 50.1, "2026-10-05" to 0.0), imported)
+        fun dump(points: List<Pair<String, Double>>) = points.joinToString(" ") { "${it.first}=${it.second}" }
+        lines.add("merge " + dump(merged))
+        lines.add("merge-watch-only " + dump(GarminScoringInputs.vo2maxPoints(vo2Points, emptyList())))
+        lines.add("merge-import-only " + dump(GarminScoringInputs.vo2maxPoints(emptyList(), imported)))
+        val weekSets = listOf(
+            merged, emptyList(), listOf("2026-10-03" to 44.0), listOf("2026-01-01" to 40.0, "2026-03-15" to 42.0),
+            listOf("2025-12-30" to 41.0, "2026-01-20" to -2.0),
+        )
+        for ((i, points) in weekSets.withIndex()) {
+            for (before in listOf("2026-11-07", "2026-10-03", "2026-02-07", "bad")) {
+                lines.add("weeks $i $before [" + dump(GarminScoringInputs.watchVo2maxWeeks(points, before)) + "]")
+            }
+        }
         return lines.joinToString("\n")
     }
 
@@ -766,6 +785,29 @@ class GarminScoringInputsTest {
             vo2 2026-11-08 53.0
             vo2 2026-12-31 nil
             vo2 bad nil
+            merge 2026-09-20=48.0 2026-10-01=50.1 2026-10-04=51.0 2026-10-05=47.5
+            merge-watch-only 2026-10-01=50.1 2026-10-04=51.0 2026-10-31=52.4 2026-11-08=53.0
+            merge-import-only 2026-09-20=48.0 2026-10-04=49.0 2026-10-05=47.5
+            weeks 0 2026-11-07 [2026-09-26=48.0 2026-10-03=50.1 2026-10-10=47.5 2026-10-17=47.5 2026-10-24=47.5 2026-10-31=47.5]
+            weeks 0 2026-10-03 [2026-09-26=48.0]
+            weeks 0 2026-02-07 []
+            weeks 0 bad []
+            weeks 1 2026-11-07 []
+            weeks 1 2026-10-03 []
+            weeks 1 2026-02-07 []
+            weeks 1 bad []
+            weeks 2 2026-11-07 [2026-10-03=44.0 2026-10-10=44.0 2026-10-17=44.0 2026-10-24=44.0]
+            weeks 2 2026-10-03 []
+            weeks 2 2026-02-07 []
+            weeks 2 bad []
+            weeks 3 2026-11-07 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0 2026-03-21=42.0 2026-03-28=42.0 2026-04-04=42.0 2026-04-11=42.0]
+            weeks 3 2026-10-03 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0 2026-03-21=42.0 2026-03-28=42.0 2026-04-04=42.0 2026-04-11=42.0]
+            weeks 3 2026-02-07 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0]
+            weeks 3 bad []
+            weeks 4 2026-11-07 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+            weeks 4 2026-10-03 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+            weeks 4 2026-02-07 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+            weeks 4 bad []
         """.trimIndent()
     }
 }

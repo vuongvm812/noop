@@ -195,6 +195,49 @@ public enum GarminScoringInputs {
             .max { $0.day < $1.day }?.value
     }
 
+    /// The VO2max points the week resolver reads (#71): every live watch point, plus the Garmin export's
+    /// imported points on days the watch has no usable value, oldest first. The watch's own sync wins
+    /// wherever it has a day. Kotlin twin: `GarminScoringInputs.vo2maxPoints`.
+    public static func vo2maxPoints(
+        watch: [(day: String, value: Double)], imported: [(day: String, value: Double)]
+    ) -> [(day: String, value: Double)] {
+        let watchPoints = watch.filter { $0.value > 0 && $0.value.isFinite }
+        let watchDays = Set(watchPoints.map(\.day))
+        let merged = watchPoints + imported.filter { $0.value > 0 && $0.value.isFinite && !watchDays.contains($0.day) }
+        return merged.sorted { $0.day.utf16.lexicographicallyPrecedes($1.day.utf16) }
+    }
+
+    /// Every Saturday week key strictly before `beforeWeekKey` that `watchVo2max` gives a value from
+    /// `points`, with that value, oldest first (#71). The recompute pass writes these past weeks so the
+    /// VO2max history shows the watch's numbers, not only for the current week. Empty when
+    /// `beforeWeekKey` does not parse. Kotlin twin: `GarminScoringInputs.watchVo2maxWeeks`.
+    public static func watchVo2maxWeeks(
+        _ points: [(day: String, value: Double)], beforeWeekKey: String
+    ) -> [(week: String, value: Double)] {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let f = DateFormatter()
+        f.calendar = utc
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = utc.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        guard f.date(from: beforeWeekKey) != nil,
+              let first = points.filter({ $0.value > 0 && $0.value.isFinite }).map(\.day).min(),
+              let firstDate = f.date(from: first) else { return [] }
+        // Sunday = 1 … Saturday = 7: step forward to the first Saturday on or after the oldest point.
+        let toSaturday = (7 - utc.component(.weekday, from: firstDate)) % 7
+        guard var week = utc.date(byAdding: .day, value: toSaturday, to: firstDate) else { return [] }
+        var out: [(week: String, value: Double)] = []
+        while true {
+            let key = f.string(from: week)
+            guard key < beforeWeekKey else { break }
+            if let v = watchVo2max(points, weekKey: key) { out.append((week: key, value: v)) }
+            guard let next = utc.date(byAdding: .day, value: 7, to: week) else { break }
+            week = next
+        }
+        return out
+    }
+
     /// True when an Effort score whose inputs came from `sourceId` (registry `brand`) must carry the
     /// experimental label. Kotlin twin: `GarminScoringInputs.effortIsExperimental`.
     public static func effortIsExperimental(sourceId: String, brand: String?) -> Bool {

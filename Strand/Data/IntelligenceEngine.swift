@@ -636,13 +636,50 @@ final class IntelligenceEngine: ObservableObject {
 
     /// The active Garmin watch's own VO₂max for the week keyed `satKey`, or nil for any other device (#51).
     /// The watch is the registry's active device, not the engine's `deviceId`, which stays the canonical
-    /// "my-whoop" while a watch is active and would never find the watch's points (#70). Kotlin twin:
+    /// "my-whoop" while a watch is active and would never find the watch's points (#70). The watch's synced
+    /// points come first; the Garmin export's fill the days the watch lacks (#71). Kotlin twin:
     /// `IntelligenceEngine.watchVo2max`.
     func watchVo2max(store: WhoopStore, satKey: String) async -> Double? {
+        guard let watchId = activeGarminWatchId(store: store) else { return nil }
+        return await garminWatchVo2max(store: store, watchId: watchId, satKey: satKey)
+    }
+
+    /// The registry's active device (else the engine's `deviceId`) when it is a Garmin watch, else nil (#70).
+    /// Kotlin twin: `IntelligenceEngine.activeGarminWatchId`.
+    func activeGarminWatchId(store: WhoopStore) -> String? {
         let watchId = (try? DeviceRegistryStore(dbQueue: store.registryWriter).activeDeviceId()) ?? deviceId
-        guard FusionSource.isGarminWatchId(watchId) else { return nil }
-        let points = (try? await store.metricSeries(deviceId: watchId, key: "vo2max", from: "0000-01-01", to: satKey)) ?? []
-        return GarminScoringInputs.watchVo2max(points.map { (day: $0.day, value: $0.value) }, weekKey: satKey)
+        return FusionSource.isGarminWatchId(watchId) ? watchId : nil
+    }
+
+    /// `watchVo2max` for an already resolved watch id. Kotlin twin: `IntelligenceEngine.garminWatchVo2max`.
+    func garminWatchVo2max(store: WhoopStore, watchId: String, satKey: String) async -> Double? {
+        GarminScoringInputs.watchVo2max(await garminVo2maxPoints(store: store, watchId: watchId, to: satKey), weekKey: satKey)
+    }
+
+    /// The Garmin VO₂max points on or before `to`: the watch's own, then the export's on the days the watch
+    /// has none (`GarminScoringInputs.vo2maxPoints`). Kotlin twin: `garminVo2maxPoints`.
+    private func garminVo2maxPoints(store: WhoopStore, watchId: String, to: String) async -> [(day: String, value: Double)] {
+        let watch = (try? await store.metricSeries(deviceId: watchId, key: "vo2max", from: "0000-01-01", to: to)) ?? []
+        let imported = (try? await store.metricSeries(deviceId: "garmin-import", key: "vo2max", from: "0000-01-01", to: to)) ?? []
+        return GarminScoringInputs.vo2maxPoints(
+            watch: watch.map { (day: $0.day, value: $0.value) }, imported: imported.map { (day: $0.day, value: $0.value) })
+    }
+
+    /// Writes the Garmin VO₂max of every past week (before `beforeWeek`) the 28-day rule covers, tagged
+    /// `garmin` (#71). The current week goes through `fitnessAgeRows`; this pass covers the weeks before
+    /// it, so an export imported after pairing shows Garmin's numbers in the VO₂max history. `watchId` is
+    /// the resolved active watch (`activeGarminWatchId`). Idempotent. Kotlin twin: `persistWatchVo2maxHistory`.
+    func persistWatchVo2maxHistory(store: WhoopStore, watchId: String, computedId: String, beforeWeek: String) async {
+        guard FusionSource.isGarminWatchId(watchId) else { return }
+        let weeks = GarminScoringInputs.watchVo2maxWeeks(
+            await garminVo2maxPoints(store: store, watchId: watchId, to: beforeWeek), beforeWeekKey: beforeWeek)
+        guard !weeks.isEmpty else { return }
+        try? await store.persistMetricSeriesWithProvenance(
+            points: weeks.map { MetricPoint(day: $0.week, key: "vo2max_est", value: $0.value) },
+            provenance: weeks.map {
+                ScoreInputProvenanceRow(day: $0.week, key: "vo2max_est", sourceId: Vo2MaxEstimator.garmin.rawValue)
+            },
+            deviceId: computedId)
     }
 
     /// Manual "refresh Fitness Age" (the button on the not-ready card): recompute the weekly Fitness Age NOW
@@ -2698,7 +2735,9 @@ final class IntelligenceEngine: ObservableObject {
         for d in dailies { faGateByDay[d.day] = d }
         let faGate7 = Array(faGateByDay.values.sorted { $0.day < $1.day }.suffix(7))
         let faSatKey = IntelligenceEngine.saturdayKey(onOrBefore: newestDay)
-        let faWatchVo2 = await watchVo2max(store: store, satKey: faSatKey)
+        let faWatchId = activeGarminWatchId(store: store)
+        var faWatchVo2: Double?
+        if let faWatchId { faWatchVo2 = await garminWatchVo2max(store: store, watchId: faWatchId, satKey: faSatKey) }
         let faPts = Self.fitnessAgeRows(
             gateDays: faGate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
@@ -2709,6 +2748,9 @@ final class IntelligenceEngine: ObservableObject {
                 provenance: Self.vo2MaxProvenance(points: faPts, waistCm: profile.waistCm, watchVo2max: faWatchVo2),
                 deviceId: computedId
             )
+        }
+        if let faWatchId {
+            await persistWatchVo2maxHistory(store: store, watchId: faWatchId, computedId: computedId, beforeWeek: faSatKey)
         }
 
         // ── Vitality / Body Age (Phase 7) , weekly, keyed to the week's Saturday ────────────────────

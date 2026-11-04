@@ -183,6 +183,42 @@ object GarminScoringInputs {
             .maxByOrNull { it.first }?.second
     }
 
+    /**
+     * The VO2max points the week resolver reads (#71): every live watch point, plus the Garmin export's
+     * imported points on days the watch has no usable value, oldest first. The watch's own sync wins
+     * wherever it has a day. Swift twin: `GarminScoringInputs.vo2maxPoints`.
+     */
+    fun vo2maxPoints(
+        watch: List<Pair<String, Double>>, imported: List<Pair<String, Double>>,
+    ): List<Pair<String, Double>> {
+        val watchPoints = watch.filter { it.second > 0.0 && it.second.isFinite() }
+        val watchDays = watchPoints.mapTo(HashSet()) { it.first }
+        return (watchPoints + imported.filter { it.second > 0.0 && it.second.isFinite() && it.first !in watchDays })
+            .sortedBy { it.first }
+    }
+
+    /**
+     * Every Saturday week key strictly before [beforeWeekKey] that [watchVo2max] gives a value from [points],
+     * with that value, oldest first (#71). The recompute pass writes these past weeks so the VO2max history
+     * shows the watch's numbers, not only for the current week. Empty when [beforeWeekKey] does not parse.
+     * Swift twin: `GarminScoringInputs.watchVo2maxWeeks`.
+     */
+    fun watchVo2maxWeeks(points: List<Pair<String, Double>>, beforeWeekKey: String): List<Pair<String, Double>> {
+        if (runCatching { java.time.LocalDate.parse(beforeWeekKey) }.isFailure) return emptyList()
+        val first = points.filter { it.second > 0.0 && it.second.isFinite() }.minOfOrNull { it.first } ?: return emptyList()
+        val firstDate = runCatching { java.time.LocalDate.parse(first) }.getOrNull() ?: return emptyList()
+        // Monday = 1 … Saturday = 6: step forward to the first Saturday on or after the oldest point.
+        var week = firstDate.plusDays(((6 - firstDate.dayOfWeek.value + 7) % 7).toLong())
+        val out = ArrayList<Pair<String, Double>>()
+        while (true) {
+            val key = week.toString()
+            if (key >= beforeWeekKey) break
+            watchVo2max(points, key)?.let { out.add(key to it) }
+            week = week.plusDays(7)
+        }
+        return out
+    }
+
     /** True when an Effort whose inputs came from [sourceId] (registry [brand]) carries the experimental label. */
     fun effortIsExperimental(sourceId: String, brand: String?): Boolean {
         if (EFFORT_VALIDATED) return false
