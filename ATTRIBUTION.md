@@ -176,6 +176,22 @@ SettingRelated, ProductInfo, Battery).
   `TestHuaweiTruSleepParser.java` are used as expected literals in NOOP's tests, attributed there. Every
   value is an unvalidated candidate: none of it has been checked on a Huawei Band 10.
 
+## Huawei Band 10 history sync (fork)
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org), consulted at commit
+  `6e4220682feb6917a5644304d9d7c760f30b6eaf`, licensed **AGPL-3.0**. `HuaweiHistorySync.kt`,
+  `HuaweiFileDownload.kt`, `HuaweiSyncRunner.kt` and the new `HuaweiCommand` entries under
+  `android/app/src/main/java/com/noop/huawei/` are **re-derived** from protocol facts only: the
+  FitnessData count / data request layouts and the measurement-switch payloads (`packets/FitnessData.java`);
+  the 0x2C and 0x0A file-download message layouts, file type bytes, block arithmetic and raw block layouts
+  (`packets/FileDownloadService2C.java`, `FileDownloadService0A.java`, `HuaweiFileDownloadManager.java`);
+  the workout count / totals / data / capability layouts and the range-split retry (`packets/Workout.java`,
+  `HuaweiWorkoutSyncManager.java`); the P2P message layout, package names, fingerprints, ping / ack codes
+  and the dictionary request, reply and cursor rules (`packets/P2P.java`, `p2p/HuaweiBaseP2PService.java`,
+  `HuaweiP2PManager.java`, `p2p/HuaweiP2PDataDictionarySyncService.java`); the sync order and its
+  capability gates and expand-capability bits (`HuaweiSupportProvider.java`, `HuaweiState.java`,
+  `packets/DeviceConfig.java`); and the workout type codes mapped to sports (`HuaweiWorkoutGbParser.java`).
+  No code is copied. None of it has been checked on a Huawei Band 10.
+
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
 - **MarkdownUI** (`gonzalezreal/swift-markdown-ui`) — renders the AI Coach's Markdown
