@@ -2875,6 +2875,64 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * protocol, so the UI shows an indeterminate indicator + live.syncChunksThisSession, never a percent. */
     fun syncNow() = ble.syncNow()
 
+    /** The live Garmin watch's link as Today's Refresh button reads it (#93); twin of Swift
+     *  `AppModel.garminRefreshLink`. Follows the source as it comes and goes. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val garminRefreshLink: StateFlow<TodayRefreshLink> = garminSource
+        .flatMapLatest { src ->
+            if (src == null) flowOf(TodayRefreshControl.garmin(linkReady = false, syncing = false))
+            else combine(src.linkPhase, src.syncing) { phase, syncing ->
+                TodayRefreshControl.garmin(
+                    linkReady = phase == com.noop.ble.GarminSource.LinkPhase.READY ||
+                        phase == com.noop.ble.GarminSource.LinkPhase.BUSY,
+                    syncing = syncing,
+                )
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), TodayRefreshControl.garmin(false, false))
+
+    /** The live Huawei band's link as Today's Refresh button reads it (#93). Android only. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val huaweiRefreshLink: StateFlow<TodayRefreshLink> = huaweiSource
+        .flatMapLatest { src ->
+            if (src == null) flowOf(TodayRefreshControl.huawei(ready = false, syncing = false))
+            else combine(src.linkPhase, src.syncing) { phase, syncing ->
+                TodayRefreshControl.huawei(
+                    ready = phase == com.noop.ble.HuaweiSource.LinkPhase.READY,
+                    syncing = syncing,
+                )
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), TodayRefreshControl.huawei(false, false))
+
+    /** The device a Today Refresh tap reaches (#93), from the same registry and coordinator reads the
+     *  screens already observe. Resolved in [TodayRefreshControl] so the rule has one spelling. */
+    fun todayRefreshSource(): TodayRefreshSource = TodayRefreshControl.source(
+        activeIsWhoop = activeIsWhoop.value,
+        garminLive = garminSource.value != null,
+        huaweiLive = huaweiSource.value != null,
+        ouraActive = activeIsOura.value,
+    )
+
+    /**
+     * Today's Refresh button (#93): sync whichever device is active, through that device's own manual
+     * sync. Each target is already gated on its own link (WHOOP: connected + bonded + not backfilling;
+     * Garmin/Huawei: their source's phase), so a tap that races a disconnect is a logged no-op. Oura has
+     * no history request to make, so a ring is reconnected instead (the Live console's #2305 action).
+     * Today's data then follows by itself: the screen reads Room flows, as after a pull-to-sync.
+     */
+    fun syncActiveDevice() {
+        when (todayRefreshSource()) {
+            TodayRefreshSource.WHOOP -> syncNow()
+            TodayRefreshSource.GARMIN -> garminSyncNow()
+            TodayRefreshSource.HUAWEI -> huaweiSyncNow()
+            TodayRefreshSource.OURA -> reconnectOuraRing()
+            TodayRefreshSource.NONE -> Unit
+        }
+    }
+
     /** Force an immediate Fitness Age recompute from stored history , the not-ready card's refresh button.
      *  Light (no raw-HR rescoring), so it returns fast and works even when the strap is offline. Applies the
      *  SAME gate as the recompute pass (IntelligenceEngine.fitnessAgeRows). Calls back on the main thread
