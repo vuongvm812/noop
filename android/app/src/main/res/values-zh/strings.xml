@@ -3041,4 +3041,29 @@
     <string name="weekly_summary_notification_title">你的每周总结已就绪</string>
     <string name="weekly_summary_toggle_label">每周总结</string>
     <string name="weekly_summary_toggle_help">每周一次，在周一首次同步后，推送上周的主要结论。点按即可在趋势中打开该周。</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">自动化结果</string>
+    <string name="automation_channel_description">自动化的执行结果：待查看的小睡、备份、自托管推送、新的周期读数。</string>
+    <string name="automation_nap_title">检测到小睡</string>
+    <string name="automation_nap_body">一次约 %1$d 分钟的小睡正在“自动化”中等待你查看。</string>
+    <string name="automation_backup_done_title">备份完成</string>
+    <string name="automation_backup_done_body">自动备份已保存到你选择的文件夹。</string>
+    <string name="automation_backup_failed_title">备份失败</string>
+    <string name="automation_backup_failed_body">无法写入自动备份。稍后会重试；请在“备份与同步”中检查文件夹。</string>
+    <string name="automation_push_done_title">自托管推送完成</string>
+    <string name="automation_push_done_body">你的数据已发送到你自己的端点。</string>
+    <string name="automation_push_failed_title">自托管推送失败</string>
+    <string name="automation_push_failed_body">推送到你的端点未完成。请在“自托管推送”中查看状态。</string>
+    <string name="automation_cycle_title">周期感知</string>
+    <string name="automation_cycle_body">有新的周期感知读数可用。</string>
+    <string name="automation_results_section_title">自动化结果</string>
+    <string name="automation_results_section_blurb">可选通知，默认关闭；后台自动化有结果时提醒你。</string>
+    <string name="automation_results_nap_label">检测到小睡</string>
+    <string name="automation_results_nap_help">小睡检测将小睡加入队列时，通知你查看。</string>
+    <string name="automation_results_backup_label">备份完成或失败</string>
+    <string name="automation_results_backup_help">每次自动备份后：每天最多一次成功通知，失败只通知一次，直到下次成功。</string>
+    <string name="automation_results_push_label">自托管推送完成或失败</string>
+    <string name="automation_results_push_help">自托管推送结束后：每天最多一次成功通知，失败只通知一次，直到下次成功。</string>
+    <string name="automation_results_cycle_label">新的周期读数</string>
+    <string name="automation_results_cycle_help">开启周期感知时，有新读数会发送一条中性通知。</string>
 </resources>

@@ -3084,4 +3084,29 @@
     <string name="weekly_summary_notification_title">Deine Wochenübersicht ist bereit</string>
     <string name="weekly_summary_toggle_label">Wochenübersicht</string>
     <string name="weekly_summary_toggle_help">Einmal pro Woche, nach deiner ersten Synchronisierung am Montag, eine Mitteilung mit dem Wichtigsten aus der letzten Woche. Tippe darauf, um die Woche in Trends zu öffnen.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Automationsergebnisse</string>
+    <string name="automation_channel_description">Was deine Automationen getan haben: ein Nickerchen zur Prüfung, ein Backup, ein Self-Hosted-Push, ein neuer Zykluswert.</string>
+    <string name="automation_nap_title">Nickerchen erkannt</string>
+    <string name="automation_nap_body">Ein Nickerchen von ca. %1$d Min. wartet in Automationen auf deine Prüfung.</string>
+    <string name="automation_backup_done_title">Backup abgeschlossen</string>
+    <string name="automation_backup_done_body">Dein automatisches Backup wurde im gewählten Ordner gespeichert.</string>
+    <string name="automation_backup_failed_title">Backup fehlgeschlagen</string>
+    <string name="automation_backup_failed_body">Das automatische Backup konnte nicht geschrieben werden. Es wird erneut versucht; prüfe den Ordner unter Backup &amp; Sync.</string>
+    <string name="automation_push_done_title">Self-Hosted-Push abgeschlossen</string>
+    <string name="automation_push_done_body">Deine Daten wurden an deinen eigenen Endpunkt gesendet.</string>
+    <string name="automation_push_failed_title">Self-Hosted-Push fehlgeschlagen</string>
+    <string name="automation_push_failed_body">Der Push an deinen Endpunkt wurde nicht abgeschlossen. Prüfe den Status unter Self-Hosted-Push.</string>
+    <string name="automation_cycle_title">Zyklusbewusstsein</string>
+    <string name="automation_cycle_body">Ein neuer Wert zum Zyklusbewusstsein ist verfügbar.</string>
+    <string name="automation_results_section_title">Automationsergebnisse</string>
+    <string name="automation_results_section_blurb">Optionale Mitteilungen, standardmäßig aus, wenn eine Hintergrund-Automation ein Ergebnis hat.</string>
+    <string name="automation_results_nap_label">Nickerchen erkannt</string>
+    <string name="automation_results_nap_help">Wenn die Nickerchen-Erkennung ein Nickerchen einreiht, eine Mitteilung zur Prüfung.</string>
+    <string name="automation_results_backup_label">Backup abgeschlossen oder fehlgeschlagen</string>
+    <string name="automation_results_backup_help">Nach jedem automatischen Backup: höchstens ein Erfolg pro Tag und ein Fehler einmalig bis zum nächsten Erfolg.</string>
+    <string name="automation_results_push_label">Self-Hosted-Push abgeschlossen oder fehlgeschlagen</string>
+    <string name="automation_results_push_help">Nach einem abgeschlossenen Self-Hosted-Push: höchstens ein Erfolg pro Tag und ein Fehler einmalig bis zum nächsten Erfolg.</string>
+    <string name="automation_results_cycle_label">Neuer Zykluswert</string>
+    <string name="automation_results_cycle_help">Solange das Zyklusbewusstsein an ist, eine neutrale Mitteilung, wenn ein neuer Wert verfügbar ist.</string>
 </resources>

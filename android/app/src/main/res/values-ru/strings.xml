@@ -2966,4 +2966,29 @@
     <string name="weekly_summary_notification_title">Ваша сводка за неделю готова</string>
     <string name="weekly_summary_toggle_label">Сводка за неделю</string>
     <string name="weekly_summary_toggle_help">Раз в неделю, после первой синхронизации в понедельник, уведомление с главным итогом прошлой недели. Нажмите, чтобы открыть неделю в Трендах.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Результаты автоматизаций</string>
+    <string name="automation_channel_description">Что сделали автоматизации: сон для проверки, резервная копия, отправка на свой сервер, новый показатель цикла.</string>
+    <string name="automation_nap_title">Обнаружен дневной сон</string>
+    <string name="automation_nap_body">Дневной сон ~%1$d мин ждёт проверки в разделе «Автоматизации».</string>
+    <string name="automation_backup_done_title">Резервная копия создана</string>
+    <string name="automation_backup_done_body">Автоматическая резервная копия сохранена в выбранную папку.</string>
+    <string name="automation_backup_failed_title">Сбой резервного копирования</string>
+    <string name="automation_backup_failed_body">Не удалось записать автоматическую копию. Будет повторная попытка; проверьте папку в «Резервной копии и синхронизации».</string>
+    <string name="automation_push_done_title">Отправка на свой сервер завершена</string>
+    <string name="automation_push_done_body">Ваши данные отправлены на ваш собственный адрес.</string>
+    <string name="automation_push_failed_title">Сбой отправки на свой сервер</string>
+    <string name="automation_push_failed_body">Отправка на ваш адрес не завершилась. Проверьте статус в разделе «Отправка на свой сервер».</string>
+    <string name="automation_cycle_title">Осведомлённость о цикле</string>
+    <string name="automation_cycle_body">Доступен новый показатель осведомлённости о цикле.</string>
+    <string name="automation_results_section_title">Результаты автоматизаций</string>
+    <string name="automation_results_section_blurb">Необязательные уведомления, по умолчанию выключены, когда у фоновой автоматизации есть результат.</string>
+    <string name="automation_results_nap_label">Обнаружен дневной сон</string>
+    <string name="automation_results_nap_help">Когда обнаружение сна ставит сон в очередь, уведомление для проверки.</string>
+    <string name="automation_results_backup_label">Резервная копия создана или не удалась</string>
+    <string name="automation_results_backup_help">После каждой автоматической копии: не более одного успеха в день и сбой один раз до следующего успеха.</string>
+    <string name="automation_results_push_label">Отправка на свой сервер завершена или не удалась</string>
+    <string name="automation_results_push_help">После завершения отправки: не более одного успеха в день и сбой один раз до следующего успеха.</string>
+    <string name="automation_results_cycle_label">Новый показатель цикла</string>
+    <string name="automation_results_cycle_help">Пока осведомлённость о цикле включена, нейтральное уведомление о новом показателе.</string>
 </resources>

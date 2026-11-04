@@ -347,7 +347,10 @@ enum FolderBackup {
         guard autoEnabled, hasFolder else { return }
         let nowMs = Int(Date().timeIntervalSince1970 * 1000.0)
         guard nowMs - lastBackupMs >= dayMs else { return }
-        await backupNow(checkpoint: checkpoint)
+        let ok = await backupNow(checkpoint: checkpoint)
+        // #92: the opt-in result notification for the automatic backup (manual ones report on screen).
+        await AutomationResultNotifier.onBackupResult(
+            succeeded: ok, enabled: UserDefaults.standard.bool(forKey: "behavior.backupResultNotify"))
     }
 
     /// Diagnostic-only snapshot of the restore list's health: the chosen folder's name, its raw entry

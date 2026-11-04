@@ -366,6 +366,8 @@ final class AppModel: ObservableObject {
             self?.evaluateStrainTarget()
             // #91: the Monday weekly summary (its persisted once-a-week gate makes this a defaults read).
             Task { @MainActor [weak self] in await self?.evaluateWeeklySummary() }
+            // #92: the opt-in morning recap and post-workout summary (each has its own persisted gate).
+            Task { @MainActor [weak self] in await self?.evaluateDailyReports() }
             // Keep the battery night-guard's learned bedtime warm off the same signal (throttled inside).
             self?.refreshHabitualMidsleep()
         }.store(in: &hrCancellables)
@@ -2210,6 +2212,26 @@ final class AppModel: ObservableObject {
         await WeeklySummaryNotifier.evaluate(repo: repo, enabled: behavior.weeklySummaryNudge)
     }
 
+    /// #92: the morning recap for the banked night and the post-workout summary for the newest
+    /// workout. Android twin: AppViewModel's days-collector `ScheduledReportNotifier` calls.
+    func evaluateDailyReports() async {
+        if let row = repo.today, row.totalSleepMin != nil {
+            AutomationResultNotifier.onMorning(
+                reportDay: row.day, chargePct: row.recovery.map { Int($0.rounded()) },
+                restPct: repo.restScore(row).map { Int($0.rounded()) }, enabled: behavior.morningRecapReport)
+        }
+        guard behavior.postWorkoutReport else { return }
+        AutomationResultNotifier.onWorkout(await newestWorkout(), enabled: true)
+    }
+
+    /// The newest workout of the last two days on the active device, nil when none.
+    func newestWorkout() async -> WorkoutRow? {
+        guard let store = await repo.storeHandle() else { return nil }
+        let now = Int(Date().timeIntervalSince1970)
+        let rows = (try? await store.workouts(deviceId: repo.deviceId, from: now - 2 * 86_400, to: now, limit: 50)) ?? []
+        return rows.max { $0.startTs < $1.startTs }
+    }
+
     func evaluateStrainTarget() {
         guard let row = repo.today else { return }
         StrainTargetNotifier.onDayUpdate(
@@ -2357,6 +2379,9 @@ final class AppModel: ObservableObject {
         cyclePhase = CyclePhaseEngine.classify(nights,
                                                baselineUsable: skinState.usable,
                                                loggedPeriodStarts: loggedPeriodStarts)
+        // #92: the opt-in neutral "new cycle reading" notification (its gate skips learning / unknown).
+        AutomationResultNotifier.onCycleReading(phase: cyclePhase?.phase.rawValue,
+                                                enabled: behavior.cycleReadingNotify)
         cycleCurve = curve
         cycleCurveDays = curveDays
     }

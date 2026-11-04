@@ -1,5 +1,6 @@
 package com.noop.push
 
+import com.noop.notif.AutomationResultNotifier
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -310,6 +311,14 @@ class SelfHostedPushWorker(
             decision.status == Status.RETRYING -> settings.recordRetrying(decision.message.orEmpty())
             decision.status == Status.FAILED -> settings.recordError(decision.message.orEmpty())
             else -> Unit
+        }
+        // #92: only a settled run is a result; a continuing or retrying run is still in flight.
+        if (!pending || decision.willRetry) {
+            when (decision.status) {
+                Status.SUCCESS -> AutomationResultNotifier.onPushResult(applicationContext, true)
+                Status.FAILED -> AutomationResultNotifier.onPushResult(applicationContext, false)
+                else -> Unit
+            }
         }
     }
 

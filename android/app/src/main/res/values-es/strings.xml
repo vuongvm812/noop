@@ -3071,4 +3071,29 @@
     <string name="weekly_summary_notification_title">Tu resumen semanal está listo</string>
     <string name="weekly_summary_toggle_label">Resumen semanal</string>
     <string name="weekly_summary_toggle_help">Una vez por semana, tras tu primera sincronización del lunes, una notificación con lo más destacado de la semana pasada. Tócala para abrir la semana en Tendencias.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Resultados de automatizaciones</string>
+    <string name="automation_channel_description">Lo que hicieron tus automatizaciones: una siesta por revisar, una copia de seguridad, un envío autoalojado, una nueva lectura del ciclo.</string>
+    <string name="automation_nap_title">Siesta detectada</string>
+    <string name="automation_nap_body">Una siesta de ~%1$d min espera tu revisión en Automatizaciones.</string>
+    <string name="automation_backup_done_title">Copia de seguridad completada</string>
+    <string name="automation_backup_done_body">Tu copia automática se guardó en la carpeta elegida.</string>
+    <string name="automation_backup_failed_title">Error en la copia de seguridad</string>
+    <string name="automation_backup_failed_body">No se pudo escribir la copia automática. Se volverá a intentar; revisa la carpeta en Copia y sincronización.</string>
+    <string name="automation_push_done_title">Envío autoalojado completado</string>
+    <string name="automation_push_done_body">Tus datos se enviaron a tu propio endpoint.</string>
+    <string name="automation_push_failed_title">Error en el envío autoalojado</string>
+    <string name="automation_push_failed_body">El envío a tu endpoint no se completó. Revisa su estado en Envío autoalojado.</string>
+    <string name="automation_cycle_title">Conciencia del ciclo</string>
+    <string name="automation_cycle_body">Hay una nueva lectura de conciencia del ciclo disponible.</string>
+    <string name="automation_results_section_title">Resultados de automatizaciones</string>
+    <string name="automation_results_section_blurb">Notificaciones opcionales, desactivadas por defecto, cuando una automatización en segundo plano tiene un resultado.</string>
+    <string name="automation_results_nap_label">Siesta detectada</string>
+    <string name="automation_results_nap_help">Cuando la detección de siestas pone una en cola, una notificación para revisarla.</string>
+    <string name="automation_results_backup_label">Copia completada o fallida</string>
+    <string name="automation_results_backup_help">Tras cada copia automática: como mucho un éxito al día, y un fallo una vez hasta el siguiente éxito.</string>
+    <string name="automation_results_push_label">Envío autoalojado completado o fallido</string>
+    <string name="automation_results_push_help">Cuando termina un envío autoalojado: como mucho un éxito al día, y un fallo una vez hasta el siguiente éxito.</string>
+    <string name="automation_results_cycle_label">Nueva lectura del ciclo</string>
+    <string name="automation_results_cycle_help">Mientras la conciencia del ciclo esté activa, una notificación neutra cuando haya una nueva lectura.</string>
 </resources>

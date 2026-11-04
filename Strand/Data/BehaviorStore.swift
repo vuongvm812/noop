@@ -58,6 +58,11 @@ final class BehaviorStore: ObservableObject {
     @Published var strainTargetNudge: Bool { didSet { d.set(strainTargetNudge, forKey: K.strainTargetNudge) } }
     /// #91: opt-in (default off) for the Monday "weekly summary ready" notification.
     @Published var weeklySummaryNudge: Bool { didSet { d.set(weeklySummaryNudge, forKey: K.weeklySummaryNudge) } }
+    /// #92: opt-in (default off) automation result notifications.
+    @Published var morningRecapReport: Bool { didSet { d.set(morningRecapReport, forKey: K.morningRecapReport) } }
+    @Published var postWorkoutReport: Bool { didSet { d.set(postWorkoutReport, forKey: K.postWorkoutReport) } }
+    @Published var backupResultNotify: Bool { didSet { d.set(backupResultNotify, forKey: K.backupResultNotify) } }
+    @Published var cycleReadingNotify: Bool { didSet { d.set(cycleReadingNotify, forKey: K.cycleReadingNotify) } }
 
     private let d = UserDefaults.standard
     private enum K {
@@ -83,6 +88,10 @@ final class BehaviorStore: ObservableObject {
         static let batteryPredictiveAlerts = "behavior.batteryPredictiveAlerts"
         static let strainTargetNudge = "behavior.strainTargetNudge"
         static let weeklySummaryNudge = "behavior.weeklySummaryNudge"
+        static let morningRecapReport = "behavior.morningRecapReport"
+        static let postWorkoutReport = "behavior.postWorkoutReport"
+        static let backupResultNotify = "behavior.backupResultNotify"
+        static let cycleReadingNotify = "behavior.cycleReadingNotify"
     }
 
     init() {
@@ -106,6 +115,10 @@ final class BehaviorStore: ObservableObject {
         batteryPredictiveAlerts = d.object(forKey: K.batteryPredictiveAlerts) as? Bool ?? true
         strainTargetNudge = d.object(forKey: K.strainTargetNudge) as? Bool ?? false
         weeklySummaryNudge = d.object(forKey: K.weeklySummaryNudge) as? Bool ?? false
+        morningRecapReport = d.object(forKey: K.morningRecapReport) as? Bool ?? false
+        postWorkoutReport = d.object(forKey: K.postWorkoutReport) as? Bool ?? false
+        backupResultNotify = d.object(forKey: K.backupResultNotify) as? Bool ?? false
+        cycleReadingNotify = d.object(forKey: K.cycleReadingNotify) as? Bool ?? false
     }
 
     // MARK: Charge baseline recalibration

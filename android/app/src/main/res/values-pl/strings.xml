@@ -3087,4 +3087,29 @@
     <string name="weekly_summary_notification_title">Twoje podsumowanie tygodnia jest gotowe</string>
     <string name="weekly_summary_toggle_label">Podsumowanie tygodnia</string>
     <string name="weekly_summary_toggle_help">Raz w tygodniu, po pierwszej synchronizacji w poniedziałek, powiadomienie z najważniejszym wnioskiem z zeszłego tygodnia. Dotknij, aby otworzyć tydzień w Trendach.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Wyniki automatyzacji</string>
+    <string name="automation_channel_description">Co zrobiły automatyzacje: drzemka do przejrzenia, kopia zapasowa, wysyłka self-hosted, nowy odczyt cyklu.</string>
+    <string name="automation_nap_title">Wykryto drzemkę</string>
+    <string name="automation_nap_body">Drzemka ok. %1$d min czeka na przejrzenie w Automatyzacjach.</string>
+    <string name="automation_backup_done_title">Kopia zapasowa ukończona</string>
+    <string name="automation_backup_done_body">Automatyczna kopia zapasowa została zapisana w wybranym folderze.</string>
+    <string name="automation_backup_failed_title">Kopia zapasowa nie powiodła się</string>
+    <string name="automation_backup_failed_body">Nie udało się zapisać automatycznej kopii. Nastąpi ponowna próba; sprawdź folder w Kopii i synchronizacji.</string>
+    <string name="automation_push_done_title">Wysyłka self-hosted ukończona</string>
+    <string name="automation_push_done_body">Dane zostały wysłane na Twój własny endpoint.</string>
+    <string name="automation_push_failed_title">Wysyłka self-hosted nie powiodła się</string>
+    <string name="automation_push_failed_body">Wysyłka na Twój endpoint nie została ukończona. Sprawdź jej stan w Wysyłce self-hosted.</string>
+    <string name="automation_cycle_title">Świadomość cyklu</string>
+    <string name="automation_cycle_body">Dostępny jest nowy odczyt świadomości cyklu.</string>
+    <string name="automation_results_section_title">Wyniki automatyzacji</string>
+    <string name="automation_results_section_blurb">Opcjonalne powiadomienia, domyślnie wyłączone, gdy automatyzacja w tle ma wynik.</string>
+    <string name="automation_results_nap_label">Wykryto drzemkę</string>
+    <string name="automation_results_nap_help">Gdy wykrywanie drzemek doda drzemkę do kolejki, powiadomienie, by ją przejrzeć.</string>
+    <string name="automation_results_backup_label">Kopia ukończona lub nieudana</string>
+    <string name="automation_results_backup_help">Po każdej automatycznej kopii: najwyżej jeden sukces dziennie i błąd raz, do następnego sukcesu.</string>
+    <string name="automation_results_push_label">Wysyłka self-hosted ukończona lub nieudana</string>
+    <string name="automation_results_push_help">Po zakończeniu wysyłki self-hosted: najwyżej jeden sukces dziennie i błąd raz, do następnego sukcesu.</string>
+    <string name="automation_results_cycle_label">Nowy odczyt cyklu</string>
+    <string name="automation_results_cycle_help">Gdy świadomość cyklu jest włączona, neutralne powiadomienie o nowym odczycie.</string>
 </resources>

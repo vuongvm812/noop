@@ -3100,4 +3100,29 @@
     <string name="weekly_summary_notification_title">Your weekly summary is ready</string>
     <string name="weekly_summary_toggle_label">Weekly summary</string>
     <string name="weekly_summary_toggle_help">Once a week, after your first sync on Monday, a notification with the main takeaway from last week. Tap it to open the week in Trends.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Automation results</string>
+    <string name="automation_channel_description">What your automations did: a nap to review, a backup, a self-hosted push, a new cycle reading.</string>
+    <string name="automation_nap_title">Nap detected</string>
+    <string name="automation_nap_body">A ~%1$d-min nap is waiting for your review in Automations.</string>
+    <string name="automation_backup_done_title">Backup finished</string>
+    <string name="automation_backup_done_body">Your automatic backup was saved to your chosen folder.</string>
+    <string name="automation_backup_failed_title">Backup failed</string>
+    <string name="automation_backup_failed_body">The automatic backup could not be written. It will try again; check the folder in Backup &amp; Sync.</string>
+    <string name="automation_push_done_title">Self-hosted push finished</string>
+    <string name="automation_push_done_body">Your data was sent to your own endpoint.</string>
+    <string name="automation_push_failed_title">Self-hosted push failed</string>
+    <string name="automation_push_failed_body">The push to your endpoint did not complete. Check its status in Self-hosted push.</string>
+    <string name="automation_cycle_title">Cycle awareness</string>
+    <string name="automation_cycle_body">A new cycle-awareness reading is available.</string>
+    <string name="automation_results_section_title">Automation results</string>
+    <string name="automation_results_section_blurb">Optional phone notifications, off by default, when a background automation has a result.</string>
+    <string name="automation_results_nap_label">Nap detected</string>
+    <string name="automation_results_nap_help">When nap detection queues a nap, a notification so you can review it.</string>
+    <string name="automation_results_backup_label">Backup finished or failed</string>
+    <string name="automation_results_backup_help">After each automatic backup: at most one success a day, and a failure once until the next success.</string>
+    <string name="automation_results_push_label">Self-hosted push finished or failed</string>
+    <string name="automation_results_push_help">After a self-hosted push run settles: at most one success a day, and a failure once until the next success.</string>
+    <string name="automation_results_cycle_label">New cycle reading</string>
+    <string name="automation_results_cycle_help">While cycle awareness is on, a neutral notification when a new reading is available.</string>
 </resources>

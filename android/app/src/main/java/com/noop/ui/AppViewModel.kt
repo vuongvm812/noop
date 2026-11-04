@@ -1219,6 +1219,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         activityBins = lastCircadianBins.first,
                         daysObserved = lastCircadianBins.second,
                     )
+                    // #92: the opt-in neutral "new cycle reading" notification, only while tracking is on.
+                    if (_cycleTrackingEnabled.value) {
+                        com.noop.notif.AutomationResultNotifier.onCycleReading(
+                            appContext, _v5Signals.value?.cycle?.phase?.raw,
+                        )
+                    }
                 }
                 // Keep the home-screen widget fresh while the app is open — covers users who turned
                 // the background service off (the service is the widget's heartbeat otherwise).

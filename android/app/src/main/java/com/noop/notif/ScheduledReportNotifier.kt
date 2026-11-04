@@ -74,7 +74,7 @@ object ScheduledReportPolicy {
      *  where before it would have arrived at 00:40 to someone asleep.
      *
      *  That is the second cost of a floor, beside a late recap still calling itself "Good morning". Both
-     *  are why this is a stopgap and the wake-based version is the real answer (#2289). */
+     *  are why this is a stopgap and the wake-based version is the real answer (#2289). Swift twin: `ScheduledReportPolicy.shouldNotifyMorning`. */
     fun shouldNotifyMorning(
         enabled: Boolean,
         chargeOrRestPresent: Boolean,
@@ -88,7 +88,7 @@ object ScheduledReportPolicy {
         nowMinuteOfDay >= earliestMinuteOfDay
 
     /** Fire the post-workout summary only for a workout STRICTLY newer than the last one summarised, so a
-     *  re-sync of the same backlog never re-notifies. [lastWorkoutTs] is 0 before the first ever. */
+     *  re-sync of the same backlog never re-notifies. [lastWorkoutTs] is 0 before the first ever. Swift twin: `ScheduledReportPolicy.shouldNotifyWorkout`. */
     fun shouldNotifyWorkout(
         enabled: Boolean,
         newestWorkoutTs: Long?,
@@ -97,7 +97,7 @@ object ScheduledReportPolicy {
 
     /** Title + body for the morning recap. Charge and Rest are each optional (a night can produce one
      *  without the other); absent ones are simply omitted — never shown as 0 or a guess. Returns null when
-     *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). */
+     *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). Swift twin: `ScheduledReportPolicy.morningCopy`. */
     fun morningCopy(chargePct: Int?, restPct: Int?): Pair<String, String>? {
         val parts = ArrayList<String>(2)
         chargePct?.let { parts.add("Charge $it") }
@@ -111,7 +111,7 @@ object ScheduledReportPolicy {
 
     /** Title + body for the post-workout summary. [effortDisplay] is already formatted on the user's
      *  chosen scale ("0–100" or "0–21"); [durationLabel] is e.g. "42 min". avgHr is optional — a session
-     *  with no usable HR omits it rather than inventing one. */
+     *  with no usable HR omits it rather than inventing one. Swift twin: `ScheduledReportPolicy.workoutCopy`. */
     fun workoutCopy(
         sportLabel: String,
         effortDisplay: String,
@@ -129,7 +129,7 @@ object ScheduledReportPolicy {
     }
 
     /** "42 min" / "1 h 8 min" from a whole-minute duration; clamps a 0/negative span to "under a minute"
-     *  so a mis-timed session never reads as "0 min". */
+     *  so a mis-timed session never reads as "0 min". Swift twin: `ScheduledReportPolicy.durationLabel`. */
     fun durationLabel(minutes: Int): String = when {
         minutes <= 0 -> "under a minute"
         minutes < 60 -> "$minutes min"
