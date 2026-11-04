@@ -142,6 +142,8 @@
     <string name="action_breathe">Дыхание</string>
     <string name="today_latest_workouts">Последние тренировки</string>
     <string name="today_customize_title">Настроить «Сегодня»</string>
+    <string name="today_refresh_sync_now">Синхронизировать</string>
+    <string name="today_refresh_syncing">Синхронизация</string>
     <string name="today_customize_action">Настроить</string>
     <string name="today_customize_description">Измените порядок отображаемого или переместите раздел в «Скрытые», не удаляя его.</string>
     <string name="today_customize_edit_added_cards">Изменить добавленные карточки</string>

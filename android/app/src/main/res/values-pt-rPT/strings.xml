@@ -58,6 +58,8 @@
     <string name="action_breathe">Respirar</string>
     <string name="today_latest_workouts">Treinos recentes</string>
     <string name="today_customize_title">Personalizar Hoje</string>
+    <string name="today_refresh_sync_now">Sincronizar agora</string>
+    <string name="today_refresh_syncing">A sincronizar</string>
     <string name="today_customize_action">Personalizar</string>
     <string name="today_customize_description">Reordena o que é mostrado ou move uma secção para Ocultos sem a apagar.</string>
     <string name="today_customize_edit_added_cards">Editar cartões adicionados</string>

@@ -32,6 +32,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
@@ -44,6 +48,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothSearching
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -349,6 +354,14 @@ fun TodayScreen(
     // The ring's OWN charge while a ring source is live (null otherwise, #2075), so the header can draw the
     // active ring's battery instead of nothing. Changes a few times a session, no per-tick churn.
     val ouraBatteryPct by viewModel.ouraBatteryPct.collectAsStateWithLifecycle()
+    // #93: what the Refresh disc beside the wordmark reads, one flow per source it can sync. Each changes
+    // on a link transition or a sync starting/finishing, never per tick.
+    val activeIsOura by viewModel.activeIsOura.collectAsStateWithLifecycle()
+    val ouraLinkPhase by viewModel.ouraLinkPhase.collectAsStateWithLifecycle()
+    val garminLive by viewModel.garminSource.collectAsStateWithLifecycle()
+    val huaweiLive by viewModel.huaweiSource.collectAsStateWithLifecycle()
+    val garminRefreshLink by viewModel.garminRefreshLink.collectAsStateWithLifecycle()
+    val huaweiRefreshLink by viewModel.huaweiRefreshLink.collectAsStateWithLifecycle()
     val v5Signals by viewModel.v5Signals.collectAsStateWithLifecycle()
     val cycleEnabled by viewModel.cycleTrackingEnabled.collectAsStateWithLifecycle()
     val cycleHidden by viewModel.cycleAwarenessHidden.collectAsStateWithLifecycle()
@@ -1483,6 +1496,13 @@ fun TodayScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // #93 supersedes the "cannot be read as a reload button" half of the #2169 note below: the
+                // slot now also holds Refresh, a deliberate reload that syncs the active device. The rest
+                // of #2169 stands. Away, the slot is still the Rescan disc; connected, Refresh takes it
+                // instead of the spacer; a device with nothing to sync (a generic HR strap) still leaves
+                // the spacer. `TodayRefreshControl.resolve` picks which, so the two discs can never both
+                // claim the slot, and each fades on its own so a flapping link pulses rather than blinks.
+                //
                 // #2169: the balancing spacer becomes the control, but ONLY while there is something to
                 // connect. A permanently visible control has to explain itself; one that appears exactly
                 // when the strap is away says what it is for by being there, and cannot be read as a
@@ -1497,8 +1517,36 @@ fun TodayScreen(
                 // instant swap turns that into a blinking icon beside the wordmark; a fade reads as a
                 // pulse instead. Keeping the gutter itself always present also means the wordmark cannot
                 // shift even mid-transition, which an if/else between a control and a spacer allows.
+                val refreshSource = TodayRefreshControl.source(
+                    activeIsWhoop = activeIsWhoop,
+                    garminLive = garminLive != null,
+                    huaweiLive = huaweiLive != null,
+                    ouraActive = activeIsOura,
+                )
+                val refreshLink = when (refreshSource) {
+                    TodayRefreshSource.WHOOP -> TodayRefreshControl.whoop(
+                        liveSnap.connected, liveSnap.bonded, liveSnap.backfilling, liveSnap.historyReady,
+                    )
+                    TodayRefreshSource.GARMIN -> garminRefreshLink
+                    TodayRefreshSource.HUAWEI -> huaweiRefreshLink
+                    TodayRefreshSource.OURA -> TodayRefreshControl.oura(
+                        connecting = ouraLinkPhase == com.noop.ble.OuraLiveSource.LinkPhase.CONNECTING ||
+                            ouraLinkPhase == com.noop.ble.OuraLiveSource.LinkPhase.AUTHENTICATING,
+                        authenticated = ouraLinkPhase == com.noop.ble.OuraLiveSource.LinkPhase.AUTHENTICATED,
+                    )
+                    TodayRefreshSource.NONE -> TodayRefreshLink(linkUp = false, canSync = false, syncing = false)
+                }
+                val refreshState = TodayRefreshControl.resolve(
+                    refreshSource, refreshLink, rescanOffered = !liveSnap.connected,
+                )
                 val scanAffordance by animateFloatAsState(
-                    targetValue = if (liveSnap.connected) 0f else 1f,
+                    targetValue = if (refreshState == TodayRefreshState.RESCAN) 1f else 0f,
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                )
+                val showsRefresh = refreshState != TodayRefreshState.RESCAN &&
+                    refreshState != TodayRefreshState.HIDDEN
+                val refreshAffordance by animateFloatAsState(
+                    targetValue = if (showsRefresh) 1f else 0f,
                     animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                 )
                 Box(
@@ -1508,6 +1556,15 @@ fun TodayScreen(
                     if (scanAffordance > 0.01f) {
                         Box(modifier = Modifier.graphicsLayer { alpha = scanAffordance }) {
                             RescanDisc(scanning = liveSnap.scanning, onClick = requestScan)
+                        }
+                    }
+                    if (refreshAffordance > 0.01f) {
+                        Box(modifier = Modifier.graphicsLayer { alpha = refreshAffordance }) {
+                            RefreshDisc(
+                                // Fading out, keep the last visible look rather than flashing a greyed disc.
+                                state = if (showsRefresh) refreshState else TodayRefreshState.UNAVAILABLE,
+                                onClick = { viewModel.syncActiveDevice() },
+                            )
                         }
                     }
                 }
@@ -2438,6 +2495,59 @@ private fun RescanDisc(scanning: Boolean, onClick: () -> Unit) {
             tint = Color.White.copy(alpha = if (scanning) 0.45f else 1f),
             modifier = Modifier.size(16.dp),
         )
+    }
+}
+
+/** Refresh (#93): sync the active device, in the wordmark row's leading slot while it is connected.
+ *
+ *  The Rescan disc's note that a circular arrow "reads as reload my data" is exactly why this one uses
+ *  it: this IS the reload, and it only appears once the device is connected, when Rescan has left.
+ *  Spins while the active device syncs (WHOOP backfill, Garmin/Huawei history sync, an Oura reconnect),
+ *  greys out and takes no taps unless a sync would actually run. */
+@Composable
+private fun RefreshDisc(state: TodayRefreshState, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val ready = state == TodayRefreshState.READY
+    val syncing = state == TodayRefreshState.SYNCING
+    val label = uiString(if (syncing) R.string.today_refresh_syncing else R.string.today_refresh_sync_now)
+    Box(
+        modifier = Modifier
+            .size(HeaderClusterControl)
+            .liquidPress(interaction)
+            .clip(CircleShape)
+            // The Rescan disc's chrome, so the slot looks the same whichever control holds it.
+            .background(Color.White.copy(alpha = if (ready) 0.16f else 0.08f))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = ready,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (syncing) {
+            // Composed only while syncing, so an idle disc runs no frame clock.
+            val spin = rememberInfiniteTransition()
+            val angle by spin.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(tween(durationMillis = 1_000, easing = LinearEasing)),
+            )
+            Icon(
+                Icons.Filled.Sync,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = angle },
+            )
+        } else {
+            Icon(
+                Icons.Filled.Sync,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = if (ready) 1f else 0.45f),
+                modifier = Modifier.size(16.dp),
+            )
+        }
     }
 }
 

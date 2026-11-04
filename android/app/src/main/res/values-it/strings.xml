@@ -144,6 +144,8 @@
     <string name="action_breathe">Respira</string>
     <string name="today_latest_workouts">Ultimi allenamenti</string>
     <string name="today_customize_title">Personalizza Oggi</string>
+    <string name="today_refresh_sync_now">Sincronizza ora</string>
+    <string name="today_refresh_syncing">Sincronizzazione</string>
     <string name="today_customize_action">Personalizza</string>
     <string name="today_customize_description">Riordina ciò che viene mostrato o sposta una sezione in Nascosti senza eliminarla.</string>
     <string name="today_customize_edit_added_cards">Modifica schede aggiunte</string>

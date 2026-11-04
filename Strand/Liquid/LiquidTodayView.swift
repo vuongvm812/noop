@@ -675,6 +675,15 @@ struct LiquidTodayView: View {
             // section block below. The wordmark's bottom pad (10) + the section VStack's 12 spacing keeps
             // the default hero-under-wordmark gap at the original 22.
             LiquidWordmark()
+                // #93: Refresh rides the wordmark's row at the leading edge, Android's slot, so the
+                // wordmark stays centred and nothing moves when the control comes and goes.
+                .overlay(alignment: .leading) {
+                    LiquidRefreshButton {
+                        // The reload pull-to-refresh runs after its sync request.
+                        await repo.refresh()
+                        await load()
+                    }
+                }
                 .padding(.top, 30)
                 .padding(.bottom, 10)
         }
@@ -2523,6 +2532,75 @@ private let headerClusterSpacing = NoopMetrics.space1
 #else
 private let headerClusterSpacing = NoopMetrics.space3
 #endif
+
+/// Refresh (#93): sync the active device. Spins while it syncs (WHOOP backfill, Garmin history sync, an
+/// Oura reconnect), greyed while it is away or a sync would be declined, absent when the active device
+/// has nothing to sync. `TodayRefreshControl` decides which; Kotlin twin `RefreshDisc` in TodayScreen.kt.
+///
+/// A leaf that observes AppModel on its own, so the model's per-beat `bpm` churn re-renders this button
+/// rather than all of Today.
+private struct LiquidRefreshButton: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let reload: () async -> Void
+
+    private var state: TodayRefreshState {
+        let source = model.todayRefreshSource
+        let link: TodayRefreshLink
+        switch source {
+        case .whoop:
+            link = TodayRefreshControl.whoop(connected: live.connected, bonded: live.bonded,
+                                             backfilling: live.backfilling, historyReady: live.historyReady)
+        case .garmin:
+            link = model.garminRefreshLink
+        case .oura:
+            link = TodayRefreshControl.oura(
+                connecting: model.ouraLinkPhase == .connecting || model.ouraLinkPhase == .authenticating,
+                authenticated: model.ouraLinkPhase == .authenticated)
+        case .huawei, .none:
+            link = TodayRefreshLink(linkUp: false, canSync: false, syncing: false)
+        }
+        // No Rescan disc beside the wordmark on Apple, so an away device reads as a greyed Refresh.
+        return TodayRefreshControl.resolve(source: source, link: link, rescanOffered: false)
+    }
+
+    var body: some View {
+        let state = state
+        if state != .hidden {
+            Button {
+                model.syncActiveDevice()
+                Task { await reload() }
+            } label: {
+                icon(spinning: state == .syncing && !reduceMotion)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(state == .unavailable ? StrandPalette.textTertiary : StrandPalette.textPrimary)
+                    .frame(
+                        width: NoopMetrics.compactControlSize,
+                        height: NoopMetrics.compactControlSize
+                    )
+            }
+            .nativeLiquidGlassHeaderButton()
+            .disabled(state != .ready)
+            // Two Text literals, not a ternary of strings: a String would skip the catalogue.
+            .accessibilityLabel(state == .syncing ? Text("Syncing…") : Text("Sync now"))
+        }
+    }
+
+    /// Spinning only while a sync runs, on a timeline that exists only then.
+    @ViewBuilder
+    private func icon(spinning: Bool) -> some View {
+        let glyph = Image(systemName: "arrow.triangle.2.circlepath")
+        if spinning {
+            TimelineView(.animation) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                glyph.rotationEffect(.degrees(t.truncatingRemainder(dividingBy: 1) * 360))
+            }
+        } else {
+            glyph
+        }
+    }
+}
 
 private struct LiquidAddButton: View {
     @EnvironmentObject var router: NavRouter

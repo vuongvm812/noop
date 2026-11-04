@@ -56,6 +56,8 @@
     <string name="action_breathe">Oddychać</string>
     <string name="today_latest_workouts">Najnowsze treningi</string>
     <string name="today_customize_title">Dostosuj już dziś</string>
+    <string name="today_refresh_sync_now">Synchronizuj teraz</string>
+    <string name="today_refresh_syncing">Synchronizowanie</string>
     <string name="today_customize_action">Dostosuj</string>
     <string name="today_customize_description">Zmień kolejność pokazywanych elementów lub przenieś sekcję do Ukrytej bez jej usuwania.</string>
     <string name="today_customize_edit_added_cards">Edytuj dodane karty</string>
