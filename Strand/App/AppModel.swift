@@ -660,9 +660,12 @@ final class AppModel: ObservableObject {
         self.ble.onSerialIdentityAdopted = { [weak registry] serialId in
             registry?.setActive(serialId)
         }
-        // A Garmin history sync that stored files re-scores like a completed WHOOP offload.
+        // A Garmin history sync that stored files re-scores like a completed WHOOP offload, except that it
+        // never skips as unchanged: a watch file can land only in streams the raw-input fingerprint does not
+        // witness (a METRICS file's VO2max is a metricSeries point), and the sync reports here only when it
+        // downloaded something (#70).
         coordinator.onGarminHistoryStored = { [weak self] in
-            Task { @MainActor in await self?.refreshAfterCompletedBackfill() }
+            Task { @MainActor in await self?.refreshAfterCompletedBackfill(skipIfUnchanged: false, triggerLabel: "garmin-sync") }
         }
         self.sourceCoordinator = coordinator
         syncGarminLiveDemand()   // a Live screen already open before the store finished opening
@@ -754,7 +757,8 @@ final class AppModel: ObservableObject {
         #endif
     }
 
-    private func refreshAfterCompletedBackfill() async {
+    /// `skipIfUnchanged` and `triggerLabel` go to `analyzeRecent`; a WHOOP offload keeps the defaults.
+    private func refreshAfterCompletedBackfill(skipIfUnchanged: Bool = true, triggerLabel: String? = nil) async {
         live.append(log: "Backfill: refreshing dashboard cache from completed sync")
         await repo.refresh(days: 120)
         // Score the freshly-offloaded raw data RIGHT NOW rather than waiting for the next 15-minute
@@ -775,7 +779,7 @@ final class AppModel: ObservableObject {
         // foreground pass is never deferred.
         await RescoreBackgroundScheduler.run(passInProgress: intelligence.computing,
                                              log: { [live] line in live.append(log: line) }) {
-            await intelligence.analyzeRecent(skipIfUnchanged: true)
+            await intelligence.analyzeRecent(skipIfUnchanged: skipIfUnchanged, triggerLabel: triggerLabel)
         }
         await refreshV5Signals()
         #if os(iOS)

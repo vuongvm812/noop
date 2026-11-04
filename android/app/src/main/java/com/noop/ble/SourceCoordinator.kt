@@ -542,6 +542,7 @@ class SourceCoordinator(
             // and stored under this watch's id (GarminHistoryIngest). Nothing on the watch is changed.
             loadSynced = {
                 GarminHistoryIngest.refetchSleepFilesOnce(syncStore, id, prefs, straplog)
+                GarminHistoryIngest.refetchMetricsFilesOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.rederiveNightVitalsOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.syncedKeys(syncStore, id)
             },

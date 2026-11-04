@@ -635,9 +635,13 @@ final class IntelligenceEngine: ObservableObject {
     }
 
     /// The active Garmin watch's own VO₂max for the week keyed `satKey`, or nil for any other device (#51).
+    /// The watch is the registry's active device, not the engine's `deviceId`, which stays the canonical
+    /// "my-whoop" while a watch is active and would never find the watch's points (#70). Kotlin twin:
+    /// `IntelligenceEngine.watchVo2max`.
     func watchVo2max(store: WhoopStore, satKey: String) async -> Double? {
-        guard FusionSource.isGarminWatchId(deviceId) else { return nil }
-        let points = (try? await store.metricSeries(deviceId: deviceId, key: "vo2max", from: "0000-01-01", to: satKey)) ?? []
+        let watchId = (try? DeviceRegistryStore(dbQueue: store.registryWriter).activeDeviceId()) ?? deviceId
+        guard FusionSource.isGarminWatchId(watchId) else { return nil }
+        let points = (try? await store.metricSeries(deviceId: watchId, key: "vo2max", from: "0000-01-01", to: satKey)) ?? []
         return GarminScoringInputs.watchVo2max(points.map { (day: $0.day, value: $0.value) }, weekKey: satKey)
     }
 

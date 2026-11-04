@@ -192,7 +192,7 @@ class NoopApplication : Application() {
             // Body Battery / respiration / SpO2 / steps / floors snapshot.
             clearExternalLiveHr = { ble.clearExternalLiveHr() },
             garminLiveSink = { snapshot -> ble.publishExternalGarminLive(snapshot) },
-            // New Garmin history files: the same debounced post-offload analysis a WHOOP backfill schedules.
+            // New Garmin history files: the debounced post-offload analysis, never skipped as unchanged (#70).
             onGarminHistoryStored = { ble.requestPostSyncAnalysis() },
             initialActiveDeviceId = activeDeviceId,
         )

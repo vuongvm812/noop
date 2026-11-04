@@ -3228,10 +3228,13 @@ object IntelligenceEngine {
     }
 
     /** The active Garmin watch's own VO₂max for the week keyed [satKey], or null for any other device (#51).
-     *  Swift twin: `IntelligenceEngine.watchVo2max`. */
+     *  The watch is the registry's active device, not [deviceId]: the post-sync pass runs under the canonical
+     *  "my-whoop" while a watch is active and would never find the watch's points (#70); [deviceId] is the
+     *  fallback when the registry names none. Swift twin: `IntelligenceEngine.watchVo2max`. */
     suspend fun watchVo2max(repo: WhoopRepository, deviceId: String, satKey: String): Double? {
-        if (!FusionSource.isGarminWatchId(deviceId)) return null
-        val points = repo.metricSeries(deviceId, "vo2max", "0000-01-01", satKey).map { it.day to it.value }
+        val watchId = repo.activeDeviceId() ?: deviceId
+        if (!FusionSource.isGarminWatchId(watchId)) return null
+        val points = repo.metricSeries(watchId, "vo2max", "0000-01-01", satKey).map { it.day to it.value }
         return GarminScoringInputs.watchVo2max(points, satKey)
     }
 

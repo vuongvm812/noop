@@ -593,6 +593,9 @@ class WhoopRepository(
     /** #716: read all paired devices (thin pass-through for the BLE scan fix). */
     suspend fun pairedDevices(): List<PairedDeviceRow> = dao.pairedDevices()
 
+    /** The registry's active device id, or null when none is active. Swift twin: `DeviceRegistryStore.activeDeviceId`. */
+    suspend fun activeDeviceId(): String? = dao.activeDeviceId()
+
     /** Raw biometric sample counts per device id in a window - see [WhoopDao.rawSampleCountsByDevice]. */
     suspend fun rawSampleCountsByDevice(from: Long, to: Long): List<Pair<String, Int>> =
         dao.rawSampleCountsByDevice(from, to).map { it.deviceId to it.total }

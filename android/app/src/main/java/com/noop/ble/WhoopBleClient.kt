@@ -3194,9 +3194,15 @@ class WhoopBleClient(
 
     /**
      * Another source (a Garmin watch's history sync) stored new history: run the same debounced post-offload
-     * scoring pass a completed WHOOP backfill schedules.
+     * scoring pass a completed WHOOP backfill schedules, except that it never skips as unchanged. A watch
+     * file can land only in streams the raw-input fingerprint does not witness (a METRICS file's VO2max is
+     * a metricSeries point), and the sync calls here only when it downloaded something (#70). Twin of the
+     * Swift `onGarminHistoryStored` → `refreshAfterCompletedBackfill(skipIfUnchanged: false)`.
      */
-    fun requestPostSyncAnalysis() = schedulePostBackfillAnalysis()
+    fun requestPostSyncAnalysis() {
+        analyzeAfterBackfillForced.set(true)
+        schedulePostBackfillAnalysis()
+    }
 
     private fun schedulePostBackfillAnalysis() {
         if (!analyzeAfterBackfillScheduled.compareAndSet(false, true)) {
@@ -3243,10 +3249,15 @@ class WhoopBleClient(
                 // recalibrate re-scores force regardless of the raw-input fingerprint and are untouched. Twin of
                 // the Swift `analyzeRecent(skipIfUnchanged:)` gate at the refreshAfterCompletedBackfill site.
                 val newData = analyzeFp != NoopPrefs.analyzeWatermark(context)
-                log("re-score: trigger=post-offload newData=" +
-                    if (newData) "yes"
-                    else "no (empty/duplicate offload — nothing changed since last run) — skipping (#1146)")
-                if (newData) runCatching {
+                // Taken once per pass: a request landing after this line re-arms the pending retry below.
+                val forced = analyzeAfterBackfillForced.getAndSet(false)
+                log(
+                    if (forced) "re-score: trigger=garmin-sync newData=" + (if (newData) "yes" else "no — forced (#70)")
+                    else "re-score: trigger=post-offload newData=" +
+                        if (newData) "yes"
+                        else "no (empty/duplicate offload — nothing changed since last run) — skipping (#1146)",
+                )
+                if (newData || forced) runCatching {
                     // #1816: set the motion sink so a fresh strap's first backfill flips the Today caption
                     // from "No motion synced yet" to the phone-step-days countdown as soon as it lands.
                     IntelligenceEngine.stepsHasMotionSink = { hasMotion ->
@@ -3553,6 +3564,8 @@ class WhoopBleClient(
     /** One-shot debounce: a post-backfill scoring pass is already scheduled/running. */
     private val analyzeAfterBackfillScheduled = java.util.concurrent.atomic.AtomicBoolean(false)
     private val analyzeAfterBackfillPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** The next post-backfill pass runs even when the raw-input fingerprint is unchanged ([requestPostSyncAnalysis]). */
+    private val analyzeAfterBackfillForced = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Guards the once-per-connect initial offload kick (Swift `backfillStarted`). */
     private var backfillStarted = false
