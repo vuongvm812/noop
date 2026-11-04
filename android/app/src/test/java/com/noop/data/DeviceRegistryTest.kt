@@ -262,6 +262,28 @@ class DeviceRegistryTest {
     }
 
     @Test
+    fun forgetDeletesTheDeviceCredentials() = runBlocking {
+        val calls = mutableListOf<String>()
+        val reg = DeviceRegistry(seededDao(), object : DeviceRegistry.Transactor {
+            override suspend fun <R> run(block: suspend () -> R): R = block()
+        }, { from, to -> calls.add("move $from -> $to") }, { id -> calls.add("delete $id") })
+        reg.forget("my-whoop")
+        assertEquals(listOf("delete my-whoop"), calls)
+    }
+
+    @Test
+    fun reKeyMovesTheCredentialsOnlyWhenARePointHappened() = runBlocking {
+        val calls = mutableListOf<String>()
+        val reg = DeviceRegistry(seededDao(), object : DeviceRegistry.Transactor {
+            override suspend fun <R> run(block: suspend () -> R): R = block()
+        }, { from, to -> calls.add("move $from -> $to") }, { id -> calls.add("delete $id") })
+        assertFalse(reg.adoptSerialIdentity("missing", "huawei-serial"))
+        assertTrue(calls.isEmpty())
+        assertTrue(reg.adoptSerialIdentity("my-whoop", "serial-1"))
+        assertEquals(listOf("move my-whoop -> serial-1"), calls)
+    }
+
+    @Test
     fun renameSetsAndClearsNickname() = runBlocking {
         val reg = registryWith(seededDao())
         reg.rename("my-whoop", "  Left wrist  ")

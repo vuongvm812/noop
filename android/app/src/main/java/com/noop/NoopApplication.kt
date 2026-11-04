@@ -67,7 +67,13 @@ class NoopApplication : Application() {
     }
 
     /** Process-wide device registry over the same Room DB — the single source of the active device id. */
-    val deviceRegistry: DeviceRegistry by lazy { DeviceRegistry(WhoopDatabase.get(this)) }
+    val deviceRegistry: DeviceRegistry by lazy {
+        DeviceRegistry(
+            WhoopDatabase.get(this),
+            moveCredentials = { from, to -> com.noop.ble.HuaweiKeyStore.of(this).move(from, to) },
+            deleteCredentials = { id -> com.noop.ble.HuaweiKeyStore.of(this).delete(id) },
+        )
+    }
 
     /**
      * Active device id, resolved once at startup from the registry and falling back to the legacy

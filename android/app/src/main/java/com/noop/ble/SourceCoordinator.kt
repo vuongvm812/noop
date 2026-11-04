@@ -105,6 +105,8 @@ class SourceCoordinator(
     private val garminLiveSink: (com.noop.garmin.GarminLiveSnapshot?) -> Unit = {},
     /** A Garmin history sync stored new files: run the same refresh + analysis a completed WHOOP offload runs. */
     private val onGarminHistoryStored: () -> Unit = {},
+    /** Runs a Huawei band's history sync once its link is authenticated. No-op until the sync engine is wired. */
+    private val huaweiSyncRunner: com.noop.huawei.HuaweiSyncRunner = com.noop.huawei.HuaweiSyncRunner.NONE,
     /** Push the latest instantaneous speed/cadence/power from a connected standard fitness sensor
      *  (RSC/CSC/CPS), read ADDITIVELY alongside HR by [StandardHrSource], into the live state the in-workout
      *  UI observes (wired at the composition root to `ble::publishExternalSensorMetrics`). PURE ADDITIVE — it
@@ -142,6 +144,11 @@ class SourceCoordinator(
      *  null whenever the active source is not a GarminSource. Mirrors macOS `SourceCoordinator.garminSource`. */
     private val _garminSource = MutableStateFlow<GarminSource?>(null)
     val garminSource: StateFlow<GarminSource?> = _garminSource.asStateFlow()
+
+    /** The active Huawei band source, for the pairing wizard, the device panel and the Test Centre; null
+     *  whenever the active source is not a HuaweiSource. */
+    private val _huaweiSource = MutableStateFlow<HuaweiSource?>(null)
+    val huaweiSource: StateFlow<HuaweiSource?> = _huaweiSource.asStateFlow()
 
     /** The active Oura source's live adopt outcome, mirrored so the Add-Oura wizard can leave its Adopting
      *  step (success -> close, failed -> the honest Failed step). [AdoptPhase.Idle] whenever no Oura source
@@ -421,6 +428,7 @@ class SourceCoordinator(
         if (!address.isNullOrEmpty()) source.connect(address) else source.scan()
         activeSource = source
         _garminSource.value = source as? GarminSource
+        _huaweiSource.value = source as? HuaweiSource
         activeStrapId = id
         onStrap = true
     }
@@ -429,8 +437,8 @@ class SourceCoordinator(
      * Build the isolated [LiveHrSource] for a device from its registered `sourceKind` — the ONE place that
      * maps a kind to a concrete driver. An FTMS gym machine runs the FtmsSource; an EXPERIMENTAL Huami
      * device (Amazfit / Zepp / Mi Band) runs the HuamiHrSource; an EXPERIMENTAL Oura ring runs the
-     * OuraLiveSource; a Garmin watch runs the GarminSource; a Huawei Band 10 holds the
-     * HuaweiPlaceholderSource until its driver lands; everything else is a generic HR
+     * OuraLiveSource; a Garmin watch runs the GarminSource; a Huawei Band 10 runs the HuaweiSource;
+     * everything else is a generic HR
      * strap on StandardHrSource. Adding a brand adds ONE arm
      * here (plus a conforming source); nothing else in the coordinator changes. Returns the source WITHOUT
      * connecting — the caller ([switchToStrap]) does the connect-by-address-else-scan bring-up. Mirrors
@@ -462,8 +470,7 @@ class SourceCoordinator(
             }
             SourceKind.oura.name -> makeOuraSource(id, ctx, row)
             SourceKind.garmin.name -> makeGarminSource(id, ctx, row)
-            // Wave 1 placeholder: reports needs-pairing and never runs a strap profile at the band.
-            SourceKind.huawei.name -> HuaweiPlaceholderSource(id, straplog)
+            SourceKind.huawei.name -> makeHuaweiSource(id, ctx, row)
             else -> {
                 val repo = requireNotNull(repository) { "SourceCoordinator.repository is required to persist strap samples" }
                 StandardHrSource(
@@ -563,6 +570,38 @@ class SourceCoordinator(
             val demand = garminLiveDemand
             source.updateLiveDemand { demand }
         }
+    }
+
+    /**
+     * Build the source for a Huawei Band 10 (`huawei`). Credentials come from the encrypted [HuaweiKeyStore];
+     * a first pairing runs only when the wizard armed one in [HuaweiPairingRequests]. Battery rides the same
+     * [batterySink]; the band's model name corrects the registry label. Per-connect readouts appear only while
+     * the Connection or Sources Test Centre domain is active; auth failures and mode changes always log.
+     */
+    private fun makeHuaweiSource(id: String, ctx: Context, row: PairedDeviceRow?): HuaweiSource {
+        val prefs = ctx.getSharedPreferences(HUAWEI_SYNC_PREFS, Context.MODE_PRIVATE)
+        val lastKey = "lastAt.$id"
+        val source = HuaweiSource(
+            deviceId = id,
+            gatt = AndroidHuaweiGatt(ctx, straplog),
+            keys = HuaweiKeyStore.of(ctx),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+            syncRunner = huaweiSyncRunner,
+            log = straplog,
+            detail = {
+                val tc = com.noop.testcentre.TestCentre.from(ctx)
+                tc.active(com.noop.testcentre.TestDomain.CONNECTION) || tc.active(com.noop.testcentre.TestDomain.SOURCES)
+            },
+            onBattery = batterySink,
+            onProduct = { info ->
+                val model = info.productModel
+                if (model.isNotBlank() && model != row?.model) scope.launch { runCatching { registry.setModel(id, model) } }
+            },
+            onSynced = { at -> prefs.edit().putLong(lastKey, at).apply() },
+            initialLastSyncAt = if (prefs.contains(lastKey)) prefs.getLong(lastKey, 0) else null,
+        )
+        HuaweiPairingRequests.take(id)?.let { source.beginFirstPairing(it) }
+        return source
     }
 
     /** Who is watching live data ([GarminRadioPolicy] inputs), kept so a Garmin source built later starts from it. */
@@ -757,6 +796,7 @@ class SourceCoordinator(
         activeSource?.stop()
         activeSource = null
         _garminSource.value = null
+        _huaweiSource.value = null
         // Stop mirroring the (now torn-down) Oura source and clear the mirrors so a stale adopt outcome /
         // needs-pairing message never outlives the source or drives a later wizard transition.
         ouraStateJob?.cancel(); ouraStateJob = null
@@ -772,6 +812,9 @@ class SourceCoordinator(
     }
 
     companion object {
+        /** Plain prefs holding each Huawei band's last completed sync time. */
+        private const val HUAWEI_SYNC_PREFS = "noop_huawei_sync"
+
         /** Whether a finished Garmin sync stored anything new (only then does it trigger a re-analysis). */
         fun garminSyncStoredHistory(summary: com.noop.garmin.GarminSyncSummary): Boolean = summary.downloaded > 0
 
