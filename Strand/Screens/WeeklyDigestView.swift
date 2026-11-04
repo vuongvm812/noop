@@ -24,31 +24,20 @@ import Foundation
 
 enum WeeklyDigestSource {
 
-    /// Build the digest for the week containing today's local day from a DailyMetric
-    /// history. Extracts each tracked metric into a "yyyy-MM-dd"→value map and hands
-    /// it to the pure engine.
+    /// Build the digest for the week containing `anchorDay` from a DailyMetric history plus
+    /// the paired watch's series (#89, read by `WeeklyDigestLoader`). The mapping into the
+    /// engine's day→value maps is the pure `WeeklyDigestInputs.series`, shared with Android.
     static func digest(from days: [DailyMetric],
                        anchorDay: String,
                        importedSleep: [String: ImportedSleepFigures] = [:],
                        computedSleep: [String: ImportedSleepFigures] = [:],
+                       watch: WeeklyDigestWatchSeries = WeeklyDigestWatchSeries(),
                        effortDisplayFactor: Double = UnitPrefs.currentEffortDisplayFactor()) -> WeeklyDigest {
-        var charge: [String: Double] = [:]
-        var effort: [String: Double] = [:]
-        var rest: [String: Double] = [:]
-        var rhr: [String: Double] = [:]
-        var hrv: [String: Double] = [:]
-        for d in days {
-            if let v = d.recovery { charge[d.day] = v }
-            if let v = d.strain   { effort[d.day] = v }
-            // Rest = the one resolver every surface reads (import, then the engine's score, #55).
-            if let r = Repository.restScore(d, imported: importedSleep[d.day], computed: computedSleep[d.day]) {
-                rest[d.day] = r
-            }
-            if let v = d.restingHr { rhr[d.day] = Double(v) }
-            if let v = d.avgHrv    { hrv[d.day] = v }
+        let rows = days.map {
+            WeeklyDigestLoader.digestDay($0, importedSleep: importedSleep, computedSleep: computedSleep)
         }
         return WeeklyDigestEngine.build(
-            byMetric: [.charge: charge, .effort: effort, .rest: rest, .rhr: rhr, .hrv: hrv],
+            byMetric: WeeklyDigestInputs.series(days: rows, watch: watch),
             anchorDay: anchorDay,
             effortDisplayFactor: effortDisplayFactor)
     }
@@ -60,17 +49,27 @@ enum WeeklyDigestSource {
 /// (an empty view) when there's no data this week, so it's safe to always place.
 struct WeeklyDigestCard: View {
     @EnvironmentObject var repo: Repository
+    @State private var watch = WeeklyDigestWatchSeries()
 
     var body: some View {
-        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
-        if digest.isEmpty {
-            EmptyView()
-        } else {
-            // Content owns its own frosted cards (the domain score row + the signals
-            // card), so it's no longer wrapped in an outer NoopCard — that would double
-            // the frost. The compact flag trims it to the three headline scores.
-            WeeklyDigestContent(digest: digest, compact: true)
+        let anchor = Repository.localDayKey(Date())
+        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: anchor,
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
+        Group {
+            if digest.isEmpty {
+                // Zero-size rather than EmptyView, so the `.task` below still runs and a week
+                // carried only by the watch's series can appear once they load.
+                Color.clear.frame(width: 0, height: 0)
+            } else {
+                // Content owns its own frosted cards (the domain score row + the signals
+                // card), so it's no longer wrapped in an outer NoopCard — that would double
+                // the frost. The compact flag trims it to the three headline scores.
+                WeeklyDigestContent(digest: digest, compact: true)
+            }
+        }
+        // Reload when a pass rewrites the history (the day count moves) or the day rolls.
+        .task(id: "\(anchor)|\(repo.days.count)") {
+            watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: anchor)
         }
     }
 }
@@ -80,6 +79,7 @@ struct WeeklyDigestCard: View {
 /// The weekly digest as a full screen (for a sidebar `.digest` case).
 struct WeeklyDigestView: View {
     @EnvironmentObject var repo: Repository
+    @State private var watch = WeeklyDigestWatchSeries()
 
     var body: some View {
         ScreenScaffold(title: "Week in review",
@@ -96,7 +96,7 @@ struct WeeklyDigestView: View {
                     : "Loading your history…")
             } else {
                 let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
                 if digest.isEmpty {
                     DataPendingNote(
                         title: "No readings this week yet",
@@ -107,6 +107,9 @@ struct WeeklyDigestView: View {
                     }
                 }
             }
+        }
+        .task(id: "\(Repository.localDayKey(Date()))|\(repo.days.count)") {
+            watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: Repository.localDayKey(Date()))
         }
     }
 }
