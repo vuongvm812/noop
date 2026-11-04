@@ -53,6 +53,29 @@ enum GarminHistoryIngest {
         }
     }
 
+    /// Once per watch, forget the stored METRICS files (FIT sub-type 44), so the next sync downloads them
+    /// again and stores the watch's own VO2max (MAX_MET_DATA, 229) from them (#70). Before #51 the decoder
+    /// read that message but the store kept nothing of it, and every METRICS file synced then is in the
+    /// ledger, so it was never fetched again. Nothing on the watch changes. Kotlin twin:
+    /// `GarminHistoryIngest.refetchMetricsFilesOnce`.
+    static func refetchMetricsFilesOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
+                                        log: (String) -> Void) async {
+        let key = "noop.garmin.metricsRefetch.v1.\(deviceId)"
+        guard !defaults.bool(forKey: key) else { return }
+        do {
+            // Both listing flows: FileAccess items (the Forerunner 165) and the legacy GFDI directory.
+            var forgotten = 0
+            for dataType in [GarminSyncFileKey.fileAccessDataType, GarminFitFileType.fitDataType] {
+                forgotten += try await store.forgetGarminSyncedFiles(deviceId: deviceId, dataType: Int(dataType),
+                                                                     subType: Int(GarminFitFileType.metrics.rawValue))
+            }
+            defaults.set(true, forKey: key)
+            log("Garmin: \(forgotten) metrics files will download again for the watch's VO2max")
+        } catch {
+            log("Garmin: metrics re-download postponed: \(error.localizedDescription)")
+        }
+    }
+
     /// Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
     /// stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
     /// use the phone's current UTC offset, as the fold does for a file without one. Kotlin twin:

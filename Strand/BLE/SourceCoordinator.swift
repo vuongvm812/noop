@@ -361,6 +361,7 @@ final class SourceCoordinator: ObservableObject {
             loadSynced: { [storeHandle, straplog] in
                 guard let store = await storeHandle() else { return [] }
                 await GarminHistoryIngest.refetchSleepFilesOnce(store: store, deviceId: id, log: straplog)
+                await GarminHistoryIngest.refetchMetricsFilesOnce(store: store, deviceId: id, log: straplog)
                 await GarminHistoryIngest.rederiveNightVitalsOnce(store: store, deviceId: id, log: straplog)
                 return await GarminHistoryIngest.syncedKeys(store: store, deviceId: id)
             },

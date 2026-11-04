@@ -668,4 +668,90 @@ class WearableExportImporterTest {
         }
         assertEquals(null, WearableExportImporter.parseGarmin(mapOf("z_summary.json" to legacy)).days.first().avgStress)
     }
+
+    // ---------------- Garmin VO2max (MetricsMaxMetData, #71) ----------------
+
+    /** Synthetic MaxMetData record, shaped like the GDPR export's. */
+    private fun maxMet(day: String, sport: String, value: String) =
+        """{"userProfilePK": 1, "calendarDate": "$day", "deviceId": 1, "updateTimestamp": "${day}T12:46:27.0", """ +
+            """"sport": "$sport", "subSport": "GENERIC", "vo2MaxValue": $value, "maxMet": 12.57, """ +
+            """"maxMetCategory": "GENERIC", "calibratedData": 1}"""
+
+    /** Two consecutive MaxMetData files sharing 2026-08-31, mixed sports, beside a daily summary.
+     *  Swift twin: `WearableExportImporterTests.garminMaxMetFiles`. */
+    private fun garminMaxMetFiles(swapNames: Boolean = false, reverse: Boolean = false): Map<String, ByteArray> {
+        val a = "[" + listOf(maxMet("2026-08-29", "RUNNING", "0"), maxMet("2026-08-29", "CYCLING", "45.0"),
+            maxMet("2026-08-30", "CYCLING", "47.0"), maxMet("2026-08-30", "RUNNING", "44.0"),
+            maxMet("2026-08-31", "CYCLING", "46.0")).joinToString(",") + "]"
+        val b = "[" + listOf(maxMet("2026-08-31", "RUNNING", "43.0"), maxMet("2026-09-01", "RUNNING", "42.0"),
+            maxMet("2026-09-01", "RUNNING", "42.5"), maxMet("2026-09-02", "RUNNING", "null")).joinToString(",") + "]"
+        val dir = "di_connect/di-connect-metrics/"
+        val first = dir + "metricsmaxmetdata_20260801_20260831_1.json"
+        val second = dir + "metricsmaxmetdata_20260831_20260930_1.json"
+        val entries = listOf(
+            (if (swapNames) second else first) to bytes(a),
+            (if (swapNames) first else second) to bytes(b),
+            "di_connect/di-connect-aggregator/udsfile_2026.json" to
+                bytes("""[ { "calendarDate": "2026-08-30", "restingHeartRate": 52 } ]"""),
+        )
+        return LinkedHashMap((if (reverse) entries.reversed() else entries).toMap())
+    }
+
+    @Test
+    fun garminMaxMetFoldsVo2maxPerDay() {
+        assertEquals(WearableExportImporter.Brand.GARMIN, WearableExportImporter.detectBrand(garminMaxMetFiles()))
+        for (swap in listOf(false, true)) for (reverse in listOf(false, true)) {
+            val days = WearableExportImporter.parseGarmin(garminMaxMetFiles(swap, reverse)).days
+            assertEquals(listOf("2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01"), days.map { it.day })
+            // A RUNNING value wins over a higher CYCLING one; a zero RUNNING value is no value; a day shared by
+            // two files takes the RUNNING record from the second; two RUNNING records → highest.
+            assertEquals(listOf(45.0, 44.0, 43.0, 42.5), days.map { it.vo2max })
+            // The MaxMetData file is not a summary: only the UDS file carries the RHR.
+            assertEquals(listOf(null, 52, null, null), days.map { it.restingHr })
+            assertEquals(0, days.mapNotNull { it.steps }.size)
+        }
+    }
+
+    @Test
+    fun garminMaxMetIsRecognisedByNameOrContent() {
+        assertTrue(WearableExportImporter.isWellnessFile("metricsmaxmetdata_20260801_20260831_1.json", ByteArray(0)))
+        assertEquals(WearableExportImporter.Brand.GARMIN, WearableExportImporter.detectBrand(
+            mapOf("metricsmaxmetdata_20260801_20260831_1.json" to bytes("[" + maxMet("2026-08-30", "RUNNING", "44.0") + "]"))))
+        // Content alone, under a name that says nothing.
+        val days = WearableExportImporter.parseGarmin(
+            mapOf("x.json" to bytes("[" + maxMet("2026-08-30", "CYCLING", "47.0") + "]"))).days
+        assertEquals(listOf(47.0), days.map { it.vo2max })
+    }
+
+    /** The day's pick across a spread of record sets. [EXPECTED_PICKS] is the Swift
+     *  `testGarminVo2maxPickOracle` output, pasted verbatim. */
+    @Test
+    fun garminVo2maxOracleMatchesSwift() {
+        val cases = listOf<List<Pair<String?, Double>>>(
+            emptyList(), listOf("RUNNING" to 44.0, "CYCLING" to 47.0), listOf("CYCLING" to 46.0, null to 48.0),
+            listOf("running" to 41.0, "CYCLING" to 50.0), listOf("RUNNING" to 0.0, "CYCLING" to 45.0),
+            listOf("RUNNING" to -3.0), listOf("RUNNING" to 42.0, "RUNNING" to 42.5),
+            listOf("RUNNING" to Double.NaN, "CYCLING" to 40.0), listOf("CYCLING" to 47.0, "RUNNING" to 44.0),
+            listOf("RUNNING" to Double.POSITIVE_INFINITY),
+        )
+        val out = cases.withIndex().joinToString("\n") { (i, c) ->
+            "pick $i ${WearableExportImporter.garminVo2max(c)?.toString() ?: "nil"}"
+        }
+        assertEquals(EXPECTED_PICKS, out)
+    }
+
+    private companion object {
+        val EXPECTED_PICKS = """
+            pick 0 nil
+            pick 1 44.0
+            pick 2 48.0
+            pick 3 41.0
+            pick 4 45.0
+            pick 5 nil
+            pick 6 42.5
+            pick 7 40.0
+            pick 8 44.0
+            pick 9 nil
+        """.trimIndent()
+    }
 }

@@ -223,6 +223,27 @@ final class GarminScoringInputsTests: XCTestCase {
         for week in ["2026-10-31", "2026-10-30", "2026-11-07", "2026-11-08", "2026-12-31", "bad"] {
             lines.append("vo2 \(week) \(GarminScoringInputs.watchVo2max(vo2Points, weekKey: week).map { String($0) } ?? "nil")")
         }
+        // #71: the watch's points first, the export's on the days the watch lacks; then every past week the
+        // 28-day rule covers.
+        let imported: [(day: String, value: Double)] = [("2026-09-20", 48.0), ("2026-10-04", 49.0), ("2026-10-05", 47.5),
+                                                        ("2026-10-06", -1), ("2026-09-01", .nan), ("2026-09-02", .infinity)]
+        let merged = GarminScoringInputs.vo2maxPoints(
+            watch: [("2026-10-04", 51.0), ("2026-10-01", 50.1), ("2026-10-05", 0)], imported: imported)
+        lines.append("merge " + merged.map { "\($0.day)=\($0.value)" }.joined(separator: " "))
+        lines.append("merge-watch-only " + GarminScoringInputs.vo2maxPoints(watch: vo2Points, imported: [])
+            .map { "\($0.day)=\($0.value)" }.joined(separator: " "))
+        lines.append("merge-import-only " + GarminScoringInputs.vo2maxPoints(watch: [], imported: imported)
+            .map { "\($0.day)=\($0.value)" }.joined(separator: " "))
+        let weekSets: [[(day: String, value: Double)]] = [
+            merged, [], [("2026-10-03", 44.0)], [("2026-01-01", 40.0), ("2026-03-15", 42.0)],
+            [("2025-12-30", 41.0), ("2026-01-20", -2)],
+        ]
+        for (i, points) in weekSets.enumerated() {
+            for before in ["2026-11-07", "2026-10-03", "2026-02-07", "bad"] {
+                let weeks = GarminScoringInputs.watchVo2maxWeeks(points, beforeWeekKey: before)
+                lines.append("weeks \(i) \(before) [" + weeks.map { "\($0.week)=\($0.value)" }.joined(separator: " ") + "]")
+            }
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -826,5 +847,28 @@ final class GarminScoringInputsTests: XCTestCase {
     vo2 2026-11-08 53.0
     vo2 2026-12-31 nil
     vo2 bad nil
+    merge 2026-09-20=48.0 2026-10-01=50.1 2026-10-04=51.0 2026-10-05=47.5
+    merge-watch-only 2026-10-01=50.1 2026-10-04=51.0 2026-10-31=52.4 2026-11-08=53.0
+    merge-import-only 2026-09-20=48.0 2026-10-04=49.0 2026-10-05=47.5
+    weeks 0 2026-11-07 [2026-09-26=48.0 2026-10-03=50.1 2026-10-10=47.5 2026-10-17=47.5 2026-10-24=47.5 2026-10-31=47.5]
+    weeks 0 2026-10-03 [2026-09-26=48.0]
+    weeks 0 2026-02-07 []
+    weeks 0 bad []
+    weeks 1 2026-11-07 []
+    weeks 1 2026-10-03 []
+    weeks 1 2026-02-07 []
+    weeks 1 bad []
+    weeks 2 2026-11-07 [2026-10-03=44.0 2026-10-10=44.0 2026-10-17=44.0 2026-10-24=44.0]
+    weeks 2 2026-10-03 []
+    weeks 2 2026-02-07 []
+    weeks 2 bad []
+    weeks 3 2026-11-07 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0 2026-03-21=42.0 2026-03-28=42.0 2026-04-04=42.0 2026-04-11=42.0]
+    weeks 3 2026-10-03 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0 2026-03-21=42.0 2026-03-28=42.0 2026-04-04=42.0 2026-04-11=42.0]
+    weeks 3 2026-02-07 [2026-01-03=40.0 2026-01-10=40.0 2026-01-17=40.0 2026-01-24=40.0]
+    weeks 3 bad []
+    weeks 4 2026-11-07 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+    weeks 4 2026-10-03 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+    weeks 4 2026-02-07 [2026-01-03=41.0 2026-01-10=41.0 2026-01-17=41.0 2026-01-24=41.0]
+    weeks 4 bad []
     """
 }

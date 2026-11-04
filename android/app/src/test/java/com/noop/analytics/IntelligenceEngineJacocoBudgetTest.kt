@@ -158,16 +158,18 @@ class IntelligenceEngineJacocoBudgetTest {
             trace = { events.add("trace") },
         )
 
-        assertEquals("diag", events.first())
-        assertEquals("apple:apple-health", events[1])
-        assertEquals("apple:health-connect", events[2])
+        // The watch-VO2max resolver asks the registry for the active watch before the fitness gate (#70).
+        assertEquals("activeDevice", events.first())
+        assertEquals("diag", events[1])
+        assertEquals("apple:apple-health", events[2])
+        assertEquals("apple:health-connect", events[3])
         // Cold cache: every day is folded, so every day pays BOTH the witness and the read it guards.
         assertEquals(60, events.count { it == "gravityFp" })
         assertEquals(60, events.count { it == "gravity" })
         // Each day asks for the witness BEFORE the read it might skip; a read that came first would make
         // the cache pointless while still passing a count.
-        assertEquals("gravityFp", events[3])
-        assertEquals("gravity", events[4])
+        assertEquals("gravityFp", events[4])
+        assertEquals("gravity", events[5])
         // Three diagnostics now: the fitness gate first, the motion-cache readout once the reads are done,
         // and the phase line last of all.
         assertEquals(3, events.count { it == "diag" })
@@ -195,7 +197,7 @@ class IntelligenceEngineJacocoBudgetTest {
         } catch (failure: InvocationTargetException) {
             assertSame(sentinel, failure.cause)
         }
-        assertEquals(listOf("diag", "apple:apple-health"), failureEvents)
+        assertEquals(listOf("activeDevice", "diag", "apple:apple-health"), failureEvents)
     }
 
     /**
@@ -244,6 +246,11 @@ class IntelligenceEngineJacocoBudgetTest {
                     events.add("apple:${arguments!![0]}")
                     if (appleFailure != null) throw appleFailure
                     emptyList<Any>()
+                }
+                // The registry's active device, for the watch's own VO2max (#70). No watch is active here.
+                "activeDeviceId" -> {
+                    events.add("activeDevice")
+                    null
                 }
                 "gravitySamples" -> {
                     events.add("gravity")

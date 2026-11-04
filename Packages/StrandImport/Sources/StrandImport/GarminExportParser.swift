@@ -16,6 +16,8 @@ import Foundation
 //   DI-Connect-Aggregator/UDSFile_*.json — the daily summaries in newer exports (same day fields; stress
 //                        under allDayStress.aggregatorList TOTAL).
 //   *_healthStatusData.json — per day, a `metrics` list whose HRV entry is the overnight HRV.
+//   DI-Connect-Metrics/MetricsMaxMetData_*.json — the watch's VO2max history: per record a calendarDate,
+//                        sport (RUNNING / CYCLING), vo2MaxValue. Folded per day by `vo2max(_:)`.
 //
 // Newer exports name the folders with hyphens (DI-Connect-Wellness) and write zoneless GMT times with a
 // fractional second; both spellings are accepted.
@@ -40,9 +42,26 @@ enum GarminExportParser {
     /// Kotlin twin: `WearableExportImporter.garminStress`.
     static func stress(_ v: Int?) -> Int? { v.flatMap { $0 <= 100 ? $0 : nil } }
 
+    /// True for a MaxMetData (VO2max) file, by name or by its `vo2MaxValue` records. Checked before the
+    /// daily-summary branch, which would otherwise take it for a summary.
+    /// Kotlin twin: `WearableExportImporter.isGarminMaxMet`.
+    static func isMaxMet(_ base: String, _ records: [[String: Any]]) -> Bool {
+        base.lowercased().contains("maxmetdata") || records.contains(where: { $0["vo2MaxValue"] != nil })
+    }
+
+    /// One day's VO2max from its MaxMetData records `(sport, value)`, which can span several files: the
+    /// highest RUNNING value (what Garmin Connect shows), else the highest value of any sport. Non-positive
+    /// values are ignored. Order-free, so file order cannot change it. Kotlin twin: `WearableExportImporter.garminVo2max`.
+    static func vo2max(_ records: [(sport: String?, value: Double)]) -> Double? {
+        let valid = records.filter { $0.value > 0 && $0.value.isFinite }
+        let running = valid.filter { $0.sport?.uppercased() == "RUNNING" }
+        return (running.isEmpty ? valid : running).map(\.value).max()
+    }
+
     static func parse(_ files: [String: Data]) -> (days: [WearableDailyRow], sleeps: [WearableSleepSession]) {
         var byDay: [String: WearableDailyRow] = [:]
         var sleeps: [WearableSleepSession] = []
+        var vo2ByDay: [String: [(sport: String?, value: Double)]] = [:]
         func day(_ key: String) -> WearableDailyRow { byDay[key] ?? WearableDailyRow(day: key) }
 
         for name in fileOrder(Array(files.keys)) {
@@ -51,7 +70,12 @@ enum GarminExportParser {
             // A Garmin wellness file is usually a top-level array; some are { ... : [ ... ] }.
             let records = elements(data)
 
-            if base.contains("sleepdata") || records.contains(where: { $0["deepSleepSeconds"] != nil || $0["sleepStartTimestampGMT"] != nil || $0["DeepSleepDurationInSeconds"] != nil }) {
+            if isMaxMet(base, records) {
+                for r in records {
+                    guard let key = WearableJSON.str(r, "calendarDate"), !key.isEmpty, let v = WearableJSON.dbl(r, "vo2MaxValue") else { continue }
+                    vo2ByDay[key, default: []].append((sport: WearableJSON.str(r, "sport"), value: v))
+                }
+            } else if base.contains("sleepdata") || records.contains(where: { $0["deepSleepSeconds"] != nil || $0["sleepStartTimestampGMT"] != nil || $0["DeepSleepDurationInSeconds"] != nil }) {
                 for s in records {
                     guard let session = sleepSession(s), let key = sleepDayKey(s, session) else { continue }
                     sleeps.append(session)
@@ -83,6 +107,12 @@ enum GarminExportParser {
                     byDay[key] = row
                 }
             }
+        }
+        for (key, records) in vo2ByDay {
+            guard let v = vo2max(records) else { continue }
+            var row = day(key)
+            row.vo2max = v
+            byDay[key] = row
         }
         return (byDay.values.sorted { $0.day < $1.day }, sleeps.sorted { $0.start < $1.start })
     }

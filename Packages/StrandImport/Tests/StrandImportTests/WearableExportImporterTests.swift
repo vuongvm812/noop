@@ -491,6 +491,84 @@ final class WearableExportImporterTests: XCTestCase {
         XCTAssertNil(onlyLegacy.days.first?.avgStress, "a stress average above 100 is not a stress level")
     }
 
+    // MARK: - Garmin VO2max (MetricsMaxMetData, #71)
+
+    /// Synthetic MaxMetData record, shaped like the GDPR export's.
+    private func maxMet(_ day: String, _ sport: String, _ value: String) -> String {
+        #"{"userProfilePK": 1, "calendarDate": "\#(day)", "deviceId": 1, "updateTimestamp": "\#(day)T12:46:27.0", "#
+            + #""sport": "\#(sport)", "subSport": "GENERIC", "vo2MaxValue": \#(value), "maxMet": 12.57, "#
+            + #""maxMetCategory": "GENERIC", "calibratedData": 1}"#
+    }
+
+    /// Two consecutive MaxMetData files sharing 2026-08-31, mixed sports, beside a daily summary.
+    /// Kotlin twin: `WearableExportImporterTest.garminMaxMetFiles`.
+    private func garminMaxMetFiles(swapNames: Bool = false) -> [String: Data] {
+        let a = "[" + [maxMet("2026-08-29", "RUNNING", "0"), maxMet("2026-08-29", "CYCLING", "45.0"),
+                       maxMet("2026-08-30", "CYCLING", "47.0"), maxMet("2026-08-30", "RUNNING", "44.0"),
+                       maxMet("2026-08-31", "CYCLING", "46.0")].joined(separator: ",") + "]"
+        let b = "[" + [maxMet("2026-08-31", "RUNNING", "43.0"), maxMet("2026-09-01", "RUNNING", "42.0"),
+                       maxMet("2026-09-01", "RUNNING", "42.5"), maxMet("2026-09-02", "RUNNING", "null")]
+            .joined(separator: ",") + "]"
+        let dir = "di_connect/di-connect-metrics/"
+        let first = dir + "metricsmaxmetdata_20260801_20260831_1.json"
+        let second = dir + "metricsmaxmetdata_20260831_20260930_1.json"
+        return [swapNames ? second : first: bytes(a), swapNames ? first : second: bytes(b),
+                "di_connect/di-connect-aggregator/udsfile_2026.json":
+                    bytes(#"[ { "calendarDate": "2026-08-30", "restingHeartRate": 52 } ]"#)]
+    }
+
+    func testGarminMaxMetFoldsVo2maxPerDay() {
+        let files = garminMaxMetFiles()
+        XCTAssertEqual(WearableExportImporter.detectBrand(files), .garmin)
+        for swap in [false, true] {
+            for _ in 0..<10 {
+                let days = GarminExportParser.parse(garminMaxMetFiles(swapNames: swap)).days
+                XCTAssertEqual(days.map(\.day), ["2026-08-29", "2026-08-30", "2026-08-31", "2026-09-01"])
+                // A RUNNING value wins over a higher CYCLING one; a zero RUNNING value is no value; a day
+                // shared by two files takes the RUNNING record from the second; two RUNNING records → highest.
+                XCTAssertEqual(days.map { $0.vo2max }, [45.0, 44.0, 43.0, 42.5])
+                // The MaxMetData file is not a summary: only the UDS file carries the RHR.
+                XCTAssertEqual(days.map { $0.restingHr }, [nil, 52, nil, nil])
+                XCTAssertEqual(days.compactMap { $0.steps }.count, 0)
+            }
+        }
+    }
+
+    func testGarminMaxMetIsRecognisedByNameOrContent() {
+        XCTAssertTrue(WearableExportImporter.isWellnessFile("metricsmaxmetdata_20260801_20260831_1.json", data: Data()))
+        XCTAssertEqual(WearableExportImporter.detectBrand(
+            ["metricsmaxmetdata_20260801_20260831_1.json": bytes("[" + maxMet("2026-08-30", "RUNNING", "44.0") + "]")]),
+            .garmin)
+        // Content alone, under a name that says nothing.
+        let days = GarminExportParser.parse(["x.json": bytes("[" + maxMet("2026-08-30", "CYCLING", "47.0") + "]")]).days
+        XCTAssertEqual(days.map { $0.vo2max }, [47.0])
+    }
+
+    /// The day's pick across a spread of record sets. Oracle: the same lines are pinned in the Kotlin twin
+    /// `WearableExportImporterTest.garminVo2maxOracleMatchesSwift`.
+    func testGarminVo2maxPickOracle() {
+        let cases: [[(sport: String?, value: Double)]] = [
+            [], [("RUNNING", 44), ("CYCLING", 47)], [("CYCLING", 46), (nil, 48)], [("running", 41), ("CYCLING", 50)],
+            [("RUNNING", 0), ("CYCLING", 45)], [("RUNNING", -3)], [("RUNNING", 42), ("RUNNING", 42.5)],
+            [("RUNNING", .nan), ("CYCLING", 40)], [("CYCLING", 47), ("RUNNING", 44)], [("RUNNING", .infinity)],
+        ]
+        let out = cases.enumerated().map { i, c in
+            "pick \(i) \(GarminExportParser.vo2max(c).map { String($0) } ?? "nil")"
+        }.joined(separator: "\n")
+        XCTAssertEqual(out, """
+        pick 0 nil
+        pick 1 44.0
+        pick 2 48.0
+        pick 3 41.0
+        pick 4 45.0
+        pick 5 nil
+        pick 6 42.5
+        pick 7 40.0
+        pick 8 44.0
+        pick 9 nil
+        """)
+    }
+
     func testGarminZonelessFractionTrim() {
         XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.0"), "2026-07-26T18:59:17")
         XCTAssertEqual(GarminExportParser.trimZonelessFraction("2026-07-26T18:59:17.186"), "2026-07-26T18:59:17")
