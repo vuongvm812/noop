@@ -289,7 +289,7 @@ object ChargeBaselines {
     /**
      * The epochs a day scored on [scoredDay] uses. Only nights up to and including the scored day decide its
      * era, so a past day keeps the era it was scored in and the first night on a new device starts a new
-     * baseline with nothing before it. HRV and resting HR cut where a Garmin watch starts or stops
+     * baseline with nothing before it. HRV and resting HR cut where a Garmin or Huawei watch starts or stops
      * ([GarminScoringInputs.baselineEraEpoch]); respiration cuts at any brand switch
      * ([Baselines.deviceEraEpoch]); skin temperature only at the manual recalibration. Each is the later of
      * its era cut and its recalibration epoch. Swift twin: `ChargeBaselines.epochs`.
@@ -301,10 +301,10 @@ object ChargeBaselines {
         recoveryRecalibration: Double,
     ): Epochs {
         val upTo = sourceDays.filter { it.day <= scoredDay }.map { it.day to it.sourceId }
-        val garmin = GarminScoringInputs.baselineEraEpoch(upTo)
+        val watch = GarminScoringInputs.baselineEraEpoch(upTo)
         val anyBrand = Baselines.deviceEraEpoch(upTo)
         return Epochs(
-            hrv = max(hrvRecalibration, garmin), restingHR = max(recoveryRecalibration, garmin),
+            hrv = max(hrvRecalibration, watch), restingHR = max(recoveryRecalibration, watch),
             resp = max(recoveryRecalibration, anyBrand), skin = recoveryRecalibration,
         )
     }

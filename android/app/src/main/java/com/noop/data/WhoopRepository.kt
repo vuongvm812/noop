@@ -398,6 +398,9 @@ enum class DeviceMetricKind(val wire: String) {
     ANAEROBIC_TRAINING_EFFECT("anaerobic_training_effect"),
     /** The watch's EPOC-based training load for one activity (unitless), stamped at the workout start. */
     TRAINING_LOAD("training_load"),
+    /** Skin temperature in degrees Celsius, as the wearable measured it (Huawei Band 10). Kotlin-only (fork):
+     *  no Swift twin yet, so no Apple build writes or reads it. */
+    SKIN_TEMP_C("skin_temp_c"),
 }
 
 /**

@@ -78,6 +78,10 @@ public enum SourceKind: String, Sendable, CaseIterable {
     /// protocol NOOP does not speak. Additive (no DB migration): only a Garmin pairing writes it, and an
     /// older build reading the row falls back to `liveBLE` (`SourceKind(rawValue:) ?? .liveBLE`).
     case garmin
+    /// A Huawei Band 10 over its own protocol. The pairing and sync are Android-only in this fork, so
+    /// the Apple apps never write this kind; the case exists so a row restored from an Android backup
+    /// decodes to its true kind instead of `liveBLE`. Mirrors Kotlin `SourceKind.huawei`.
+    case huawei
 }
 
 /// Canonical metric a source can provide. Drives capability-aware UI + the day-owner resolver.

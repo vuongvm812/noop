@@ -2207,6 +2207,7 @@
     <string name="today_section_supplements">Nahrungsergänzung</string>
     <string name="today_section_stress">Stress</string>
     <string name="stress_summary_source_garmin">Garmin-Stress</string>
+    <string name="stress_summary_source_huawei">Huawei-Stress</string>
     <string name="stress_summary_source_noop">NOOP-Stress</string>
     <string name="stress_summary_latest">Aktuellste</string>
     <string name="stress_summary_average">Heutiger Durchschnitt</string>
@@ -2240,6 +2241,7 @@
     <string name="today_source_fitbit">Fitbit-Tracker</string>
     <string name="today_effort_experimental">Belastung experimentell</string>
     <string name="today_source_garmin">Garmin-Uhr</string>
+    <string name="today_source_huawei">Huawei-Band</string>
     <string name="today_source_workout_files">Workout-Dateien</string>
     <string name="today_source_joiner">" + "</string>
     <string name="today_readiness_push">Belasten</string>

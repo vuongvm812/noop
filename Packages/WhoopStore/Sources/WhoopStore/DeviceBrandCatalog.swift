@@ -16,10 +16,10 @@ public struct DeviceBrandSpec: Sendable, Equatable {
     /// order (most specific first) so a Huami sub-brand like Mi Band wins over the broader Amazfit tokens.
     public let nameTokens: [String]
     /// The routing kind stored on the device (drives `SourceCoordinator.makeSource`). `.liveBLE` for a brand
-    /// whose live HR is the standard 0x180D broadcast (generic straps); `.huami` / `.oura` / `.garmin` for the
-    /// custom-protocol sources.
+    /// whose live HR is the standard 0x180D broadcast (generic straps); `.huami` / `.oura` / `.garmin` /
+    /// `.huawei` for the custom-protocol sources.
     public let sourceKind: SourceKind
-    /// The registry id prefix for a device of this brand ("huami", "oura", "garmin", "strap").
+    /// The registry id prefix for a device of this brand ("huami", "oura", "garmin", "huawei", "strap").
     public let idPrefix: String
     /// Whether this brand can stream LIVE heart rate at all in NOOP. `false` for Oura (no open live stream)
     /// — the wizard routes those to import instead of pretending to connect.
@@ -53,6 +53,10 @@ public enum DeviceBrandCatalog {
         DeviceBrandSpec(brand: "Garmin",
                         nameTokens: ["garmin", "forerunner", "fenix", "vivoactive", "venu", "instinct", "epix", "vivosmart", "hrm"],
                         sourceKind: .garmin, idPrefix: "garmin", canStreamLiveHR: true, isExperimentalTier: false),
+        // Huawei Band 10: a supported watch source like Garmin (listed beside it, not under Experimental).
+        // No live HR stream in NOOP yet; pairing is Android-only in this fork.
+        DeviceBrandSpec(brand: "Huawei", nameTokens: ["huawei band 10"],
+                        sourceKind: .huawei, idPrefix: "huawei", canStreamLiveHR: false, isExperimentalTier: false),
         DeviceBrandSpec(brand: "Oura", nameTokens: ["oura"],
                         sourceKind: .oura, idPrefix: "oura", canStreamLiveHR: false, isExperimentalTier: true),
         // Shipped generic HR straps — standard 0x180D broadcast, labelled for display only. All route as a
@@ -89,5 +93,24 @@ public enum DeviceBrandCatalog {
     /// name an Oura night's provenance "Oura". Twin of Kotlin `DeviceBrandCatalog.isOura`.
     public static func isOura(_ deviceId: String) -> Bool {
         all.first { deviceId.hasPrefix($0.idPrefix + "-") }?.sourceKind == .oura
+    }
+
+    /// The source kinds of a paired WATCH: a device whose own vitals, sleep stages, stress and workouts are
+    /// primary on the days it owns. Twin of Kotlin `DeviceBrandCatalog.WATCH_SOURCE_KINDS`.
+    public static let watchSourceKinds: Set<SourceKind> = [.garmin, .huawei]
+
+    /// The watch brand row whose "<idPrefix>-" a stored source id carries, or nil. The brand's own export
+    /// import ("<idPrefix>-import") never matches; a "-noop" computed sibling does (see
+    /// `watchSpec(forDeviceId:)`). Twin of Kotlin `DeviceBrandCatalog.watchSpecForSource`.
+    public static func watchSpec(forSource sourceId: String) -> DeviceBrandSpec? {
+        guard let spec = all.first(where: { watchSourceKinds.contains($0.sourceKind) && sourceId.hasPrefix($0.idPrefix + "-") })
+        else { return nil }
+        return sourceId == spec.idPrefix + "-import" ? nil : spec
+    }
+
+    /// The watch brand row for a paired watch's registry id, or nil for any other id, a brand export
+    /// import, or a "-noop" computed sibling. Twin of Kotlin `DeviceBrandCatalog.watchSpecForDeviceId`.
+    public static func watchSpec(forDeviceId deviceId: String) -> DeviceBrandSpec? {
+        deviceId.hasSuffix("-noop") ? nil : watchSpec(forSource: deviceId)
     }
 }

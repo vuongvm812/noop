@@ -21,11 +21,10 @@ internal fun dayOwnerSource(deviceId: String?): FusionSource? = when {
     deviceId.endsWith("-noop") -> FusionSource.NOOP_COMPUTED
     deviceId == WhoopRepository.APPLE_HEALTH_SOURCE -> FusionSource.APPLE_HEALTH
     deviceId == WhoopRepository.HEALTH_CONNECT_SOURCE -> FusionSource.HEALTH_CONNECT
-    // A paired Garmin watch's days are the watch's, never "Whoop" (Garmin child 9).
-    FusionSource.isGarminWatchId(deviceId) -> FusionSource.GARMIN_WATCH
+    // A paired watch's days are the watch's (Garmin, Huawei), never "Whoop" (Garmin child 9).
     // The merged Today rows carry the imported strap deviceId ("my-whoop") on days a real WHOOP import
     // covers, and the "-noop" sibling otherwise; any other strap deviceId is still an imported strap day.
-    else -> FusionSource.WHOOP_IMPORT
+    else -> FusionSource.watchBrand(deviceId) ?: FusionSource.WHOOP_IMPORT
 }
 
 internal sealed interface DisplayText {
@@ -40,6 +39,7 @@ internal fun provenanceBadgeLabel(owner: FusionSource?): DisplayText? = when (ow
     FusionSource.HEALTH_CONNECT -> DisplayText.Resource(R.string.today_source_health_connect)
     FusionSource.XIAOMI_BAND -> DisplayText.Resource(R.string.today_source_mi_band)
     FusionSource.GARMIN_WATCH -> DisplayText.Resource(R.string.today_source_garmin)
+    FusionSource.HUAWEI_WATCH -> DisplayText.Resource(R.string.today_source_huawei)
     FusionSource.NUTRITION_CSV -> DisplayText.Resource(R.string.today_source_nutrition)
     FusionSource.LOCAL_CACHE -> DisplayText.Resource(R.string.today_source_cached)
     null -> null
@@ -73,9 +73,9 @@ internal fun provenanceDisplayLabel(
         return DisplayText.Resource(R.string.spo2_strap_estimate_caption)
     }
     if (rawSource.endsWith("-noop")) return DisplayText.Resource(R.string.today_source_on_device)
-    // Checked before the active-strap match: a Garmin watch can BE the active device, and its own rows must
-    // read "Garmin", not "Whoop" (Garmin child 9).
-    if (FusionSource.isGarminWatchId(rawSource)) return DisplayText.Resource(R.string.today_source_garmin)
+    // Checked before the active-strap match: a watch can BE the active device, and its own rows must read its
+    // brand ("Garmin", "Huawei"), not "Whoop" (Garmin child 9).
+    FusionSource.watchBrand(rawSource)?.let { watch -> provenanceBadgeLabel(watch)?.let { return it } }
     if (rawSource == deviceId || rawSource == WhoopRepository.WHOOP_SOURCE) return DisplayText.Resource(R.string.today_source_whoop)
     if (rawSource == WhoopRepository.APPLE_HEALTH_SOURCE) return DisplayText.Resource(R.string.today_source_apple_health)
     // Fall back to the FusionSource display name for any other known source; else the raw id verbatim.
@@ -89,6 +89,7 @@ internal fun vo2MaxAttributionLabelRes(estimator: Vo2MaxEstimator?): Int = when 
     Vo2MaxEstimator.NES -> R.string.vo2max_method_nes
     Vo2MaxEstimator.UTH -> R.string.vo2max_method_uth
     Vo2MaxEstimator.GARMIN -> R.string.today_source_garmin
+    Vo2MaxEstimator.HUAWEI -> R.string.today_source_huawei
     null -> R.string.vo2max_method_unknown
 }
 

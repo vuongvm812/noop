@@ -23,6 +23,7 @@ class DeviceBrandCatalogTest {
             "Garmin Forerunner 265" to "Garmin",
             "fēnix 7" to "Garmin",            // diacritic-folded to "fenix"
             "HRM-Pro" to "Garmin",
+            "HUAWEI Band 10-A1B" to "Huawei",
             "Oura Ring" to "Oura",
             "Polar H10" to "Polar",
             "Wahoo TICKR" to "Wahoo",
@@ -59,6 +60,11 @@ class DeviceBrandCatalogTest {
         assertEquals(SourceKind.garmin, spec("Garmin").sourceKind)
         assertEquals("garmin", SourceKind.garmin.name)   // stable cross-platform store encoding
         assertEquals(SourceKind.liveBLE, spec("Polar").sourceKind)
+        assertEquals(SourceKind.huawei, spec("Huawei").sourceKind)
+        assertEquals("huawei", SourceKind.huawei.name)   // stable cross-platform store encoding
+        assertEquals("huawei", spec("Huawei").idPrefix)
+        assertFalse(spec("Huawei").canStreamLiveHR)
+        assertFalse(spec("Huawei").isExperimentalTier)
 
         assertEquals("huami", spec("Amazfit").idPrefix)
         assertEquals("oura", spec("Oura").idPrefix)
@@ -96,5 +102,19 @@ class DeviceBrandCatalogTest {
         assertFalse(DeviceBrandCatalog.isOura(""))
         assertFalse(DeviceBrandCatalog.isOura("oura"))
         assertFalse(DeviceBrandCatalog.isOura("neuraloura-1"))
+    }
+
+    /** The watch resolver: a paired Garmin or Huawei watch id resolves to its brand row; an export import, a
+     *  computed sibling and every other brand do not. Twin of Swift `testWatchSpecForDeviceId` (SAME cases). */
+    @Test
+    fun watchSpecForDeviceId() {
+        assertEquals("Garmin", DeviceBrandCatalog.watchSpecForDeviceId("garmin-AA:BB")?.brand)
+        assertEquals("Huawei", DeviceBrandCatalog.watchSpecForDeviceId("huawei-AA:BB:CC:00:11:22")?.brand)
+        for (id in listOf("garmin-import", "huawei-import", "garmin-x-noop", "huawei-x-noop", "garmin", "huawei",
+                "my-whoop", "oura-1", "huami-1", "strap-1", "")) {
+            assertNull(id, DeviceBrandCatalog.watchSpecForDeviceId(id))
+        }
+        assertEquals("Huawei", DeviceBrandCatalog.watchSpecForSource("huawei-x-noop")?.brand)
+        assertNull(DeviceBrandCatalog.watchSpecForSource("huawei-import"))
     }
 }

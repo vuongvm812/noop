@@ -2158,6 +2158,7 @@
     <string name="today_section_supplements">Добавки</string>
     <string name="today_section_stress">Стресс</string>
     <string name="stress_summary_source_garmin">Стресс Garmin</string>
+    <string name="stress_summary_source_huawei">Стресс Huawei</string>
     <string name="stress_summary_source_noop">Стресс NOOP</string>
     <string name="stress_summary_latest">Последнее</string>
     <string name="stress_summary_average">Среднее за сегодня</string>

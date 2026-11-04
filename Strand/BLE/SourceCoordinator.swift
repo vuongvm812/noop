@@ -306,6 +306,8 @@ final class SourceCoordinator: ObservableObject {
         case .huami: return makeHuamiSource(id: id)
         case .oura:  return makeOuraSource(id: id)
         case .garmin: return makeGarminSource(id: id)
+        // A Huawei Band 10 pairs and syncs on Android only in this fork: never run a strap profile at it.
+        case .huawei: return UnavailableSource(deviceId: id, reason: "huawei: not available on this platform", log: straplog)
         default:     return makeStandardSource(id: id)
         }
     }
@@ -685,4 +687,22 @@ final class SourceCoordinator: ObservableObject {
     /// (`SourceIdentity`, beside `PairedDevice`) and this delegates. Two spellings of "is this a WHOOP"
     /// that could disagree is precisely how a strap's samples end up filed under a ring.
     static func isWhoop(_ device: PairedDevice) -> Bool { SourceIdentity.isWhoop(device) }
+}
+
+/// The source for a device kind this platform cannot run (a Huawei Band 10, whose pairing and sync are
+/// Android-only in this fork). It never touches the radio; connect and scan only log why nothing streams.
+private final class UnavailableSource: LiveHRSource {
+    private let deviceId: String
+    private let reason: String
+    private let log: (String) -> Void
+
+    init(deviceId: String, reason: String, log: @escaping (String) -> Void) {
+        self.deviceId = deviceId
+        self.reason = reason
+        self.log = log
+    }
+
+    func scan() { log("\(reason) (device \(deviceId))") }
+    func connect(_ id: UUID) { log("\(reason) (device \(deviceId))") }
+    func stop() {}
 }

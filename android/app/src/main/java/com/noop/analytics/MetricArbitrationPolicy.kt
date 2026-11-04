@@ -72,7 +72,7 @@ object MetricArbitrationPolicy {
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0   // direct dedicated sensor (R-R / PPG)
                 FusionSource.XIAOMI_BAND -> 0    // dedicated wrist PPG
-                FusionSource.GARMIN_WATCH -> 0   // the watch's own overnight value beats NOOP's sparse-HR estimate
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 0   // the watch's own overnight value beats NOOP's sparse-HR estimate
                 FusionSource.NOOP_COMPUTED -> 1  // derived on-device from raw strap streams
                 FusionSource.APPLE_HEALTH -> 2   // phone aggregate
                 FusionSource.HEALTH_CONNECT -> 2
@@ -85,7 +85,7 @@ object MetricArbitrationPolicy {
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
                 FusionSource.XIAOMI_BAND -> 0
-                FusionSource.GARMIN_WATCH -> 0
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 0
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.APPLE_HEALTH -> 2
                 FusionSource.HEALTH_CONNECT -> 2
@@ -97,7 +97,7 @@ object MetricArbitrationPolicy {
             // The device that ACTUALLY COUNTS steps wins; the strap only ESTIMATES from motion.
             when (source) {
                 FusionSource.XIAOMI_BAND -> 0    // wrist pedometer — counts directly
-                FusionSource.GARMIN_WATCH -> 0   // the watch's own pedometer — counts directly
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 0   // the watch's own pedometer — counts directly
                 FusionSource.APPLE_HEALTH -> 0   // phone pedometer — counts directly
                 FusionSource.HEALTH_CONNECT -> 0
                 FusionSource.WHOOP_IMPORT -> 3   // strap step estimate is a last resort
@@ -110,7 +110,7 @@ object MetricArbitrationPolicy {
             // The best STAGER wins: imported WHOOP stages > NOOP-computed stages > phone sleep buckets.
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
-                FusionSource.GARMIN_WATCH -> 0   // the watch's own stages are primary on the days it owns
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 0   // the watch's own stages are primary on the days it owns
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.XIAOMI_BAND -> 1    // a band with its own staging, below WHOOP's
                 FusionSource.APPLE_HEALTH -> 2   // phone sleep buckets
@@ -127,7 +127,7 @@ object MetricArbitrationPolicy {
                 FusionSource.WHOOP_IMPORT -> 3
                 FusionSource.NOOP_COMPUTED -> 3
                 FusionSource.XIAOMI_BAND -> 3
-                FusionSource.GARMIN_WATCH -> 3
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 3
                 FusionSource.NUTRITION_CSV -> 3
                 FusionSource.LOCAL_CACHE -> 3
             }
@@ -137,7 +137,7 @@ object MetricArbitrationPolicy {
             when (source) {
                 FusionSource.WHOOP_IMPORT -> 0
                 FusionSource.XIAOMI_BAND -> 0
-                FusionSource.GARMIN_WATCH -> 0   // stress, Body Battery, sleep score: the watch's own
+                FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 0   // stress, Body Battery, sleep score: the watch's own
                 FusionSource.NOOP_COMPUTED -> 1
                 FusionSource.APPLE_HEALTH -> 2
                 FusionSource.HEALTH_CONNECT -> 2
@@ -158,7 +158,7 @@ object MetricArbitrationPolicy {
         FusionSource.APPLE_HEALTH -> 2
         FusionSource.HEALTH_CONNECT -> 3
         FusionSource.XIAOMI_BAND -> 4
-        FusionSource.GARMIN_WATCH -> 5
+        FusionSource.GARMIN_WATCH, FusionSource.HUAWEI_WATCH -> 5
         FusionSource.NUTRITION_CSV -> 6
         FusionSource.LOCAL_CACHE -> 7
     }
@@ -171,7 +171,7 @@ object MetricArbitrationPolicy {
     fun reason(metric: MetricKind, source: FusionSource): String {
         if (metric == MetricKind.STEPS &&
             (source == FusionSource.XIAOMI_BAND || source == FusionSource.APPLE_HEALTH ||
-                source == FusionSource.HEALTH_CONNECT || source == FusionSource.GARMIN_WATCH)
+                source == FusionSource.HEALTH_CONNECT || source.isWatch)
         ) {
             return "counts directly"
         }
@@ -182,7 +182,7 @@ object MetricArbitrationPolicy {
         }
         if (metric == MetricKind.SLEEP && source == FusionSource.WHOOP_IMPORT) return "best stager"
         if (metric == MetricKind.SLEEP && source == FusionSource.NOOP_COMPUTED) return "computed stages"
-        if (metric == MetricKind.SLEEP && source == FusionSource.GARMIN_WATCH) return "watch stages"
+        if (metric == MetricKind.SLEEP && source.isWatch) return "watch stages"
         if (metric == MetricKind.SLEEP &&
             (source == FusionSource.APPLE_HEALTH || source == FusionSource.HEALTH_CONNECT)
         ) {
