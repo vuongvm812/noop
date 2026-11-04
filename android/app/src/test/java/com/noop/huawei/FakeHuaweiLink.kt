@@ -7,6 +7,7 @@ import com.noop.huawei.protocol.HuaweiLinkConfig
 import com.noop.huawei.protocol.HuaweiPacketCodec
 import com.noop.huawei.protocol.HuaweiProtocolException
 import com.noop.huawei.protocol.HuaweiPush
+import com.noop.huawei.protocol.HuaweiRawPush
 import com.noop.huawei.protocol.HuaweiRandom
 import com.noop.huawei.protocol.HuaweiRequest
 import com.noop.huawei.protocol.HuaweiTlv
@@ -22,7 +23,7 @@ import kotlinx.coroutines.flow.asSharedFlow
  * Messages in a reply that do not match the request, and anything sent with [deliverFromBand], go to
  * [pushes].
  */
-class FakeHuaweiLink(private val peer: Peer) : HuaweiLink {
+class FakeHuaweiLink(private val peer: Peer, pushReplay: Int = 16) : HuaweiLink {
 
     fun interface Peer {
         /** The frames NOOP sent for one request; returns the band's frames, or null to stay silent. */
@@ -30,7 +31,8 @@ class FakeHuaweiLink(private val peer: Peer) : HuaweiLink {
     }
 
     private val codec = HuaweiPacketCodec()
-    private val pushFlow = MutableSharedFlow<HuaweiPush>(replay = 16, extraBufferCapacity = 64)
+    private val pushFlow = MutableSharedFlow<HuaweiPush>(replay = pushReplay, extraBufferCapacity = 4096)
+    private val rawFlow = MutableSharedFlow<HuaweiRawPush>(extraBufferCapacity = 4096)
 
     val sent = mutableListOf<HuaweiRequest>()
     val sentFrames = mutableListOf<List<ByteArray>>()
@@ -39,6 +41,8 @@ class FakeHuaweiLink(private val peer: Peer) : HuaweiLink {
     val currentConfig: HuaweiLinkConfig get() = codec.config
 
     override val pushes: SharedFlow<HuaweiPush> = pushFlow.asSharedFlow()
+
+    override val rawPushes: SharedFlow<HuaweiRawPush> = rawFlow.asSharedFlow()
 
     override fun configure(config: HuaweiLinkConfig) {
         codec.config = config
@@ -50,18 +54,35 @@ class FakeHuaweiLink(private val peer: Peer) : HuaweiLink {
         val frames = codec.encode(request)
         sentFrames.add(frames)
         val reply = peer.onFrames(frames) ?: awaitCancellation()
+        return route(reply, request) ?: throw HuaweiProtocolException("no reply for ${request.command}")
+    }
+
+    /** Sent without awaiting a reply; whatever the peer answers is routed as pushes. */
+    override suspend fun send(request: HuaweiRequest) {
+        sent.add(request)
+        val frames = codec.encode(request)
+        sentFrames.add(frames)
+        peer.onFrames(frames)?.let { route(it, null) }
+    }
+
+    /** Raw frames → [rawPushes]; the first TLV frame matching [request] is the answer; the rest → [pushes]. */
+    private fun route(reply: List<ByteArray>, request: HuaweiRequest?): HuaweiTlv? {
         var answer: HuaweiTlv? = null
         for (chunk in reply) {
             for (frame in codec.feed(chunk)) {
+                if (HuaweiFraming.isRawCommand(frame.serviceId, frame.commandId)) {
+                    rawFlow.tryEmit(HuaweiRawPush(frame.serviceId, frame.commandId, codec.decodeRaw(frame)))
+                    continue
+                }
                 val tlv = codec.decodeTlv(frame)
-                if (answer == null && frame.serviceId == request.serviceId && frame.commandId == request.commandId) {
+                if (answer == null && request != null && frame.serviceId == request.serviceId && frame.commandId == request.commandId) {
                     answer = tlv
                 } else {
                     pushFlow.tryEmit(HuaweiPush(frame.serviceId, frame.commandId, tlv))
                 }
             }
         }
-        return answer ?: throw HuaweiProtocolException("no reply for ${request.command}")
+        return answer
     }
 
     /** Band-initiated bytes (for example the 01/27 battery push). */
@@ -75,12 +96,12 @@ class FakeHuaweiLink(private val peer: Peer) : HuaweiLink {
         /** A plaintext peer answering each request's TLV with [respond] (null = silent). */
         fun scripted(respond: (HuaweiFrame, HuaweiTlv) -> HuaweiTlv?): FakeHuaweiLink {
             val inbound = HuaweiPacketCodec()
-            return FakeHuaweiLink { frames ->
+            return FakeHuaweiLink(peer = { frames ->
                 val frame = frames.flatMap { inbound.feed(it) }.single()
                 respond(frame, inbound.decodeTlv(frame))?.let {
                     HuaweiFraming.encode(frame.serviceId, frame.commandId, it.serialize(), sliced = false)
                 }
-            }
+            })
         }
     }
 }

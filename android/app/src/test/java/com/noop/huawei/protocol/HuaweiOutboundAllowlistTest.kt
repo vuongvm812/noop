@@ -16,6 +16,13 @@ class HuaweiOutboundAllowlistTest {
     private val allowed = setOf(
         0x01 to 0x01, 0x01 to 0x02, 0x01 to 0x03, 0x01 to 0x07, 0x01 to 0x08, 0x01 to 0x0E, 0x01 to 0x0F,
         0x01 to 0x13, 0x01 to 0x28, 0x01 to 0x2C, 0x01 to 0x31, 0x01 to 0x33, 0x01 to 0x37,
+        // History sync (#82): FitnessData reads and the three switches, Workout reads, band → phone file
+        // download over 0x0A and 0x2C (the 2C block request appears twice: encrypted and plaintext), P2P.
+        0x07 to 0x0A, 0x07 to 0x0B, 0x07 to 0x0C, 0x07 to 0x0D, 0x07 to 0x17, 0x07 to 0x23, 0x07 to 0x24,
+        0x17 to 0x07, 0x17 to 0x08, 0x17 to 0x0A, 0x17 to 0x15,
+        0x0A to 0x01, 0x0A to 0x02, 0x0A to 0x03, 0x0A to 0x04, 0x0A to 0x06,
+        0x2C to 0x01, 0x2C to 0x03, 0x2C to 0x04, 0x2C to 0x06,
+        0x34 to 0x01,
     )
 
     /** Factory reset; OTA; file upload; watchface; apps; ephemeris (two services). */
@@ -24,14 +31,43 @@ class HuaweiOutboundAllowlistTest {
 
     @Test fun enumIsExactlyTheReviewedSet() {
         assertEquals(allowed, HuaweiCommand.entries.map { it.serviceId to it.commandId }.toSet())
-        assertEquals(allowed.size, HuaweiCommand.entries.size)
+        assertEquals(allowed.size + 1, HuaweiCommand.entries.size)
+        assertEquals(listOf(HuaweiCommand.FILE2C_BLOCK, HuaweiCommand.FILE2C_BLOCK_PLAIN),
+            HuaweiCommand.entries.filter { it.serviceId == 0x2C && it.commandId == 0x04 })
     }
 
     @Test fun bannedCommandsAreUnrepresentable() {
         for (c in HuaweiCommand.entries) {
             assertFalse("$c is banned", (c.serviceId to c.commandId) in bannedCommands)
             assertFalse("$c uses a banned service", c.serviceId in bannedServices)
-            assertEquals("only Device Config is allowlisted", 0x01, c.serviceId)
+        }
+    }
+
+    @Test fun theSwitchesCanOnlyBeTurnedOn() {
+        for (c in HuaweiRequest.SWITCHES) {
+            assertEquals(c, HuaweiRequest.of(c, HuaweiTlv().putBoolean(1, true)).command)
+            assertEquals(c, HuaweiRequest.of(c, HuaweiTlv().putInt(1, 1)).command)
+            assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putBoolean(1, false)) }
+            assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putInt(1, 0)) }
+            assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv().putBoolean(1, true).putByte(2, 5)) }
+            assertThrows(IllegalArgumentException::class.java) { HuaweiRequest.of(c, HuaweiTlv()) }
+        }
+    }
+
+    @Test fun p2pIsLimitedToTheDictionarySync() {
+        fun p2p(cmd: Int, src: String, dst: String) =
+            HuaweiTlv().putByte(1, cmd).putShort(2, 1).putString(3, src).putString(4, dst)
+        val ok = p2p(2, "hw.unitedevice.datadictionarysync", "hw.watch.health.filesync")
+        assertEquals(HuaweiCommand.P2P, HuaweiRequest.of(HuaweiCommand.P2P, ok).command)
+        // Another service on the band (a file push, a watchface), an unknown command, or a smuggled duplicate tag.
+        assertThrows(IllegalArgumentException::class.java) {
+            HuaweiRequest.of(HuaweiCommand.P2P, p2p(2, "hw.unitedevice.datadictionarysync", "hw.watch.watchface"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            HuaweiRequest.of(HuaweiCommand.P2P, p2p(4, "com.huawei.health", "hw.watch.health.filesync"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            HuaweiRequest.of(HuaweiCommand.P2P, ok.copy().putString(4, "hw.watch.watchface"))
         }
     }
 
@@ -40,7 +76,11 @@ class HuaweiOutboundAllowlistTest {
             HuaweiCommand.LINK_PARAMS, HuaweiCommand.SECURITY_NEGOTIATION, HuaweiCommand.PIN_CODE, HuaweiCommand.HICHAIN,
             HuaweiCommand.AUTH, HuaweiCommand.BOND_PARAMS, HuaweiCommand.BOND,
         )
-        for (c in HuaweiCommand.entries) assertEquals(c.toString(), c !in plaintext, c.encrypted)
+        for (c in HuaweiCommand.entries) {
+            if (c == HuaweiCommand.FILE2C_BLOCK_PLAIN) continue
+            assertEquals(c.toString(), c !in plaintext, c.encrypted)
+        }
+        assertFalse("sent plaintext only when the band's 2C/03 reply asks for it", HuaweiCommand.FILE2C_BLOCK_PLAIN.encrypted)
         assertFalse(HuaweiCommand.LINK_PARAMS.sliced)
     }
 

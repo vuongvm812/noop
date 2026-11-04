@@ -33,6 +33,37 @@ enum class HuaweiCommand(val serviceId: Int, val commandId: Int, val encrypted: 
     SETTING_RELATED(0x01, 0x31, encrypted = true, sliced = true),
     SECURITY_NEGOTIATION(0x01, 0x33, encrypted = false, sliced = true),
     EXPAND_CAPABILITIES(0x01, 0x37, encrypted = true, sliced = true),
+
+    // FitnessData (0x07): history reads and the three measurement switches.
+    STEP_DATA_COUNT(0x07, 0x0A, encrypted = true, sliced = true),
+    STEP_DATA(0x07, 0x0B, encrypted = true, sliced = true),
+    SLEEP_DATA_COUNT(0x07, 0x0C, encrypted = true, sliced = true),
+    SLEEP_DATA(0x07, 0x0D, encrypted = true, sliced = true),
+    AUTO_HEART_RATE(0x07, 0x17, encrypted = true, sliced = true),
+    RESTING_HEART_RATE(0x07, 0x23, encrypted = true, sliced = true),
+    AUTO_SPO2(0x07, 0x24, encrypted = true, sliced = true),
+
+    // Workout (0x17): reads.
+    WORKOUT_COUNT(0x17, 0x07, encrypted = true, sliced = true),
+    WORKOUT_TOTALS(0x17, 0x08, encrypted = true, sliced = true),
+    WORKOUT_DATA(0x17, 0x0A, encrypted = true, sliced = true),
+    WORKOUT_CAPABILITY(0x17, 0x15, encrypted = true, sliced = true),
+
+    // File download, band → phone only ("old sync" 0x0A, "new sync" 0x2C). No upload service is listed.
+    FILE0A_INIT(0x0A, 0x01, encrypted = true, sliced = true),
+    FILE0A_PARAMS(0x0A, 0x02, encrypted = true, sliced = true),
+    FILE0A_INFO(0x0A, 0x03, encrypted = true, sliced = true),
+    FILE0A_BLOCK(0x0A, 0x04, encrypted = true, sliced = true),
+    FILE0A_DONE(0x0A, 0x06, encrypted = true, sliced = true),
+    FILE2C_INIT(0x2C, 0x01, encrypted = true, sliced = true),
+    FILE2C_INFO(0x2C, 0x03, encrypted = true, sliced = true),
+    FILE2C_BLOCK(0x2C, 0x04, encrypted = true, sliced = true),
+    /** The block request when the band's 2C/03 reply says it cannot take it encrypted (tag 5). */
+    FILE2C_BLOCK_PLAIN(0x2C, 0x04, encrypted = false, sliced = true),
+    FILE2C_DONE(0x2C, 0x06, encrypted = true, sliced = true),
+
+    /** P2P (0x34/0x01), only between the packages in [HuaweiRequest.P2P_PACKAGES]. */
+    P2P(0x34, 0x01, encrypted = true, sliced = true),
 }
 
 /** Inbound-only message ids (pushes the band sends unprompted). */
@@ -70,10 +101,38 @@ class HuaweiRequest private constructor(val command: HuaweiCommand, tlv: HuaweiT
         const val HICHAIN_OP_AUTHENTICATE = 1
         const val HICHAIN_OP_BIND = 2
 
+        /** The measurement switches; each may only be sent as `{01: on}`. */
+        val SWITCHES = setOf(HuaweiCommand.AUTO_HEART_RATE, HuaweiCommand.AUTO_SPO2, HuaweiCommand.RESTING_HEART_RATE)
+
+        /** The only P2P packages NOOP addresses: the phone-side health app, the dictionary sync module and the band's file sync. */
+        val P2P_PACKAGES = setOf("com.huawei.health", "hw.unitedevice.datadictionarysync", "hw.watch.health.filesync")
+
+        /** P2P command ids NOOP sends: 1 ping, 2 data, 3 ack. */
+        val P2P_COMMANDS = setOf(1, 2, 3)
+
         /** Any allowlisted request that does not install a key. */
         fun of(command: HuaweiCommand, tlv: HuaweiTlv): HuaweiRequest {
             require(!needsFirstPairing(command, tlv)) { "$command with this payload needs a first-pairing grant" }
+            require(command !in SWITCHES || isSwitchOn(tlv)) { "$command may only switch the measurement on" }
+            require(command != HuaweiCommand.P2P || isDictionaryP2P(tlv)) { "P2P is limited to the data-dictionary sync" }
             return HuaweiRequest(command, tlv)
+        }
+
+        /** Exactly one tag 1 holding a non-zero value of 1 or 4 bytes. */
+        fun isSwitchOn(tlv: HuaweiTlv): Boolean {
+            val e = tlv.entries.singleOrNull() ?: return false
+            val v = e.value
+            return e.tag == 0x01 && (v.size == 1 || v.size == 4) && v.any { it.toInt() != 0 }
+        }
+
+        /** A ping, data or ack between two [P2P_PACKAGES], each tag at most once. */
+        fun isDictionaryP2P(tlv: HuaweiTlv): Boolean {
+            val tags = tlv.entries.map { it.tag }
+            if (tags.size != tags.toSet().size) return false
+            val cmd = tlv.bytesOrNull(0x01)?.singleOrNull()?.toInt() ?: return false
+            val src = tlv.bytesOrNull(0x03)?.toString(Charsets.UTF_8) ?: return false
+            val dst = tlv.bytesOrNull(0x04)?.toString(Charsets.UTF_8) ?: return false
+            return cmd in P2P_COMMANDS && src in P2P_PACKAGES && dst in P2P_PACKAGES
         }
 
         /** A key-installing request. The grant is the proof that the user started a first pairing. */

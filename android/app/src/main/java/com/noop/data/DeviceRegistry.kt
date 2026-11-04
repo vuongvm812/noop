@@ -32,6 +32,18 @@ class DeviceRegistry(
         },
     )
 
+    /**
+     * Per-device state kept outside the database (a Huawei band's sync watermarks) that must follow a
+     * re-key ([adoptSerialIdentity]) and go with a data wipe ([deleteDeviceData]), as the rows do.
+     */
+    interface DeviceSideState {
+        fun moveDeviceState(from: String, to: String)
+        fun dropDeviceState(id: String)
+    }
+
+    /** Registered once at startup by the application. */
+    val sideStates: MutableList<DeviceSideState> = java.util.concurrent.CopyOnWriteArrayList()
+
     /** All paired devices, oldest first. */
     suspend fun all(): List<PairedDeviceRow> =
         dao.pairedDevices().map { honestWhoopCapabilities(it) }
@@ -101,7 +113,7 @@ class DeviceRegistry(
             dao.deletePairedDeviceRow(activeId)
             dao.deleteDeviceRow(activeId)
             true
-        }
+        }.also { moved -> if (moved) sideStates.forEach { it.moveDeviceState(activeId, serialId) } }
     }
 
     /** Stamp a device as seen right now — a real connect or disconnect, not every inbound packet, which
@@ -245,6 +257,8 @@ class DeviceRegistry(
             dao.deleteLiftSessionsFor(id)
             dao.deleteLiftSetsFor(id)
         }
+        // After the rows: a wiped band's watermarks must not make the next sync skip what was deleted.
+        sideStates.forEach { it.dropDeviceState(id) }
     }
 
     /** Set the owner override for a day (insert-or-replace). */
