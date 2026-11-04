@@ -870,16 +870,34 @@ fun TodayScreen(
     var stressReading by remember { mutableStateOf<StressToday.Reading?>(null) }
     val stressTileShown = KeyMetric.STRESS in enabledKeyMetrics ||
         DashboardCard.STRESS in enabledDashboardCards
-    LaunchedEffect(days, viewModel.activeStrapId, selectedDayOffset, stressTileShown) {
-        stressReading = if (selectedDayOffset == 0 && stressTileShown) {
-            runCatching {
-                StressTodayLoader.load(
-                    viewModel.repo,
-                    viewModel.activeStrapId,
-                    personalBaseline = NoopPrefs.stressPersonalBaseline(context),
+    // #94: and on a 10-minute tick while Today is STARTED, because incoming heart rate does not move
+    // `days`, so an afternoon of new samples used to leave the tile and the row where they were. The tick
+    // is aligned to the hosted curve's (a few seconds behind it, see TODAY_READING_TICK_OFFSET_MS), and the
+    // producer's heart-rate fingerprint gate makes an idle tick one indexed query. Entering STARTED reads
+    // at once, so returning to the app shows a current reading rather than waiting out an interval.
+    val stressReadingLifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(days, viewModel.activeStrapId, selectedDayOffset, stressTileShown, stressReadingLifecycleOwner) {
+        if (selectedDayOffset != 0 || !stressTileShown) {
+            stressReading = null
+            return@LaunchedEffect
+        }
+        stressReadingLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                stressReading = runCatching {
+                    StressTodayLoader.load(
+                        viewModel.repo,
+                        viewModel.activeStrapId,
+                        personalBaseline = NoopPrefs.stressPersonalBaseline(context),
+                    )
+                }.getOrNull()
+                delay(
+                    StressWidgetProducer.msUntilNextTodayTick(
+                        System.currentTimeMillis(),
+                        offsetMs = StressWidgetProducer.TODAY_READING_TICK_OFFSET_MS,
+                    ),
                 )
-            }.getOrNull()
-        } else null
+            }
+        }
     }
 
     // Steps for the selected day from imported Apple Health / Health Connect data, the Today Steps
@@ -4071,7 +4089,8 @@ private fun HostedCardsSection(
                         stressCurve = it.points
                         stressActivityMaskedHours = it.activityMaskedHours
                     }
-                delay(StressWidgetProducer.RESCORE_INTERVAL_MS)
+                // #94: on Today's aligned 10-minute tick, the one the tile reading also follows.
+                delay(StressWidgetProducer.msUntilNextTodayTick(System.currentTimeMillis()))
             }
         }
     }

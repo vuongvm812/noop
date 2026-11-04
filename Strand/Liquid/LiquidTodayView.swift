@@ -484,6 +484,18 @@ struct LiquidTodayView: View {
         .task(id: "\(repo.refreshSeq)-\(repo.weightLogSeq)-\(selectedDayOffset)-\(keyMetricsRaw)-\(dashboardCardsRaw)") {
             await reloadKeyMetricExtras()
         }
+        // #94: live banking does not bump `refreshSeq`, so the Stress tile, the pinned Stress row and the
+        // hosted curve also re-ask on a 10-minute tick while Today is on screen. Twin of the classic Today.
+        .task(id: selectedDayOffset) {
+            guard selectedDayOffset == 0 else { return }
+            while !Task.isCancelled {
+                let nowMs = Int64(Date().timeIntervalSince1970 * 1_000)
+                let waitMs = StressDayCurve.msUntilNextTodayTick(nowMs: nowMs)
+                try? await Task.sleep(nanoseconds: UInt64(waitMs) * 1_000_000)
+                if Task.isCancelled { return }
+                await refreshLiveStress()
+            }
+        }
         .sheet(isPresented: $showWeightLog) {
             WeightLogSheet(unitSystem: unitSystem, onClose: { showWeightLog = false })
         }
@@ -1955,18 +1967,7 @@ struct LiquidTodayView: View {
         }
 
         // #2040: and today's stress, on the same "only when hosted" rule.
-        if HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) {
-            let result = await StressDayCurve.today(
-                repo: repo,
-                personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
-            )?.result
-            // Waking hours only (#94), as the classic Today, the widget and the Android card draw it.
-            hostedStressHours = result?.timeline.filter { !$0.asleep } ?? []
-            hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
-        } else {
-            hostedStressHours = []
-            hostedStressActivityMaskedHours = 0
-        }
+        await loadHostedStress()
 
         // First load done — bring the hero gauges + sky to life now the launch churn has settled.
         if !dataLoaded { withAnimation(.easeIn(duration: 0.4)) { dataLoaded = true } }
@@ -2183,6 +2184,34 @@ struct LiquidTodayView: View {
         // Route through the shared formatter instead of hardcoding *21: a default (0–100) user was shown the
         // WHOOP-scaled number here while the hero + Workouts table showed 0–100, two numbers for one workout.
         return UnitFormatter.effortDisplay(s, scale: effortScale)
+    }
+
+    /// #2040: today's scored stress for the hosted curve card, ONLY when that card is hosted. Split out so
+    /// the live tick (#94) can re-ask without rebuilding the sleep model beside it.
+    private func loadHostedStress() async {
+        guard HostedCardPrefs.decodeEnabled(hostedCardsRaw).contains(.stressToday) else {
+            hostedStressHours = []
+            hostedStressActivityMaskedHours = 0
+            return
+        }
+        let result = await StressDayCurve.today(
+            repo: repo,
+            personalBaseline: PuffinExperiment.stressPersonalBaselineEnabled
+        )?.result
+        // Waking hours only (#94), as the classic Today, the widget and the Android card draw it.
+        hostedStressHours = result?.timeline.filter { !$0.asleep } ?? []
+        hostedStressActivityMaskedHours = result?.activityMaskedHours ?? 0
+    }
+
+    /// #94: the live tick's work. The hosted curve first, then the reading, so the reading's own call to
+    /// `StressDayCurve.today` lands on the memo the curve just filled rather than scoring the day twice.
+    private func refreshLiveStress() async {
+        guard selectedDayOffset == 0 else { return }
+        await loadHostedStress()
+        if Set(enabledKeyMetrics).contains(.stress)
+            || DashboardCardPrefs.decodeEnabled(dashboardCardsRaw).contains(.stress) {
+            stressReading = await StressTodayLoader.load(repo: repo)
+        }
     }
 
     /// #57: load the Stress tile's reading (today only, and only when the tile is shown) and the weight

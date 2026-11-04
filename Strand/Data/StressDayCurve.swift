@@ -38,8 +38,9 @@ enum StressDayCurve {
     /// replay one surface's curve into the other. With a single slot that is correct and useless: the
     /// background publishers ask with the default lens and Today asks with the selected one, so when the
     /// toggle is on each call evicts the other's entry and every call misses whatever the fingerprint
-    /// says. Today re-asks on a timer, so the trailing-history read the fingerprint gate exists to avoid
-    /// was being paid on essentially every tick. Keyed by lens, each surface keeps its own gate.
+    /// says. Today re-asks on its live tick (`todayRefreshIntervalMs`, #94), so the trailing-history read
+    /// the fingerprint gate exists to avoid would be paid on every tick. Keyed by lens, each surface keeps
+    /// its own gate.
     @MainActor private static var memos: [Bool: Memo] = [:]
 
     /// Today's curve and the local day number it belongs to, or nil when it could not be scored.
@@ -122,6 +123,28 @@ enum StressDayCurve {
         memos[personalBaseline] = Memo(fingerprint: fingerprint, day: day,
                                        personalBaseline: personalBaseline, result: scored)
         return (scored, day)
+    }
+
+    /// How often a VISIBLE Today re-asks for its stress reading and hosted curve (#94).
+    ///
+    /// Today's tile, pinned Stress row and hosted curve otherwise reloaded only on `refreshSeq`, and live
+    /// banking does not bump it, so an afternoon of new heart rate left them where they were. The tick is
+    /// cheap when nothing moved: `today` reads one indexed fingerprint and returns the memo. It is matched to
+    /// the data, not the stream: the curve resolves to half-hours, so asking per sample buys nothing.
+    /// Foreground only; the background publishers keep their own spacing. Kotlin twin:
+    /// `StressWidgetProducer.TODAY_REFRESH_INTERVAL_MS`.
+    static let todayRefreshIntervalMs: Int64 = 10 * 60 * 1_000
+
+    /// Milliseconds from `nowMs` to the next Today tick, ticks falling on wall-clock multiples of
+    /// `intervalMs` shifted by `offsetMs`. Aligned rather than relative to when a loop started, so two
+    /// loops asking for the same day land on the same instant and the second one hits the memo. Never 0:
+    /// exactly on a tick waits a whole interval, so a loop cannot spin. Kotlin twin:
+    /// `StressWidgetProducer.msUntilNextTodayTick`.
+    static func msUntilNextTodayTick(nowMs: Int64, offsetMs: Int64 = 0,
+                                     intervalMs: Int64 = todayRefreshIntervalMs) -> Int64 {
+        guard intervalMs > 0 else { return 1 }
+        let phase = ((nowMs - offsetMs) % intervalMs + intervalMs) % intervalMs
+        return intervalMs - phase
     }
 
     /// Days since the epoch on the LOCAL calendar.

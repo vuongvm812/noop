@@ -69,7 +69,7 @@ internal object StressWidgetProducer {
      * replay one surface's curve into the other. With a single slot that is correct and useless: three
      * background callers ask with the default lens and Today asks with the selected one, so when the
      * toggle is on each call evicts the other's entry and every call misses whatever the fingerprint
-     * says. Today re-asks every [RESCORE_INTERVAL_MS], so the trailing-history read the fingerprint gate
+     * says. Today re-asks every [TODAY_REFRESH_INTERVAL_MS], so the trailing-history read the fingerprint gate
      * exists to avoid was being paid on essentially every tick. Keyed by lens, each surface keeps its
      * own gate. Two entries at most, so this is a pair of slots rather than a cache that grows.
      *
@@ -100,6 +100,37 @@ internal object StressWidgetProducer {
      * being no help while a strap is streaming into the window it fingerprints.
      */
     const val RESCORE_INTERVAL_MS: Long = 15L * 60L * 1000L
+
+    /**
+     * How often a VISIBLE Today re-asks for its stress reading and hosted curve (#94).
+     *
+     * Today's tile and pinned Stress row otherwise reloaded only when `days` moved, and incoming heart
+     * rate does not move it, so an afternoon of new samples left them where they were. Foreground only:
+     * the connection service keeps [RESCORE_INTERVAL_MS] for the widget. The tick is cheap when nothing
+     * moved, since [todayCurve] reads one fingerprint and returns the memo. Swift twin:
+     * `StressDayCurve.todayRefreshIntervalMs`.
+     */
+    const val TODAY_REFRESH_INTERVAL_MS: Long = 10L * 60L * 1000L
+
+    /**
+     * Milliseconds from [nowMs] to the next Today tick, ticks falling on wall-clock multiples of
+     * [intervalMs] shifted by [offsetMs]. Aligned rather than relative to when a loop started, so Today's
+     * two loops (the hosted curve and the tile reading) ask a few seconds apart on the same tick and the
+     * second one hits the memo the first filled. Never 0: exactly on a tick waits a whole interval, so a
+     * loop cannot spin. Swift twin: `StressDayCurve.msUntilNextTodayTick`.
+     */
+    fun msUntilNextTodayTick(
+        nowMs: Long,
+        offsetMs: Long = 0L,
+        intervalMs: Long = TODAY_REFRESH_INTERVAL_MS,
+    ): Long {
+        if (intervalMs <= 0L) return 1L
+        val phase = ((nowMs - offsetMs) % intervalMs + intervalMs) % intervalMs
+        return intervalMs - phase
+    }
+
+    /** The tile loop's lag behind the hosted-curve loop on each Today tick, so it reads the fresh memo. */
+    const val TODAY_READING_TICK_OFFSET_MS: Long = 5_000L
 
     /**
      * The stamp to keep after an attempt, given what that attempt actually produced (#2120).
