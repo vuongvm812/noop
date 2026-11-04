@@ -75,8 +75,11 @@ enum class DeviceStatus { active, paired, archived }
 // imports — a 90-minute ride must never displace a full-day source with HR for the same day. It owns a
 // day only when nothing else has data (a strap-less day). Additive: only the activity-file importer writes it.
 /** [garmin]: a Garmin watch over its own GFDI protocol ([com.noop.ble.GarminSource]); a watch
- *  paired through the Broadcast Heart Rate fallback stays [liveBLE]. Mirrors Swift `SourceKind.garmin`. */
-enum class SourceKind { liveBLE, historyBLE, cloudImport, fileImport, ftms, huami, oura, activityFile, garmin }
+ *  paired through the Broadcast Heart Rate fallback stays [liveBLE]. Mirrors Swift `SourceKind.garmin`.
+ *  [huawei]: a Huawei Band 10 over its own protocol. A supported watch source like [garmin]: its own
+ *  vitals, stages, stress and workouts are primary on the days it owns. Additive (no DB migration): only a
+ *  Huawei pairing writes it. Mirrors Swift `SourceKind.huawei`. */
+enum class SourceKind { liveBLE, historyBLE, cloudImport, fileImport, ftms, huami, oura, activityFile, garmin, huawei }
 
 /** A canonical metric a source can provide — drives capability-aware UI + the day-owner resolver.
  *  Stored as the enum name (Swift `Metric` rawValue) inside the comma-joined `capabilities` string. */

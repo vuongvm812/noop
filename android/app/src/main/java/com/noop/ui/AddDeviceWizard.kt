@@ -94,7 +94,9 @@ private enum class DeviceType {
     // standard Broadcast Heart Rate fallback, reached from the Garmin flow.
     // EXPERIMENTAL tier (Amazfit / MiBand / Oura) - best-effort, clean-room, can't be hardware-verified
     // here. Each fails to an honest message and never fabricates data.
-    Amazfit, MiBand, Garmin, GarminBroadcast, Oura;
+    Amazfit, MiBand, Garmin, GarminBroadcast, Oura,
+    // Huawei Band 10: a supported watch source beside Garmin (not experimental). Runs its own step machine.
+    Huawei;
 
     val isWhoop: Boolean get() = this == Whoop4 || this == Whoop5MG
     val whoopModel: WhoopModel?
@@ -116,6 +118,7 @@ private enum class DeviceType {
             MiBand -> ExperimentalBrand.MI_BAND
             Garmin, GarminBroadcast -> ExperimentalBrand.GARMIN
             Oura -> ExperimentalBrand.OURA
+            Huawei -> ExperimentalBrand.HUAWEI
             else -> null
         }
 
@@ -129,6 +132,7 @@ private enum class DeviceType {
             MiBand -> "Xiaomi Mi Band"
             Garmin, GarminBroadcast -> uiString(R.string.l10n_add_device_wizard_garmin_watch_a866104a)
             Oura -> "Oura ring"
+            Huawei -> uiString(R.string.huawei_band_title)
         }
 }
 
@@ -150,6 +154,13 @@ private enum class GarminConnectFace { Progress, Success, Unsupported, Slow }
  */
 private enum class OuraStep { Gate, Prep, Pick, Confirm, Adopting, Failed }
 
+/**
+ * The Huawei Band 10 pairing sub-flow: [Prep] (keep Huawei Health off the band, optional account id) ->
+ * [Pick] (scan) -> [Consent] (pairing replaces the band's current pairing) -> [Confirm] (the user taps
+ * the band; the first-pairing grant is created here and nowhere else) -> [Success] or [Failure] with retry.
+ */
+private enum class HuaweiStep { Prep, Pick, Consent, Confirm, Success, Failure }
+
 @Composable
 fun AddDeviceWizard(
     viewModel: AppViewModel,
@@ -158,11 +169,23 @@ fun AddDeviceWizard(
      *  instead (import a file)" link and every honest Oura failure offer this, so the destructive takeover
      *  is never the only door. Defaults to a plain close so existing call sites keep compiling. */
     onUseFileImport: () -> Unit = onClose,
+    /** Open straight on the Huawei pairing flow (the band panel's "Pair again"). */
+    startWithHuawei: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
     var step by remember { mutableStateOf(WizardStep.Type) }
-    var type by remember { mutableStateOf<DeviceType?>(null) }
+    var type by remember { mutableStateOf(if (startWithHuawei) DeviceType.Huawei else null) }
+
+    // --- Huawei Band 10 pairing sub-flow. Inert for every other device type. ---
+    var huaweiStep by remember { mutableStateOf(HuaweiStep.Prep) }
+    var huaweiAccount by remember { mutableStateOf("") }
+    var pickedHuawei by remember { mutableStateOf<com.noop.ble.HuaweiScanner.DiscoveredBand?>(null) }
+    /** Bumped on every pairing attempt, restarting the Confirm step's observers and give-up timer. */
+    var huaweiAttempt by remember { mutableStateOf(0) }
+    /** The source has left its old state for this attempt, so a FAILED / NEEDS_PAIRING now is this attempt's. */
+    var huaweiAttemptStarted by remember { mutableStateOf(false) }
+    var huaweiPromptAt by remember { mutableStateOf<Long?>(null) }
 
     // --- Oura factory-reset-and-adopt sub-flow (the Oura type drives its own step machine; section 2 of
     // docs/superpowers/specs/2026-06-29-oura-onboarding-ux.md). Inert for every other device type. ---
@@ -202,6 +225,8 @@ fun AddDeviceWizard(
     val ouraScanner = remember { viewModel.makeOuraScanner() }
     // Discovery-only Garmin (GFDI) scanner: lists advertising and OS-known watches, never attaches.
     val garminScanner = remember { viewModel.makeGarminScanner() }
+    // Discovery-only Huawei Band 10 scanner (service FE86 or the band's name); never connects.
+    val huaweiScanner = remember { viewModel.makeHuaweiScanner() }
     // The Garmin watch just registered, and the device that was active before it (restored if the user
     // falls back to Broadcast Heart Rate).
     var garminAddedId by remember { mutableStateOf<String?>(null) }
@@ -227,6 +252,7 @@ fun AddDeviceWizard(
         huamiScanner.stopScan()
         ouraScanner.stop()
         garminScanner.stopScan()
+        huaweiScanner.stopScan()
     }
 
     // Belt-and-braces: stop whichever scan is live whenever the wizard leaves composition. The Garmin
@@ -234,6 +260,15 @@ fun AddDeviceWizard(
     DisposableEffect(Unit) { onDispose { stopAllScans(); garminScanner.stop() } }
 
     fun goBack() {
+        if (type == DeviceType.Huawei) {
+            when (huaweiStep) {
+                HuaweiStep.Prep -> type = null
+                HuaweiStep.Pick -> { huaweiScanner.stopScan(); huaweiStep = HuaweiStep.Prep }
+                HuaweiStep.Consent, HuaweiStep.Failure -> { pickedHuawei = null; huaweiScanner.scan(); huaweiStep = HuaweiStep.Pick }
+                HuaweiStep.Confirm, HuaweiStep.Success -> Unit
+            }
+            return
+        }
         // The Oura type runs its own step machine; back walks that, falling out to the type list from Gate.
         if (type == DeviceType.Oura) {
             when (ouraStep) {
@@ -476,6 +511,60 @@ fun AddDeviceWizard(
         if (closeAfter) onClose()
     }
 
+    /**
+     * Register the picked band (id `huawei-<address>`, kind `huawei`, made active as Garmin is) and start a
+     * first pairing on it. The grant is created here, on the user's "Pair", and used for this one attempt.
+     */
+    fun startHuaweiPairing() {
+        val band = pickedHuawei ?: return
+        stopAllScans()
+        val now = System.currentTimeMillis() / 1000
+        val huawei = ExperimentalBrand.HUAWEI
+        val device = PairedDeviceRow(
+            id = "${huawei.idPrefix}-${band.address}",
+            brand = huawei.displayBrand,
+            model = band.name,
+            nickname = null,
+            peripheralId = band.address,
+            sourceKind = SourceKind.huawei.name,
+            capabilities = HuaweiBandUi.CAPABILITIES,
+            status = DeviceStatus.paired.name,
+            addedAt = now,
+            lastSeenAt = now,
+        )
+        huaweiAttemptStarted = false
+        huaweiPromptAt = null
+        huaweiAttempt += 1
+        huaweiStep = HuaweiStep.Confirm
+        val account = huaweiAccount.trim().takeIf { it.isNotEmpty() }
+        scope.launch {
+            viewModel.pairHuaweiBand(device, account, com.noop.huawei.protocol.HuaweiFirstPairingGrant.forPairingWizard())
+        }
+    }
+
+    // The Confirm step follows the active Huawei source: READY is success; FAILED or NEEDS_PAIRING after
+    // this attempt began is failure; no outcome within the give-up window is failure too.
+    val huaweiSource by viewModel.huaweiSource.collectAsStateWithLifecycle()
+    val huaweiPhase = huaweiSource?.linkPhase?.collectAsStateWithLifecycle()?.value
+    val huaweiConfirming = huaweiSource?.confirmingOnBand?.collectAsStateWithLifecycle()?.value ?: false
+    LaunchedEffect(huaweiStep, huaweiAttempt, huaweiPhase, huaweiConfirming) {
+        if (type != DeviceType.Huawei || huaweiStep != HuaweiStep.Confirm) return@LaunchedEffect
+        if (huaweiConfirming && huaweiPromptAt == null) huaweiPromptAt = System.currentTimeMillis()
+        when (huaweiPhase) {
+            com.noop.ble.HuaweiSource.LinkPhase.CONNECTING, com.noop.ble.HuaweiSource.LinkPhase.AUTHENTICATING ->
+                huaweiAttemptStarted = true
+            com.noop.ble.HuaweiSource.LinkPhase.READY -> if (huaweiAttemptStarted) huaweiStep = HuaweiStep.Success
+            com.noop.ble.HuaweiSource.LinkPhase.FAILED, com.noop.ble.HuaweiSource.LinkPhase.NEEDS_PAIRING ->
+                if (huaweiAttemptStarted) huaweiStep = HuaweiStep.Failure
+            else -> Unit
+        }
+    }
+    LaunchedEffect(huaweiStep, huaweiAttempt) {
+        if (type != DeviceType.Huawei || huaweiStep != HuaweiStep.Confirm) return@LaunchedEffect
+        kotlinx.coroutines.delay(HuaweiBandUi.PAIRING_GIVE_UP_MS)
+        if (huaweiStep == HuaweiStep.Confirm) huaweiStep = HuaweiStep.Failure
+    }
+
     // The live adopt-failure reason (the source's needs-pairing message). Collected here so the honest
     // Failed step can surface it instead of static copy, mirroring the Swift wizard's `model.ouraNeedsPairing`.
     // The Adopting->Failed observer (the LaunchedEffect below) reads the SAME value.
@@ -505,16 +594,26 @@ fun AddDeviceWizard(
         title = {
             // The Oura type drives its own titled step machine; otherwise the generic step titles apply.
             val isOura = type == DeviceType.Oura
+            val isHuawei = type == DeviceType.Huawei
             val hTitle = when {
                 isOura -> ouraHeaderTitle(ouraStep, ouraAdvanced)
+                isHuawei -> huaweiHeaderTitle(huaweiStep)
                 step == WizardStep.Connect -> garminConnectHeader(garminFace)
                 else -> headerTitle(step, type)
             }
-            val hSub = if (isOura) ouraHeaderSubtitle(ouraStep, ouraAdvanced) else headerSubtitle(step)
+            val hSub = when {
+                isOura -> ouraHeaderSubtitle(ouraStep, ouraAdvanced)
+                isHuawei -> null
+                else -> headerSubtitle(step)
+            }
             // Back is offered on every step except the very first (the type list). The Adopting progress
             // step hides back so the user can't interrupt the key install mid-flight; the Garmin Connect
             // step hides it because the watch is already registered.
-            val showBack = if (isOura) ouraStep != OuraStep.Adopting else step != WizardStep.Type && step != WizardStep.Connect
+            val showBack = when {
+                isOura -> ouraStep != OuraStep.Adopting
+                isHuawei -> huaweiStep != HuaweiStep.Confirm && huaweiStep != HuaweiStep.Success
+                else -> step != WizardStep.Type && step != WizardStep.Connect
+            }
             Row(verticalAlignment = Alignment.Top) {
                 if (showBack) {
                     IconButton(onClick = { goBack() }, modifier = Modifier.size(28.dp)) {
@@ -546,7 +645,34 @@ fun AddDeviceWizard(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
             // The Oura type runs the factory-reset-and-adopt sub-flow (section 2 of the onboarding UX
             // spec), NOT the generic Prep/Pick/Confirm. Everything else keeps the generic 4-step shape.
-            if (type == DeviceType.Oura) {
+            if (type == DeviceType.Huawei) {
+                when (huaweiStep) {
+                    HuaweiStep.Prep -> HuaweiPrepStep(
+                        account = huaweiAccount,
+                        onAccount = { huaweiAccount = it.filter { c -> c in '0'..'9' }.take(17) },
+                        onScan = { huaweiScanner.scan(); huaweiStep = HuaweiStep.Pick },
+                    )
+                    HuaweiStep.Pick -> HuaweiPickStep(
+                        scanner = huaweiScanner,
+                        onSelect = { band -> pickedHuawei = band; huaweiScanner.stopScan(); huaweiStep = HuaweiStep.Consent },
+                        onRescan = { huaweiScanner.scan() },
+                    )
+                    HuaweiStep.Consent -> HuaweiConsentStep(
+                        bandName = pickedHuawei?.name ?: DeviceType.Huawei.title,
+                        onPair = { startHuaweiPairing() },
+                    )
+                    HuaweiStep.Confirm -> HuaweiConfirmStep(promptAt = huaweiPromptAt)
+                    HuaweiStep.Success -> HuaweiResultStep(
+                        success = true,
+                        onPrimary = { stopAllScans(); onClose() },
+                    )
+                    HuaweiStep.Failure -> HuaweiResultStep(
+                        success = false,
+                        onPrimary = { startHuaweiPairing() },
+                        onSecondary = { pickedHuawei = null; huaweiScanner.scan(); huaweiStep = HuaweiStep.Pick },
+                    )
+                }
+            } else if (type == DeviceType.Oura) {
                 OuraFlow(
                     ouraStep = ouraStep,
                     advanced = ouraAdvanced,
@@ -592,8 +718,10 @@ fun AddDeviceWizard(
                 when (step) {
                     WizardStep.Type -> TypeStep(onPick = { t ->
                         type = t; nameDraft = ""
-                        // Oura enters its own step machine at the gate, not the generic prep step.
-                        if (t == DeviceType.Oura) {
+                        // Oura and Huawei enter their own step machines, not the generic prep step.
+                        if (t == DeviceType.Huawei) {
+                            huaweiStep = HuaweiStep.Prep; pickedHuawei = null; huaweiAccount = ""
+                        } else if (t == DeviceType.Oura) {
                             ouraStep = OuraStep.Gate; ouraConsent = false; ouraAdvanced = false; ouraKeyDraft = ""
                         } else {
                             step = WizardStep.Prep
@@ -825,6 +953,9 @@ private fun TypeStep(onPick: (DeviceType) -> Unit) {
         }
         TypeRow(Icons.Filled.Watch, DeviceType.Garmin.title, uiString(R.string.l10n_add_device_wizard_pairs_over_the_watch_s_own_2064d8fb)) {
             onPick(DeviceType.Garmin)
+        }
+        TypeRow(Icons.Filled.Watch, DeviceType.Huawei.title, uiString(R.string.huawei_wizard_type_subtitle)) {
+            onPick(DeviceType.Huawei)
         }
 
         // EXPERIMENTAL tier - clearly labelled, opt-in, best-effort. Each is honest about what it can
@@ -1064,6 +1195,8 @@ private fun prepInstructions(type: DeviceType): List<String> = when (type) {
     // Oura runs the factory-reset-and-adopt prep inside OuraFlow (ouraPrepInstructions), so this generic
     // branch is unreached for Oura; kept for the exhaustive when.
     DeviceType.Oura -> ouraPrepInstructions
+    // The Huawei flow renders its own prep step (HuaweiPrepStep); this list is never shown for it.
+    DeviceType.Huawei -> emptyList()
 }
 
 /** The factory-reset prep checklist for the Oura adopt flow (Step B of the onboarding UX spec). No
@@ -2029,6 +2162,184 @@ private fun GarminConnectStep(
                     fullWidth = true,
                     onClick = onUseBroadcast,
                 )
+            }
+        }
+    }
+}
+
+// MARK: - Huawei Band 10 flow: prep, pick, consent, confirm on band, result
+
+private fun huaweiHeaderTitle(step: HuaweiStep): String = when (step) {
+    HuaweiStep.Prep -> uiString(R.string.huawei_prep_title)
+    HuaweiStep.Pick -> uiString(R.string.huawei_pick_title)
+    HuaweiStep.Consent -> uiString(R.string.huawei_consent_title)
+    HuaweiStep.Confirm -> uiString(R.string.huawei_confirm_title)
+    HuaweiStep.Success -> uiString(R.string.huawei_success_title)
+    HuaweiStep.Failure -> uiString(R.string.huawei_failure_title)
+}
+
+@Composable
+private fun HuaweiPrepStep(account: String, onAccount: (String) -> Unit, onScan: () -> Unit) {
+    val valid = HuaweiBandUi.accountIdAcceptable(account)
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space16)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space14), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Watch, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(28.dp))
+            Text(DeviceType.Huawei.title, style = NoopType.title2, color = Palette.textPrimary)
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.space14))
+                .frostedCardSurface(cornerRadius = Metrics.space14)
+                .padding(Metrics.space16),
+            verticalArrangement = Arrangement.spacedBy(Metrics.space12),
+        ) {
+            listOf(
+                uiString(R.string.huawei_prep_health_off),
+                uiString(R.string.huawei_prep_dont_unpair),
+                uiString(R.string.huawei_prep_bound),
+            ).forEach { line ->
+                Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space10), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = Palette.accent, modifier = Modifier.size(Metrics.iconSmall))
+                    Text(line, style = NoopType.body, color = Palette.textSecondary)
+                }
+            }
+        }
+        OutlinedTextField(
+            value = account,
+            onValueChange = onAccount,
+            singleLine = true,
+            isError = !valid,
+            label = { Text(uiString(R.string.huawei_account_label), style = NoopType.caption, color = Palette.textTertiary) },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+            colors = wizardFieldColors(),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = uiString(R.string.huawei_account_label) },
+        )
+        if (!valid) {
+            Text(uiString(R.string.huawei_account_invalid), style = NoopType.footnote, color = Palette.statusCritical)
+        }
+        TextButton(
+            onClick = onScan,
+            enabled = valid,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cornerSm))
+                .background(if (valid) Palette.accent else Palette.surfaceInset),
+        ) {
+            Text(uiString(R.string.l10n_add_device_wizard_scan_28cba55d), style = NoopType.headline, color = Palette.goldDeepText)
+        }
+    }
+}
+
+@Composable
+private fun HuaweiPickStep(
+    scanner: com.noop.ble.HuaweiScanner,
+    onSelect: (com.noop.ble.HuaweiScanner.DiscoveredBand) -> Unit,
+    onRescan: () -> Unit,
+) {
+    val discovered by scanner.discovered.collectAsStateWithLifecycle()
+    PickList(
+        searching = true,
+        isEmpty = discovered.isEmpty(),
+        onRescan = onRescan,
+        emptyHint = uiString(R.string.huawei_pick_empty),
+        rescanLabel = uiString(R.string.l10n_add_device_wizard_scan_again_f6ab55dd),
+    ) {
+        discovered.sortedByDescending { it.rssi }.forEach { band ->
+            DiscoveredRow(
+                name = band.name,
+                subtitle = uiString(R.string.huawei_band_title),
+                rssi = band.rssi,
+                onTap = { onSelect(band) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun HuaweiConsentStep(bandName: String, onPair: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space16)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.space12))
+                .background(Palette.statusWarning.copy(alpha = 0.10f))
+                .padding(Metrics.space12),
+            horizontalArrangement = Arrangement.spacedBy(Metrics.space10),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(Icons.Filled.Warning, contentDescription = null, tint = Palette.statusWarning, modifier = Modifier.size(Metrics.iconSmall))
+            Text(uiString(R.string.huawei_consent_body, bandName), style = NoopType.body, color = Palette.textPrimary)
+        }
+        TextButton(
+            onClick = onPair,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cornerSm))
+                .background(Palette.accent),
+        ) {
+            Text(uiString(R.string.huawei_consent_pair), style = NoopType.headline, color = Palette.goldDeepText)
+        }
+    }
+}
+
+/** Waiting on the band: a countdown from when the band raised its prompt, a spinner until then. */
+@Composable
+private fun HuaweiConfirmStep(promptAt: Long?) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(promptAt) {
+        while (promptAt != null) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(500)
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space12), horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        CircularProgressIndicator(color = Palette.accent, modifier = Modifier.size(22.dp))
+        if (promptAt == null) {
+            Text(uiString(R.string.huawei_confirm_connecting), style = NoopType.body, color = Palette.textPrimary)
+        } else {
+            Text(uiString(R.string.huawei_confirm_body), style = NoopType.body, color = Palette.textPrimary)
+            Text(
+                uiString(R.string.huawei_confirm_countdown, HuaweiBandUi.secondsLeft(promptAt, now)),
+                style = NoopType.headline,
+                color = Palette.accent,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HuaweiResultStep(success: Boolean, onPrimary: () -> Unit, onSecondary: (() -> Unit)? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(Metrics.space16)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Metrics.space10), verticalAlignment = Alignment.Top) {
+            Icon(
+                if (success) Icons.Filled.Check else Icons.Filled.Warning,
+                contentDescription = null,
+                tint = if (success) Palette.statusPositive else Palette.statusWarning,
+                modifier = Modifier.size(Metrics.iconSmall),
+            )
+            Text(
+                uiString(if (success) R.string.huawei_success_body else R.string.huawei_failure_body),
+                style = NoopType.body,
+                color = Palette.textSecondary,
+            )
+        }
+        TextButton(
+            onClick = onPrimary,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Metrics.cornerSm))
+                .background(Palette.accent),
+        ) {
+            Text(
+                uiString(if (success) R.string.huawei_done else R.string.huawei_retry),
+                style = NoopType.headline,
+                color = Palette.goldDeepText,
+            )
+        }
+        onSecondary?.let { back ->
+            TextButton(onClick = back, modifier = Modifier.fillMaxWidth()) {
+                Text(uiString(R.string.l10n_add_device_wizard_scan_again_f6ab55dd), style = NoopType.subhead, color = Palette.accent)
             }
         }
     }

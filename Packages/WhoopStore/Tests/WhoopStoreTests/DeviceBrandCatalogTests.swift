@@ -15,6 +15,7 @@ final class DeviceBrandCatalogTests: XCTestCase {
             ("Garmin Forerunner 265", "Garmin"),
             ("fēnix 7", "Garmin"),                 // diacritic-folded to "fenix"
             ("HRM-Pro", "Garmin"),
+            ("HUAWEI Band 10-A1B", "Huawei"),
             ("Oura Ring", "Oura"),
             ("Polar H10", "Polar"),
             ("Wahoo TICKR", "Wahoo"),
@@ -54,6 +55,12 @@ final class DeviceBrandCatalogTests: XCTestCase {
         XCTAssertEqual(spec("Garmin").sourceKind, .garmin)
         XCTAssertEqual(SourceKind.garmin.rawValue, "garmin")   // stable cross-platform store encoding
         XCTAssertEqual(spec("Polar").sourceKind, .liveBLE)
+        // Huawei Band 10 is its own watch kind.
+        XCTAssertEqual(spec("Huawei").sourceKind, .huawei)
+        XCTAssertEqual(SourceKind.huawei.rawValue, "huawei")   // stable cross-platform store encoding
+        XCTAssertEqual(spec("Huawei").idPrefix, "huawei")
+        XCTAssertFalse(spec("Huawei").canStreamLiveHR)
+        XCTAssertFalse(spec("Huawei").isExperimentalTier)
         // id prefixes match the wizard's registration.
         XCTAssertEqual(spec("Amazfit").idPrefix, "huami")
         XCTAssertEqual(spec("Oura").idPrefix, "oura")
@@ -92,5 +99,18 @@ final class DeviceBrandCatalogTests: XCTestCase {
         // Prefix must be delimited: a bare "oura" with no "-" (or an unrelated id) is not a registry ring id.
         XCTAssertFalse(DeviceBrandCatalog.isOura("oura"))
         XCTAssertFalse(DeviceBrandCatalog.isOura("neuraloura-1"))
+    }
+
+    /// The watch resolver: a paired Garmin or Huawei watch id resolves to its brand row; an export import,
+    /// a computed sibling and every other brand do not. Kotlin twin asserts the SAME cases.
+    func testWatchSpecForDeviceId() {
+        XCTAssertEqual(DeviceBrandCatalog.watchSpec(forDeviceId: "garmin-AA:BB")?.brand, "Garmin")
+        XCTAssertEqual(DeviceBrandCatalog.watchSpec(forDeviceId: "huawei-AA:BB:CC:00:11:22")?.brand, "Huawei")
+        for id in ["garmin-import", "huawei-import", "garmin-x-noop", "huawei-x-noop", "garmin", "huawei",
+                   "my-whoop", "oura-1", "huami-1", "strap-1", ""] {
+            XCTAssertNil(DeviceBrandCatalog.watchSpec(forDeviceId: id), id)
+        }
+        XCTAssertEqual(DeviceBrandCatalog.watchSpec(forSource: "huawei-x-noop")?.brand, "Huawei")
+        XCTAssertNil(DeviceBrandCatalog.watchSpec(forSource: "huawei-import"))
     }
 }

@@ -115,7 +115,8 @@ object GarminScoringInputs {
         return FusionResolver.resolve(key, inputs)
     }
 
-    /** Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. */
+    /** Resolve one Garmin-owned day's resting HR, overnight HRV and respiration. Another watch brand's day
+     *  resolves the same way and is then relabelled by [attributedTo]. */
     fun resolve(
         computedRestingHr: Int?,
         computedHrv: Double?,
@@ -150,13 +151,25 @@ object GarminScoringInputs {
         )
     }
 
+    /** [r] with every watch-won fact credited to [watchSource] (a Huawei band's day) instead of Garmin. The
+     *  values and the HRV basis are unchanged; a Garmin day passes through as is. Kotlin-only (fork). */
+    fun attributedTo(r: Resolution, watchSource: FusionSource): Resolution {
+        if (watchSource == FusionSource.GARMIN_WATCH) return r
+        val g = FusionSource.GARMIN_WATCH
+        return r.copy(
+            restingHrSource = if (r.restingHrSource == g) watchSource else r.restingHrSource,
+            avgHrvSource = if (r.avgHrvSource == g) watchSource else r.avgHrvSource,
+            respRateSource = if (r.respRateSource == g) watchSource else r.respRateSource,
+        )
+    }
+
     /**
-     * The baseline era cut for HRV and resting HR (#459) when a Garmin watch is part of the history, as
-     * [Baselines.deviceEraEpoch] computes it; 0 when no day is a Garmin day, which keeps every non-Garmin
-     * history byte-identical. Pairs are (day, sourceId).
+     * The baseline era cut for HRV and resting HR (#459) when a watch brand (Garmin, Huawei) is part of the
+     * history, as [Baselines.deviceEraEpoch] computes it; 0 when no day is a watch-brand day, which keeps
+     * every other history byte-identical. Pairs are (day, sourceId).
      */
     fun baselineEraEpoch(sourceDays: List<Pair<String, String>>): Double {
-        if (sourceDays.none { Baselines.brandBucket(it.second) == "garmin" }) return 0.0
+        if (sourceDays.none { Baselines.brandBucket(it.second) in Baselines.WATCH_BRAND_BUCKETS }) return 0.0
         return Baselines.deviceEraEpoch(sourceDays)
     }
 

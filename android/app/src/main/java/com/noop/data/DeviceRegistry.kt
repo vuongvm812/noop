@@ -17,6 +17,12 @@ import androidx.room.withTransaction
 class DeviceRegistry(
     private val dao: DeviceRegistryDao,
     private val transactor: Transactor,
+    /** Moves per-device secrets held outside Room (the Huawei key store) when an id is re-keyed. */
+    private val moveCredentials: (from: String, to: String) -> Unit = { _, _ -> },
+    /** Deletes those secrets when a device is forgotten, so a removed band leaves no usable key behind. */
+    private val deleteCredentials: (id: String) -> Unit = {},
+    /** Drops per-device sync state held outside Room (Huawei watermarks) when a device's data is wiped. */
+    private val dropSyncState: (id: String) -> Unit = {},
 ) {
     /** A single-transaction boundary. Production wraps Room's `withTransaction`; tests pass through.
      *  Not a `fun interface` — a SAM method may not be generic — so implementors use the object form. */
@@ -25,11 +31,19 @@ class DeviceRegistry(
     }
 
     /** Production constructor: wraps the DAO + Room transaction over [db]. */
-    constructor(db: WhoopDatabase) : this(
+    constructor(
+        db: WhoopDatabase,
+        moveCredentials: (from: String, to: String) -> Unit = { _, _ -> },
+        deleteCredentials: (id: String) -> Unit = {},
+        dropSyncState: (id: String) -> Unit = {},
+    ) : this(
         dao = db.whoopDao(),
         transactor = object : Transactor {
             override suspend fun <R> run(block: suspend () -> R): R = db.withTransaction { block() }
         },
+        moveCredentials = moveCredentials,
+        deleteCredentials = deleteCredentials,
+        dropSyncState = dropSyncState,
     )
 
     /** All paired devices, oldest first. */
@@ -101,7 +115,7 @@ class DeviceRegistry(
             dao.deletePairedDeviceRow(activeId)
             dao.deleteDeviceRow(activeId)
             true
-        }
+        }.also { moved -> if (moved) moveCredentials(activeId, serialId) }
     }
 
     /** Stamp a device as seen right now — a real connect or disconnect, not every inbound packet, which
@@ -170,6 +184,7 @@ class DeviceRegistry(
             dao.deletePairedDeviceRow(id)
             dao.deleteDeviceRow(id)
         }
+        deleteCredentials(id)
     }
 
     /** Update the model label for a device. Mirrors the Swift store's `setModel`. */
@@ -245,6 +260,8 @@ class DeviceRegistry(
             dao.deleteLiftSessionsFor(id)
             dao.deleteLiftSetsFor(id)
         }
+        // After the rows: a wiped band's watermarks must not make the next sync skip what was deleted.
+        dropSyncState(id)
     }
 
     /** Set the owner override for a day (insert-or-replace). */

@@ -67,7 +67,28 @@ class NoopApplication : Application() {
     }
 
     /** Process-wide device registry over the same Room DB — the single source of the active device id. */
-    val deviceRegistry: DeviceRegistry by lazy { DeviceRegistry(WhoopDatabase.get(this)) }
+    val deviceRegistry: DeviceRegistry by lazy {
+        DeviceRegistry(
+            WhoopDatabase.get(this),
+            // A re-keyed Huawei band keeps its pairing key and its sync watermarks; a forgotten one loses both.
+            moveCredentials = { from, to ->
+                com.noop.ble.HuaweiKeyStore.of(this).move(from, to)
+                com.noop.data.HuaweiSyncPrefs.of(this).moveDeviceState(from, to)
+            },
+            deleteCredentials = { id -> com.noop.ble.HuaweiKeyStore.of(this).delete(id) },
+            dropSyncState = { id -> com.noop.data.HuaweiSyncPrefs.of(this).dropDeviceState(id) },
+        )
+    }
+
+    /**
+     * Huawei band history sync (#82): watermarks in `noop_huawei_sync`, batches stored by
+     * [com.noop.data.HuaweiHistoryIngest], then the same debounced post-sync analysis as new Garmin history.
+     * Handed to the Huawei source as its [com.noop.huawei.HuaweiSyncRunner].
+     */
+    val huaweiSyncRunner: com.noop.huawei.HuaweiSyncRunner by lazy {
+        com.noop.data.HuaweiHistoryIngest.runner(this, WhoopDatabase.get(this),
+            onStored = { ble.requestPostSyncAnalysis() }, log = { ble.externalLog(it) })
+    }
 
     /**
      * Active device id, resolved once at startup from the registry and falling back to the legacy
@@ -194,6 +215,8 @@ class NoopApplication : Application() {
             garminLiveSink = { snapshot -> ble.publishExternalGarminLive(snapshot) },
             // New Garmin history files: the debounced post-offload analysis, never skipped as unchanged (#70).
             onGarminHistoryStored = { ble.requestPostSyncAnalysis() },
+            // A Huawei band's history sync (#82), run by the band's source once its link is READY.
+            huaweiSyncRunner = huaweiSyncRunner,
             initialActiveDeviceId = activeDeviceId,
         )
     }

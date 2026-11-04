@@ -144,6 +144,7 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
         onDispose { viewModel.setGarminOnScreenChannels(emptySet()) }
     }
     val garminSource by viewModel.garminSource.collectAsStateWithLifecycle()
+    val huaweiSource by viewModel.huaweiSource.collectAsStateWithLifecycle()
     val garminSpo2Requested by viewModel.garminSpO2Requested.collectAsStateWithLifecycle()
     LaunchedEffect(live.bonded) {
         if (live.bonded) viewModel.getBattery()
@@ -384,6 +385,11 @@ fun LiveScreen(viewModel: AppViewModel, onManageDevices: () -> Unit = {}) {
                 onMeasureSpo2 = { viewModel.requestGarminSpO2() },
             )
             }
+        }
+
+        // A Huawei band has no realtime channel: say so instead of an empty heart-rate readout.
+        if (huaweiSource != null) {
+            item { HuaweiLiveNote() }
         }
 
         // Max HR + the top-zone entry threshold (read-only; manage coaching in Automations).

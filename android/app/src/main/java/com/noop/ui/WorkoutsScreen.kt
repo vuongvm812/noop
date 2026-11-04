@@ -513,6 +513,7 @@ private fun RangeBar(
 private val SOURCE_FILTER_OPTIONS = listOf(
     WorkoutSource.WHOOP, WorkoutSource.APPLE, WorkoutSource.DETECTED,
     WorkoutSource.MANUAL, WorkoutSource.LIFTING, WorkoutSource.ACTIVITY_FILE, WorkoutSource.GARMIN,
+    WorkoutSource.HUAWEI,
 )
 
 /** The Source-filter menu label for an origin class. */
@@ -524,6 +525,7 @@ private fun sourceFilterLabel(c: WorkoutSource): String = when (c) {
     WorkoutSource.LIFTING -> "Lifting"
     WorkoutSource.ACTIVITY_FILE -> "File"
     WorkoutSource.GARMIN -> "Garmin"
+    WorkoutSource.HUAWEI -> "Huawei"
 }
 
 /**
@@ -2260,7 +2262,7 @@ private fun RowActionsMenu(
                     )
                 }
                 WorkoutSource.WHOOP, WorkoutSource.APPLE, WorkoutSource.LIFTING, WorkoutSource.ACTIVITY_FILE,
-                WorkoutSource.GARMIN -> {
+                WorkoutSource.GARMIN, WorkoutSource.HUAWEI -> {
                     DropdownMenuItem(
                         text = { Text(uiString(R.string.l10n_workouts_screen_duplicate_as_manual_2d580d46), style = NoopType.body, color = Palette.textPrimary) },
                         onClick = { open = false; onEdit(WorkoutEditing.asManualCopy(row), true) },
@@ -2829,6 +2831,7 @@ private val WorkoutRow.sourceBadge: Pair<String, Color>
         WorkoutSource.LIFTING -> "LIFT" to Palette.zone2 // imported Hevy / Liftosaur strength log
         WorkoutSource.ACTIVITY_FILE -> "FILE" to Palette.metricAmber // imported GPX / TCX / FIT
         WorkoutSource.GARMIN -> "GAR" to Palette.zone3 // Garmin history sync (#50)
+        WorkoutSource.HUAWEI -> "HUA" to Palette.zone4 // Huawei Band 10 history sync
         else -> when (workoutSourceLabel(deviceId, source)) {
             "HC" -> "HC" to Palette.metricPurple
             "Whoop" -> "WHP" to Palette.accent

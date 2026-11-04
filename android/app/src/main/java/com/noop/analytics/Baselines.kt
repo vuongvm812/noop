@@ -470,6 +470,9 @@ object Baselines {
         }.getOrDefault(0.0)
     }
 
+    /** The [brandBucket]s of the watch brands whose own vitals score a day (Garmin, Huawei). */
+    internal val WATCH_BRAND_BUCKETS: Set<String> = setOf("garmin", "huawei")
+
     /**
      * Coarse HRV-scale brand for a source id (#459). Every WHOOP-origin id shares ONE scale; each
      * wearable-export brand is its own. Unknown ids bucket to "whoop" (the strap source and its Apple/
@@ -482,6 +485,7 @@ object Baselines {
         sourceId.startsWith("oura") -> "oura"
         sourceId.startsWith("fitbit") -> "fitbit"
         sourceId.startsWith("garmin") -> "garmin"
+        sourceId.startsWith("huawei") -> "huawei"
         // "apple-health" / "health-connect" fall through to "whoop" ON PURPOSE: NOOP's Apple/HC daily
         // rows ride the strap source's scale, and HC is a pass-through whose true origin is unknowable,
         // so they must NOT open a false era boundary against WHOOP nights.

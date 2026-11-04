@@ -132,6 +132,65 @@ numbers.
   from NOOP's own runs on a Forerunner 165. Nothing from Gadgetbridge beyond the protocol facts above, at
   the same pinned commit.
 
+## Huawei Band 10 (fork, Android only)
+The whole Huawei Band 10 source in this fork is **re-derived** Kotlin written from **protocol facts**, with
+no Swift twin yet. See [docs/HUAWEI.md](docs/HUAWEI.md).
+- **Gadgetbridge** (`Freeyourgadget/Gadgetbridge`, codeberg.org), licensed **AGPL-3.0**, consulted at
+  commit `6e4220682feb6917a5644304d9d7c760f30b6eaf`. NOOP copies none of its code. What was taken, as
+  facts, and from which files (paths under `nodomain/freeyourgadget/gadgetbridge/`):
+  - **Transport and authentication** (`com/noop/huawei/protocol/`, `com/noop/huawei/auth/`): the Link
+    Protocol frame (`5A | len | 00/slice flag | sid | cid | TLV | CRC-16/XMODEM`) and its slicing, the TLV
+    VarInt, the `{7C, 7D, 7E}` encryption envelope and its AES-GCM/AES-CBC and IV-counter rules, the
+    LinkParams / SecurityNegotiation / PinCode / Auth / BondParams / Bond / HiChain message layouts and
+    key schedules, and the capability packet layouts (SupportedServices, SupportedCommands,
+    ExpandCapabilities, SettingRelated, ProductInfo, Battery): `devices/huawei/HuaweiPacket.java`,
+    `HuaweiTLV.java`, `HuaweiCrypto.java`, `HuaweiConstants.java`, `packets/DeviceConfig.java`,
+    `util/CryptoUtils.java`, `service/devices/huawei/HuaweiSupportProvider.java` and
+    `requests/Get*Request.java` (chiefly `GetAuthRequest`, `GetBondRequest`, `GetHiChainRequest`).
+  - **Set time and account id**: the 01/05 time and UTC-offset layout (`HuaweiUtil.getTimeAndZoneId`,
+    `packets/DeviceConfig.java`) and the AccountRelated 1A/01 and 1A/05 layouts and their gates
+    (`requests/SendAccountRequest.java`, `SendExtendedAccountRequest.java`, `packets/AccountRelated.java`).
+  - **Metric decoders** (`com/noop/huawei/decode/`, the fold `com/noop/ingest/HuaweiWatchIngest.kt`): the
+    FitnessData step-data feature bitmaps and field widths and the legacy sleep record layout
+    (`packets/FitnessData.java`, `requests/GetSleepDataRequest.java`); the sequence_data sleep file layout,
+    its summary value ids and the 8-byte stage records (`HuaweiSequenceDataFileParser.java`,
+    `HuaweiSequenceDataParserBase.java`, `HuaweiTrueSleepSequenceDataParser.java`,
+    `HuaweiSleepSessionProvider.kt`); the `sleep_state.bin` records (`HuaweiTruSleepParser.java`); the
+    `rrisqi_data.bin` stress layout (`HuaweiStressParser.java`); the P2P dictionary class / value ids
+    500044 / 500044831 (HRV RMSSD) and 400012 / 400012430 (skin temperature) with their value ranges
+    (`p2p/dictionarysync/*`, `HuaweiDictTypes.java`); the workout totals tags, data header, bitmap,
+    inner-block widths and scales and the pace block layout (`packets/Workout.java`,
+    `HuaweiWorkoutGbParser.java`); and the GPS file layout and its 6378245 m radius
+    (`HuaweiGpsParser.java`).
+  - **History sync** (`HuaweiHistorySync.kt`, `HuaweiFileDownload.kt`, `HuaweiSyncRunner.kt`): the
+    FitnessData count / data request layouts and the measurement-switch payloads (`packets/FitnessData.java`);
+    the 0x2C and 0x0A file-download message layouts, file type bytes, block arithmetic and raw block
+    layouts (`packets/FileDownloadService2C.java`, `FileDownloadService0A.java`,
+    `HuaweiFileDownloadManager.java`); the workout count / totals / data / pace / capability layouts and
+    the range-split retry (`packets/Workout.java`, `HuaweiWorkoutSyncManager.java`); the P2P message
+    layout, package names, fingerprints, ping / ack codes and the dictionary request, reply and cursor
+    rules (`packets/P2P.java`, `p2p/HuaweiBaseP2PService.java`, `HuaweiP2PManager.java`,
+    `p2p/HuaweiP2PDataDictionarySyncService.java`); the sync order, its capability gates and the
+    expand-capability bits (`HuaweiSupportProvider.java`, `HuaweiState.java`, `packets/DeviceConfig.java`);
+    and the workout type codes mapped to sports (`HuaweiWorkoutGbParser.java`).
+- **Vendor constants** taken from those Gadgetbridge files and committed verbatim because every band
+  expects them: the digest secrets v1/v2/v3, the bond mixing keys `SECRET_KEY_1/2` (v1 and v2/3), the
+  challenge/response message bytes, the HiChain `GROUP_ID`, and the HiChain strings (`com.huawei.health`,
+  `com.huawei.devicegroupmanage`, `health_group_name`, the version strings, and the HKDF/AAD labels
+  `hichain_iso_session_key`, `hichain_return_key`, `hichain_iso_exchange`, `hichain_iso_result`). They live
+  in `HuaweiVendorConstants` (`HuaweiAuthCrypto.kt`).
+- **Test vectors**: the expected byte literals in `HuaweiTlvTest`, `HuaweiFramingTest`,
+  `HuaweiDeviceConfigTest`, `HuaweiAuthPacketsTest` and `GadgetbridgeHuaweiVectors` reproduce
+  Gadgetbridge's `TestHuaweiPacket`, `TestHuaweiTLV`, `TestVarInt` and `packets/TestDeviceConfig` at the
+  same commit, used as protocol test vectors with attribution. The HMAC, HKDF and PBKDF2 vectors are
+  RFC 4231, RFC 5869 and RFC 7914; the GCM known answer is NIST test case 2.
+- **Test vectors**, continued: byte vectors from Gadgetbridge's `TestFitnessData.java`, `TestWorkout.java`
+  and `TestHuaweiTruSleepParser.java` are used as expected literals in NOOP's decoder tests, attributed
+  there.
+- **Not validated on hardware.** Nothing here has been run against a Huawei Band 10; JVM tests run against
+  a simulated band only, and every value remains an unvalidated candidate until checked on a real band.
+  Honor PAKE / STS framing is not implemented.
+
 ## Other
 - **GRDB.swift** (`groue/GRDB.swift`) — SQLite persistence (via Swift Package Manager).
 - **MarkdownUI** (`gonzalezreal/swift-markdown-ui`) — renders the AI Coach's Markdown

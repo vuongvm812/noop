@@ -65,6 +65,13 @@ I don't wear a WHOOP. I wear a **Garmin**. I forked NOOP so I could get its on-d
 - **Shares the watch with Garmin Connect.** NOOP no longer resets the watch's link when it connects, so Garmin Connect can keep syncing workouts to Strava.
 - **Run routes.** Workouts synced from the watch keep their GPS route, and NOOP's workout screen shows it on a map.
 
+**Huawei Band 10 on Android (untested on hardware):**
+
+- **Direct Bluetooth pairing.** Pick "Huawei Band 10" in Add a device and confirm on the band. NOOP talks the band's own protocol; no Huawei account login is needed (an optional account id can be entered for a band that is bound to one).
+- **History sync.** Per-minute heart rate, steps, SpO2, resting HR, sleep, stress, HRV, skin temperature and workouts are read from the band and land in the same tables as a Garmin watch. NOOP never deletes anything on the band; its only writes are reversible (measurement switches on, the clock, the optional account id).
+- **Android only, Kotlin only.** There is no macOS or iOS support yet: the Swift twin is deferred in this fork.
+- **Not verified on a real Huawei Band 10.** It is tested only against a simulated band in JVM unit tests. See [docs/HUAWEI.md](docs/HUAWEI.md).
+
 **Your Garmin history counts:**
 
 - **Garmin Connect export import.** NOOP reads the current "Export Your Data" ZIP: sleep, resting HR, HRV, steps and stress.
@@ -76,7 +83,7 @@ I don't wear a WHOOP. I wear a **Garmin**. I forked NOOP so I could get its on-d
 - **Stress card.** Today's stress level and average, with an intraday sparkline.
 - **Home-screen widget works for a Garmin wearer.** It shows HRV, resting HR and scores even before Charge has finished calibrating.
 
-The Bluetooth stack for WHOOP, the strap protocol, storage, sleep staging and the analytics engines are NOOP's, unchanged. Garmin protocol facts were re-derived from [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge)'s documentation, with attribution in [ATTRIBUTION.md](ATTRIBUTION.md). No Gadgetbridge code was copied.
+The Bluetooth stack for WHOOP, the strap protocol, storage, sleep staging and the analytics engines are NOOP's, unchanged. Garmin protocol facts were re-derived from [Gadgetbridge](https://codeberg.org/Freeyourgadget/Gadgetbridge)'s documentation, and Huawei protocol facts from Gadgetbridge's source (AGPL-3.0), with attribution in [ATTRIBUTION.md](ATTRIBUTION.md). No Gadgetbridge code was copied.
 
 ---
 
@@ -283,6 +290,7 @@ NOOP is an independent, **experimental** project — capable, but a work in prog
 | **WHOOP 4.0** | ✅ The tested, supported path. Live HR, recovery, strain, sleep, history offload — the full experience. (v1.95 also unlocked sleep + recovery on the newer "v25" 4.0 firmware layout that earlier versions could only read live HR from.) |
 | **WHOOP 5.0 / MG** | 🧪 **Live heart rate works** (confirmed on real hardware). Pick "WHOOP 5.0 / MG" before connecting — and see the pairing note below, because you can't just scan for it. Deeper 5/MG metrics (recovery, strain, sleep) are still being mapped; there's an opt-in **Settings → Experimental** toggle for 5/MG owners who want to help document the protocol. |
 | **Garmin watches** | ✅ **Supported** on macOS, iOS and Android. Pick "Garmin watch" in Add a device: NOOP pairs over the watch's own protocol, read-only, for history sync (sleep, heart rate, steps, stress, Body Battery, SpO₂, respiration, HRV), live heart rate + R-R, and Charge / Effort / Rest from the watch's data. Hardware-tested on a Forerunner 165. Models NOOP can't pair this way can still be added with Broadcast Heart Rate. See [docs/GARMIN.md](docs/GARMIN.md). |
+| **Huawei Band 10** | ✅ **Supported on Android only** (no macOS / iOS). Pick "Huawei Band 10" in Add a device: NOOP pairs over the band's own protocol and syncs its history (heart rate, steps, SpO₂, resting HR, sleep, stress, HRV, skin temperature, workouts). No live heart rate. **Not yet verified on a real band**: tested only against a simulated band. See [docs/HUAWEI.md](docs/HUAWEI.md). |
 | **Oura Ring (Gen 3 measured; Ring 5 reported)** | 🧪 **Experimental, not a supported strap.** Pairs on **iOS / Android only** and reads real overnight data — heart rate, sleep stages, skin temperature, SpO₂, motion. The ring's night feeds the scorer, so a ring-only day gets a **Sleep** and a **Strain** score but **no Recovery** (it needs an HRV baseline the ring cannot provide), and some metrics are permanently out of reach. See **Oura ring support** below before you expect anything from it. |
 
 > ### WHOOP 5.0 / MG analysis limits

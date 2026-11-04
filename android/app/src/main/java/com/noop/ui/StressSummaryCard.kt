@@ -141,12 +141,13 @@ private fun StressFigure(label: String, value: Double?, reading: StressToday.Rea
 /** Also the Key Metrics Stress tile's caption (#57). */
 internal fun sourceLabelRes(source: StressToday.Source): Int = when (source) {
     StressToday.Source.GARMIN -> R.string.stress_summary_source_garmin
+    StressToday.Source.HUAWEI -> R.string.stress_summary_source_huawei
     StressToday.Source.NOOP -> R.string.stress_summary_source_noop
 }
 
-/** Garmin's scale is whole numbers; NOOP's 0-3 proxy prints to one decimal like the Stress screen. */
+/** A watch's scale is whole numbers; NOOP's 0-3 proxy prints to one decimal like the Stress screen. */
 internal fun formatStressSummaryValue(value: Double, source: StressToday.Source): String = when (source) {
-    StressToday.Source.GARMIN -> value.roundToInt().toString()
+    StressToday.Source.GARMIN, StressToday.Source.HUAWEI -> value.roundToInt().toString()
     StressToday.Source.NOOP -> StressTrace.formatLevel(value)
 }
 

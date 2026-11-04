@@ -148,6 +148,8 @@ fun DevicesScreen(
 
     // Sheets / dialogs (mirror the Swift @State targets).
     var showAddWizard by remember { mutableStateOf(false) }
+    /** The wizard was opened from the Huawei band panel's "Pair again", so it starts on the Huawei flow. */
+    var huaweiPairAgain by remember { mutableStateOf(false) }
     var switchTarget by remember { mutableStateOf<PairedDeviceRow?>(null) }
     var strapCompare by remember { mutableStateOf<StrapCompareData?>(null) }
     var renameTarget by remember { mutableStateOf<PairedDeviceRow?>(null) }
@@ -356,6 +358,14 @@ fun DevicesScreen(
             if (device.status == DeviceStatus.active.name && isGarminWatch(device)) {
                 GarminWatchPanel(viewModel, modifier = Modifier.padding(top = Metrics.gap))
             }
+            // The Huawei band panel sits under the active band's card.
+            if (device.status == DeviceStatus.active.name && isHuaweiBand(device)) {
+                HuaweiBandPanel(
+                    viewModel,
+                    onPairAgain = { huaweiPairAgain = true; showAddWizard = true },
+                    modifier = Modifier.padding(top = Metrics.gap),
+                )
+            }
         }
 
         // Prominent "+ Add a device" button.
@@ -389,10 +399,11 @@ fun DevicesScreen(
     if (showAddWizard) {
         AddDeviceWizard(
             viewModel = viewModel,
-            onClose = { showAddWizard = false; reload() },
+            onClose = { showAddWizard = false; huaweiPairAgain = false; reload() },
+            startWithHuawei = huaweiPairAgain,
             // The Oura gate's file-import links close the wizard and route to Data Sources, so the
             // non-destructive lane is always one tap away (it is never the only door).
-            onUseFileImport = { showAddWizard = false; reload(); onUseFileImport() },
+            onUseFileImport = { showAddWizard = false; huaweiPairAgain = false; reload(); onUseFileImport() },
         )
     }
 
@@ -1742,7 +1753,7 @@ private fun deviceIcon(device: PairedDeviceRow): ImageVector = when {
     device.sourceKind == SourceKind.ftms.name -> Icons.AutoMirrored.Filled.DirectionsRun
     device.sourceKind == SourceKind.huami.name -> Icons.Filled.GraphicEq
     device.sourceKind == SourceKind.oura.name -> Icons.Filled.Circle
-    isGarminWatch(device) -> Icons.Filled.Watch
+    watchSourceOf(device) != null -> Icons.Filled.Watch
     SourceCoordinator.isWhoop(device) -> Icons.Filled.Watch
     else -> Icons.Filled.FavoriteBorder
 }
@@ -1761,8 +1772,19 @@ private data class DeviceCapabilityProfile(
     val footnote: String,      // one short honest caveat line ("*" estimates + the SpO₂/steps notes)
 )
 
-/** A Garmin watch paired over its own GFDI protocol (not one added through Broadcast Heart Rate). */
-internal fun isGarminWatch(device: PairedDeviceRow): Boolean = device.sourceKind == SourceKind.garmin.name
+/** A Huawei band paired over its own protocol, routed through the same watch resolver. */
+internal fun isHuaweiBand(device: PairedDeviceRow): Boolean =
+    watchSourceOf(device) == com.noop.analytics.FusionSource.HUAWEI_WATCH
+
+/** A Garmin watch paired over its own GFDI protocol (not one added through Broadcast Heart Rate). Routed
+ *  through the one watch resolver. */
+internal fun isGarminWatch(device: PairedDeviceRow): Boolean =
+    watchSourceOf(device) == com.noop.analytics.FusionSource.GARMIN_WATCH
+
+/** The watch brand of a paired watch row (by its stored kind), or null for any other device. */
+internal fun watchSourceOf(device: PairedDeviceRow): com.noop.analytics.FusionSource? =
+    SourceKind.entries.firstOrNull { it.name == device.sourceKind }
+        ?.let { com.noop.analytics.FusionSource.forWatchKind(it) }
 
 private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
     // Garmin watch over GFDI: history files + live channels, read-only.
@@ -1772,6 +1794,15 @@ private fun deviceProfile(device: PairedDeviceRow): DeviceCapabilityProfile {
             captures = uiString(R.string.l10n_devices_screen_heart_rate_r_r_sleep_steps_d1a26aee),
             powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2),
             footnote = uiString(R.string.l10n_devices_screen_read_only_noop_downloads_the_watch_49e3c0cd),
+        )
+    }
+    // Huawei band over its own protocol: history sync only, no live heart rate.
+    if (isHuaweiBand(device)) {
+        return DeviceCapabilityProfile(
+            displayModel = device.model,
+            captures = uiString(R.string.huawei_profile_captures),
+            powers = uiString(R.string.l10n_devices_screen_powers_charge_effort_and_rest_from_6c8040c2),
+            footnote = uiString(R.string.huawei_profile_footnote),
         )
     }
     // FTMS gym machine: a live machine + (when reported) HR session, recorded via the existing

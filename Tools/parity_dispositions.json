@@ -1154,6 +1154,518 @@
       "identity_sha256": "10c4c40e421b70e12783c9f3509ad41db2f5dccf8309e63afd966ef63e50ad9c",
       "platform": "kotlin",
       "rationale": "Kotlin convenience wrapper that forms restorative seconds (deep + REM) and calls RestScorer.composite; Swift callers do that sum inline before calling Rest.composite, so there is no Swift declaration to pair."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::HUAWEI_STRESS_KEY",
+      "identity_sha256": "6b45cb52f50f33567d299fb1bc70281054cdcef9287a2c4887935ba02a746fa9",
+      "platform": "kotlin",
+      "rationale": "The stored daily-average key of a Huawei band's own stress (twin of garmin_stress). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::forWatchKind/1#1",
+      "identity_sha256": "bb7cc1a4e5b21550ee0dfa5ddec0dc28921a0de4abe89c5a700e8bdfbf1b05f5",
+      "platform": "kotlin",
+      "rationale": "Maps a catalog watch SourceKind (garmin, huawei) onto its fusion source for the brand-driven watch resolver. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::isWatchId/1#1",
+      "identity_sha256": "16d616c2910484ef80cffec3219f3cd0055ed3367fcd3c5724676148184e16ce",
+      "platform": "kotlin",
+      "rationale": "Brand-driven paired-watch check (Garmin or Huawei) that replaces Garmin-only id gates on Android. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::watchBrand/1#1",
+      "identity_sha256": "5c251c0752560840dca564c84fba0ad0fe44c31d60e33bbf4e8a0579ffee6e86",
+      "platform": "kotlin",
+      "rationale": "The one resolver naming a paired watch's brand (GARMIN_WATCH / HUAWEI_WATCH) from its registry id via DeviceBrandCatalog. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/GarminWorkoutEffort.kt::watchBrand/1#1",
+      "identity_sha256": "d23af317303ded4e20034ff972fe33e69eac69a83e51e85e1ca794eedea22303",
+      "platform": "kotlin",
+      "rationale": "Names the watch brand whose history sync stored a workout row, so Huawei workouts classify and score as watch workouts. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::vo2MaxProvenance/5#1",
+      "identity_sha256": "9b084eb879236610d35829db05a64ca07f41a1c72bfa55d33dac9aa87bed995b",
+      "platform": "kotlin",
+      "rationale": "Kotlin-only VO2max provenance writer (already Kotlin-only at arity 4) now takes the watch estimator so a Huawei estimate is tagged huawei. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::watchEstimatorFor/1#1",
+      "identity_sha256": "1a3aa77fdd1866ed392dd1e4a94fafd536db977e99d5906581abfd9c1d814195",
+      "platform": "kotlin",
+      "rationale": "Picks the VO2max provenance tag (garmin / huawei) for the resolved active watch. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::prefersWatch/1#1",
+      "identity_sha256": "fc1d2334abda8022581b735914bfb04bac6f16b99bcca8937a58049933403080",
+      "platform": "kotlin",
+      "rationale": "Asks a watch's own stress first for any watch brand (Garmin or Huawei); Garmin semantics stay prefersGarmin's. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/StressToday.kt::watchSource/1#1",
+      "identity_sha256": "5a79f9ca02e11a1cf833f0b5cfb7fcf8043388f30f8892437c617bc56fe23579",
+      "platform": "kotlin",
+      "rationale": "Names the stress source a watch reading carries for the active device (HUAWEI for a Huawei band, else GARMIN). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/Entities.kt::forWatch/1#1",
+      "identity_sha256": "f6e677465480ebd5ff50f51aa73384fa750ba78bb78b2f871001ab45b170c008",
+      "platform": "kotlin",
+      "rationale": "Maps a watch fusion source onto its VO2max estimator tag (GARMIN / HUAWEI). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/GarminScoringInputs.kt::attributedTo/2#1",
+      "identity_sha256": "8097620bc49725921c9e3c6328f7f8f7e1de90f5866445bbdd727daeacd15caf",
+      "platform": "kotlin",
+      "rationale": "Credits a watch-owned day's resolved vitals to the Huawei band instead of Garmin without changing the shared Garmin resolve. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::isWatch@property#1",
+      "identity_sha256": "9da7446f3fcc839d10f10a249914ccc57657adac67c2e52ca496b53bb806ffe0",
+      "platform": "kotlin",
+      "rationale": "True for the paired-watch fusion sources (GARMIN_WATCH, HUAWEI_WATCH); HUAWEI_WATCH itself is Kotlin-only. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/FusionTypes.kt::watchIdPrefix@property#1",
+      "identity_sha256": "4e0fb39b146f13541d4bc118fee0c029769c76ecc6b6816d711d32ac841acba2",
+      "platform": "kotlin",
+      "rationale": "The catalog id prefix of a watch fusion source, used to read that brand's own export namespace. Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::EARLIEST_TS",
+      "identity_sha256": "12be9268be3cdffc2f91c56808c64fb55c42b3d591361368c2041024f08ccaaa",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (EARLIEST_TS), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SKIN_TEMP_WIRE",
+      "identity_sha256": "60b17a69c0542dbd6b4b6f8d5692eeedffce574dc42bf58eb4cb8036e8bfd947",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SKIN_TEMP_WIRE), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SLEEP_SPAN_JOIN_GAP_S",
+      "identity_sha256": "58c63661cc14930422ac6d61898c9b4fd94707685f1c74f33b6e90d742b993a7",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SLEEP_SPAN_JOIN_GAP_S), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SOURCE_DICTIONARY",
+      "identity_sha256": "e0337f10f5d6681aa772e07d8e5831533ff8514b65e0c5c5701dd434d0f61240",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SOURCE_DICTIONARY), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SOURCE_MINUTE",
+      "identity_sha256": "a003d149fe1b2a9a41a2648012ff8f2b23faffb4b2367f285d18d9d16f69573b",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SOURCE_MINUTE), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SOURCE_SLEEP",
+      "identity_sha256": "41f93b18b2c1b1f067027ec870c84dc22ba96e4800c3cefc8d6b48c79aedf0ab",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SOURCE_SLEEP), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SOURCE_STRESS",
+      "identity_sha256": "6da68e25de9724208766f1b5e7cc512644811582befddce367b53a73b732a9dc",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SOURCE_STRESS), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::SOURCE_WORKOUT",
+      "identity_sha256": "5dfd5c438878d8ad08ecd0fd73b3b97d80324b93d7f7366fc87d41cbc4335319",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (SOURCE_WORKOUT), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-file",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt",
+      "identity_sha256": "fb4813b0d8b0434f8e1e61f1c693923fa98008c6edaa559eca9631a72fb4c5fa",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (the file), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::add/4#1",
+      "identity_sha256": "23b9f919cf2954042245bdbecb69843783b6616d2735aea527c29255c3592931",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (add/4#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::day/1#1",
+      "identity_sha256": "7e171c919edc33320c0ff117e6e71f339529ecdb179836960bc6386c91192f49",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (day/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::dayOf/1#1",
+      "identity_sha256": "d0eef8ddab4d212a5e5beb2470f3f61d85e5c50a72167823944d92b0d7d59e06",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (dayOf/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::draft/1#1",
+      "identity_sha256": "c5373f6a2174b778bde89602de227bff4dbc7b1e2a236eaf48594f158bcc61fb",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (draft/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::flush/0#1",
+      "identity_sha256": "769df9b63da4b1938f5dc24eceb6ebefc60eb5a4bcc65ae868b84afbc79bccd2",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (flush/0#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::fold/1#1",
+      "identity_sha256": "421cbc37bbf039c39b34e25862ebf7e696a63f5e1d4ab70d679f972472e7baf5",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (fold/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::foldNights/2#1",
+      "identity_sha256": "5f1c11614b55cdfc9eac86e7d11c27efa18f972287d60e3b82b10e15ac683174",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (foldNights/2#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::overnightSpo2/3#1",
+      "identity_sha256": "75b972b1bba2c603f441fb575c42e2c98de376b7fde8984bdac55885d07a3ea3",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (overnightSpo2/3#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::placeable/1#1",
+      "identity_sha256": "f0ac5fefa9e4d2a94d854ab55791894fbe5d22d8a4f8985e1668e41befaa1814",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (placeable/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::seconds/1#1",
+      "identity_sha256": "3b0ab029fb1b941ea347e81f80ef96a7ac97205588f70b1ce5dc088046669c14",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (seconds/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::stagesJSON/1#1",
+      "identity_sha256": "85554b4a4b04ad960e98b4e142b046399153bcc868dd3f891c675ddf4f3de532",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (stagesJSON/1#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::sum/2#1",
+      "identity_sha256": "8e95d2b52fc1905e275e9e677fce00cede24179e135e4c2b812aa7ffdfb5bbf5",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (sum/2#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HuaweiWatchIngest.kt::asleepS@property#1",
+      "identity_sha256": "e0642e3c395c5686765bd2231803f54b95fdafda2929b11d6931fb2f052e84bc",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history fold (asleepS@property#1), fork-only and Android-only (#77): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-constant",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::PREFS_NAME",
+      "identity_sha256": "c7b07db7ab8d68983ea285d30c052f16cbd8c71530af19d16bdf6809512d6b51",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (PREFS_NAME), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-file",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt",
+      "identity_sha256": "4b24252d3ebbc14df9c3a46843b3f708c1347ebe94d67ff13ccf3ef5263a51f7",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (the file), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-file",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt",
+      "identity_sha256": "dac13f058b4511f587e916038b54f18f95df2eadf9a45521e89a01b5eb63f257",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (the file), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::exec/2#1",
+      "identity_sha256": "8ae4a21b16375e980caebe3db8b40657755e61b07db63c7f56116dc0b795f5bb",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (exec/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::mergeDay/5#1",
+      "identity_sha256": "300027acf6a4f06e5ddc8e0fd57cd4d2ce874bcf93b79b234fe50bc10dc98980",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (mergeDay/5#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::runner/4#1",
+      "identity_sha256": "fd7ad5f5c4aabb613dca9937496b590d3d3ed142d51235c5fcb6bd8121444c33",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (runner/4#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::sport/1#1",
+      "identity_sha256": "6e0411020bb7b592166ebc44d26214d61847d2ec74f3d2dd2adcf18185ae035e",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (sport/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::store/3#1",
+      "identity_sha256": "b40513cef202e97c06ac0fce6660893bfab3bf7c763f8992a3d05da6aea9bfa3",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (store/3#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::workoutRow/2#1",
+      "identity_sha256": "b7aa48cd4ee6e811d2afae16dcda762b9cc41cfc4e91e25a4743600e7694e7c8",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (workoutRow/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::dictionaryCursorMs/2#1",
+      "identity_sha256": "8ef3da5601faab59d22d4f940ad6b478eee6d68a162b368f5f21385c47068532",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (dictionaryCursorMs/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::dropDeviceState/1#1",
+      "identity_sha256": "54001c55067f18a50009bbce61774432fd4064021528241d7e1f42cc43d94637",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (dropDeviceState/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::emptyStreak/1#1",
+      "identity_sha256": "d95724f973dcf4bea6f6c93de78e104248594f84b53105eb5b98d39ba43bae73",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (emptyStreak/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::key/2#1",
+      "identity_sha256": "8ade044937444228ba5a2ef3f291b87c6276efe13341170d063f664d44481482",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (key/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::lastSync/2#1",
+      "identity_sha256": "565b4fa33f07617aae6fdfff7323204800d911f84e925a9d4a42a2c9938d757e",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (lastSync/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::lastSyncAt/1#1",
+      "identity_sha256": "4d72e731aed3d33acced9463a951479b5d07b6fe00409b27348789344ed3353b",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (lastSyncAt/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::lastWorkoutEnd/1#1",
+      "identity_sha256": "7ff023d6221e114f41de2b8202114615b4aa0967d2ba2a145368b69bb1fbddd1",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (lastWorkoutEnd/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::long/2#1",
+      "identity_sha256": "0d3c3b40e210b0f321d44a08ed1626185e0c876c34500722b2380d045a1f6151",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (long/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::moveDeviceState/2#1",
+      "identity_sha256": "0f473355685c38f1bd6a12aa635ef1154bd3b978f7896a4b27d2748c994e59bb",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (moveDeviceState/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::of/1#1",
+      "identity_sha256": "50525017fb6ca359ff802c4f21e371de6a2d3fdbe02e7b47994a2a65d068a651",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (of/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::putLong/3#1",
+      "identity_sha256": "75086d48b167eca86031c3a0c2cb059526469b72103f88aecb2407b59561659f",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (putLong/3#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::recordSyncOutcome/3#1",
+      "identity_sha256": "116ff25b94859485e8760f20e29d5c6a35ae6bb4ba19a7076dcf1b2e93818bb3",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (recordSyncOutcome/3#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::setDictionaryCursorMs/3#1",
+      "identity_sha256": "ae9d528c611b5b5d05149d47d7a11b50d55ce5375742395dc0d85ec0427220a2",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (setDictionaryCursorMs/3#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::setLastSync/3#1",
+      "identity_sha256": "2993734eb63c2e735e2844e44a23f852bcdd63221f8d1ed0a148324b800a1b20",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (setLastSync/3#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::setLastWorkoutEnd/2#1",
+      "identity_sha256": "7ebb45f59fd5144ed4b35b62c20894323e485ba4bedf385e4b07fc1e4d04f206",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (setLastWorkoutEnd/2#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::setSwitchesEnabled/1#1",
+      "identity_sha256": "f41510f47ef230adad31f7aa2b1995155785c67b0d9c6344dd1d25738772ede6",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (setSwitchesEnabled/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::switchesEnabled/1#1",
+      "identity_sha256": "95c5610e951429b02e65d22fb980d6333ed510f775864164f89313ac819bd0af",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 sync watermarks (switchesEnabled/1#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-property",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiHistoryIngest.kt::any@property#1",
+      "identity_sha256": "b754e37337927567a757c594b290d080d99e18d61b7919a26c5768069fa4e480",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 history storage (any@property#1), fork-only and Android-only (#82): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::completedAt/1#1",
+      "identity_sha256": "a75d5e0786ed9c241d0dc20b5cadc8d99d915e17c59fb3ac3fc8398bf52d5708",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 completed-sync time for the device panel (completedAt/1#1), fork-only and Android-only (#83): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/HuaweiSyncPrefs.kt::setCompletedAt/2#1",
+      "identity_sha256": "074e049852c13bf95579a023e2430dc6008c3579065271952e141dca90dbf155",
+      "platform": "kotlin",
+      "rationale": "Huawei Band 10 completed-sync time for the device panel (setCompletedAt/2#1), fork-only and Android-only (#83): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
     }
   ]
 }
