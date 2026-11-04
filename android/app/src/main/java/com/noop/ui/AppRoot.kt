@@ -72,6 +72,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -523,6 +524,16 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     // #984: the changelog sheet a What's New inbox row opens. Held here (not inside the inbox) so it
     // survives the inbox sheet closing — the tap dismisses the inbox and presents this over the app.
     var showWhatsNewFromInbox by remember { mutableStateOf(false) }
+    // #91: a notification tap that names a screen (the weekly summary opens Trends).
+    val pendingRoute by NotificationRoute.pending.collectAsState()
+    LaunchedEffect(pendingRoute) {
+        val route = when (pendingRoute) {
+            NotificationRoute.TRENDS -> Destination.Trends.route
+            else -> null
+        }
+        if (route != null && route != nav.currentDestination?.route) nav.navigateTopLevel(route)
+        if (pendingRoute != null) NotificationRoute.pending.value = null
+    }
 
     // #1836: an overlay container, not a bottomBar slot. The slot sat OUTSIDE the screen content, so a
     // screen's own backdrop (LiquidScreenSky / BackgroundImageBackdrop) stopped where the bar began and

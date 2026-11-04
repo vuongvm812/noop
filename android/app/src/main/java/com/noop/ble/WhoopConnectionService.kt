@@ -18,6 +18,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.noop.NoopApplication
+import com.noop.notif.ScheduledReportNotifier
 import com.noop.R
 import com.noop.alarm.SleepWindowWatcher
 import com.noop.alarm.SmartAlarmScheduler
@@ -413,6 +414,14 @@ class WhoopConnectionService : Service() {
                         dayState.illness?.let {
                             IllnessAlertNotifier.withWindow(this@WhoopConnectionService, it, dayState.days)
                         })
+                }
+                // #91: the Monday weekly summary, from here so it lands while the app is backgrounded.
+                // Its persisted once-a-week gate makes every evaluation after the first a prefs read.
+                runCatching {
+                    val app = application as NoopApplication
+                    ScheduledReportNotifier.onWeeklySummary(
+                        this@WhoopConnectionService, repo, app.deviceRegistry, app.activeDeviceId, dayState.days,
+                    )
                 }
                 // Evaluated only when (SoC, charging) actually MOVES — see [lastBatteryAlertKey]. Both policies
                 // are once-per-crossing and persisted, so re-running them on an unchanged pair can only repeat

@@ -1194,6 +1194,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         target21 = optimalStrainRange(todayRow.recovery)?.low,
                     )
                 }
+                // #91: the Monday weekly summary (the service posts it too when backgrounded; the
+                // persisted once-a-week gate keeps the two from doubling up).
+                runCatching {
+                    ScheduledReportNotifier.onWeeklySummary(appContext, repo, deviceRegistry, activeStrapId, days)
+                }
                 // v5 skin-temp suite: run the Cycle / Body-clock / Illness-heads-up engines over the same
                 // cached history and publish their RESULTS for the Health hub. The richer IllnessSignalEngine
                 // here is the v5 replacement for AppModel.evaluateIllness's body (the macOS Result analogue);

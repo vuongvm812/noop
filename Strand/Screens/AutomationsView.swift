@@ -69,6 +69,7 @@ struct AutomationsView: View {
             healthInsightsCard
             batteryCard
             strainTargetCard
+            weeklySummaryCard
         }
     }
 
@@ -436,6 +437,24 @@ struct AutomationsView: View {
                         // already reached, evaluate now rather than waiting for the next refresh
                         // (the reevaluateIllness idiom).
                         model.evaluateStrainTarget()
+                    }
+                }
+        }
+    }
+
+    // MARK: - Weekly summary (#91)
+
+    private var weeklySummaryCard: some View {
+        Section2(icon: "calendar", title: String(localized: "Weekly summary"),
+                 blurb: String(localized: "Once a week, the main takeaway from last week's review."),
+                 active: behavior.weeklySummaryNudge) {
+            ToggleRow(label: String(localized: "Notify when the weekly summary is ready"),
+                      help: String(localized: "Posts after your first sync on Monday. Tap it to open the week in Trends."),
+                      isOn: $behavior.weeklySummaryNudge)
+                .onChangeCompat(of: behavior.weeklySummaryNudge) { on in
+                    if on {
+                        WeeklySummaryNotifier.requestAuthorization()
+                        Task { await model.evaluateWeeklySummary() }
                     }
                 }
         }

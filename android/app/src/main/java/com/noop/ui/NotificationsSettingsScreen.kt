@@ -245,6 +245,7 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
     var morningReport by remember { mutableStateOf(NoopPrefs.morningReportEnabled(context)) }
     var postWorkoutReport by remember { mutableStateOf(NoopPrefs.postWorkoutReportEnabled(context)) }
     var strainTargetReport by remember { mutableStateOf(NoopPrefs.strainTargetEnabled(context)) }
+    var weeklySummaryReport by remember { mutableStateOf(NoopPrefs.weeklySummaryEnabled(context)) }
     var phonePermissionDenied by remember { mutableStateOf(false) }
     val phonePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -517,6 +518,17 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
                 onChange = {
                     strainTargetReport = it
                     NoopPrefs.setStrainTargetEnabled(context, it)
+                },
+            )
+            RowDivider()
+            // #91: once a week, the weekly digest's top line for last week; the tap opens Trends.
+            FormToggleRow(
+                label = uiString(R.string.weekly_summary_toggle_label),
+                help = uiString(R.string.weekly_summary_toggle_help),
+                checked = weeklySummaryReport,
+                onChange = {
+                    weeklySummaryReport = it
+                    NoopPrefs.setWeeklySummaryEnabled(context, it)
                 },
             )
         }

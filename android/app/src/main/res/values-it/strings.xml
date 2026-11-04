@@ -3035,4 +3035,8 @@
     <string name="weekly_digest_value_hours">%1$s h</string>
     <string name="weekly_digest_value_minutes">%1$d min</string>
     <string name="weekly_digest_target_progress">%1$d su %2$d min</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">Il tuo riepilogo settimanale è pronto</string>
+    <string name="weekly_summary_toggle_label">Riepilogo settimanale</string>
+    <string name="weekly_summary_toggle_help">Una volta a settimana, dopo la prima sincronizzazione del lunedì, una notifica con il punto chiave della settimana scorsa. Toccala per aprire la settimana in Tendenze.</string>
 </resources>

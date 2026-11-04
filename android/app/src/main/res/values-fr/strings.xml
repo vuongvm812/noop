@@ -3066,4 +3066,8 @@
     <string name="weekly_digest_value_hours">%1$s h</string>
     <string name="weekly_digest_value_minutes">%1$d min</string>
     <string name="weekly_digest_target_progress">%1$d sur %2$d min</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">Votre résumé de la semaine est prêt</string>
+    <string name="weekly_summary_toggle_label">Résumé de la semaine</string>
+    <string name="weekly_summary_toggle_help">Une fois par semaine, après votre première synchronisation du lundi, une notification avec l\'essentiel de la semaine passée. Touchez-la pour ouvrir la semaine dans Tendances.</string>
 </resources>

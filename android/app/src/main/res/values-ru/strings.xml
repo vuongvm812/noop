@@ -2962,4 +2962,8 @@
     <string name="weekly_digest_value_hours">%1$s ч</string>
     <string name="weekly_digest_value_minutes">%1$d мин</string>
     <string name="weekly_digest_target_progress">%1$d из %2$d мин</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">Ваша сводка за неделю готова</string>
+    <string name="weekly_summary_toggle_label">Сводка за неделю</string>
+    <string name="weekly_summary_toggle_help">Раз в неделю, после первой синхронизации в понедельник, уведомление с главным итогом прошлой недели. Нажмите, чтобы открыть неделю в Трендах.</string>
 </resources>

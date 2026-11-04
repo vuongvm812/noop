@@ -3037,4 +3037,8 @@
     <string name="weekly_digest_value_hours">%1$s 小时</string>
     <string name="weekly_digest_value_minutes">%1$d 分钟</string>
     <string name="weekly_digest_target_progress">%1$d / %2$d 分钟</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">你的每周总结已就绪</string>
+    <string name="weekly_summary_toggle_label">每周总结</string>
+    <string name="weekly_summary_toggle_help">每周一次，在周一首次同步后，推送上周的主要结论。点按即可在趋势中打开该周。</string>
 </resources>

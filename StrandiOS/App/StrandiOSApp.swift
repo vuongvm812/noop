@@ -84,6 +84,8 @@ struct StrandiOSApp: App {
         let router = NavRouter()
         _router = StateObject(wrappedValue: router)
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
+        // #91: the weekly summary opens Trends, where the week's digest lives.
+        NotificationPresenter.shared.onWeeklySummaryTapped = { [weak router] in router?.openTrends() }
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
@@ -154,6 +156,11 @@ struct StrandiOSApp: App {
             await model?.checkStrapNotSeen()
         })
         StaleBatteryBackgroundScheduler.schedule()
+        // #91: the Monday wake for the weekly summary; the notifier's own gate decides whether to post.
+        WeeklySummaryBackgroundScheduler.register(perform: { [weak model] in
+            await model?.evaluateWeeklySummary(loadIfEmpty: true)
+        })
+        WeeklySummaryBackgroundScheduler.schedule()
         let bridge = HealthKitBridge(
             repo: model.repo,
             appleDeviceId: model.appleDeviceId,

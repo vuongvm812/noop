@@ -364,6 +364,8 @@ final class AppModel: ObservableObject {
         repo.$days.sink { [weak self] days in
             self?.evaluateIllness(days)
             self?.evaluateStrainTarget()
+            // #91: the Monday weekly summary (its persisted once-a-week gate makes this a defaults read).
+            Task { @MainActor [weak self] in await self?.evaluateWeeklySummary() }
             // Keep the battery night-guard's learned bedtime warm off the same signal (throttled inside).
             self?.refreshHabitualMidsleep()
         }.store(in: &hrCancellables)
@@ -2201,6 +2203,13 @@ final class AppModel: ObservableObject {
     /// against the LOW end of today's recovery-derived optimal band (#43). The notifier's persisted
     /// day gate makes this safe to fire on every days republish; nil recovery (calibrating) yields a
     /// nil band → no target → no notification. Android twin: AppViewModel's days-collector call.
+    /// #91: post last week's summary when due. `loadIfEmpty` is for the iOS Monday background wake,
+    /// which can run before the history has loaded. Android twin: the days-collector call in AppViewModel.
+    func evaluateWeeklySummary(loadIfEmpty: Bool = false) async {
+        if loadIfEmpty, repo.days.isEmpty { await repo.refresh() }
+        await WeeklySummaryNotifier.evaluate(repo: repo, enabled: behavior.weeklySummaryNudge)
+    }
+
     func evaluateStrainTarget() {
         guard let row = repo.today else { return }
         StrainTargetNotifier.onDayUpdate(
