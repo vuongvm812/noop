@@ -3125,4 +3125,13 @@
     <string name="automation_results_push_help">After a self-hosted push run settles: at most one success a day, and a failure once until the next success.</string>
     <string name="automation_results_cycle_label">New cycle reading</string>
     <string name="automation_results_cycle_help">While cycle awareness is on, a neutral notification when a new reading is available.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Import a Huawei band\'s history from Gadgetbridge\'s \"Export database\" file (or its .zip export). Fully offline; no Huawei account or Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Huawei bands · Gadgetbridge database export</string>
+    <string name="data_sources_gadgetbridge_import_button">Import Gadgetbridge export…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Nothing imported</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d day imported</item>
+        <item quantity="other">%1$d days imported</item>
+    </plurals>
 </resources>

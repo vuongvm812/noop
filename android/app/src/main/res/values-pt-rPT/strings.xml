@@ -3088,4 +3088,13 @@
     <string name="automation_results_push_help">Quando um envio auto-alojado termina: no máximo um sucesso por dia, e uma falha uma vez até ao próximo sucesso.</string>
     <string name="automation_results_cycle_label">Nova leitura do ciclo</string>
     <string name="automation_results_cycle_help">Enquanto a consciência do ciclo estiver ativa, uma notificação neutra quando houver uma nova leitura.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Importe o histórico de uma pulseira Huawei a partir do ficheiro «Exportar base de dados» do Gadgetbridge (ou da exportação .zip). Totalmente offline; sem conta Huawei nem Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Pulseiras Huawei · exportação da base de dados do Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_import_button">Importar exportação do Gadgetbridge…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Nada importado</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d dia importado</item>
+        <item quantity="other">%1$d dias importados</item>
+    </plurals>
 </resources>

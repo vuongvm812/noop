@@ -17,7 +17,7 @@ object WearableHistory {
 
     /** Every wearable-export or cloud-pull namespace, in fixed fallback order.
      *  Mirrors the Swift `WearableHistory.sourceIds` list. */
-    val sourceIds: List<String> = listOf("garmin-import", "oura-import", "oura-api", "fitbit-import")
+    val sourceIds: List<String> = listOf("garmin-import", "oura-import", "oura-api", "fitbit-import", "huawei-import")
 
     /** The brand's OWN scores an export carries: reference values a history read never resolves as a
      *  NOOP metric of the same key. Mirrors the Swift `WearableHistory.referenceKeys` set. */
@@ -43,6 +43,7 @@ object WearableHistory {
             "garmin" -> "Garmin"
             "oura" -> "Oura"
             "fitbit" -> "Fitbit"
+            "huawei" -> "Huawei"
             else -> null
         }
     }

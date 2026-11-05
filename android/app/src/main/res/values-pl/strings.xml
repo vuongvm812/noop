@@ -3112,4 +3112,15 @@
     <string name="automation_results_push_help">Po zakończeniu wysyłki self-hosted: najwyżej jeden sukces dziennie i błąd raz, do następnego sukcesu.</string>
     <string name="automation_results_cycle_label">Nowy odczyt cyklu</string>
     <string name="automation_results_cycle_help">Gdy świadomość cyklu jest włączona, neutralne powiadomienie o nowym odczycie.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Zaimportuj historię opaski Huawei z pliku „Eksportuj bazę danych” z Gadgetbridge (lub z eksportu .zip). Całkowicie offline; bez konta Huawei i Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Opaski Huawei · eksport bazy danych Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_import_button">Importuj eksport Gadgetbridge…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Nic nie zaimportowano</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d dzień zaimportowany</item>
+        <item quantity="few">%1$d dni zaimportowane</item>
+        <item quantity="many">%1$d dni zaimportowanych</item>
+        <item quantity="other">%1$d dnia zaimportowanego</item>
+    </plurals>
 </resources>

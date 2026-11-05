@@ -134,7 +134,7 @@ ANDROID_HELPER_NON_UI_LITERALS = {
     "<1m", "${secs / 60}m", "${secs / 3600}h", "${secs / 86_400}d",
     # TodayProvenance source ids and metric dictionary keys.
     "-noop", "recovery", "strain", "sleep_performance", "oura-import", "oura-api",
-    "fitbit-import", "garmin-import", "xiaomi-band",
+    "fitbit-import", "garmin-import", "huawei-import", "xiaomi-band",
 }
 
 # AppRoot's Home-owned shell strings are resource-backed: the visible Today bottom-tab

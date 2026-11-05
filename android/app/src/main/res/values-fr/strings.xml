@@ -3095,4 +3095,13 @@
     <string name="automation_results_push_help">Quand un envoi auto-hébergé se termine : au plus un succès par jour, et un échec une fois jusqu\'au prochain succès.</string>
     <string name="automation_results_cycle_label">Nouvelle lecture du cycle</string>
     <string name="automation_results_cycle_help">Tant que le suivi du cycle est actif, une notification neutre lorsqu\'une nouvelle lecture est disponible.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Importez l’historique d’un bracelet Huawei depuis le fichier « Exporter la base de données » de Gadgetbridge (ou son export .zip). Entièrement hors ligne ; sans compte Huawei ni Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Bracelets Huawei · export de base de données Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_import_button">Importer l’export Gadgetbridge…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Rien d’importé</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d jour importé</item>
+        <item quantity="other">%1$d jours importés</item>
+    </plurals>
 </resources>

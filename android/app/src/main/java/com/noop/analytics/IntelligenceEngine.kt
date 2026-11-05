@@ -344,7 +344,7 @@ object IntelligenceEngine {
     /** Imported wearable-export source ids whose DAILY aggregates can be scored for a NOOP Charge/Rest on
      *  an import-only day (#823). Matches WearableExportImporter.Brand.deviceId. Mirrors the Swift
      *  Repository.wearableImportSources. */
-    private val WEARABLE_IMPORT_SOURCES = listOf("oura-import", "fitbit-import", "garmin-import")
+    private val WEARABLE_IMPORT_SOURCES = listOf("oura-import", "fitbit-import", "garmin-import", "huawei-import")
 
     /** CAPTURE-B: a day's resolved read owner + the HR-row count read for it, captured in pass 1 and
      *  consumed by pass 2's universal dayOwner emit. */

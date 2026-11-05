@@ -3066,4 +3066,12 @@
     <string name="automation_results_push_help">自托管推送结束后：每天最多一次成功通知，失败只通知一次，直到下次成功。</string>
     <string name="automation_results_cycle_label">新的周期读数</string>
     <string name="automation_results_cycle_help">开启周期感知时，有新读数会发送一条中性通知。</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">从 Gadgetbridge 的“导出数据库”文件（或 .zip 导出）导入华为手环的历史数据。完全离线；无需华为账号或蓝牙。</string>
+    <string name="data_sources_gadgetbridge_secondary">华为手环 · Gadgetbridge 数据库导出</string>
+    <string name="data_sources_gadgetbridge_import_button">导入 Gadgetbridge 导出…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">尚未导入</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="other">已导入 %1$d 天</item>
+    </plurals>
 </resources>

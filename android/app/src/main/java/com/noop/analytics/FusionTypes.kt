@@ -63,6 +63,9 @@ enum class FusionSource(val id: String, val displayName: String) {
          */
         fun forStoredSourceId(id: String): FusionSource? {
             watchBrand(id)?.let { return it }
+            // The Gadgetbridge database import ("huawei-import") is labelled as Huawei; it is not a paired
+            // watch, so isWatchId stays false and no scoring path treats it as one.
+            if (id == "huawei-import") return HUAWEI_WATCH
             return entries.firstOrNull { it.id == id }
         }
 
