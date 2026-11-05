@@ -3109,4 +3109,13 @@
     <string name="automation_results_push_help">Nach einem abgeschlossenen Self-Hosted-Push: höchstens ein Erfolg pro Tag und ein Fehler einmalig bis zum nächsten Erfolg.</string>
     <string name="automation_results_cycle_label">Neuer Zykluswert</string>
     <string name="automation_results_cycle_help">Solange das Zyklusbewusstsein an ist, eine neutrale Mitteilung, wenn ein neuer Wert verfügbar ist.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Importiere den Verlauf eines Huawei-Armbands aus der Gadgetbridge-Datei „Datenbank exportieren“ (oder dem ZIP-Export). Vollständig offline; kein Huawei-Konto und kein Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Huawei-Armbänder · Gadgetbridge-Datenbankexport</string>
+    <string name="data_sources_gadgetbridge_import_button">Gadgetbridge-Export importieren…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Nichts importiert</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d Tag importiert</item>
+        <item quantity="other">%1$d Tage importiert</item>
+    </plurals>
 </resources>

@@ -115,6 +115,7 @@ internal fun todayScoreProviderLabel(provider: ScoreInputProvider): DisplayText 
         "oura-import", "oura-api" -> DisplayText.Resource(R.string.today_source_oura)
         "fitbit-import" -> DisplayText.Resource(R.string.today_source_fitbit)
         "garmin-import" -> DisplayText.Resource(R.string.today_source_garmin)
+        "huawei-import" -> DisplayText.Resource(R.string.today_source_huawei)
         "xiaomi-band" -> DisplayText.Resource(R.string.today_source_mi_band)
         WhoopRepository.ACTIVITY_FILE_SOURCE -> DisplayText.Resource(R.string.today_source_workout_files)
         else -> {

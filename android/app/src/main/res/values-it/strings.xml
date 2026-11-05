@@ -3064,4 +3064,13 @@
     <string name="automation_results_push_help">Al termine di un invio self-hosted: al massimo un successo al giorno e un errore una volta fino al successo seguente.</string>
     <string name="automation_results_cycle_label">Nuova lettura del ciclo</string>
     <string name="automation_results_cycle_help">Finché la consapevolezza del ciclo è attiva, una notifica neutra quando è disponibile una nuova lettura.</string>
+    <string name="data_sources_gadgetbridge_title">Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_subtitle">Importa la cronologia di un braccialetto Huawei dal file «Esporta database» di Gadgetbridge (o dall\'esportazione .zip). Completamente offline; nessun account Huawei né Bluetooth.</string>
+    <string name="data_sources_gadgetbridge_secondary">Braccialetti Huawei · esportazione database Gadgetbridge</string>
+    <string name="data_sources_gadgetbridge_import_button">Importa esportazione Gadgetbridge…</string>
+    <string name="data_sources_gadgetbridge_nothing_imported">Niente importato</string>
+    <plurals name="data_sources_gadgetbridge_days_imported">
+        <item quantity="one">%1$d giorno importato</item>
+        <item quantity="other">%1$d giorni importati</item>
+    </plurals>
 </resources>

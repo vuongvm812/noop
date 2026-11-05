@@ -74,6 +74,7 @@ import com.noop.ingest.ActivityFileImporter
 import com.noop.ingest.LiftingImporter
 import com.noop.ingest.NutritionCsvImporter
 import com.noop.ingest.XiaomiBandImporter
+import com.noop.ingest.GadgetbridgeImporter
 import com.noop.ingest.WhoopCsvImporter
 import com.noop.ingest.WearableExportImporter
 import kotlinx.coroutines.Dispatchers
@@ -160,6 +161,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
     // Imported workout files (GPX / TCX / FIT) write workouts under their own source ("activity-file").
     var activityFiles by remember { mutableStateOf<Int?>(null) }
     var xiaomiDays by remember { mutableStateOf<Int?>(null) }
+    var gadgetbridgeDays by remember { mutableStateOf<Int?>(null) }
     // Imported Oura / Fitbit / Garmin exports write daily metrics under their own per-brand source.
     var wearableDays by remember { mutableStateOf<Int?>(null) }
 
@@ -188,6 +190,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         liftingWorkouts = vm.repo.workoutsCount(LiftingImporter.SOURCE_ID, 0L, nowS)
         activityFiles = vm.repo.workoutsCount(ActivityFileImporter.SOURCE_ID, 0L, nowS)
         xiaomiDays = vm.repo.metricSeriesKeyCount(XiaomiBandImporter.DEFAULT_DEVICE_ID, "steps")
+        gadgetbridgeDays = vm.repo.metricSeriesKeyCount(GadgetbridgeImporter.DEVICE_ID, "steps")
         wearableDays = WearableExportImporter.Brand.values().sumOf {
             vm.repo.metricSeriesKeyCount(it.sourceId, "rhr") +
                 vm.repo.metricSeriesKeyCount(it.sourceId, "sleep_total_min")
@@ -244,6 +247,15 @@ fun DataSourcesScreen(vm: AppViewModel) {
     val xiaomiImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) runImport { XiaomiBandImporter.importExport(context, uri, vm.repo) } }
+
+    // Gadgetbridge database export (Huawei tables): stored like a band sync, then the post-sync analysis runs.
+    val gadgetbridgeImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) runImport {
+            GadgetbridgeImporter.importExport(context, uri, onStored = { vm.ble.requestPostSyncAnalysis() })
+        }
+    }
 
     val nutritionImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -681,6 +693,35 @@ fun DataSourcesScreen(vm: AppViewModel) {
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             ) { nutritionImportLauncher.launch(arrayOf("*/*")) }
+        }
+        }
+
+        // --- Gadgetbridge database export (Huawei tables) ---
+        item {
+        SourceCard(
+            title = uiString(R.string.data_sources_gadgetbridge_title),
+            icon = Icons.Filled.Watch,
+            tint = Palette.metricPurple,
+            subtitle = uiString(R.string.data_sources_gadgetbridge_subtitle),
+        ) {
+            val hasGadgetbridge = (gadgetbridgeDays ?: 0) > 0
+            StatePill(
+                title = if (hasGadgetbridge) uiString(R.string.l10n_data_sources_screen_imported_434eb26f)
+                else uiString(R.string.data_sources_gadgetbridge_nothing_imported),
+                tone = if (hasGadgetbridge) StrandTone.Accent else StrandTone.Neutral,
+                showsDot = true,
+            )
+            CountLine(
+                primary = gadgetbridgeDays?.let { uiPlural(R.plurals.data_sources_gadgetbridge_days_imported, it, it) } ?: "—",
+                secondary = if (gadgetbridgeDays == null) uiString(R.string.today_source_counting)
+                else uiString(R.string.data_sources_gadgetbridge_secondary),
+            )
+            BackupButton(
+                label = uiString(R.string.data_sources_gadgetbridge_import_button),
+                icon = Icons.Filled.FileUpload,
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { gadgetbridgeImportLauncher.launch(arrayOf("*/*")) }
         }
         }
 

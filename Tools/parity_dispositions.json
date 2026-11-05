@@ -1666,6 +1666,174 @@
       "identity_sha256": "074e049852c13bf95579a023e2430dc6008c3579065271952e141dca90dbf155",
       "platform": "kotlin",
       "rationale": "Huawei Band 10 completed-sync time for the device panel (setCompletedAt/2#1), fork-only and Android-only (#83): the fork ships no Huawei support on Apple platforms, so there is no Swift declaration to pair (Kotlin-only; Swift twin deferred (fork))."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::importExport/6#1",
+      "identity_sha256": "bbb60467dbae362d9d7db3f2df5fd952ee8bbd41a1cd4e2d1999e97f2d2829ae",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::materialize/3#1",
+      "identity_sha256": "9cbf655167298f0de817e47ab2efccf6f80a6bf63915bac67491cc56fc89466e",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::hasSqliteHeader/1#1",
+      "identity_sha256": "89a008247efcc1e07e28c0a3009f7689869f3c1c3874d6b2d2af9122c2383fb9",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::copyBounded/2#1",
+      "identity_sha256": "451791cb405121b5327d57786b77197c0c115f3ce4b5e62bf1a310b522fe5d25",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::importFrom/5#1",
+      "identity_sha256": "7879774f7a839ec611bda5e14563fe8e9302a6cc33696cc2cd68419cf85f4ded",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::importDevices/6#1",
+      "identity_sha256": "eea2e28b8b677366fd4346c2de8f2647d7d7d196dd417dbf84cbfc8f7a3ff1cb",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::day/1#1",
+      "identity_sha256": "427f8a7aec50912dcea26f9a7fa170a12422da1e4d8467d8a9b2117204495712",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::timeRange/3#1",
+      "identity_sha256": "cc480b7515ae7584fc3d757f3510ed1da2e972cc52961049644b4793a0180970",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::scan/5#1",
+      "identity_sha256": "c174c8fbf3bd75a1e24184be7c1addc40dacac7a3060b0fb7c6507d6c67ee046",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::readChunk/4#1",
+      "identity_sha256": "780e6ffc4e407199ae088c4f856d816d224e70e565512f95500cebcbef2a021d",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::long/2#1",
+      "identity_sha256": "a784168c187be270a83294ecb1fcdfec4badbb7ce7b9ecd47dc90e7bad836d11",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::columns/2#1",
+      "identity_sha256": "4d97b33fc32824c3643ea8818193da5f0e6a5529c547a3307dd04c612f2e93d7",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::sel/2#1",
+      "identity_sha256": "2792b8cd3e4261d43444ed9d7ab9234efbb8ece9ce28c5569ae1ba1ebab93f8f",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeImporter.kt::hasTable/2#1",
+      "identity_sha256": "0aa40587e9a98c2b92b0898746ce5558c3e69e38f3f56887b336b613e29c3593",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::positive/1#1",
+      "identity_sha256": "a2e690dffed1232d9f74fb4bd5f811ccdc2bcaefbf8d5ae0b25765f0337dcbdb",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::nonNegative/1#1",
+      "identity_sha256": "d69408a62719e90660c246edc186476920b1b9a9f9ce1b6287f1446d486c3616",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::minutes/1#1",
+      "identity_sha256": "c63b5b1e2ac187bdae7d478eb6ef956e058079b0eb93aac592f5c91972d8f156",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::nights/2#1",
+      "identity_sha256": "af18415531b0673bc96772e927c36d76047beb9f46d19c3fea111b30246f506e",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::stress/1#1",
+      "identity_sha256": "4303ff99018fbe66c3517b4526b6c10a78f0726de352ad701b28e53f2df36d7e",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::workouts/2#1",
+      "identity_sha256": "3f2ba4e953040bed6378faf161963afae788fc18bcdd322c93c2946aaa64c0f3",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/GadgetbridgeMapping.kt::chunks/4#1",
+      "identity_sha256": "080829b950997c8d12c25aad5e8ea44a2517ca302c86e90d0f42928b517a8f57",
+      "platform": "kotlin",
+      "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
     }
   ]
 }

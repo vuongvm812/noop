@@ -43,8 +43,10 @@ class WearableHistoryParityTest {
     fun idResolverMatchesSharedOracle() {
         for (c in objects(fixture().getJSONArray("idCases"))) {
             val active = c.getString("activeDeviceId")
-            assertEquals(active, strings(c.getJSONArray("readOrder")), WearableHistory.readOrder(active))
-            assertEquals(active, strings(c.getJSONArray("baselineSeedIds")), WearableHistory.baselineSeedIds(active))
+            // "huawei-import" is a Kotlin-only extension of the shared list (Huawei is Android-only in this fork).
+            fun shared(l: List<String>) = l.filter { it != "huawei-import" }
+            assertEquals(active, strings(c.getJSONArray("readOrder")), shared(WearableHistory.readOrder(active)))
+            assertEquals(active, strings(c.getJSONArray("baselineSeedIds")), shared(WearableHistory.baselineSeedIds(active)))
         }
     }
 
@@ -113,6 +115,6 @@ class WearableHistoryParityTest {
         val stress = WhoopRepository.sourceCandidates("stress", "my-whoop", "garmin-abc").map { it.source }
         assertFalse(stress.contains("garmin-import"))
         val steps = WhoopRepository.sourceCandidates("steps", "my-whoop", "garmin-abc").map { it.source }
-        assertEquals(listOf("garmin-import", "oura-import", "oura-api", "fitbit-import"), steps.takeLast(4))
+        assertEquals(listOf("garmin-import", "oura-import", "oura-api", "fitbit-import", "huawei-import"), steps.takeLast(5))
     }
 }

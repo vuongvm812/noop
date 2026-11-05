@@ -208,7 +208,7 @@ class RawTimelineRepositoryDaoTest {
         assertEquals(
             // #31: the wearable-export namespaces are read last, as lowest-precedence history.
             listOf("whoop-new", "whoop-old", "my-whoop", "whoop-new-noop", "whoop-old-noop", "my-whoop-noop",
-                "garmin-import", "oura-import", "oura-api", "fitbit-import"),
+                "garmin-import", "oura-import", "oura-api", "fitbit-import", "huawei-import"),
             queried,
         )
         org.junit.Assert.assertNotNull(habitual)
