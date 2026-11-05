@@ -90,7 +90,10 @@ extension WidgetSnapshot {
         // lives in the iOS/widget shared sources, and the producer is now also read by the Today card,
         // which is compiled for macOS too.
         let stressPoints: [StressPoint]? = stress.map { scored in
-            scored.result.timeline.map {
+            // Waking hours only (#94): the widget's header averages every point it carries, and the
+            // day's average is a waking-hours figure. Night hours stay on the Stress screen's graph.
+            // Twin of the Android `StressWidgetProducer` filter.
+            scored.result.timeline.filter { !$0.asleep }.map {
                 // `startTs` is the wall-clock bucket start with the local shift already undone, so it
                 // is a true instant and formats correctly against the device's zone.
                 StressPoint(ts: Int64($0.startTs), level: $0.level, moving: $0.maskedForActivity)

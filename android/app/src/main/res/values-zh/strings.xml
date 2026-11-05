@@ -1877,8 +1877,12 @@
     <string name="score_state_title_calibrating">校准中</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">早晨恢复</string>
     <string name="stress_screen_subtitle">清醒时段的自主神经负荷</string>
-    <string name="stress_timeline_caption_day">折线显示每个清醒小时的 0–3 指标，并以您今天自己的平静时段为基准评分。下方的条形将您的一天划分为低、中、高压力时段。</string>
-    <string name="stress_timeline_caption_personal">折线显示每个清醒小时的 0–3 指标，并以您的个人日间基线（您平时一天的状态）为基准评分。下方的条形将您的一天划分为低、中、高压力时段。</string>
+    <string name="stress_timeline_caption_day">折线显示每小时的 0–3 指标，并以您今天自己的平静时段为基准评分。夜间时段以阴影显示。下方的条形将您的清醒时段划分为低、中、高压力时段。</string>
+    <string name="stress_timeline_caption_personal">折线显示每小时的 0–3 指标，并以您的个人日间基线（您平时一天的状态）为基准评分。夜间时段以阴影显示。下方的条形将您的清醒时段划分为低、中、高压力时段。</string>
+    <string name="stress_intraday_line_low">您最近一小时处于平静状态。</string>
+    <string name="stress_intraday_line_medium">您最近一小时处于中等水平，接近您的日常状态。</string>
+    <string name="stress_intraday_line_high">您最近一小时压力较高。几分钟的节律呼吸会有所帮助。</string>
+    <string name="stress_methodology_intraday">仪表显示您最近一个已评分的小时，计算方式与时间线相同。每日趋势将每晚的静息心率和 HRV 与您自己的 30 天基线比较，如有记录的每日评分则使用该评分。心率越高、HRV 越低，评分越高。两者都使用 0–3 刻度：0 为平静，1.5 为您的基线，3 为高度激活。</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="other">因您当时在活动，已排除 %1$d 小时。</item>
     </plurals>

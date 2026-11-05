@@ -62,6 +62,97 @@ class DaytimeStressTest {
     }
 
     @Test
+    fun nightAndDay_matchesTheSwiftTwinValueForValue() {
+        // ORACLE for #94: the stdout of `DaytimeStress.swift` (StrandAnalytics `swift test`,
+        // testNightAndDayMatchTheKotlinTwinValueForValue) over this exact scenario: sleep 00-05 at HR
+        // 50-53 / R-R 1100±40, a morning 06-10 at 62/64/63/72/65 / R-R 900±20, and an evening 22-23 at
+        // 58/74 / R-R 950±25. "z" marks an asleep point. Night hours score against the waking calm
+        // reference, and none of them reach the summaries.
+        val hr = ArrayList<HrSample>()
+        val rr = ArrayList<RrInterval>()
+        listOf(0 to 50, 1 to 51, 2 to 52, 3 to 51, 4 to 50, 5 to 53).forEach { (h, bpm) ->
+            hr += hourHr(h, bpm); rr += hourRrVariable(h, 1_100, 40)
+        }
+        listOf(6 to 62, 7 to 64, 8 to 63, 9 to 72, 10 to 65).forEach { (h, bpm) ->
+            hr += hourHr(h, bpm); rr += hourRrVariable(h, 900, 20)
+        }
+        listOf(22 to 58, 23 to 74).forEach { (h, bpm) ->
+            hr += hourHr(h, bpm); rr += hourRrVariable(h, 950, 25)
+        }
+        val res = DaytimeStress.analyze(hr, rr, includeTimeline = true)
+        fun render(points: List<DaytimeStress.HourPoint>) = points.joinToString(" ") {
+            "${it.startTs}${if (it.asleep) "z" else ""}:" +
+                (it.level?.let { l -> String.format(java.util.Locale.US, "%.6f", l) } ?: "nil")
+        }
+        assertEquals(
+                "0z:0.074664 3600z:0.098208 7200z:0.128849 10800z:0.098208 14400z:0.074664 " +
+                "18000z:0.168494 21600:1.289768 25200:1.710232 28800:1.500000 32400:2.780594 " +
+                "36000:1.912363 79200z:0.588309 82800z:2.871151",
+            render(res.hours),
+        )
+        assertEquals(
+                "-1800z:0.074664 0z:0.074664 1800z:0.098208 3600z:0.098208 5400z:0.128849 " +
+                "7200z:0.128849 9000z:0.098208 10800z:0.098208 12600z:0.074664 14400z:0.074664 " +
+                "16200z:0.168494 18000z:0.168494 19800z:1.289768 21600:1.289768 23400:1.710232 " +
+                "25200:1.710232 27000:1.500000 28800:1.500000 30600:2.780594 32400:2.780594 " +
+                "34200:1.912363 36000:1.912363 77400:0.588309 79200z:0.588309 81000z:2.871151 " +
+                "82800z:2.871151",
+            render(res.timeline),
+        )
+        assertEquals("1.838592", res.dayMean?.let { String.format(java.util.Locale.US, "%.6f", it) })
+        assertEquals(32400L, res.peak?.startTs)
+        assertEquals(60, res.highStressMinutes)
+        assertEquals(0, res.sustainedRun)
+    }
+
+    @Test
+    fun nightHoursAreScoredAndMarkedAsleep() {
+        // #94: a 3 am hour is placed on the timeline, scored against the waking reference, marked asleep.
+        val r = DaytimeStress.analyze(hourHr(3, 80) + hourHr(9, 60), emptyList())
+        val night = r.hours.first { it.hour == 3 }
+        val day = r.hours.first { it.hour == 9 }
+        assertTrue(night.asleep)
+        assertNotNull("a night hour with a waking reference must be scored", night.level)
+        assertFalse(day.asleep)
+        assertNotNull(day.level)
+    }
+
+    @Test
+    fun nightHoursAreDrawnNotCounted() {
+        // A tense night must not move any day summary; the night hours are there, HIGH and marked.
+        val waking = listOf(8 to 60, 9 to 62, 10 to 61, 11 to 70, 12 to 64).flatMap { hourHr(it.first, it.second) }
+        val night = listOf(0 to 110, 1 to 112, 2 to 115, 22 to 118, 23 to 120).flatMap { hourHr(it.first, it.second) }
+        val dayOnly = DaytimeStress.analyze(waking, emptyList())
+        val both = DaytimeStress.analyze(night + waking, emptyList())
+        assertEquals(dayOnly.dayMean, both.dayMean)
+        assertEquals(dayOnly.peak, both.peak)
+        assertEquals(dayOnly.sustainedHigh, both.sustainedHigh)
+        assertEquals(dayOnly.sustainedRun, both.sustainedRun)
+        assertEquals(dayOnly.highStressMinutes, both.highStressMinutes)
+        assertEquals(dayOnly.activityMaskedHours, both.activityMaskedHours)
+        val asleep = both.hours.filter { it.asleep }
+        assertEquals(listOf(0, 1, 2, 22, 23), asleep.map { it.hour })
+        assertTrue(asleep.all { (it.level ?: 0.0) >= DaytimeStress.highBandFloor })
+        assertEquals(dayOnly.hours, both.hours.filter { !it.asleep })
+    }
+
+    @Test
+    fun aNightWithNoWakingReferenceIsNotScored() {
+        // 2 am, day-relative: no waking hour yet, nothing to score against, so no fabricated 1.5.
+        val hr = hourHr(0, 55) + hourHr(1, 52)
+        val r = DaytimeStress.analyze(hr, emptyList())
+        assertEquals(listOf(0, 1), r.hours.map { it.hour })
+        assertTrue(r.hours.all { it.asleep && it.level == null })
+        assertNull(r.dayMean)
+        // A personal baseline IS a reference, so the same night scores under BaselineRelative.
+        val base = Baselines.foldHistory(List(20) { 60.0 }, Baselines.daytimeHRCfg)
+        val personal = DaytimeStress.analyze(hr, emptyList(),
+            mode = DaytimeStress.ScoringMode.BaselineRelative(base, null))
+        assertTrue(personal.hours.all { it.asleep && it.level != null })
+        assertNull("night hours never feed the day mean", personal.dayMean)
+    }
+
+    @Test
     fun theSlidingReadIsOptIn() {
         val hr = ArrayList<HrSample>()
         val rr = ArrayList<RrInterval>()

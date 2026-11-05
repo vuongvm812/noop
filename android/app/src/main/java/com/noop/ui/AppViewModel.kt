@@ -845,13 +845,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var todayFooterCache: TodayFooterState? = null
 
     /**
-     * #849: the same re-mount guard for Today's pinned "Your cards" reads (Stress / Fitness age / Vitality),
+     * #849: the same re-mount guard for Today's pinned "Your cards" reads (Fitness age / Vitality / VO2max),
      * which scan the whole metric history. Signature + last-computed values are cached on the ViewModel so a
      * re-mount restores them and skips the redundant reload, exactly like the footer above. `null` = not yet
      * loaded this process; the cached triple is restored into the screen's local state on first composition.
      */
     var todayCardsLoadedSig: Int? = null
-    var todayStressCache: Double? = null
     var todayFitnessAgeCache: Double? = null
     var todayVitalityCache: Double? = null
     var todayVo2maxCache: Double? = null

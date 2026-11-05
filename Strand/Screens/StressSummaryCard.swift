@@ -6,16 +6,16 @@ import StrandDesign
 //
 // Today's stress at a glance: the latest level, today's average, a small intraday sparkline and the
 // source (Garmin's own 0-100 stress, or NOOP's 0-3 proxy), at the top of the Stress screen. The Today
-// Key Metrics Stress tile (#57) reads the SAME `StressTodayLoader` → `StressToday.resolve` and taps
-// through to this screen, so the two readouts cannot disagree. Twin of Android `StressSummaryCard`
-// (android/.../ui/StressSummaryCard.kt).
+// Key Metrics Stress tile (#57) and the pinned "Your cards" Stress row (#94) read the SAME
+// `StressTodayLoader` → `StressToday.resolve` and tap through to this screen, so the readouts cannot
+// disagree. Twin of Android `StressSummaryCard` (android/.../ui/StressSummaryCard.kt).
 
 struct StressSummaryCard: View {
 
-    @EnvironmentObject var repo: Repository
-
-    @State private var reading: StressToday.Reading?
-    @State private var loaded = false
+    /// Handed in by the Stress screen, which also draws the hero gauge from it (#94): one read, two
+    /// figures, rather than two reads that could land a fingerprint apart.
+    let reading: StressToday.Reading?
+    let loaded: Bool
 
     var body: some View {
         NoopCard(tint: StrandPalette.stressColor) {
@@ -46,12 +46,6 @@ struct StressSummaryCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }
-        // A sync bumps refreshSeq; the loader's NOOP half is memoised, so a re-read of an unchanged day
-        // costs one fingerprint query.
-        .task(id: repo.refreshSeq) {
-            reading = await StressTodayLoader.load(repo: repo)
-            loaded = true
         }
     }
 
@@ -117,6 +111,20 @@ struct StressSummaryCard: View {
         case .garmin: return "\(Int(value.rounded()))"
         case .noop:   return StressTrace.formatLevel(value)
         }
+    }
+
+    /// The figure the Key Metrics Stress tile and the pinned "Your cards" Stress row both print (#94): the
+    /// latest level on its own scale, "1.4/3" or "37/100". Nil when the reading has no level. One funnel,
+    /// so the tile and the row cannot print two numbers for one reading.
+    static func cardText(_ reading: StressToday.Reading?) -> String? {
+        guard let reading, let level = StressToday.tileLevel(reading) else { return nil }
+        return format(level, source: reading.source) + scaleSuffix(reading.scaleMax)
+    }
+
+    /// The row's 0...1 fill for the same level, on the reading's own scale.
+    static func cardFraction(_ reading: StressToday.Reading?) -> Double? {
+        guard let reading, let level = StressToday.tileLevel(reading) else { return nil }
+        return min(max(level / reading.scaleMax, 0), 1)
     }
 
     /// "/100" or "/3": the scale the figure is on. A number, so nothing to translate.

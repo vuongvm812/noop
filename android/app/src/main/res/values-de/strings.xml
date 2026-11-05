@@ -1987,8 +1987,12 @@
     <string name="score_state_title_calibrating">Kalibrierung</string>
     <string name="l10n_stress_glance_widget_resumes_in_the_morning_a640b49f">Wird morgens fortgesetzt</string>
     <string name="stress_screen_subtitle">Autonome Belastung im Verlauf deines wachen Tages</string>
-    <string name="stress_timeline_caption_day">Die Linie zeigt den 0–3-Näherungswert jeder Wachstunde, bewertet anhand deiner eigenen ruhigen Stunden heute. Der Balken darunter teilt deinen Tag in ruhige, mäßige und hohe Stresszeiten.</string>
-    <string name="stress_timeline_caption_personal">Die Linie zeigt den 0–3-Näherungswert jeder Wachstunde, bewertet anhand deiner persönlichen Tages-Baseline (wie deine Tage normalerweise verlaufen). Der Balken darunter teilt deinen Tag in ruhige, mäßige und hohe Stresszeiten.</string>
+    <string name="stress_timeline_caption_day">Die Linie zeigt den 0–3-Näherungswert jeder Stunde, bewertet anhand deiner eigenen ruhigen Stunden heute. Nachtstunden sind schattiert. Der Balken darunter teilt deinen wachen Tag in ruhige, mäßige und hohe Stresszeiten.</string>
+    <string name="stress_timeline_caption_personal">Die Linie zeigt den 0–3-Näherungswert jeder Stunde, bewertet anhand deiner persönlichen Tages-Baseline (wie deine Tage normalerweise verlaufen). Nachtstunden sind schattiert. Der Balken darunter teilt deinen wachen Tag in ruhige, mäßige und hohe Stresszeiten.</string>
+    <string name="stress_intraday_line_low">Deine letzte Stunde wirkt ruhig.</string>
+    <string name="stress_intraday_line_medium">Deine letzte Stunde wirkt mäßig, etwa auf deinem üblichen Niveau.</string>
+    <string name="stress_intraday_line_high">Deine letzte Stunde wirkt hoch. Ein paar Minuten ruhiges, gleichmäßiges Atmen können helfen.</string>
+    <string name="stress_methodology_intraday">Die Anzeige zeigt deine zuletzt bewertete Stunde, gelesen wie die Zeitleiste. Der Tagestrend vergleicht die Ruheherzfrequenz und HRV jeder Nacht mit deiner eigenen 30-Tage-Baseline und nutzt deinen erfassten Tageswert, wo es einen gibt. Eine höhere Herzfrequenz und eine niedrigere HRV erhöhen beide den Wert. Beide nutzen eine Skala von 0–3: 0 ist ruhig, 1,5 liegt auf deiner Baseline, 3 ist stark aktiviert.</string>
     <plurals name="stress_hours_excluded_moving">
         <item quantity="one">%1$d Stunde ausgeschlossen — du warst in Bewegung.</item>
         <item quantity="other">%1$d Stunden ausgeschlossen — du warst in Bewegung.</item>

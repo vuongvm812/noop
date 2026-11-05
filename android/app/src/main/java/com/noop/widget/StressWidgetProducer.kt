@@ -33,10 +33,17 @@ internal object StressWidgetProducer {
     /** Today's curve, honest activity-masked hour count, and the local day they belong to. [dayMean] is
      *  `DaytimeStress.Result.dayMean`, which the Today stress card's resolver reads (#42). */
     data class Curve(
+        /** Waking points only: what the widget and the Today card draw and average (#94). */
         val points: List<StressPoint>,
         val epochDay: Long,
         val activityMaskedHours: Int,
         val dayMean: Double? = null,
+        /**
+         * The whole day, night hours included (#94): what the Stress tile, the pinned card and the Stress
+         * screen's summary read through [com.noop.ui.StressTodayLoader], so their latest level stays live
+         * overnight. Swift twin: `StressDayCurve.today`'s full `timeline`. Defaults to [points].
+         */
+        val dayPoints: List<StressPoint> = points,
     )
 
     /** What the last computation saw and produced, swapped in as ONE value.
@@ -52,6 +59,7 @@ internal object StressWidgetProducer {
         val points: List<StressPoint>,
         val activityMaskedHours: Int,
         val dayMean: Double?,
+        val dayPoints: List<StressPoint>,
     )
 
     /**
@@ -61,7 +69,7 @@ internal object StressWidgetProducer {
      * replay one surface's curve into the other. With a single slot that is correct and useless: three
      * background callers ask with the default lens and Today asks with the selected one, so when the
      * toggle is on each call evicts the other's entry and every call misses whatever the fingerprint
-     * says. Today re-asks every [RESCORE_INTERVAL_MS], so the trailing-history read the fingerprint gate
+     * says. Today re-asks every [TODAY_REFRESH_INTERVAL_MS], so the trailing-history read the fingerprint gate
      * exists to avoid was being paid on essentially every tick. Keyed by lens, each surface keeps its
      * own gate. Two entries at most, so this is a pair of slots rather than a cache that grows.
      *
@@ -92,6 +100,37 @@ internal object StressWidgetProducer {
      * being no help while a strap is streaming into the window it fingerprints.
      */
     const val RESCORE_INTERVAL_MS: Long = 15L * 60L * 1000L
+
+    /**
+     * How often a VISIBLE Today re-asks for its stress reading and hosted curve (#94).
+     *
+     * Today's tile and pinned Stress row otherwise reloaded only when `days` moved, and incoming heart
+     * rate does not move it, so an afternoon of new samples left them where they were. Foreground only:
+     * the connection service keeps [RESCORE_INTERVAL_MS] for the widget. The tick is cheap when nothing
+     * moved, since [todayCurve] reads one fingerprint and returns the memo. Swift twin:
+     * `StressDayCurve.todayRefreshIntervalMs`.
+     */
+    const val TODAY_REFRESH_INTERVAL_MS: Long = 10L * 60L * 1000L
+
+    /**
+     * Milliseconds from [nowMs] to the next Today tick, ticks falling on wall-clock multiples of
+     * [intervalMs] shifted by [offsetMs]. Aligned rather than relative to when a loop started, so Today's
+     * two loops (the hosted curve and the tile reading) ask a few seconds apart on the same tick and the
+     * second one hits the memo the first filled. Never 0: exactly on a tick waits a whole interval, so a
+     * loop cannot spin. Swift twin: `StressDayCurve.msUntilNextTodayTick`.
+     */
+    fun msUntilNextTodayTick(
+        nowMs: Long,
+        offsetMs: Long = 0L,
+        intervalMs: Long = TODAY_REFRESH_INTERVAL_MS,
+    ): Long {
+        if (intervalMs <= 0L) return 1L
+        val phase = ((nowMs - offsetMs) % intervalMs + intervalMs) % intervalMs
+        return intervalMs - phase
+    }
+
+    /** The tile loop's lag behind the hosted-curve loop on each Today tick, so it reads the fresh memo. */
+    const val TODAY_READING_TICK_OFFSET_MS: Long = 5_000L
 
     /**
      * The stamp to keep after an attempt, given what that attempt actually produced (#2120).
@@ -179,7 +218,9 @@ internal object StressWidgetProducer {
                 it.day == day && it.fingerprint == fingerprint
             }
             if (memoHit != null) {
-                return@runCatching Curve(memoHit.points, day, memoHit.activityMaskedHours, memoHit.dayMean)
+                return@runCatching Curve(
+                    memoHit.points, day, memoHit.activityMaskedHours, memoHit.dayMean, memoHit.dayPoints,
+                )
             }
 
             val hr = repo.hrSamplesUnion(deviceId, from, nowSeconds, limit = 200_000)
@@ -208,18 +249,23 @@ internal object StressWidgetProducer {
                     // double-count the half-step windows.
                 )
             }
-            val points = result.timeline.map {
-                // startTs is the wall-clock bucket start with the local shift already undone, so it
-                // is a true instant and formats correctly against the device's zone.
+            // startTs is the wall-clock bucket start with the local shift already undone, so it is a true
+            // instant and formats correctly against the device's zone.
+            val dayPoints = result.timeline.map {
                 StressPoint(ts = it.startTs, level = it.level, moving = it.maskedForActivity)
             }
+            // Waking hours only (#94): the widget and the Today card both average every point they carry
+            // (StressTrace.stats), and the day's average is a waking-hours figure. Night hours stay on the
+            // Stress screen's graph. Twin of the iOS WidgetPublish filter.
+            val points = dayPoints.filterIndexed { i, _ -> !result.timeline[i].asleep }
 
             memos = memos + (
                 personalBaseline to Memo(
                     fingerprint, day, personalBaseline, points, result.activityMaskedHours, result.dayMean,
+                    dayPoints,
                 )
             )
-            Curve(points, day, result.activityMaskedHours, result.dayMean)
+            Curve(points, day, result.activityMaskedHours, result.dayMean, dayPoints)
         }.getOrNull()
     }
 

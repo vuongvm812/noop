@@ -7,7 +7,7 @@ import WhoopProtocol
 // The daily Stress score (StressView / StressScreen) maps "resting HR up + HRV down vs
 // a personal baseline" onto a 0–3 logistic. This helper applies that SAME math at the
 // per-hour grain so the Stress screen can show *when* in the day stress ran high — not
-// a new score. For each waking hour it computes:
+// a new score. For each hour of the day it computes:
 //
 //   • mean HR over the hour                    (HR up   = stress, like daily RHR)
 //   • RMSSD over the hour's clean R-R          (HRV down = stress, like daily avgHRV)
@@ -18,6 +18,14 @@ import WhoopProtocol
 // score. The day is its own baseline: a desk day with one tense afternoon reads that
 // afternoon as elevated *relative to that person's own calm hours*, no cloud, no history
 // needed beyond the day itself.
+//
+// NIGHT HOURS (#94). Hours outside the waking window are scored too, against the SAME waking-hour
+// calm reference, and carry `HourPoint.asleep` so a chart can shade them. They are drawn, never
+// counted: every day summary (`dayMean`, `peak`, `sustainedHigh`, `highStressMinutes`,
+// `activityMaskedHours`) stays on the waking hours, so a calm night cannot dilute the day's average
+// or bury a tense evening in the sustained-high run. A night hour is left unscored while the day has
+// no reference to score it against (before the first waking hour on a day-relative read): with no
+// anchor, `rawScore` returns 0 and the hour would print a fabricated 1.5.
 //
 // "Sustained high stress" is an honest, conservative flag: the most recent
 // `sustainedHours` covered hours must ALL sit in the HIGH band (≥ highBandFloor). It
@@ -52,7 +60,9 @@ public enum DaytimeStress {
     public static let highBandFloor: Double = 2.0
     /// Consecutive most-recent covered hours that must all be HIGH to flag sustained stress.
     public static let sustainedHours: Int = 3
-    /// First/last local hour-of-day treated as "waking" for the timeline (06:00–22:00).
+    /// First/last local hour-of-day treated as "waking" (06:00–22:00). Waking hours build the calm
+    /// reference and the day summaries; the rest of the day is the night window, scored and marked
+    /// `asleep` but never counted. A clock window, not a detected sleep session.
     public static let wakingStartHour: Int = 6
     public static let wakingEndHour: Int = 22
 
@@ -183,32 +193,38 @@ public enum DaytimeStress {
         /// separate "you were moving" from "no reading" and keeps active hours out of the calm
         /// reference and the coverage totals. See the motion-gate constants above.
         public let maskedForActivity: Bool
+        /// True when the hour falls in the night window (outside `wakingStartHour..<wakingEndHour`).
+        /// Scored against the waking reference and drawn shaded, but left out of every day summary
+        /// (#94). Kotlin twin: `HourPoint.asleep`.
+        public let asleep: Bool
 
         /// True when the hour was scored (had enough HR to place on the curve).
         public var hasData: Bool { level != nil }
 
         public init(hour: Int, startTs: Int, level: Double?, meanHR: Double?, rmssd: Double?,
-                    maskedForActivity: Bool = false) {
+                    maskedForActivity: Bool = false, asleep: Bool = false) {
             self.hour = hour
             self.startTs = startTs
             self.level = level
             self.meanHR = meanHR
             self.rmssd = rmssd
             self.maskedForActivity = maskedForActivity
+            self.asleep = asleep
         }
     }
 
     /// The full daytime read: the hourly timeline plus the sustained-high summary.
     public struct Result: Equatable, Sendable {
-        /// Waking-hour timeline, earliest → latest. Hours with no signal carry `level == nil`.
+        /// The day's hourly timeline, earliest → latest, night hours included and marked `asleep`.
+        /// Hours with no signal carry `level == nil`.
         public let hours: [HourPoint]
-        /// True when the most recent `sustainedHours` SCORED hours all sit in the HIGH band.
+        /// True when the most recent `sustainedHours` SCORED waking hours all sit in the HIGH band.
         public let sustainedHigh: Bool
         /// Count of trailing high hours backing `sustainedHigh` (0 when not sustained).
         public let sustainedRun: Int
-        /// Mean stress across the SCORED hours, or nil when none were scorable.
+        /// Mean stress across the SCORED waking hours, or nil when none were scorable.
         public let dayMean: Double?
-        /// Peak scored hour (highest `level`), or nil.
+        /// Peak scored waking hour (highest `level`), or nil.
         public let peak: HourPoint?
         /// Count of waking hours left unscored because they were AMBULATORY (the motion gate fired),
         /// i.e. `hours.filter { $0.maskedForActivity }.count`. Lets a caller report honest coverage
@@ -254,7 +270,7 @@ public enum DaytimeStress {
             self.hrOnlyFallback = hrOnlyFallback
         }
 
-        /// The scored hours only (level non-nil), in time order.
+        /// The scored hours only (level non-nil), in time order, night hours included.
         public var scored: [HourPoint] { hours.filter { $0.level != nil } }
 
         /// Empty read — used when the day had no usable intraday HR at all.
@@ -480,7 +496,7 @@ public enum DaytimeStress {
             // its tense hours — without any cross-day history. Falls back to the plain mean
             // when there are too few scored hours for a quartile.
             //
-            // Built from the WAKING hours only — the same hours scored in step 4. Sleep is the
+            // Built from the WAKING hours only — the same hours the day summaries count. Sleep is the
             // calmest, lowest-HR / highest-HRV stretch of the day, and the analysis window
             // always begins at local midnight, so the current day routinely carries several
             // hours of it. Letting those night hours into the reference drags the "calm" anchor
@@ -528,7 +544,7 @@ public enum DaytimeStress {
             }
         }
 
-        // 4) Score each waking-hour bucket on the shared 0–3 curve.
+        // 4) Score every bucket on the shared 0–3 curve, night hours marked `asleep` (#94).
         //
         // Written against a supplied bucket grid so the SAME expression scores the on-the-hour pass
         // and the half-step display pass. One copy, so the two can never drift into scoring the same
@@ -541,7 +557,7 @@ public enum DaytimeStress {
             var points: [HourPoint] = []
             points.reserveCapacity(gridAggs.count)
             for a in gridAggs {
-            guard isWakingHour(a.bucket) else { continue }
+            let asleep = !isWakingHour(a.bucket)
             let hourOfDay = floorDiv(a.bucket, bucketSeconds) % 24
             // The wall-clock bucket start (undo the local shift applied above).
             let wallStart = a.bucket - tzOffsetSeconds
@@ -556,18 +572,24 @@ public enum DaytimeStress {
             let masked = a.meanHR != nil && (ambulatory(a.bucket) || shadow)
             // Score only when at least one signal is present AND HR cleared the count gate AND the
             // hour was not motion-masked (HR is the always-available anchor; RMSSD enriches it).
-            let level: Double? = (a.meanHR != nil && !masked)
+            // A night hour also needs a reference: before the day's first waking hour a day-relative
+            // read has none, and scoring against nothing would print 1.5 for an hour nobody measured
+            // against. A waking hour with HR always has one (it feeds the reference itself), so this
+            // leaves waking scores byte-identical.
+            let level: Double? = (a.meanHR != nil && !masked && (!asleep || refHR != nil))
                 ? squash(rawScore(hr: a.meanHR, meanHR: refHR, sdHR: sdHR,
                                   rmssd: a.rmssd, meanRMSSD: refRMSSD, sdRMSSD: sdRMSSD))
                 : nil
             points.append(HourPoint(hour: hourOfDay, startTs: wallStart,
                                     level: level, meanHR: a.meanHR, rmssd: a.rmssd,
-                                    maskedForActivity: masked))
+                                    maskedForActivity: masked, asleep: asleep))
             }
             return points
         }
         let points = scoreGrid(aggs, activeFracByBucket)
-        let activityMaskedHours = points.reduce(0) { $0 + ($1.maskedForActivity ? 1 : 0) }
+        // Every summary below reads the WAKING hours only. Night hours are drawn, never counted (#94).
+        let waking = points.filter { !$0.asleep }
+        let activityMaskedHours = waking.reduce(0) { $0 + ($1.maskedForActivity ? 1 : 0) }
 
         // 4b) The half-step DISPLAY timeline: the same hour-long window re-read every
         //     `timelineStepSeconds`, scored against the SAME references, and merged with the
@@ -582,7 +604,7 @@ public enum DaytimeStress {
                 .sorted { $0.startTs < $1.startTs }
         }()
 
-        let scored = points.compactMap { p -> (HourPoint, Double)? in p.level.map { (p, $0) } }
+        let scored = waking.compactMap { p -> (HourPoint, Double)? in p.level.map { (p, $0) } }
         guard !scored.isEmpty else {
             // No scorable waking hour — still return the (unscored) timeline so the UI can
             // show "not enough data" rather than nothing. `hrOnlyFallback` is a MODE property
@@ -625,9 +647,9 @@ public enum DaytimeStress {
         return (r != 0 && (r < 0) != (b < 0)) ? q - 1 : q
     }
 
-    /// Whether a local hour-bucket start falls inside the waking window the timeline scores
-    /// (06:00–22:00). The single source of truth for "waking" — used both to build the calm
-    /// reference and to pick the hours to score, so the two can never drift apart.
+    /// Whether a local hour-bucket start falls inside the waking window (06:00–22:00). The single
+    /// source of truth for "waking": it builds the calm reference, marks night hours `asleep`, and
+    /// picks the hours the day summaries count, so the three can never drift apart.
     static func isWakingHour(_ bucket: Int) -> Bool {
         let hourOfDay = floorDiv(bucket, bucketSeconds) % 24
         return hourOfDay >= wakingStartHour && hourOfDay < wakingEndHour
