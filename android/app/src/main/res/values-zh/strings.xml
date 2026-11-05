@@ -56,6 +56,8 @@
     <string name="action_breathe">深呼吸</string>
     <string name="today_latest_workouts">近期运动</string>
     <string name="today_customize_title">自定义“今天”</string>
+    <string name="today_refresh_sync_now">立即同步</string>
+    <string name="today_refresh_syncing">正在同步</string>
     <string name="today_customize_action">自定义</string>
     <string name="today_customize_description">重新排序已显示内容，或将某个部分移至“已隐藏”而不删除。</string>
     <string name="today_customize_edit_added_cards">编辑已添加的卡片</string>

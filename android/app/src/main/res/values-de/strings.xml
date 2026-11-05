@@ -62,6 +62,8 @@
     <!-- Today screen: workouts feed header. Matches the iOS German entry for "Latest Workouts". -->
     <string name="today_latest_workouts">Neueste Workouts</string>
     <string name="today_customize_title">Heute anpassen</string>
+    <string name="today_refresh_sync_now">Jetzt synchronisieren</string>
+    <string name="today_refresh_syncing">Wird synchronisiert</string>
     <string name="today_customize_action">Anpassen</string>
     <string name="today_customize_description">Ordne sichtbare Elemente neu an oder verschiebe einen Abschnitt nach „Ausgeblendet“, ohne ihn zu löschen.</string>
     <string name="today_customize_edit_added_cards">Hinzugefügte Karten bearbeiten</string>

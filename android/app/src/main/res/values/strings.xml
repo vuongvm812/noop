@@ -157,6 +157,8 @@
          "final", #34/#53 follow-up); wording mirrored on iOS in Localizable.xcstrings. -->
     <string name="today_latest_workouts">Latest Workouts</string>
     <string name="today_customize_title">Customize Today</string>
+    <string name="today_refresh_sync_now">Sync now</string>
+    <string name="today_refresh_syncing">Syncing</string>
     <string name="today_customize_action">Customize</string>
     <string name="today_customize_description">Reorder what is shown, or move a section to Hidden without deleting it.</string>
     <string name="today_customize_edit_added_cards">Edit added cards</string>

@@ -1638,6 +1638,8 @@
     <string name="action_breathe">Respirer</string>
     <string name="today_latest_workouts">Derniers entraînements</string>
     <string name="today_customize_title">Personnaliser Aujourd’hui</string>
+    <string name="today_refresh_sync_now">Synchroniser</string>
+    <string name="today_refresh_syncing">Synchronisation</string>
     <string name="today_customize_action">Personnaliser</string>
     <string name="today_customize_description">Réorganisez les éléments affichés ou déplacez une section dans Masqués sans la supprimer.</string>
     <string name="today_customize_edit_added_cards">Modifier les cartes ajoutées</string>

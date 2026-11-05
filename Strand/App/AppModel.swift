@@ -1479,7 +1479,26 @@ final class AppModel: ObservableObject {
         garminSourceCancellable = coordinator.$garminSource
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.garminSource = $0 }
+        garminRefreshLinkCancellable = coordinator.$garminSource
+            .flatMap { source -> AnyPublisher<TodayRefreshLink, Never> in
+                guard let source else {
+                    return Just(TodayRefreshControl.garmin(linkReady: false, syncing: false)).eraseToAnyPublisher()
+                }
+                return source.$linkPhase.combineLatest(source.$syncing)
+                    .map { phase, syncing in
+                        TodayRefreshControl.garmin(linkReady: phase == .ready || phase == .busy, syncing: syncing)
+                    }
+                    .eraseToAnyPublisher()
+            }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.garminRefreshLink = $0 }
     }
+
+    /// The live Garmin watch's link as Today's Refresh button reads it (#93). Mirrored here, like
+    /// `ouraLinkPhase`, so the header need not observe a source object that comes and goes.
+    @Published private(set) var garminRefreshLink = TodayRefreshControl.garmin(linkReady: false, syncing: false)
+    private var garminRefreshLinkCancellable: AnyCancellable?
 
     func setGarminContinuousLive(_ on: Bool) {
         UserDefaults.standard.set(on, forKey: Self.garminContinuousLiveKey)
@@ -1516,6 +1535,29 @@ final class AppModel: ObservableObject {
     /// "Sync now" on the Garmin watch panel: a manual history sync on the live watch.
     func garminSyncNow() {
         garminSource?.syncNow()
+    }
+
+    /// The device a Today Refresh tap reaches (#93). Apple has no Huawei source. Kotlin twin:
+    /// `AppViewModel.todayRefreshSource`.
+    var todayRefreshSource: TodayRefreshSource {
+        TodayRefreshControl.source(activeIsWhoop: live.activeIsWhoop,
+                                   garminLive: garminSource != nil,
+                                   huaweiLive: false,
+                                   ouraActive: sourceCoordinator?.ouraSource != nil)
+    }
+
+    /// Today's Refresh button (#93): sync whichever device is active, through that device's own manual
+    /// sync. Each target is gated on its own link, so a tap that races a disconnect is a logged no-op.
+    /// Oura has no history request to make, so a ring is reconnected instead (#2305's console action).
+    /// The caller reloads Today afterwards, as pull-to-refresh does. Kotlin twin:
+    /// `AppViewModel.syncActiveDevice`.
+    func syncActiveDevice() {
+        switch todayRefreshSource {
+        case .whoop: ble.syncNow()
+        case .garmin: garminSyncNow()
+        case .oura: reconnectOuraRing()
+        case .huawei, .none: break
+        }
     }
 
     /// Re-issue the BLE realtime arm WITHOUT touching the ref-count , used when a fresh
