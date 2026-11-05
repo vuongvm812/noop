@@ -1194,6 +1194,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         target21 = optimalStrainRange(todayRow.recovery)?.low,
                     )
                 }
+                // #91: the Monday weekly summary (the service posts it too when backgrounded; the
+                // persisted once-a-week gate keeps the two from doubling up).
+                runCatching {
+                    ScheduledReportNotifier.onWeeklySummary(appContext, repo, deviceRegistry, activeStrapId, days)
+                }
                 // v5 skin-temp suite: run the Cycle / Body-clock / Illness-heads-up engines over the same
                 // cached history and publish their RESULTS for the Health hub. The richer IllnessSignalEngine
                 // here is the v5 replacement for AppModel.evaluateIllness's body (the macOS Result analogue);
@@ -1214,6 +1219,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         activityBins = lastCircadianBins.first,
                         daysObserved = lastCircadianBins.second,
                     )
+                    // #92: the opt-in neutral "new cycle reading" notification, only while tracking is on.
+                    if (_cycleTrackingEnabled.value) {
+                        com.noop.notif.AutomationResultNotifier.onCycleReading(
+                            appContext, _v5Signals.value?.cycle?.phase?.raw,
+                        )
+                    }
                 }
                 // Keep the home-screen widget fresh while the app is open — covers users who turned
                 // the background service off (the service is the widget's heartbeat otherwise).

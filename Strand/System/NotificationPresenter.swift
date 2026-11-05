@@ -22,6 +22,8 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     /// is a safe no-op (the tap is simply not routed) rather than a crash if this ever fires before the
     /// root has wired it.
     var onCoachBriefTapped: (() -> Void)?
+    /// #91: tapping the weekly summary opens Trends (set by each app shell to its NavRouter).
+    var onWeeklySummaryTapped: (() -> Void)?
 
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
@@ -39,8 +41,11 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.notification.request.content.categoryIdentifier == CoachBriefScheduler.notificationCategoryId {
+        let category = response.notification.request.content.categoryIdentifier
+        if category == CoachBriefScheduler.notificationCategoryId {
             onCoachBriefTapped?()
+        } else if category == WeeklySummaryNotifier.categoryId {
+            onWeeklySummaryTapped?()
         }
         completionHandler()
     }

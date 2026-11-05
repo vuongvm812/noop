@@ -3042,4 +3042,57 @@
     <string name="huawei_tc_slice_size">Taille de tranche</string>
     <string name="huawei_tc_capability_bits">Bits de capacité</string>
     <string name="huawei_tc_services">Services</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">Activité</string>
+    <string name="weekly_digest_section_sleep">Sommeil</string>
+    <string name="weekly_digest_section_overnight_vitals">Signes vitaux nocturnes</string>
+    <string name="weekly_digest_section_stress_energy">Stress et énergie</string>
+    <string name="weekly_digest_section_training">Entraînement</string>
+    <string name="weekly_digest_metric_steps">Pas</string>
+    <string name="weekly_digest_metric_active_kcal">Calories actives</string>
+    <string name="weekly_digest_metric_intensity_minutes">Minutes d\'intensité</string>
+    <string name="weekly_digest_metric_sleep_duration">Durée du sommeil</string>
+    <string name="weekly_digest_metric_sleep_efficiency">Efficacité du sommeil</string>
+    <string name="weekly_digest_metric_deep_sleep">Sommeil profond</string>
+    <string name="weekly_digest_metric_rem_sleep">Sommeil paradoxal</string>
+    <string name="weekly_digest_metric_sleep_score">Score de sommeil</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">Respiration</string>
+    <string name="weekly_digest_metric_skin_temp">Température cutanée</string>
+    <string name="weekly_digest_metric_stress">Stress</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Recharge Body Battery</string>
+    <string name="weekly_digest_metric_training_load">Charge d\'entraînement</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s h</string>
+    <string name="weekly_digest_value_minutes">%1$d min</string>
+    <string name="weekly_digest_target_progress">%1$d sur %2$d min</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">Votre résumé de la semaine est prêt</string>
+    <string name="weekly_summary_toggle_label">Résumé de la semaine</string>
+    <string name="weekly_summary_toggle_help">Une fois par semaine, après votre première synchronisation du lundi, une notification avec l\'essentiel de la semaine passée. Touchez-la pour ouvrir la semaine dans Tendances.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Résultats des automatisations</string>
+    <string name="automation_channel_description">Ce que vos automatisations ont fait : une sieste à vérifier, une sauvegarde, un envoi auto-hébergé, une nouvelle lecture du cycle.</string>
+    <string name="automation_nap_title">Sieste détectée</string>
+    <string name="automation_nap_body">Une sieste d\'environ %1$d min attend votre vérification dans Automatisations.</string>
+    <string name="automation_backup_done_title">Sauvegarde terminée</string>
+    <string name="automation_backup_done_body">Votre sauvegarde automatique a été enregistrée dans le dossier choisi.</string>
+    <string name="automation_backup_failed_title">Échec de la sauvegarde</string>
+    <string name="automation_backup_failed_body">La sauvegarde automatique n\'a pas pu être écrite. Elle sera retentée ; vérifiez le dossier dans Sauvegarde et synchro.</string>
+    <string name="automation_push_done_title">Envoi auto-hébergé terminé</string>
+    <string name="automation_push_done_body">Vos données ont été envoyées à votre propre point de terminaison.</string>
+    <string name="automation_push_failed_title">Échec de l\'envoi auto-hébergé</string>
+    <string name="automation_push_failed_body">L\'envoi vers votre point de terminaison n\'a pas abouti. Vérifiez son état dans Envoi auto-hébergé.</string>
+    <string name="automation_cycle_title">Suivi du cycle</string>
+    <string name="automation_cycle_body">Une nouvelle lecture du suivi du cycle est disponible.</string>
+    <string name="automation_results_section_title">Résultats des automatisations</string>
+    <string name="automation_results_section_blurb">Notifications facultatives, désactivées par défaut, lorsqu\'une automatisation en arrière-plan a un résultat.</string>
+    <string name="automation_results_nap_label">Sieste détectée</string>
+    <string name="automation_results_nap_help">Quand la détection de sieste en met une en attente, une notification pour la vérifier.</string>
+    <string name="automation_results_backup_label">Sauvegarde terminée ou échouée</string>
+    <string name="automation_results_backup_help">Après chaque sauvegarde automatique : au plus un succès par jour, et un échec une fois jusqu\'au prochain succès.</string>
+    <string name="automation_results_push_label">Envoi auto-hébergé terminé ou échoué</string>
+    <string name="automation_results_push_help">Quand un envoi auto-hébergé se termine : au plus un succès par jour, et un échec une fois jusqu\'au prochain succès.</string>
+    <string name="automation_results_cycle_label">Nouvelle lecture du cycle</string>
+    <string name="automation_results_cycle_help">Tant que le suivi du cycle est actif, une notification neutre lorsqu\'une nouvelle lecture est disponible.</string>
 </resources>

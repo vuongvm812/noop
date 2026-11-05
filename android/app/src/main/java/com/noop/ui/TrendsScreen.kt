@@ -378,9 +378,9 @@ private fun WeeklyDigestNav(
     // #268/#463: past weeks quote Effort on the user's display scale too, same as the live card.
     val context = LocalContext.current
     val factor = effortDisplayFactor(UnitPrefs.effortScale(context))
-    val restByDay = rememberRestByDay(days)
-    val digest = remember(days, anchorDay, factor, restByDay) {
-        buildWeeklyDigest(days, anchorDay, effortDisplayFactor = factor, restByDay = restByDay)
+    val inputs = rememberWeeklyDigestInputs(days, anchorDay)
+    val digest = remember(days, anchorDay, factor, inputs) {
+        buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch)
     }
     // "Share recap" capture: track the card's on-screen bounds, then draw the Compose host view + crop
     // (RecapShare.captureCropped) — the Compose-1.7 GraphicsLayer capture API isn't in this 1.6.8 build.

@@ -317,7 +317,7 @@ object BackupSync {
         if (!BackupSyncPrefs.autoEnabled(context)) return false
         if (BackupSyncPrefs.treeUri(context) == null) return false
         if (!isCatchUpDue(BackupSyncPrefs.lastBackupMs(context), nowMs)) return false
-        return backupNow(context)
+        return backupNow(context).also { com.noop.notif.AutomationResultNotifier.onBackupResult(context, it) }
     }
 }
 
@@ -330,7 +330,10 @@ class BackupSyncWorker(appContext: Context, params: WorkerParameters) :
     CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         if (!BackupSyncPrefs.autoEnabled(applicationContext)) return Result.success()
-        return if (BackupSync.backupNow(applicationContext)) Result.success() else Result.retry()
+        val ok = BackupSync.backupNow(applicationContext)
+        // #92: the opt-in result notification; a failure is told once, not on every WorkManager retry.
+        com.noop.notif.AutomationResultNotifier.onBackupResult(applicationContext, ok)
+        return if (ok) Result.success() else Result.retry()
     }
 }
 

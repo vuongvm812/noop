@@ -3252,7 +3252,7 @@ object IntelligenceEngine {
 
     /** The Garmin VO₂max points on or before [to]: the watch's own, then the export's on the days the watch
      *  has none ([GarminScoringInputs.vo2maxPoints]). Swift twin: `IntelligenceEngine.garminVo2maxPoints`. */
-    private suspend fun garminVo2maxPoints(repo: WhoopRepository, watchId: String, to: String): List<Pair<String, Double>> {
+    internal suspend fun garminVo2maxPoints(repo: WhoopRepository, watchId: String, to: String): List<Pair<String, Double>> {
         val watch = repo.metricSeries(watchId, "vo2max", "0000-01-01", to).map { it.day to it.value }
         // The same brand's own export ("garmin-import"); a brand with no export importer reads nothing.
         val importId = (FusionSource.watchBrand(watchId)?.watchIdPrefix ?: "garmin") + "-import"

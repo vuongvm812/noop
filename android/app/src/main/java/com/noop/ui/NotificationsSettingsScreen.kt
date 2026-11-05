@@ -245,6 +245,11 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
     var morningReport by remember { mutableStateOf(NoopPrefs.morningReportEnabled(context)) }
     var postWorkoutReport by remember { mutableStateOf(NoopPrefs.postWorkoutReportEnabled(context)) }
     var strainTargetReport by remember { mutableStateOf(NoopPrefs.strainTargetEnabled(context)) }
+    var weeklySummaryReport by remember { mutableStateOf(NoopPrefs.weeklySummaryEnabled(context)) }
+    var napResult by remember { mutableStateOf(NoopPrefs.napResultEnabled(context)) }
+    var backupResult by remember { mutableStateOf(NoopPrefs.backupResultEnabled(context)) }
+    var pushResult by remember { mutableStateOf(NoopPrefs.pushResultEnabled(context)) }
+    var cycleResult by remember { mutableStateOf(NoopPrefs.cycleResultEnabled(context)) }
     var phonePermissionDenied by remember { mutableStateOf(false) }
     val phonePermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -518,6 +523,52 @@ fun NotificationsSettingsScreen(vm: AppViewModel) {
                     strainTargetReport = it
                     NoopPrefs.setStrainTargetEnabled(context, it)
                 },
+            )
+            RowDivider()
+            // #91: once a week, the weekly digest's top line for last week; the tap opens Trends.
+            FormToggleRow(
+                label = uiString(R.string.weekly_summary_toggle_label),
+                help = uiString(R.string.weekly_summary_toggle_help),
+                checked = weeklySummaryReport,
+                onChange = {
+                    weeklySummaryReport = it
+                    NoopPrefs.setWeeklySummaryEnabled(context, it)
+                },
+            )
+        }
+
+        // MARK: Automation results (#92) — opt-in, default OFF; one toggle per background automation.
+        AlertSection(
+            icon = Icons.Filled.NotificationsActive,
+            title = uiString(R.string.automation_results_section_title),
+            blurb = uiString(R.string.automation_results_section_blurb),
+        ) {
+            FormToggleRow(
+                label = uiString(R.string.automation_results_nap_label),
+                help = uiString(R.string.automation_results_nap_help),
+                checked = napResult,
+                onChange = { napResult = it; NoopPrefs.setNapResultEnabled(context, it) },
+            )
+            RowDivider()
+            FormToggleRow(
+                label = uiString(R.string.automation_results_backup_label),
+                help = uiString(R.string.automation_results_backup_help),
+                checked = backupResult,
+                onChange = { backupResult = it; NoopPrefs.setBackupResultEnabled(context, it) },
+            )
+            RowDivider()
+            FormToggleRow(
+                label = uiString(R.string.automation_results_push_label),
+                help = uiString(R.string.automation_results_push_help),
+                checked = pushResult,
+                onChange = { pushResult = it; NoopPrefs.setPushResultEnabled(context, it) },
+            )
+            RowDivider()
+            FormToggleRow(
+                label = uiString(R.string.automation_results_cycle_label),
+                help = uiString(R.string.automation_results_cycle_help),
+                checked = cycleResult,
+                onChange = { cycleResult = it; NoopPrefs.setCycleResultEnabled(context, it) },
             )
         }
     }

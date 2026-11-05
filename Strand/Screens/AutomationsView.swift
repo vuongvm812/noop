@@ -69,6 +69,8 @@ struct AutomationsView: View {
             healthInsightsCard
             batteryCard
             strainTargetCard
+            weeklySummaryCard
+            resultNotificationsCard
         }
     }
 
@@ -437,6 +439,61 @@ struct AutomationsView: View {
                         // (the reevaluateIllness idiom).
                         model.evaluateStrainTarget()
                     }
+                }
+        }
+    }
+
+    // MARK: - Weekly summary (#91)
+
+    private var weeklySummaryCard: some View {
+        Section2(icon: "calendar", title: String(localized: "Weekly summary"),
+                 blurb: String(localized: "Once a week, the main takeaway from last week's review."),
+                 active: behavior.weeklySummaryNudge) {
+            ToggleRow(label: String(localized: "Notify when the weekly summary is ready"),
+                      help: String(localized: "Posts after your first sync on Monday. Tap it to open the week in Trends."),
+                      isOn: $behavior.weeklySummaryNudge)
+                .onChangeCompat(of: behavior.weeklySummaryNudge) { on in
+                    if on {
+                        WeeklySummaryNotifier.requestAuthorization()
+                        Task { await model.evaluateWeeklySummary() }
+                    }
+                }
+        }
+    }
+
+    // MARK: - Result notifications (#92)
+
+    private var resultNotificationsCard: some View {
+        Section2(icon: "bell.badge", title: String(localized: "Result notifications"),
+                 blurb: String(localized: "Optional notifications, off by default, when an automation has a result."),
+                 active: behavior.morningRecapReport || behavior.postWorkoutReport
+                    || behavior.backupResultNotify || behavior.cycleReadingNotify) {
+            ToggleRow(label: String(localized: "Morning recap"),
+                      help: String(localized: "Last night's Charge and Rest, once per night, not before 05:00."),
+                      isOn: $behavior.morningRecapReport)
+                .onChangeCompat(of: behavior.morningRecapReport) { on in
+                    if on { AutomationResultNotifier.requestAuthorization() }
+                }
+            ToggleRow(label: String(localized: "Post-workout summary"),
+                      help: String(localized: "When a new workout syncs in: its Effort, duration and average heart rate."),
+                      isOn: $behavior.postWorkoutReport)
+                .onChangeCompat(of: behavior.postWorkoutReport) { on in
+                    guard on else { return }
+                    AutomationResultNotifier.requestAuthorization()
+                    // Start from the newest existing workout, so turning this on does not summarise an old one.
+                    Task { AutomationResultNotifier.seedWorkoutFrontier(await model.newestWorkout()?.startTs) }
+                }
+            ToggleRow(label: String(localized: "Backup finished or failed"),
+                      help: String(localized: "After each automatic backup: at most one success a day, and a failure once until the next success."),
+                      isOn: $behavior.backupResultNotify)
+                .onChangeCompat(of: behavior.backupResultNotify) { on in
+                    if on { AutomationResultNotifier.requestAuthorization() }
+                }
+            ToggleRow(label: String(localized: "New cycle reading"),
+                      help: String(localized: "While cycle awareness is on, a neutral notification when a new reading is available."),
+                      isOn: $behavior.cycleReadingNotify)
+                .onChangeCompat(of: behavior.cycleReadingNotify) { on in
+                    if on { AutomationResultNotifier.requestAuthorization() }
                 }
         }
     }

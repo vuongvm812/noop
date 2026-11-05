@@ -3011,4 +3011,57 @@
     <string name="huawei_tc_slice_size">Dimensione del frammento</string>
     <string name="huawei_tc_capability_bits">Bit di capacità</string>
     <string name="huawei_tc_services">Servizi</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">Attività</string>
+    <string name="weekly_digest_section_sleep">Sonno</string>
+    <string name="weekly_digest_section_overnight_vitals">Parametri vitali notturni</string>
+    <string name="weekly_digest_section_stress_energy">Stress ed energia</string>
+    <string name="weekly_digest_section_training">Allenamento</string>
+    <string name="weekly_digest_metric_steps">Passi</string>
+    <string name="weekly_digest_metric_active_kcal">Calorie attive</string>
+    <string name="weekly_digest_metric_intensity_minutes">Minuti di intensità</string>
+    <string name="weekly_digest_metric_sleep_duration">Durata del sonno</string>
+    <string name="weekly_digest_metric_sleep_efficiency">Efficienza del sonno</string>
+    <string name="weekly_digest_metric_deep_sleep">Sonno profondo</string>
+    <string name="weekly_digest_metric_rem_sleep">Sonno REM</string>
+    <string name="weekly_digest_metric_sleep_score">Punteggio del sonno</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">Respirazione</string>
+    <string name="weekly_digest_metric_skin_temp">Temperatura cutanea</string>
+    <string name="weekly_digest_metric_stress">Stress</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Ricarica Body Battery</string>
+    <string name="weekly_digest_metric_training_load">Carico di allenamento</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s h</string>
+    <string name="weekly_digest_value_minutes">%1$d min</string>
+    <string name="weekly_digest_target_progress">%1$d su %2$d min</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">Il tuo riepilogo settimanale è pronto</string>
+    <string name="weekly_summary_toggle_label">Riepilogo settimanale</string>
+    <string name="weekly_summary_toggle_help">Una volta a settimana, dopo la prima sincronizzazione del lunedì, una notifica con il punto chiave della settimana scorsa. Toccala per aprire la settimana in Tendenze.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Risultati delle automazioni</string>
+    <string name="automation_channel_description">Cosa hanno fatto le automazioni: un pisolino da rivedere, un backup, un invio self-hosted, una nuova lettura del ciclo.</string>
+    <string name="automation_nap_title">Pisolino rilevato</string>
+    <string name="automation_nap_body">Un pisolino di ~%1$d min attende la tua revisione in Automazioni.</string>
+    <string name="automation_backup_done_title">Backup completato</string>
+    <string name="automation_backup_done_body">Il backup automatico è stato salvato nella cartella scelta.</string>
+    <string name="automation_backup_failed_title">Backup non riuscito</string>
+    <string name="automation_backup_failed_body">Non è stato possibile scrivere il backup automatico. Verrà ritentato; controlla la cartella in Backup e sincronizzazione.</string>
+    <string name="automation_push_done_title">Invio self-hosted completato</string>
+    <string name="automation_push_done_body">I tuoi dati sono stati inviati al tuo endpoint.</string>
+    <string name="automation_push_failed_title">Invio self-hosted non riuscito</string>
+    <string name="automation_push_failed_body">L\'invio al tuo endpoint non è stato completato. Controlla lo stato in Invio self-hosted.</string>
+    <string name="automation_cycle_title">Consapevolezza del ciclo</string>
+    <string name="automation_cycle_body">È disponibile una nuova lettura della consapevolezza del ciclo.</string>
+    <string name="automation_results_section_title">Risultati delle automazioni</string>
+    <string name="automation_results_section_blurb">Notifiche facoltative, disattivate per impostazione predefinita, quando un\'automazione in background ha un risultato.</string>
+    <string name="automation_results_nap_label">Pisolino rilevato</string>
+    <string name="automation_results_nap_help">Quando il rilevamento dei pisolini ne mette uno in coda, una notifica per rivederlo.</string>
+    <string name="automation_results_backup_label">Backup completato o non riuscito</string>
+    <string name="automation_results_backup_help">Dopo ogni backup automatico: al massimo un successo al giorno e un errore una volta fino al successo seguente.</string>
+    <string name="automation_results_push_label">Invio self-hosted completato o non riuscito</string>
+    <string name="automation_results_push_help">Al termine di un invio self-hosted: al massimo un successo al giorno e un errore una volta fino al successo seguente.</string>
+    <string name="automation_results_cycle_label">Nuova lettura del ciclo</string>
+    <string name="automation_results_cycle_help">Finché la consapevolezza del ciclo è attiva, una notifica neutra quando è disponibile una nuova lettura.</string>
 </resources>

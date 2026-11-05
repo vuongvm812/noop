@@ -653,12 +653,12 @@ final class IntelligenceEngine: ObservableObject {
 
     /// `watchVo2max` for an already resolved watch id. Kotlin twin: `IntelligenceEngine.garminWatchVo2max`.
     func garminWatchVo2max(store: WhoopStore, watchId: String, satKey: String) async -> Double? {
-        GarminScoringInputs.watchVo2max(await garminVo2maxPoints(store: store, watchId: watchId, to: satKey), weekKey: satKey)
+        GarminScoringInputs.watchVo2max(await Self.garminVo2maxPoints(store: store, watchId: watchId, to: satKey), weekKey: satKey)
     }
 
     /// The Garmin VO₂max points on or before `to`: the watch's own, then the export's on the days the watch
     /// has none (`GarminScoringInputs.vo2maxPoints`). Kotlin twin: `garminVo2maxPoints`.
-    private func garminVo2maxPoints(store: WhoopStore, watchId: String, to: String) async -> [(day: String, value: Double)] {
+    static func garminVo2maxPoints(store: WhoopStore, watchId: String, to: String) async -> [(day: String, value: Double)] {
         let watch = (try? await store.metricSeries(deviceId: watchId, key: "vo2max", from: "0000-01-01", to: to)) ?? []
         let imported = (try? await store.metricSeries(deviceId: "garmin-import", key: "vo2max", from: "0000-01-01", to: to)) ?? []
         return GarminScoringInputs.vo2maxPoints(
@@ -672,7 +672,7 @@ final class IntelligenceEngine: ObservableObject {
     func persistWatchVo2maxHistory(store: WhoopStore, watchId: String, computedId: String, beforeWeek: String) async {
         guard FusionSource.isGarminWatchId(watchId) else { return }
         let weeks = GarminScoringInputs.watchVo2maxWeeks(
-            await garminVo2maxPoints(store: store, watchId: watchId, to: beforeWeek), beforeWeekKey: beforeWeek)
+            await Self.garminVo2maxPoints(store: store, watchId: watchId, to: beforeWeek), beforeWeekKey: beforeWeek)
         guard !weeks.isEmpty else { return }
         try? await store.persistMetricSeriesWithProvenance(
             points: weeks.map { MetricPoint(day: $0.week, key: "vo2max_est", value: $0.value) },

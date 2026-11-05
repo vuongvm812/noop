@@ -9,8 +9,17 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.noop.R
+import com.noop.analytics.WeeklySummaryPolicy
+import com.noop.data.DailyMetric
+import com.noop.data.DeviceRegistry
+import com.noop.data.WhoopRepository
 import com.noop.ui.NoopPrefs
+import com.noop.ui.NotificationRoute
+import com.noop.ui.UnitPrefs
+import com.noop.ui.WeeklyDigestLoader
 import com.noop.ui.appLaunchIntent
+import com.noop.ui.effortDisplayFactor
+import com.noop.ui.logicalDayKeyNow
 import kotlin.math.roundToInt
 
 // MARK: - Scheduled report notifications (#517)
@@ -65,7 +74,7 @@ object ScheduledReportPolicy {
      *  where before it would have arrived at 00:40 to someone asleep.
      *
      *  That is the second cost of a floor, beside a late recap still calling itself "Good morning". Both
-     *  are why this is a stopgap and the wake-based version is the real answer (#2289). */
+     *  are why this is a stopgap and the wake-based version is the real answer (#2289). Swift twin: `ScheduledReportPolicy.shouldNotifyMorning`. */
     fun shouldNotifyMorning(
         enabled: Boolean,
         chargeOrRestPresent: Boolean,
@@ -79,7 +88,7 @@ object ScheduledReportPolicy {
         nowMinuteOfDay >= earliestMinuteOfDay
 
     /** Fire the post-workout summary only for a workout STRICTLY newer than the last one summarised, so a
-     *  re-sync of the same backlog never re-notifies. [lastWorkoutTs] is 0 before the first ever. */
+     *  re-sync of the same backlog never re-notifies. [lastWorkoutTs] is 0 before the first ever. Swift twin: `ScheduledReportPolicy.shouldNotifyWorkout`. */
     fun shouldNotifyWorkout(
         enabled: Boolean,
         newestWorkoutTs: Long?,
@@ -88,7 +97,7 @@ object ScheduledReportPolicy {
 
     /** Title + body for the morning recap. Charge and Rest are each optional (a night can produce one
      *  without the other); absent ones are simply omitted — never shown as 0 or a guess. Returns null when
-     *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). */
+     *  neither is present (the caller shouldn't have been asked to build copy, but stay honest). Swift twin: `ScheduledReportPolicy.morningCopy`. */
     fun morningCopy(chargePct: Int?, restPct: Int?): Pair<String, String>? {
         val parts = ArrayList<String>(2)
         chargePct?.let { parts.add("Charge $it") }
@@ -102,7 +111,7 @@ object ScheduledReportPolicy {
 
     /** Title + body for the post-workout summary. [effortDisplay] is already formatted on the user's
      *  chosen scale ("0–100" or "0–21"); [durationLabel] is e.g. "42 min". avgHr is optional — a session
-     *  with no usable HR omits it rather than inventing one. */
+     *  with no usable HR omits it rather than inventing one. Swift twin: `ScheduledReportPolicy.workoutCopy`. */
     fun workoutCopy(
         sportLabel: String,
         effortDisplay: String,
@@ -120,7 +129,7 @@ object ScheduledReportPolicy {
     }
 
     /** "42 min" / "1 h 8 min" from a whole-minute duration; clamps a 0/negative span to "under a minute"
-     *  so a mis-timed session never reads as "0 min". */
+     *  so a mis-timed session never reads as "0 min". Swift twin: `ScheduledReportPolicy.durationLabel`. */
     fun durationLabel(minutes: Int): String = when {
         minutes <= 0 -> "under a minute"
         minutes < 60 -> "$minutes min"
@@ -132,9 +141,13 @@ object ScheduledReportPolicy {
 object ScheduledReportNotifier {
     private const val CHANNEL_ID = "noop_scheduled_reports"
     // #297: distinct ids so a report never silently replaces another notifier's (tagless notify()).
-    // Map: 4201 connection, 4202 illness, 4203 inactivity, 4204 smart alarm, 4205/4206/4207 battery.
+    // Map: 4201 connection, 4202 illness, 4203 inactivity, 4204 smart alarm, 4205/4206/4207 and
+    // 4211/4212/4213 battery, 4208/4209 these reports, 4210 strain target, 4213/4214 coach brief
+    // (4213 clashes with the stale-battery alert; pre-existing), 4215 weekly summary, 4307 smart-alarm
+    // receiver, 4311 wind-down. Take the next free id above 4215.
     private const val MORNING_NOTIF_ID = 4208
     private const val WORKOUT_NOTIF_ID = 4209
+    private const val WEEKLY_SUMMARY_NOTIF_ID = 4215
 
     /**
      * Post the morning recap if enabled and not already posted today. [chargePct]/[restPct] are the
@@ -194,6 +207,55 @@ object ScheduledReportNotifier {
     }
 
     /**
+     * Post the "weekly summary ready" notification for last week (#91) once the new week's Monday
+     * logical day has started and its first sync has landed. Builds the digest through
+     * [WeeklyDigestLoader] (the same reads the Trends card makes) only when the cheap policy gate
+     * passes; the body is the digest's top focal sentence and the tap opens Trends. Safe to call on
+     * every days republish, foreground or from the service.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun onWeeklySummary(
+        context: Context,
+        repo: WhoopRepository,
+        registry: DeviceRegistry?,
+        activeDeviceId: String,
+        days: List<DailyMetric>,
+    ) {
+        val logicalToday = logicalDayKeyNow()
+        val week = WeeklySummaryPolicy.weekToAnnounce(
+            enabled = NoopPrefs.weeklySummaryEnabled(context),
+            logicalToday = logicalToday,
+            lastAnnouncedWeek = NoopPrefs.reportWeeklySummaryWeek(context),
+            hasCurrentWeekData = WeeklySummaryPolicy.hasCurrentWeekData(days.map { it.day }, logicalToday),
+        ) ?: return
+        // Checked before the digest load, so a denied permission does not rebuild it on every republish.
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        // The full merged history the Trends card reads (daysMerged), not the caller's bounded recent
+        // window, so the notification and the card quote the same sentence for the same week.
+        val factor = effortDisplayFactor(UnitPrefs.effortScale(context))
+        val digest = runCatching {
+            WeeklyDigestLoader.digest(
+                repo, registry, activeDeviceId, repo.daysMerged(activeDeviceId),
+                WeeklySummaryPolicy.anchorDay(week), factor,
+            )
+        }.getOrNull() ?: return
+        val body = WeeklySummaryPolicy.body(digest)
+        if (body == null) {
+            // Nothing to say about an empty week: mark it, so it is not rebuilt on every republish.
+            NoopPrefs.setReportWeeklySummaryWeek(context, week)
+            return
+        }
+        runCatching {
+            ensureChannel(context)
+            post(
+                context, WEEKLY_SUMMARY_NOTIF_ID, context.getString(R.string.weekly_summary_notification_title), body,
+                route = NotificationRoute.TRENDS,
+            )
+            NoopPrefs.setReportWeeklySummaryWeek(context, week)
+        }
+    }
+
+    /**
      * Seed the post-workout frontier to the current newest workout WITHOUT notifying — called once when the
      * user first enables the toggle, so turning it on doesn't immediately fire a summary for an old session
      * already in history. Only advances the marker forward.
@@ -205,10 +267,12 @@ object ScheduledReportNotifier {
     }
 
     @SuppressLint("MissingPermission")
-    private fun post(context: Context, id: Int, title: String, body: String) {
+    private fun post(context: Context, id: Int, title: String, body: String, route: String? = null) {
+        // A routed tap gets its own request code, so FLAG_UPDATE_CURRENT can't swap its extra onto
+        // (or off) the plain open-app intent the other reports share.
         val openApp = PendingIntent.getActivity(
-            context, 3,
-            appLaunchIntent(context),
+            context, if (route == null) 3 else id,
+            if (route == null) appLaunchIntent(context) else appLaunchIntent(context, route),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(context, CHANNEL_ID)
@@ -234,7 +298,7 @@ object ScheduledReportNotifier {
                     CHANNEL_ID, "Daily reports",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "A morning recap and post-workout summary, after your strap syncs."
+                    description = "A morning recap, post-workout and weekly summaries, after your strap syncs."
                 },
             )
         }

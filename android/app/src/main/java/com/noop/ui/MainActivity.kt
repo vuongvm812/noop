@@ -151,11 +151,17 @@ class MainActivity : ComponentActivity() {
         BackgroundImageStore.load(this)
         BottomBarStyleStore.load(this)   // #1836: bottom-bar layout choice, default the shipped slot
 
+        NotificationRoute.offer(intent)
         setContent {
             NoopTheme {
                 NoopRoot()
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        NotificationRoute.offer(intent)
     }
 
     /** Request the BLE permissions appropriate to the running OS version. */
@@ -207,6 +213,25 @@ private fun CrashRecoveryScreen(crash: String, onContinue: () -> Unit) {
         }
     }
 }
+
+/**
+ * A screen a notification tap asks the app to open (#91). The tap's intent carries [EXTRA_ROUTE];
+ * MainActivity hands it here and AppRoot navigates once it is composed, then clears it.
+ */
+object NotificationRoute {
+    const val EXTRA_ROUTE = "noop.openRoute"
+    const val TRENDS = "trends"
+
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    fun offer(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_ROUTE)?.let { pending.value = it }
+    }
+}
+
+/** [appLaunchIntent] that also asks the app to open [route] (a [NotificationRoute] key). */
+internal fun appLaunchIntent(context: Context, route: String): Intent =
+    appLaunchIntent(context).putExtra(NotificationRoute.EXTRA_ROUTE, route)
 
 internal fun appLaunchIntent(context: Context): Intent =
     context.packageManager.getLaunchIntentForPackage(context.packageName)
@@ -1383,6 +1408,8 @@ object NoopPrefs {
     // #593 target-strain nudge: opt-in enable flag + the once-per-day dedupe (last local day it fired).
     const val KEY_REPORT_STRAIN_TARGET = "noop.report.strainTarget"
     const val KEY_REPORT_STRAIN_TARGET_DAY = "noop.report.lastStrainTargetDay"
+    const val KEY_REPORT_WEEKLY_SUMMARY = "noop.report.weeklySummary"
+    const val KEY_REPORT_WEEKLY_SUMMARY_WEEK = "noop.report.lastWeeklySummaryWeek"
     const val KEY_REPORT_LAST_WORKOUT_TS = "noop.report.lastWorkoutTs"
 
     fun morningReportEnabled(context: Context): Boolean =
@@ -1421,6 +1448,57 @@ object NoopPrefs {
 
     fun setReportStrainTargetDay(context: Context, day: String) {
         of(context).edit().putString(KEY_REPORT_STRAIN_TARGET_DAY, day).apply()
+    }
+
+    /** #91: opt-in (default OFF) for the Monday "weekly summary ready" notification. */
+    fun weeklySummaryEnabled(context: Context): Boolean =
+        of(context).getBoolean(KEY_REPORT_WEEKLY_SUMMARY, false)
+
+    fun setWeeklySummaryEnabled(context: Context, enabled: Boolean) {
+        of(context).edit().putBoolean(KEY_REPORT_WEEKLY_SUMMARY, enabled).apply()
+    }
+
+    // #92: automation result notifications, each default OFF, with the state its gate needs.
+    const val KEY_RESULT_NAP = "noop.result.nap"
+    const val KEY_RESULT_NAP_TS = "noop.result.napLastTs"
+    const val KEY_RESULT_BACKUP = "noop.result.backup"
+    const val KEY_RESULT_PUSH = "noop.result.push"
+    const val KEY_RESULT_CYCLE = "noop.result.cycle"
+    const val KEY_RESULT_CYCLE_PHASE = "noop.result.cycleLastPhase"
+
+    fun napResultEnabled(context: Context): Boolean = of(context).getBoolean(KEY_RESULT_NAP, false)
+    fun setNapResultEnabled(context: Context, on: Boolean) { of(context).edit().putBoolean(KEY_RESULT_NAP, on).apply() }
+    fun napResultLastTs(context: Context): Long = of(context).getLong(KEY_RESULT_NAP_TS, 0L)
+    fun setNapResultLastTs(context: Context, ts: Long) { of(context).edit().putLong(KEY_RESULT_NAP_TS, ts).apply() }
+    fun backupResultEnabled(context: Context): Boolean = of(context).getBoolean(KEY_RESULT_BACKUP, false)
+    fun setBackupResultEnabled(context: Context, on: Boolean) { of(context).edit().putBoolean(KEY_RESULT_BACKUP, on).apply() }
+    fun pushResultEnabled(context: Context): Boolean = of(context).getBoolean(KEY_RESULT_PUSH, false)
+    fun setPushResultEnabled(context: Context, on: Boolean) { of(context).edit().putBoolean(KEY_RESULT_PUSH, on).apply() }
+    fun cycleResultEnabled(context: Context): Boolean = of(context).getBoolean(KEY_RESULT_CYCLE, false)
+    fun setCycleResultEnabled(context: Context, on: Boolean) { of(context).edit().putBoolean(KEY_RESULT_CYCLE, on).apply() }
+    fun cycleResultLastPhase(context: Context): String? = of(context).getString(KEY_RESULT_CYCLE_PHASE, null)
+    fun setCycleResultLastPhase(context: Context, phase: String) {
+        of(context).edit().putString(KEY_RESULT_CYCLE_PHASE, phase).apply()
+    }
+
+    /** Per-job result state ([job] is "BACKUP" / "PUSH"): the last notified success day, and whether a
+     *  failure has been told and not yet cleared by a success. */
+    fun jobLastSuccessDay(context: Context, job: String): String? = of(context).getString("noop.result.$job.day", null)
+    fun setJobLastSuccessDay(context: Context, job: String, day: String) {
+        of(context).edit().putString("noop.result.$job.day", day).apply()
+    }
+    fun jobFailureOutstanding(context: Context, job: String): Boolean =
+        of(context).getBoolean("noop.result.$job.failed", false)
+    fun setJobFailureOutstanding(context: Context, job: String, failed: Boolean) {
+        of(context).edit().putBoolean("noop.result.$job.failed", failed).apply()
+    }
+
+    /** The Monday (yyyy-MM-dd) of the last week the summary was posted for, the once-a-week gate. */
+    fun reportWeeklySummaryWeek(context: Context): String? =
+        of(context).getString(KEY_REPORT_WEEKLY_SUMMARY_WEEK, null)
+
+    fun setReportWeeklySummaryWeek(context: Context, monday: String) {
+        of(context).edit().putString(KEY_REPORT_WEEKLY_SUMMARY_WEEK, monday).apply()
     }
 
     /** Start-ts (epoch seconds) of the most recent workout already summarised, only a STRICTLY newer

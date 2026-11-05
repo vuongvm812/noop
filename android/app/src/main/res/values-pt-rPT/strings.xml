@@ -3035,4 +3035,57 @@
     <string name="huawei_tc_slice_size">Tamanho do fragmento</string>
     <string name="huawei_tc_capability_bits">Bits de capacidade</string>
     <string name="huawei_tc_services">Serviços</string>
+    <!-- Weekly digest card sections (#90) -->
+    <string name="weekly_digest_section_activity">Atividade</string>
+    <string name="weekly_digest_section_sleep">Sono</string>
+    <string name="weekly_digest_section_overnight_vitals">Sinais vitais noturnos</string>
+    <string name="weekly_digest_section_stress_energy">Stress e energia</string>
+    <string name="weekly_digest_section_training">Treino</string>
+    <string name="weekly_digest_metric_steps">Passos</string>
+    <string name="weekly_digest_metric_active_kcal">Calorias ativas</string>
+    <string name="weekly_digest_metric_intensity_minutes">Minutos de intensidade</string>
+    <string name="weekly_digest_metric_sleep_duration">Duração do sono</string>
+    <string name="weekly_digest_metric_sleep_efficiency">Eficiência do sono</string>
+    <string name="weekly_digest_metric_deep_sleep">Sono profundo</string>
+    <string name="weekly_digest_metric_rem_sleep">Sono REM</string>
+    <string name="weekly_digest_metric_sleep_score">Pontuação do sono</string>
+    <string name="weekly_digest_metric_spo2">SpO₂</string>
+    <string name="weekly_digest_metric_respiration">Respiração</string>
+    <string name="weekly_digest_metric_skin_temp">Temperatura da pele</string>
+    <string name="weekly_digest_metric_stress">Stress</string>
+    <string name="weekly_digest_metric_body_battery_recharge">Recarga da Body Battery</string>
+    <string name="weekly_digest_metric_training_load">Carga de treino</string>
+    <string name="weekly_digest_metric_vo2max">VO₂max</string>
+    <string name="weekly_digest_value_hours">%1$s h</string>
+    <string name="weekly_digest_value_minutes">%1$d min</string>
+    <string name="weekly_digest_target_progress">%1$d de %2$d min</string>
+    <!-- Weekly summary notification (#91) -->
+    <string name="weekly_summary_notification_title">O seu resumo semanal está pronto</string>
+    <string name="weekly_summary_toggle_label">Resumo semanal</string>
+    <string name="weekly_summary_toggle_help">Uma vez por semana, após a primeira sincronização de segunda-feira, uma notificação com o essencial da semana passada. Toque para abrir a semana em Tendências.</string>
+    <!-- Automation result notifications (#92) -->
+    <string name="automation_channel_name">Resultados das automatizações</string>
+    <string name="automation_channel_description">O que as automatizações fizeram: uma sesta para rever, uma cópia de segurança, um envio auto-alojado, uma nova leitura do ciclo.</string>
+    <string name="automation_nap_title">Sesta detetada</string>
+    <string name="automation_nap_body">Uma sesta de ~%1$d min aguarda a sua revisão em Automatizações.</string>
+    <string name="automation_backup_done_title">Cópia de segurança concluída</string>
+    <string name="automation_backup_done_body">A sua cópia automática foi guardada na pasta escolhida.</string>
+    <string name="automation_backup_failed_title">A cópia de segurança falhou</string>
+    <string name="automation_backup_failed_body">Não foi possível escrever a cópia automática. Vai tentar de novo; verifique a pasta em Cópia e sincronização.</string>
+    <string name="automation_push_done_title">Envio auto-alojado concluído</string>
+    <string name="automation_push_done_body">Os seus dados foram enviados para o seu próprio endpoint.</string>
+    <string name="automation_push_failed_title">O envio auto-alojado falhou</string>
+    <string name="automation_push_failed_body">O envio para o seu endpoint não foi concluído. Verifique o estado em Envio auto-alojado.</string>
+    <string name="automation_cycle_title">Consciência do ciclo</string>
+    <string name="automation_cycle_body">Está disponível uma nova leitura da consciência do ciclo.</string>
+    <string name="automation_results_section_title">Resultados das automatizações</string>
+    <string name="automation_results_section_blurb">Notificações opcionais, desativadas por predefinição, quando uma automatização em segundo plano tem um resultado.</string>
+    <string name="automation_results_nap_label">Sesta detetada</string>
+    <string name="automation_results_nap_help">Quando a deteção de sestas coloca uma em fila, uma notificação para a rever.</string>
+    <string name="automation_results_backup_label">Cópia concluída ou falhada</string>
+    <string name="automation_results_backup_help">Após cada cópia automática: no máximo um sucesso por dia, e uma falha uma vez até ao próximo sucesso.</string>
+    <string name="automation_results_push_label">Envio auto-alojado concluído ou falhado</string>
+    <string name="automation_results_push_help">Quando um envio auto-alojado termina: no máximo um sucesso por dia, e uma falha uma vez até ao próximo sucesso.</string>
+    <string name="automation_results_cycle_label">Nova leitura do ciclo</string>
+    <string name="automation_results_cycle_help">Enquanto a consciência do ciclo estiver ativa, uma notificação neutra quando houver uma nova leitura.</string>
 </resources>

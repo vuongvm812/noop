@@ -1,7 +1,7 @@
 package com.noop.analytics
 
 import kotlin.math.abs
-import kotlin.math.roundToInt
+import kotlin.math.floor
 import kotlin.math.sqrt
 
 // WeeklyDigest.kt — a deterministic, offline "week in review".
@@ -26,49 +26,135 @@ import kotlin.math.sqrt
 // (string comparison is chronological for ISO days), matching the day strings the
 // engine emits exactly.
 
-/** The five headline metrics a weekly digest reports on. */
+/** How a metric's daily values roll up into one weekly figure. Mirrors Swift `WeeklyRollup`. */
+enum class WeeklyRollup {
+    /** Mean of the week's daily values. */
+    MEAN,
+    /** Total over the elapsed span of the week (training load, intensity minutes). */
+    SUM,
+    /** The week's most recent reading (VO2 max). */
+    LATEST,
+}
+
+/** Which way a change in a metric reads. Mirrors Swift `WeeklyDirection`. */
+enum class WeeklyDirection { HIGHER_BETTER, LOWER_BETTER, NEUTRAL }
+
+/**
+ * Everything the engine needs to know about one metric. Mirrors Swift `WeeklyMetricSpec`:
+ * the original five keep a fixed [fixedSpread]; later metrics are normalised by the personal
+ * SD of their baseline weeks, floored at [spreadFloor].
+ */
+data class WeeklyMetricSpec(
+    /** English name used in the narration (the UI localises its own). */
+    val label: String,
+    /** Display unit suffix ("" for unitless scores). */
+    val unit: String,
+    val rollup: WeeklyRollup = WeeklyRollup.MEAN,
+    val direction: WeeklyDirection = WeeklyDirection.HIGHER_BETTER,
+    /** Fixed normaliser, or null to use the personal baseline SD. */
+    val fixedSpread: Double? = null,
+    /** Lower bound on the personal baseline SD. */
+    val spreadFloor: Double,
+    /** Decimal places for the rendered weekly values (0 or 1). */
+    val decimals: Int = 0,
+    /** False for metrics already in % or a deviation from 0: the change is given in units. */
+    val percentChange: Boolean = true,
+    /** Weekly goal for a SUM metric (intensity minutes: 150), null otherwise. */
+    val weeklyTarget: Double? = null,
+)
+
+/**
+ * The metrics a weekly digest reports on. The first five are the original headline set and
+ * keep their order; the rest only take part when their series carries data. Case order and
+ * keys are shared with the Swift enum.
+ */
 enum class WeeklyMetric(val key: String) {
     CHARGE("charge"),  // recovery, 0–100
     EFFORT("effort"),  // strain / Effort, 0–100
     REST("rest"),      // sleep performance composite, 0–100
     RHR("rhr"),        // resting heart rate, bpm
-    HRV("hrv");        // heart-rate variability, ms
+    HRV("hrv"),        // heart-rate variability, ms
+    STEPS("steps"),
+    ACTIVE_KCAL("activeKcal"),
+    SLEEP_DURATION("sleepDuration"),          // hours asleep
+    SLEEP_EFFICIENCY("sleepEfficiency"),      // % of time in bed asleep
+    DEEP_SLEEP("deepSleep"),                  // minutes
+    REM_SLEEP("remSleep"),                    // minutes
+    SLEEP_SCORE("sleepScore"),                // the watch's own sleep score, 0–100
+    SPO2("spo2"),                             // overnight mean SpO2, %
+    RESPIRATION("respiration"),               // overnight mean breaths/min
+    SKIN_TEMP_DEVIATION("skinTempDeviation"), // °C from the personal baseline
+    STRESS("stress"),                         // device stress score, 0–100
+    BODY_BATTERY_RECHARGE("bodyBatteryRecharge"), // overnight Body Battery gain
+    TRAINING_LOAD("trainingLoad"),
+    INTENSITY_MINUTES("intensityMinutes"),    // moderate + 2 × vigorous
+    VO2MAX("vo2max");
+
+    val spec: WeeklyMetricSpec
+        get() = when (this) {
+            CHARGE -> WeeklyMetricSpec("Charge", "", fixedSpread = 12.0, spreadFloor = 12.0)
+            EFFORT -> WeeklyMetricSpec("Effort", "", fixedSpread = 12.0, spreadFloor = 12.0)
+            REST -> WeeklyMetricSpec("Rest", "", fixedSpread = 12.0, spreadFloor = 12.0)
+            RHR -> WeeklyMetricSpec(
+                "Resting HR", "bpm", direction = WeeklyDirection.LOWER_BETTER,
+                fixedSpread = 4.0, spreadFloor = 4.0,
+            )
+            HRV -> WeeklyMetricSpec("HRV", "ms", fixedSpread = 8.0, spreadFloor = 8.0)
+            STEPS -> WeeklyMetricSpec("Steps", "steps", spreadFloor = 500.0)
+            ACTIVE_KCAL -> WeeklyMetricSpec("Active calories", "kcal", spreadFloor = 50.0)
+            SLEEP_DURATION -> WeeklyMetricSpec(
+                "Sleep duration", "h", direction = WeeklyDirection.NEUTRAL,
+                spreadFloor = 0.25, decimals = 1,
+            )
+            SLEEP_EFFICIENCY -> WeeklyMetricSpec(
+                "Sleep efficiency", "%", spreadFloor = 2.0, percentChange = false,
+            )
+            DEEP_SLEEP -> WeeklyMetricSpec("Deep sleep", "min", spreadFloor = 5.0)
+            REM_SLEEP -> WeeklyMetricSpec("REM sleep", "min", spreadFloor = 5.0)
+            SLEEP_SCORE -> WeeklyMetricSpec("Sleep score", "", spreadFloor = 4.0)
+            SPO2 -> WeeklyMetricSpec(
+                "Overnight SpO2", "%", direction = WeeklyDirection.NEUTRAL,
+                spreadFloor = 0.5, decimals = 1, percentChange = false,
+            )
+            RESPIRATION -> WeeklyMetricSpec(
+                "Respiration", "brpm", direction = WeeklyDirection.NEUTRAL,
+                spreadFloor = 0.3, decimals = 1,
+            )
+            SKIN_TEMP_DEVIATION -> WeeklyMetricSpec(
+                "Skin temp deviation", "°C", direction = WeeklyDirection.NEUTRAL,
+                spreadFloor = 0.1, decimals = 1, percentChange = false,
+            )
+            STRESS -> WeeklyMetricSpec("Stress", "", direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 3.0)
+            BODY_BATTERY_RECHARGE -> WeeklyMetricSpec("Body Battery recharge", "", spreadFloor = 5.0)
+            // More load is neither good nor bad on its own, so it carries no verdict.
+            TRAINING_LOAD -> WeeklyMetricSpec(
+                "Training load", "", rollup = WeeklyRollup.SUM,
+                direction = WeeklyDirection.NEUTRAL, spreadFloor = 25.0,
+            )
+            INTENSITY_MINUTES -> WeeklyMetricSpec(
+                "Intensity minutes", "min", rollup = WeeklyRollup.SUM,
+                spreadFloor = 15.0, weeklyTarget = 150.0,
+            )
+            VO2MAX -> WeeklyMetricSpec(
+                "VO2 max", "ml/kg/min", rollup = WeeklyRollup.LATEST,
+                spreadFloor = 1.0, percentChange = false,
+            )
+        }
 
     /** Human label (matches the rest of the app's naming). */
-    val label: String
-        get() = when (this) {
-            CHARGE -> "Charge"
-            EFFORT -> "Effort"
-            REST -> "Rest"
-            RHR -> "Resting HR"
-            HRV -> "HRV"
-        }
+    val label: String get() = spec.label
 
     /** Display unit suffix (empty for the unitless 0–100 scores). */
-    val unit: String
-        get() = when (this) {
-            CHARGE, EFFORT, REST -> ""
-            RHR -> "bpm"
-            HRV -> "ms"
-        }
+    val unit: String get() = spec.unit
 
-    /** True when a HIGHER value is the better outcome. Resting HR is the lone exception. */
-    val higherIsBetter: Boolean
-        get() = this != RHR
+    /** True when a HIGHER value is better. False for lower-better AND neutral metrics. */
+    val higherIsBetter: Boolean get() = spec.direction == WeeklyDirection.HIGHER_BETTER
 
     /**
-     * A coarse "typical day-to-day range" used to normalise week-over-week deltas so
-     * movers on different scales are rankable against each other. Deterministic constants
-     * (not personal baselines), byte-identical to Swift.
+     * The fixed normaliser for the original five, or the personal-spread floor for later
+     * metrics (whose actual normaliser is [WeeklyMetricSummary.personalSpread]).
      */
-    val typicalSpread: Double
-        get() = when (this) {
-            CHARGE -> 12.0
-            EFFORT -> 12.0
-            REST -> 12.0
-            RHR -> 4.0
-            HRV -> 8.0
-        }
+    val typicalSpread: Double get() = spec.fixedSpread ?: spec.spreadFloor
 }
 
 /** Summary statistics for one slice of a daily series. Mirrors Swift SeriesStat. */
@@ -105,7 +191,29 @@ data class WeeklyMetricSummary(
     val weekOverWeek: PeriodComparison,
     val baselineMean: Double?,
     val vsBaseline: Double?,
+    /** Rolled-up weekly figures for a SUM / LATEST metric (null for MEAN). */
+    val rolledThis: Double? = null,
+    val rolledLast: Double? = null,
+    /** Personal baseline SD normalising a non-headline metric, null when the baseline is thin. */
+    val personalSpread: Double? = null,
 ) {
+    /** This week's figure: the mean, or the total / latest reading per the roll-up. */
+    val thisValue: Double get() = rolledThis ?: thisWeek.mean
+
+    /** Last week's figure on the same roll-up. */
+    val lastValue: Double get() = rolledLast ?: weekOverWeek.previous.mean
+
+    /** True when this week carried at least one reading for the metric. */
+    val hasData: Boolean get() = thisWeek.n > 0
+
+    /** Fraction of the weekly target reached (SUM metrics with a target only). */
+    val targetProgress: Double?
+        get() {
+            val target = metric.spec.weeklyTarget ?: return null
+            if (target <= 0 || !hasData) return null
+            return thisValue / target
+        }
+
     /** Signed week-over-week change in the metric's own units (this − last). */
     val wowDelta: Double get() = weekOverWeek.delta
 
@@ -115,7 +223,7 @@ data class WeeklyMetricSummary(
      */
     val wowGoodness: Int
         get() {
-            if (weekOverWeek.direction == 0) return 0
+            if (weekOverWeek.direction == 0 || metric.spec.direction == WeeklyDirection.NEUTRAL) return 0
             val up = weekOverWeek.direction > 0
             return if (up == metric.higherIsBetter) 1 else -1
         }
@@ -124,7 +232,7 @@ data class WeeklyMetricSummary(
     val normalisedMove: Double
         get() {
             if (weekOverWeek.current.n == 0 || weekOverWeek.previous.n == 0) return 0.0
-            val s = metric.typicalSpread
+            val s = metric.spec.fixedSpread ?: personalSpread ?: return 0.0
             return if (s > 0) wowDelta / s else 0.0
         }
 
@@ -137,6 +245,8 @@ data class WeeklyMetricSummary(
      */
     val isRoughComparison: Boolean
         get() {
+            // A total or a latest reading is not an average of days.
+            if (metric.spec.rollup != WeeklyRollup.MEAN) return false
             val cur = weekOverWeek.current.n
             val prev = weekOverWeek.previous.n
             if (cur == 0 || prev == 0) return false
@@ -225,27 +335,44 @@ object WeeklyDigestEngine {
 
         val summaries = mutableListOf<WeeklyMetricSummary>()
         val daysSeen = mutableSetOf<String>()
+        for (metric in WeeklyMetric.values()) {
+            valuesInRange(byMetric[metric] ?: emptyMap(), monday, sunday, daysSeen)
+        }
+        // How far into the week the data runs, so a SUM metric compares this week so far
+        // against the same weekdays of earlier weeks. A finished week spans all seven days.
+        val span = daysSeen.maxOrNull()?.let { dayIndex(monday, it) + 1 } ?: 7
 
         for (metric in WeeklyMetric.values()) {
             val series = byMetric[metric] ?: emptyMap()
-
-            val thisVals = valuesInRange(series, monday, sunday, daysSeen)
+            val thisVals = valuesInRange(series, monday, sunday, null)
             val lastVals = valuesInRange(series, lastMonday, lastSunday, null)
             val baseVals = valuesInRange(series, baselineStart, baselineEnd, null)
 
-            val thisStat = stat(thisVals)
-            val wow = compare(thisVals, lastVals)
-            val baseMean = if (baseVals.isEmpty()) null else baseVals.sum() / baseVals.size
-            val vsBase = baseMean?.let { thisStat.mean - it }
-
-            summaries.add(WeeklyMetricSummary(metric, thisStat, wow, baseMean, vsBase))
+            when (metric.spec.rollup) {
+                WeeklyRollup.MEAN -> {
+                    val thisStat = stat(thisVals)
+                    val wow = compare(thisVals, lastVals)
+                    val baseMean = if (baseVals.isEmpty()) null else baseVals.sum() / baseVals.size
+                    val vsBase = baseMean?.let { thisStat.mean - it }
+                    val spread = if (metric.spec.fixedSpread == null) {
+                        personalSpread(baseVals, MIN_DAYS_FOR_FOCUS, metric.spec.spreadFloor)
+                    } else {
+                        null
+                    }
+                    summaries.add(WeeklyMetricSummary(metric, thisStat, wow, baseMean, vsBase, personalSpread = spread))
+                }
+                WeeklyRollup.SUM ->
+                    summaries.add(sumSummary(metric, series, thisVals, lastMonday, baselineStart, span))
+                WeeklyRollup.LATEST ->
+                    summaries.add(latestSummary(metric, thisVals, lastVals, baseVals))
+            }
         }
 
         val restStat = summaries.firstOrNull { it.metric == WeeklyMetric.REST }?.thisWeek
         val restConsistency = if ((restStat?.n ?: 0) >= 2) restStat?.stdev else null
 
         val balance = balanceRead(summaries)
-        val focal = focalPoints(summaries, balance, restConsistency, effortDisplayFactor)
+        val focal = focalPoints(summaries, balance, restConsistency, effortDisplayFactor, span)
 
         return WeeklyDigest(
             weekStart = monday, weekEnd = sunday, metrics = summaries,
@@ -315,6 +442,110 @@ object WeeklyDigestEngine {
         return if (sxx > 0) sxy / sxx else 0.0
     }
 
+    // MARK: - Non-mean roll-ups
+
+    /**
+     * A SUM metric: this week's total so far against last week's total over the same
+     * weekdays; the baseline is the mean same-span total of the baseline weeks that carried
+     * any reading, and the spread is the SD of those totals.
+     * Swift twin: `WeeklyDigestEngine.sumSummary`.
+     */
+    private fun sumSummary(
+        metric: WeeklyMetric,
+        series: Map<String, Double>,
+        thisVals: List<Double>,
+        lastMonday: String,
+        baselineStart: String,
+        span: Int,
+    ): WeeklyMetricSummary {
+        val lastVals = valuesInRange(series, lastMonday, addDays(lastMonday, span - 1), null)
+        val weekTotals = mutableListOf<Double>()
+        for (w in 0 until BASELINE_WEEKS) {
+            val wkStart = addDays(baselineStart, 7 * w)
+            val vals = valuesInRange(series, wkStart, addDays(wkStart, span - 1), null)
+            if (vals.isNotEmpty()) weekTotals.add(vals.sum())
+        }
+        val thisTotal = thisVals.sum()
+        val lastTotal = lastVals.sum()
+        val baseMean = if (weekTotals.isEmpty()) null else weekTotals.sum() / weekTotals.size
+        return WeeklyMetricSummary(
+            metric = metric,
+            thisWeek = stat(thisVals),
+            weekOverWeek = rolledComparison(thisVals, lastVals, thisTotal, lastTotal),
+            baselineMean = baseMean,
+            vsBaseline = baseMean?.let { thisTotal - it },
+            rolledThis = thisTotal,
+            rolledLast = lastTotal,
+            personalSpread = personalSpread(weekTotals, 2, metric.spec.spreadFloor),
+        )
+    }
+
+    /** A LATEST metric: the week's most recent reading against last week's. Swift twin: `WeeklyDigestEngine.latestSummary`. */
+    private fun latestSummary(
+        metric: WeeklyMetric,
+        thisVals: List<Double>,
+        lastVals: List<Double>,
+        baseVals: List<Double>,
+    ): WeeklyMetricSummary {
+        val thisLatest = thisVals.lastOrNull() ?: 0.0
+        val lastLatest = lastVals.lastOrNull() ?: 0.0
+        val baseMean = if (baseVals.isEmpty()) null else baseVals.sum() / baseVals.size
+        return WeeklyMetricSummary(
+            metric = metric,
+            thisWeek = stat(thisVals),
+            weekOverWeek = rolledComparison(thisVals, lastVals, thisLatest, lastLatest),
+            baselineMean = baseMean,
+            vsBaseline = if (thisVals.isEmpty()) null else baseMean?.let { thisLatest - it },
+            rolledThis = thisLatest,
+            rolledLast = lastLatest,
+            personalSpread = personalSpread(baseVals, MIN_DAYS_FOR_FOCUS, metric.spec.spreadFloor),
+        )
+    }
+
+    /**
+     * A comparison whose delta / % / direction are on rolled-up figures, keeping the day stats.
+     * Swift twin: `WeeklyDigestEngine.rolledComparison`.
+     */
+    private fun rolledComparison(
+        cur: List<Double>,
+        prev: List<Double>,
+        thisValue: Double,
+        lastValue: Double,
+    ): PeriodComparison {
+        val c = stat(cur)
+        val p = stat(prev)
+        val delta = thisValue - lastValue
+        val pct = if (p.n > 0 && lastValue != 0.0) delta / abs(lastValue) * 100.0 else null
+        val direction = when {
+            c.n == 0 || p.n == 0 -> 0
+            delta > 0 -> 1
+            delta < 0 -> -1
+            else -> 0
+        }
+        return PeriodComparison(c, p, delta, pct, direction)
+    }
+
+    /**
+     * Personal SD via [Baselines.rollingMeanSD] (σ floored at [floor]); null under [minCount] values.
+     * Swift twin: `WeeklyDigestEngine.personalSpread`.
+     */
+    private fun personalSpread(values: List<Double>, minCount: Int, floor: Double): Double? {
+        if (values.size < minCount) return null
+        val cfg = MetricCfg(
+            minVal = -Double.MAX_VALUE, maxVal = Double.MAX_VALUE, floorSpread = floor,
+            halfLifeB = 14.0, halfLifeS = 21.0,
+        )
+        // rollingMeanSD stores σ / 1.253 (its abs-dev space); undo that.
+        return Baselines.rollingMeanSD(values, cfg, window = values.size).spread * 1.253
+    }
+
+    /** Whole days from [start] to [end]; 0 if either is unparseable. Swift twin: `WeeklyDigestEngine.dayIndex`. */
+    private fun dayIndex(start: String, end: String): Int {
+        val a = parseYMD(start) ?: return 0
+        val b = parseYMD(end) ?: return 0
+        return julianDayNumber(b[0], b[1], b[2]) - julianDayNumber(a[0], a[1], a[2])
+    }
+
     // MARK: - Balance read
 
     private fun balanceRead(summaries: List<WeeklyMetricSummary>): BalanceRead {
@@ -335,18 +566,16 @@ object WeeklyDigestEngine {
 
     // MARK: - Focal points
 
+    /** Pick 1–2 plain-English focal points, most salient first. Swift twin: `WeeklyDigestEngine.focalPoints`. */
     private fun focalPoints(
         summaries: List<WeeklyMetricSummary>,
         balance: BalanceRead,
         consistencySD: Double?,
         effortDisplayFactor: Double = 1.0,
+        span: Int = 7,
     ): List<String> {
         val movers = summaries
-            .filter {
-                it.weekOverWeek.current.n >= MIN_DAYS_FOR_FOCUS &&
-                    it.weekOverWeek.previous.n >= MIN_DAYS_FOR_FOCUS &&
-                    abs(it.normalisedMove) >= FOCUS_THRESHOLD
-            }
+            .filter { focusEligible(it, span) && abs(it.normalisedMove) >= FOCUS_THRESHOLD }
             .sortedByDescending { abs(it.normalisedMove) }
 
         val lines = mutableListOf<String>()
@@ -392,18 +621,34 @@ object WeeklyDigestEngine {
     }
 
     /**
+     * Whether a metric can be a focal mover: an average needs [MIN_DAYS_FOR_FOCUS] days each
+     * side; a total needs the week that far along; a latest reading needs one each side.
+     * Swift twin: `WeeklyDigestEngine.focusEligible`.
+     */
+    private fun focusEligible(s: WeeklyMetricSummary, span: Int): Boolean {
+        val cur = s.weekOverWeek.current.n
+        val prev = s.weekOverWeek.previous.n
+        return when (s.metric.spec.rollup) {
+            WeeklyRollup.MEAN -> cur >= MIN_DAYS_FOR_FOCUS && prev >= MIN_DAYS_FOR_FOCUS
+            WeeklyRollup.SUM -> span >= MIN_DAYS_FOR_FOCUS && cur >= 1 && prev >= 1
+            WeeklyRollup.LATEST -> cur >= 1 && prev >= 1
+        }
+    }
+
+    /**
      * Render one mover as a plain-English sentence with good/bad framing. Mirrors Swift.
      * [effortDisplayFactor] rescales the EFFORT averages (and its pts fallback) for
      * display only — % is scale-invariant.
      */
     private fun moverSentence(s: WeeklyMetricSummary, effortDisplayFactor: Double = 1.0): String {
+        val spec = s.metric.spec
         val f = if (s.metric == WeeklyMetric.EFFORT) effortDisplayFactor else 1.0
         val directionWord = if (s.wowDelta > 0) "up" else if (s.wowDelta < 0) "down" else "flat"
         val pct = s.weekOverWeek.pctChange
-        val magnitude = if (pct != null && abs(pct) >= 1) {
-            "${abs(pct).roundToInt()}%"
+        val magnitude = if (spec.percentChange && pct != null && abs(pct) >= 1) {
+            "${roundedInt(abs(pct))}%"
         } else {
-            val suffix = if (s.metric.unit.isEmpty()) " pts" else " ${s.metric.unit}"
+            val suffix = if (spec.unit.isEmpty() || spec.unit == "%") " pts" else " ${spec.unit}"
             "${round1(abs(s.wowDelta) * f)}$suffix"
         }
         val frame = when (s.wowGoodness) {
@@ -411,9 +656,14 @@ object WeeklyDigestEngine {
             -1 -> ", worth a look"
             else -> ""
         }
-        val thisAvg = (s.thisWeek.mean * f).roundToInt()
-        val lastAvg = (s.weekOverWeek.previous.mean * f).roundToInt()
-        return "${s.metric.label} is $directionWord $magnitude week over week (avg $thisAvg vs $lastAvg)$frame."
+        val thisAvg = formatValue(s.thisValue * f, spec.decimals)
+        val lastAvg = formatValue(s.lastValue * f, spec.decimals)
+        val word = when (spec.rollup) {
+            WeeklyRollup.MEAN -> "avg"
+            WeeklyRollup.SUM -> "total"
+            WeeklyRollup.LATEST -> "latest"
+        }
+        return "${spec.label} is $directionWord $magnitude week over week ($word $thisAvg vs $lastAvg)$frame."
     }
 
     // MARK: - Range extraction
@@ -522,5 +772,61 @@ object WeeklyDigestEngine {
 
     // MARK: - Formatting helpers
 
-    private fun round1(x: Double): Double = (x * 10).roundToInt() / 10.0
+    /**
+     * Round half away from zero, as Swift's `rounded()` does (`roundToInt` rounds half up,
+     * which differs for negative halves; skin-temp deviation can be negative). `a - floor(a)`
+     * is exact, unlike `floor(a + 0.5)`. Swift twin: `WeeklyDigestEngine.roundedInt`.
+     */
+    private fun roundedInt(x: Double): Int {
+        val a = abs(x)
+        val f = floor(a)
+        val r = if (a - f >= 0.5) f + 1 else f
+        return (if (x < 0) -r else r).toInt()
+    }
+
+    private fun round1(x: Double): Double = roundedInt(x * 10) / 10.0
+
+    /** A weekly value for narration: whole number, or one decimal (never "-0.0"). Swift twin: `WeeklyDigestEngine.formatValue`. */
+    private fun formatValue(x: Double, decimals: Int): String =
+        if (decimals == 0) "${roundedInt(x)}" else "${round1(x) + 0.0}"
 }
+
+// MARK: - Card sections (#90)
+
+/**
+ * How the weekly card groups the metrics after the headline five, shared with Swift so both
+ * cards list the same rows in the same order. Swift twin: `WeeklyDigestSection`.
+ */
+enum class WeeklyDigestSection(val key: String) {
+    ACTIVITY("activity"),
+    SLEEP("sleep"),
+    OVERNIGHT_VITALS("overnightVitals"),
+    STRESS_ENERGY("stressEnergy"),
+    TRAINING("training");
+
+    /** The section's metrics, in display order. */
+    val metrics: List<WeeklyMetric>
+        get() = when (this) {
+            ACTIVITY -> listOf(WeeklyMetric.STEPS, WeeklyMetric.ACTIVE_KCAL, WeeklyMetric.INTENSITY_MINUTES)
+            SLEEP -> listOf(
+                WeeklyMetric.SLEEP_DURATION, WeeklyMetric.SLEEP_EFFICIENCY, WeeklyMetric.DEEP_SLEEP,
+                WeeklyMetric.REM_SLEEP, WeeklyMetric.SLEEP_SCORE,
+            )
+            OVERNIGHT_VITALS -> listOf(WeeklyMetric.SPO2, WeeklyMetric.RESPIRATION, WeeklyMetric.SKIN_TEMP_DEVIATION)
+            STRESS_ENERGY -> listOf(WeeklyMetric.STRESS, WeeklyMetric.BODY_BATTERY_RECHARGE)
+            TRAINING -> listOf(WeeklyMetric.TRAINING_LOAD, WeeklyMetric.VO2MAX)
+        }
+}
+
+/** One section's rows: only the metrics that carried a reading this week. */
+data class WeeklyDigestSectionRows(val section: WeeklyDigestSection, val rows: List<WeeklyMetricSummary>)
+
+/**
+ * The card's sections for [digest]: a row only when its metric has data this week, and a section
+ * only when it has a row. Swift twin: `WeeklyDigestEngine.sections`.
+ */
+fun WeeklyDigestEngine.sections(digest: WeeklyDigest): List<WeeklyDigestSectionRows> =
+    WeeklyDigestSection.values().mapNotNull { section ->
+        val rows = section.metrics.mapNotNull { digest.summary(it) }.filter { it.hasData }
+        if (rows.isEmpty()) null else WeeklyDigestSectionRows(section, rows)
+    }

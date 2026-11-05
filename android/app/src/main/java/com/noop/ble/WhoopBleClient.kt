@@ -4912,6 +4912,8 @@ class WhoopBleClient(
                     if (queued) {
                         val mins = decision.candidate.durationS / 60
                         log("Nap detection: queued a ~$mins-min nap for review.")
+                        // #92: the opt-in "nap waiting for review" notification (its own gate dedupes).
+                        com.noop.notif.AutomationResultNotifier.onNapQueued(context, decision.candidate.start, mins)
                     }
                 }
             } catch (t: Throwable) {

@@ -24,31 +24,20 @@ import Foundation
 
 enum WeeklyDigestSource {
 
-    /// Build the digest for the week containing today's local day from a DailyMetric
-    /// history. Extracts each tracked metric into a "yyyy-MM-dd"→value map and hands
-    /// it to the pure engine.
+    /// Build the digest for the week containing `anchorDay` from a DailyMetric history plus
+    /// the paired watch's series (#89, read by `WeeklyDigestLoader`). The mapping into the
+    /// engine's day→value maps is the pure `WeeklyDigestInputs.series`, shared with Android.
     static func digest(from days: [DailyMetric],
                        anchorDay: String,
                        importedSleep: [String: ImportedSleepFigures] = [:],
                        computedSleep: [String: ImportedSleepFigures] = [:],
+                       watch: WeeklyDigestWatchSeries = WeeklyDigestWatchSeries(),
                        effortDisplayFactor: Double = UnitPrefs.currentEffortDisplayFactor()) -> WeeklyDigest {
-        var charge: [String: Double] = [:]
-        var effort: [String: Double] = [:]
-        var rest: [String: Double] = [:]
-        var rhr: [String: Double] = [:]
-        var hrv: [String: Double] = [:]
-        for d in days {
-            if let v = d.recovery { charge[d.day] = v }
-            if let v = d.strain   { effort[d.day] = v }
-            // Rest = the one resolver every surface reads (import, then the engine's score, #55).
-            if let r = Repository.restScore(d, imported: importedSleep[d.day], computed: computedSleep[d.day]) {
-                rest[d.day] = r
-            }
-            if let v = d.restingHr { rhr[d.day] = Double(v) }
-            if let v = d.avgHrv    { hrv[d.day] = v }
+        let rows = days.map {
+            WeeklyDigestLoader.digestDay($0, importedSleep: importedSleep, computedSleep: computedSleep)
         }
         return WeeklyDigestEngine.build(
-            byMetric: [.charge: charge, .effort: effort, .rest: rest, .rhr: rhr, .hrv: hrv],
+            byMetric: WeeklyDigestInputs.series(days: rows, watch: watch),
             anchorDay: anchorDay,
             effortDisplayFactor: effortDisplayFactor)
     }
@@ -60,17 +49,27 @@ enum WeeklyDigestSource {
 /// (an empty view) when there's no data this week, so it's safe to always place.
 struct WeeklyDigestCard: View {
     @EnvironmentObject var repo: Repository
+    @State private var watch = WeeklyDigestWatchSeries()
 
     var body: some View {
-        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
-        if digest.isEmpty {
-            EmptyView()
-        } else {
-            // Content owns its own frosted cards (the domain score row + the signals
-            // card), so it's no longer wrapped in an outer NoopCard — that would double
-            // the frost. The compact flag trims it to the three headline scores.
-            WeeklyDigestContent(digest: digest, compact: true)
+        let anchor = Repository.localDayKey(Date())
+        let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: anchor,
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
+        Group {
+            if digest.isEmpty {
+                // Zero-size rather than EmptyView, so the `.task` below still runs and a week
+                // carried only by the watch's series can appear once they load.
+                Color.clear.frame(width: 0, height: 0)
+            } else {
+                // Content owns its own frosted cards (the domain score row + the signals
+                // card), so it's no longer wrapped in an outer NoopCard — that would double
+                // the frost. The compact flag trims it to the three headline scores.
+                WeeklyDigestContent(digest: digest, compact: true)
+            }
+        }
+        // Reload when a pass rewrites the history (the day count moves) or the day rolls.
+        .task(id: "\(anchor)|\(repo.days.count)") {
+            watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: anchor)
         }
     }
 }
@@ -80,6 +79,7 @@ struct WeeklyDigestCard: View {
 /// The weekly digest as a full screen (for a sidebar `.digest` case).
 struct WeeklyDigestView: View {
     @EnvironmentObject var repo: Repository
+    @State private var watch = WeeklyDigestWatchSeries()
 
     var body: some View {
         ScreenScaffold(title: "Week in review",
@@ -96,7 +96,7 @@ struct WeeklyDigestView: View {
                     : "Loading your history…")
             } else {
                 let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep)
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
                 if digest.isEmpty {
                     DataPendingNote(
                         title: "No readings this week yet",
@@ -107,6 +107,9 @@ struct WeeklyDigestView: View {
                     }
                 }
             }
+        }
+        .task(id: "\(Repository.localDayKey(Date()))|\(repo.days.count)") {
+            watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: Repository.localDayKey(Date()))
         }
     }
 }
@@ -123,6 +126,44 @@ extension WeeklyMetric {
         case .rest:   return String(localized: "Rest")
         case .rhr:    return String(localized: "Resting HR")
         case .hrv:    return String(localized: "HRV")
+        case .steps:  return String(localized: "Steps")
+        case .activeKcal: return String(localized: "Active calories")
+        case .intensityMinutes: return String(localized: "Intensity minutes")
+        case .sleepDuration: return String(localized: "Sleep duration")
+        case .sleepEfficiency: return String(localized: "Sleep efficiency")
+        case .deepSleep: return String(localized: "Deep sleep")
+        case .remSleep: return String(localized: "REM sleep")
+        case .sleepScore: return String(localized: "Sleep score")
+        case .spo2: return String(localized: "SpO₂")
+        case .respiration: return String(localized: "Respiration")
+        case .skinTempDeviation: return String(localized: "Skin temperature")
+        case .stress: return String(localized: "Stress")
+        case .bodyBatteryRecharge: return String(localized: "Body Battery recharge")
+        case .trainingLoad: return String(localized: "Training load")
+        case .vo2max: return String(localized: "VO₂max")
+        }
+    }
+}
+
+extension WeeklyDigestSection {
+    /// The section heading in the current locale.
+    var localizedTitle: String {
+        switch self {
+        case .activity:        return String(localized: "Activity")
+        case .sleep:           return String(localized: "Sleep")
+        case .overnightVitals: return String(localized: "Overnight vitals")
+        case .stressEnergy:    return String(localized: "Stress & energy")
+        case .training:        return String(localized: "Training")
+        }
+    }
+
+    /// The colour world the section's rows sit in.
+    var domain: DomainTheme {
+        switch self {
+        case .activity, .training: return .effort
+        case .sleep:               return .rest
+        case .overnightVitals:     return .charge
+        case .stressEnergy:        return .stress
         }
     }
 }
@@ -172,6 +213,8 @@ struct WeeklyDigestContent: View {
         case .rest:   return .rest
         case .hrv:    return .rest    // HRV shares the Rest / periwinkle world
         case .rhr:    return .stress
+        default:
+            return WeeklyDigestSection.allCases.first { $0.metrics.contains(m) }?.domain ?? .charge
         }
     }
 
@@ -298,8 +341,9 @@ struct WeeklyDigestContent: View {
     @ViewBuilder
     private var detailCard: some View {
         let signals = secondarySignals
+        let sections = WeeklyDigestEngine.sections(digest)
         let hasFocal = !digest.focalPoints.isEmpty
-        if hasFocal || !signals.isEmpty || !compact {
+        if hasFocal || !signals.isEmpty || !sections.isEmpty || !compact {
             NoopCard {
                 VStack(alignment: .leading, spacing: 14) {
                     if hasFocal {
@@ -318,6 +362,15 @@ struct WeeklyDigestContent: View {
                                 metricRow(row)
                             }
                         }
+                    }
+
+                    // The metrics after the headline five, grouped; a row only when it has data
+                    // this week (#90).
+                    ForEach(sections, id: \.section.rawValue) { group in
+                        if hasFocal || !signals.isEmpty || group.section != sections.first?.section {
+                            Divider().overlay(StrandPalette.hairline)
+                        }
+                        sectionBlock(group)
                     }
 
                     if !compact { footer }
@@ -378,6 +431,45 @@ struct WeeklyDigestContent: View {
         .accessibilityLabel(rowAccessibility(s, effortScale: effortScale))
     }
 
+    // MARK: Sections (#90)
+
+    private func sectionBlock(_ group: WeeklyDigestSectionRows) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(group.section.localizedTitle)
+                .font(StrandFont.caption)
+                .foregroundStyle(StrandPalette.textTertiary)
+                .accessibilityAddTraits(.isHeader)
+            ForEach(group.rows, id: \.metric.rawValue) { row in
+                VStack(alignment: .leading, spacing: 6) {
+                    metricRow(row)
+                    if let progress = row.targetProgress, let target = row.metric.spec.weeklyTarget {
+                        targetBar(progress: progress, value: row.thisValue, target: target)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Progress toward a weekly goal (intensity minutes vs 150).
+    private func targetBar(progress: Double, value: Double, target: Double) -> some View {
+        let label = String(localized: "\(Int(value.rounded())) of \(Int(target.rounded())) min")
+        return VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(StrandPalette.hairline)
+                    Capsule().fill(StrandPalette.effortColor)
+                        .frame(width: geo.size.width * min(1, max(0, progress)))
+                }
+            }
+            .frame(height: 6)
+            Text(label)
+                .font(StrandFont.footnote)
+                .foregroundStyle(StrandPalette.textTertiary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
     private func deltaChip(_ s: WeeklyMetricSummary) -> some View {
         let tone = chipTone(s)
         let arrow = s.wowDelta > 0 ? "arrow.up" : (s.wowDelta < 0 ? "arrow.down" : "minus")
@@ -428,6 +520,7 @@ struct WeeklyDigestContent: View {
         if s.metric == .effort {
             return "\(UnitFormatter.effortDisplay(s.thisWeek.mean, scale: effortScale)) / \(UnitFormatter.effortScaleMax(effortScale))"
         }
+        if !WeeklyMetric.allCases.prefix(5).contains(s.metric) { return WeeklyDigestValueText.value(s) }
         let v = Int(s.thisWeek.mean.rounded())
         return s.metric.unit.isEmpty ? "\(v)" : "\(v) \(s.metric.unit)"
     }
@@ -437,6 +530,10 @@ struct WeeklyDigestContent: View {
         // Always speak in percent so the chip's ↑/↓ + sign reads as a delta. A sub-1% mover
         // used to fall back to a bare "0.1" which, once the card prepended "−", looked like a
         // truncated number rather than a change.
+        // A metric already in % or a ±deviation reads its change in its own units (#90).
+        if !s.metric.spec.percentChange {
+            return WeeklyDigestValueText.number(abs(s.wowDelta), decimals: 1)
+        }
         if let pct = s.weekOverWeek.pctChange {
             return abs(pct) >= 1 ? "\(Int(abs(pct).rounded()))%" : "<1%"
         }
@@ -483,6 +580,28 @@ struct WeeklyDigestContent: View {
     }
 
     private func fmt1(_ x: Double) -> String { String(format: "%.1f", x) }
+}
+
+// MARK: - Value text for the later metrics (#90)
+
+/// The this-week figure for a non-headline metric: the mean, total or latest reading per
+/// its roll-up, with its unit. Units that read the same in every language stay verbatim.
+enum WeeklyDigestValueText {
+    static func value(_ s: WeeklyMetricSummary) -> String {
+        guard s.hasData else { return "—" }
+        let spec = s.metric.spec
+        let n = number(s.thisValue, decimals: spec.decimals)
+        switch s.metric {
+        case .sleepDuration: return String(localized: "\(n) h")
+        case .intensityMinutes, .deepSleep, .remSleep: return String(localized: "\(Int(s.thisValue.rounded())) min")
+        case .skinTempDeviation: return "\(s.thisValue > 0 ? "+" : "")\(n) °C"
+        default: return spec.unit.isEmpty || spec.unit == "steps" ? n : "\(n) \(spec.unit)"
+        }
+    }
+
+    static func number(_ x: Double, decimals: Int) -> String {
+        decimals == 0 ? "\(Int(x.rounded()))" : String(format: "%.1f", x)
+    }
 }
 
 // MARK: - Rough-comparison chip contract (#463, testable mirror of Android)
