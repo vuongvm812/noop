@@ -94,4 +94,7 @@ interface HuaweiSyncCursor {
     fun lastSyncAt(deviceId: String): Long?
     fun emptyStreak(deviceId: String): Int
     fun recordSyncOutcome(deviceId: String, at: Long, empty: Boolean)
+    /** Epoch seconds before which the band's P2P data dictionary is not asked again; null when it was served. */
+    fun dictUnavailableUntil(deviceId: String): Long?
+    fun setDictUnavailableUntil(deviceId: String, ts: Long)
 }

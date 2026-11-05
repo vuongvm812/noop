@@ -113,6 +113,10 @@ class HuaweiHistorySyncRoomTest {
         stallAfterBlocks: Int = Int.MAX_VALUE,
         workoutListBreaksAbove: Long = Long.MAX_VALUE,
         legacySleep: List<List<Pair<Int, ByteArray>>> = emptyList(),
+        stepErrorOn: Set<Int> = emptySet(),
+        sleepCountError: Long? = null,
+        pingUnavailable: Boolean = false,
+        workoutListErrorAt: Long? = null,
     ) = HuaweiHistoryBand.Script(
         steps = listOf(
             HuaweiHistoryBand.StepRecord(yesterday + 8 * 3_600, listOf(
@@ -143,6 +147,10 @@ class HuaweiHistorySyncRoomTest {
         silentOn = silentOn,
         stallAfterBlocks = stallAfterBlocks,
         workoutListBreaksAbove = workoutListBreaksAbove,
+        stepErrorOn = stepErrorOn,
+        sleepCountError = sleepCountError,
+        pingUnavailable = pingUnavailable,
+        workoutListErrorAt = workoutListErrorAt,
     )
 
     private class Session(val band: HuaweiHistoryBand, val link: FakeHuaweiLink)
@@ -154,9 +162,11 @@ class HuaweiHistorySyncRoomTest {
         return Session(b, link)
     }
 
+    private val logged = ArrayList<String>()
+
     private fun sync(s: Session, caps: HuaweiCapabilities = caps(), at: Long = now): HuaweiSyncSummary = runBlocking {
         HuaweiHistorySync(prefs, store = { id, batch -> HuaweiHistoryIngest.store(db, id, batch); true },
-            clock = { at }, utcOffset = { 0 }, replyTimeoutMs = 300).run(s.link, caps, band)
+            clock = { at }, utcOffset = { 0 }, log = { logged.add(it) }, replyTimeoutMs = 300).run(s.link, caps, band)
     }
 
     private fun rows(sql: String, vararg args: Any): List<List<Any?>> =
@@ -404,9 +414,92 @@ class HuaweiHistorySyncRoomTest {
         val s = session(script(workoutListBreaksAbove = 0L))
         val summary = sync(s)
         assertTrue(summary.failures.toString(), summary.failures.any { it.startsWith("workouts") })
-        // The first half of every split fails too, so the walk stops after one request per depth.
-        assertEquals(1 + HuaweiHistorySync.MAX_WORKOUT_SPLITS, s.band.received.count { it.serviceId == 0x17 && it.commandId == 0x07 })
+        // A failed slice no longer ends the walk: every slice splits to the full depth, 2^(n+1) - 1 requests.
+        assertEquals((1 shl (HuaweiHistorySync.MAX_WORKOUT_SPLITS + 1)) - 1,
+            s.band.received.count { it.serviceId == 0x17 && it.commandId == 0x07 })
+        assertTrue(summary.failures.toString(), summary.failures.any { it.contains("count=") && it.contains("list=") })
         assertTrue(rows("SELECT 1 FROM workout WHERE deviceId = ?", band).isEmpty())
+        assertNull("a skipped slice holds the workout watermark", prefs.lastWorkoutEnd(band))
+        assertNull(prefs.lastSync(band, HuaweiDataType.WORKOUTS))
+    }
+
+    @Test
+    fun aStepIndexTheBandRefusesIsSkippedAndTheWatermarkStays() {
+        val s = session(script(stepErrorOn = setOf(0)))
+        val summary = sync(s)
+        assertTrue(summary.failures.toString(), summary.failures.contains("steps: STEP_DATA day 0 answered 0x186A4"))
+        assertTrue(summary.failures.toString(), summary.failures.none { it.contains("missing tag") })
+        assertNull("the day is retried", prefs.lastSync(band, HuaweiDataType.STEPS))
+        assertEquals("the other index still lands", listOf(95.0, 96.0, 97.0, 98.0), metric(DeviceMetricKind.SPO2_PCT).map { it.second })
+        assertEquals(2, s.band.received.count { it.serviceId == 0x07 && it.commandId == 0x0B })
+        assertTrue(logged.toString(), logged.any { it.contains("07/0B") && it.contains("0x186A4") })
+        assertEquals("other streams are unaffected", now, prefs.lastSync(band, HuaweiDataType.STRESS))
+    }
+
+    @Test
+    fun aBandWithTheSleepFileNeverGetsTheLegacySleepRequests() {
+        val s = session(script(sleepCountError = 0x186A4L))
+        val summary = sync(s, caps(legacySleep = true))
+        assertTrue(summary.failures.toString(), summary.failures.isEmpty())
+        assertTrue(s.band.received.none { it.serviceId == 0x07 && it.commandId in setOf(0x0C, 0x0D) })
+        assertTrue(s.band.received.any { it.serviceId == 0x2C && it.tlv.contains(0x01) && it.tlv.string(0x01) == "sequence_data" })
+    }
+
+    @Test
+    fun aLegacySleepRefusalOfNotSupportedIsLoggedNotReported() {
+        val s = session(script(sleepCountError = 0x186A4L))
+        val summary = sync(s, caps(newSync = false, legacySleep = true, sleepFile = false))
+        assertTrue(summary.failures.toString(), summary.failures.none { it.startsWith("sleep:") })
+        assertTrue(logged.toString(), logged.any { it.contains("07/0C") && it.contains("0x186A4") })
+        assertNull(prefs.lastSync(band, HuaweiDataType.SLEEP))
+        assertEquals(1, s.band.received.count { it.serviceId == 0x07 && it.commandId == 0x0C })
+    }
+
+    @Test
+    fun aLegacySleepRefusalOfAnotherCodeIsAFailure() {
+        val s = session(script(sleepCountError = 0x186A5L))
+        val summary = sync(s, caps(newSync = false, legacySleep = true, sleepFile = false))
+        assertTrue(summary.failures.toString(), summary.failures.contains("sleep: SLEEP_DATA_COUNT answered 0x186A5"))
+    }
+
+    @Test
+    fun anUnansweredDictionaryPingIsUnavailableNotAFailureAndIsNotRepeatedForADay() {
+        val s = session(script(pingUnavailable = true))
+        val summary = sync(s)
+        assertTrue(summary.failures.toString(), summary.failures.isEmpty())
+        assertEquals(now + 86_400, prefs.dictUnavailableUntil(band))
+        assertEquals(1, s.band.received.count { it.serviceId == 0x34 })
+        val again = session(script(pingUnavailable = true))
+        assertTrue(sync(again, at = now + 3_600).failures.isEmpty())
+        assertTrue("no re-ping within 24 h", again.band.received.none { it.serviceId == 0x34 })
+        val later = session(script())
+        sync(later, at = now + 86_401)
+        assertTrue("asked again after a day", later.band.received.any { it.serviceId == 0x34 })
+        assertEquals(listOf(48.5, 51.0), metric(DeviceMetricKind.HRV_MS).map { it.second })
+    }
+
+    @Test
+    fun theDictionaryUnavailableMarkerFollowsAReKeyAndIsDropped() {
+        prefs.setDictUnavailableUntil(band, 123)
+        prefs.moveDeviceState(band, "huawei-TEST-0002")
+        assertNull(prefs.dictUnavailableUntil(band))
+        assertEquals(123L, prefs.dictUnavailableUntil("huawei-TEST-0002"))
+        prefs.dropDeviceState("huawei-TEST-0002")
+        assertNull(prefs.dictUnavailableUntil("huawei-TEST-0002"))
+    }
+
+    @Test
+    fun oneBadWorkoutSliceKeepsTheOthersAndHoldsTheWatermark() {
+        val bad = now - 10 * 86_400L
+        val s = session(script(workoutListErrorAt = bad))
+        val summary = sync(s)
+        assertTrue(summary.failures.toString(), summary.failures.any { it.startsWith("workouts:") && it.contains("band answered 0x186A4") })
+        assertEquals(1, summary.failures.count { it.startsWith("workouts:") })
+        assertEquals("the workout in a good slice is stored", 1, rows("SELECT 1 FROM workout WHERE deviceId = ?", band).size)
+        val held = prefs.lastWorkoutEnd(band)
+        assertNotNull(held)
+        assertTrue("the watermark stops before the skipped slice: $held", held!! < bad)
+        assertNull(prefs.lastSync(band, HuaweiDataType.WORKOUTS))
     }
 
     /** Every command a sync sends is a history read, a block/done, P2P to the dictionary, or a switch set ON. */

@@ -45,6 +45,15 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
         val workoutListBreaksAbove: Long = Long.MAX_VALUE,
         /** Stop streaming a file after this many blocks (the rest never arrives). */
         val stallAfterBlocks: Int = Int.MAX_VALUE,
+        /** 07/0B answers this result code instead of data for these step indexes. */
+        val stepErrorOn: Set<Int> = emptySet(),
+        /** 07/0C answers this result code (100004 on a Band 10) instead of a count. */
+        val sleepCountError: Long? = null,
+        /** The P2P ping goes unanswered, as on a band without the data dictionary service. */
+        val pingUnavailable: Boolean = false,
+        /** A 17/07 range containing this timestamp answers [workoutListError]. */
+        val workoutListErrorAt: Long? = null,
+        val workoutListError: Long = 0x186A4L,
     )
 
     class Received(val serviceId: Int, val commandId: Int, val tlv: HuaweiTlv, val encrypted: Boolean)
@@ -91,12 +100,14 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
             0x07 to 0x0A -> reply(sid, cid, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, script.steps.size)))
             0x07 to 0x0B -> {
                 val i = t.tlv(0x81).u16(0x02)
+                if (i in script.stepErrorOn) return reply(sid, cid, HuaweiTlv().putInt(0x7F, 0x186A4))
                 val r = script.steps[i]
                 val c = HuaweiTlv().putShort(0x02, i).putInt(0x03, r.baseTs.toInt())
                 for ((off, data) in r.minutes) c.put(0x84, HuaweiTlv().putByte(0x05, off).put(0x06, data))
                 reply(sid, cid, HuaweiTlv().put(0x81, c))
             }
-            0x07 to 0x0C -> reply(sid, cid, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, script.legacySleep.size)))
+            0x07 to 0x0C -> if (script.sleepCountError != null) reply(sid, cid, HuaweiTlv().putInt(0x7F, script.sleepCountError.toInt()))
+                else reply(sid, cid, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, script.legacySleep.size)))
             0x07 to 0x0D -> {
                 val i = t.tlv(0x81).u16(0x02)
                 val c = HuaweiTlv().putShort(0x02, i)
@@ -145,6 +156,9 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
                 val c = t.tlv(0x81)
                 val start = c.u32(0x03)
                 val end = c.u32(0x04)
+                if (script.workoutListErrorAt?.let { it in start..end } == true) {
+                    return reply(sid, cid, HuaweiTlv().putInt(0x7F, script.workoutListError.toInt()))
+                }
                 val list = script.workouts.filter { w -> w.totals.u32(0x04) in start..end }
                 val out = HuaweiTlv().putShort(0x02, list.size + if (end - start > script.workoutListBreaksAbove) 1 else 0)
                 for (w in list) out.put(0x85, HuaweiTlv().putShort(0x06, w.number).putShort(0x07, w.pages.size).putShort(0x08, w.pace.size))
@@ -174,7 +188,7 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
     private fun p2p(t: HuaweiTlv): List<ByteArray>? {
         val seq = t.u16(0x02)
         return when (t.byte(0x01)) {
-            1 -> reply(0x34, 0x01, HuaweiTlv().putByte(0x01, 3).putShort(0x02, seq)
+            1 -> if (script.pingUnavailable) null else reply(0x34, 0x01, HuaweiTlv().putByte(0x01, 3).putShort(0x02, seq)
                 .putString(0x03, HuaweiHistorySync.PKG_BAND_FILESYNC).putString(0x04, HuaweiHistorySync.PKG_HEALTH)
                 .putInt(0x08, HuaweiHistorySync.P2P_AVAILABLE))
             2 -> {

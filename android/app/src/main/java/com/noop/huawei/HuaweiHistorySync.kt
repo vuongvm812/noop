@@ -44,6 +44,9 @@ data class HuaweiSyncSummary(
     val empty: Boolean get() = counts.values.all { it == 0 }
 }
 
+/** A reply carrying a result code other than OK; [code] is the band's, unmodified. */
+class BandRefusedException(val code: Long, message: String) : HuaweiProtocolException(message)
+
 class HuaweiHistorySync(
     private val cursor: HuaweiSyncCursor,
     /** Persists one batch; true when it committed. The app's is [com.noop.data.HuaweiHistoryIngest.store]. */
@@ -123,6 +126,7 @@ class HuaweiHistorySync(
         private val done = LinkedHashMap<HuaweiDataType, Long>()
         private val dictionaryCursors = LinkedHashMap<Int, Long>()
         private var workoutEnd: Long? = null
+        private var workoutDropped = false
         private var p2pSequence = 0
 
         private val files = HuaweiFileDownload(link, replyTimeoutMs)
@@ -168,8 +172,9 @@ class HuaweiHistorySync(
             ).filter { (c, _) -> caps.supports(c.serviceId, c.commandId) }
             val before = failures.size
             for ((command, tlv) in switches) stream("switch $command") {
-                val code = ask(command, tlv).resultCode()
-                if (code != null && code != HuaweiTlv.RESULT_OK) failures.add("switch $command: band answered 0x%X".format(code))
+                val reply = ask(command, tlv)
+                val code = refusal(command, reply, "switch $command")
+                if (code != null) failures.add("switch $command: band answered 0x%X".format(code))
             }
             // A switch that failed is tried again next sync; the band keeps the ones that took.
             if (failures.size == before) cursor.setSwitchesEnabled(deviceId)
@@ -186,31 +191,56 @@ class HuaweiHistorySync(
             stream("steps") {
                 val start = localMidnight(since(HuaweiDataType.STEPS))
                 val count = countReply(HuaweiCommand.STEP_DATA_COUNT, start, now)
+                var skipped = 0
                 for (i in 0 until count) {
-                    val c = ask(HuaweiCommand.STEP_DATA, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, i))).tlv(0x81)
-                    val base = c.u32(0x03)
-                    for (rec in c.tlvs(0x84)) {
-                        val offset = rec.byte(0x05)
-                        HuaweiFitnessDecoder.minuteSample(base, offset, rec.bytes(0x06))?.let { minutes.add(it) }
+                    // One refused or malformed index is skipped and reported; the rest of the stream still reads.
+                    val what = "STEP_DATA day $i"
+                    try {
+                        val reply = askChecked(HuaweiCommand.STEP_DATA, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, i)), what)
+                        if (!reply.contains(0x81)) throw HuaweiProtocolException("$what returned no data")
+                        val c = reply.tlv(0x81)
+                        val base = c.u32(0x03)
+                        val decoded = ArrayList<HuaweiFitnessDecoder.MinuteSample>()
+                        for (rec in c.tlvs(0x84)) {
+                            val offset = rec.byte(0x05)
+                            HuaweiFitnessDecoder.minuteSample(base, offset, rec.bytes(0x06))?.let { decoded.add(it) }
+                        }
+                        minutes.addAll(decoded)
+                    } catch (e: HuaweiProtocolException) {
+                        skipped++
+                        failures.add("steps: ${e.message}")
+                        if (e !is BandRefusedException) log("Huawei: $what unreadable: ${e.message}")
                     }
                 }
-                done[HuaweiDataType.STEPS] = now
+                // The watermark moves only when every day read, so a skipped day is asked for again next sync.
+                if (skipped == 0) done[HuaweiDataType.STEPS] = now
             }
         }
 
         // MARK: sleep
 
+        private fun usesSleepFile(): Boolean = caps.supports(0x07, 0x16) && caps.hasExpand(EXPAND_NEW_SLEEP)
+
         /** Legacy light / deep records, 07/0C count then 07/0D per index. Re-reads a day back for a night in progress. */
         suspend fun syncLegacySleep() {
             if (!caps.supports(0x07, 0x0C) || !caps.supports(0x07, 0x0D)) return
+            // A band with the TruSleep sequence file reads its sleep there; it refuses these (Band 10: 100004).
+            if (usesSleepFile()) return
             stream("sleep") {
                 val start = since(HuaweiDataType.SLEEP) - 86_400
-                val count = countReply(HuaweiCommand.SLEEP_DATA_COUNT, start, now)
-                for (i in 0 until count) {
-                    val c = ask(HuaweiCommand.SLEEP_DATA, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, i))).tlv(0x81)
-                    for (rec in c.tlvs(0x83)) {
-                        HuaweiFitnessDecoder.sleepSpan(rec.byte(0x04), rec.bytes(0x05))?.let { sleepSpans.add(it) }
+                try {
+                    val count = countReply(HuaweiCommand.SLEEP_DATA_COUNT, start, now)
+                    for (i in 0 until count) {
+                        val c = askChecked(HuaweiCommand.SLEEP_DATA, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, i)),
+                            "SLEEP_DATA record $i").tlv(0x81)
+                        for (rec in c.tlvs(0x83)) {
+                            HuaweiFitnessDecoder.sleepSpan(rec.byte(0x04), rec.bytes(0x05))?.let { sleepSpans.add(it) }
+                        }
                     }
+                } catch (e: BandRefusedException) {
+                    // "Not supported" is the band's answer, not a fault of this sync: logged, no failure entry.
+                    if (e.code != RESULT_NOT_SUPPORTED) throw e
+                    return@stream
                 }
                 done[HuaweiDataType.SLEEP] = now
             }
@@ -222,7 +252,7 @@ class HuaweiHistorySync(
          * `sleep_state.bin` / `sleep_data.bin` pair carries no stage the fold can place.
          */
         suspend fun syncSleepFile() {
-            if (!caps.supports(0x07, 0x16) || !caps.hasExpand(EXPAND_NEW_SLEEP)) return
+            if (!usesSleepFile()) return
             stream("sleep_file") {
                 val start = since(HuaweiDataType.SLEEP_FILE) - 86_400
                 val request = HuaweiFileRequest("sequence_data", HuaweiFileRequest.TYPE_SEQUENCE_DATA, start, now,
@@ -283,9 +313,17 @@ class HuaweiHistorySync(
                 if (caps.hasExpand(EXPAND_SKIN_TEMPERATURE)) add(HuaweiDictionaryDecoder.CLASS_SKIN_TEMPERATURE)
             }
             if (classes.isEmpty()) return
+            // A band that did not serve the service is not asked again for a day (Gadgetbridge treats it as absent).
+            if ((cursor.dictUnavailableUntil(deviceId) ?: 0L) > now) return
             stream("dictionary") {
-                if (!pingDictionary()) {
-                    failures.add("dictionary: the band's dictionary service did not answer as available")
+                val available = try {
+                    pingDictionary()
+                } catch (e: TimeoutCancellationException) {
+                    false
+                }
+                if (!available) {
+                    cursor.setDictUnavailableUntil(deviceId, now + DICTIONARY_RETRY_SECONDS)
+                    log("Huawei: the band's data dictionary service is unavailable; not asked again for 24 h")
                     return@stream
                 }
                 for (cls in classes) syncDictionaryClass(cls)
@@ -371,50 +409,77 @@ class HuaweiHistorySync(
                     false
                 }
                 val start = cursor.lastWorkoutEnd(deviceId)?.plus(1) ?: (now - HuaweiRadioPolicy.FIRST_BACKFILL_SECONDS)
-                val headers = workoutHeaders(start, now, 0) ?: return@stream
-                var latestEnd = cursor.lastWorkoutEnd(deviceId)
-                for (h in headers.sortedBy { it.number }) {
-                    val w = workout(h, newSteps) ?: continue
+                val walk = HeaderWalk()
+                workoutHeaders(start, now, 0, walk)
+                val previousEnd = cursor.lastWorkoutEnd(deviceId)
+                var latestEnd = previousEnd
+                for (h in walk.headers.sortedBy { it.number }) {
+                    val w = workout(h, newSteps)
+                    if (w == null) continue
                     workouts.add(w)
                     latestEnd = maxOf(latestEnd ?: 0L, w.totals.endTs)
                 }
+                // The watermark never passes a slice the band's list failed for: its workouts are asked for again.
+                val skipped = walk.skippedStart
+                if (skipped != null && latestEnd != null) latestEnd = maxOf(previousEnd ?: Long.MIN_VALUE, minOf(latestEnd, skipped - 1))
+                if (workoutDropped) latestEnd = previousEnd
                 workoutEnd = latestEnd
-                done[HuaweiDataType.WORKOUTS] = now
+                if (skipped == null && !workoutDropped) done[HuaweiDataType.WORKOUTS] = now
             }
         }
 
         private inner class WorkoutHeader(val number: Int, val dataCount: Int, val paceCount: Int)
 
+        /** The headers of the slices that listed cleanly, and the earliest start of a slice that did not. */
+        private inner class HeaderWalk {
+            val headers = ArrayList<WorkoutHeader>()
+            var skippedStart: Long? = null
+        }
+
         /**
          * 17/07 over [start, end]. A band error, or a count that disagrees with its own list, splits the range
-         * in two, up to [MAX_WORKOUT_SPLITS] deep; past that the range is reported and null returned.
+         * in two, up to [MAX_WORKOUT_SPLITS] deep; past that only that slice is skipped and reported, and the
+         * remaining slices are still read.
          */
-        private suspend fun workoutHeaders(start: Long, end: Long, depth: Int): List<WorkoutHeader>? {
+        private suspend fun workoutHeaders(start: Long, end: Long, depth: Int, walk: HeaderWalk) {
             val reply = ask(HuaweiCommand.WORKOUT_COUNT,
                 HuaweiTlv().put(0x81, HuaweiTlv().putInt(0x03, start.toInt()).putInt(0x04, end.toInt())))
-            val code = reply.resultCode()
-            val list = if (code == null && reply.contains(0x81)) {
+            val refused = refusal(HuaweiCommand.WORKOUT_COUNT, reply, "WORKOUT_COUNT $start-$end")
+            val why: String
+            if (refused != null) {
+                why = "band answered 0x%X".format(refused)
+            } else if (!reply.contains(0x81)) {
+                why = "reply without a list"
+            } else {
                 val c = reply.tlv(0x81)
                 val count = if (c.contains(0x02)) c.u16(0x02) else 0
                 val items = c.tlvs(0x85).map {
                     WorkoutHeader(it.u16(0x06), if (it.contains(0x07)) it.u16(0x07) else 0, if (it.contains(0x08)) it.u16(0x08) else 0)
                 }
-                items.takeIf { it.size == count }
-            } else null
-            if (list != null) return list
+                if (items.size == count) {
+                    walk.headers.addAll(items)
+                    return
+                }
+                why = "count=$count list=${items.size}"
+            }
             if (depth >= MAX_WORKOUT_SPLITS || end - start < 2) {
-                failures.add("workouts: the band's list for $start-$end stayed inconsistent")
-                return null
+                failures.add("workouts: list for $start-$end skipped ($why)")
+                walk.skippedStart = minOf(walk.skippedStart ?: start, start)
+                return
             }
             val mid = start + (end - start) / 2
-            val a = workoutHeaders(start, mid, depth + 1) ?: return null
-            val b = workoutHeaders(mid + 1, end, depth + 1) ?: return null
-            return a + b
+            workoutHeaders(start, mid, depth + 1, walk)
+            workoutHeaders(mid + 1, end, depth + 1, walk)
         }
 
         /** Totals (17/08) and every sample page (17/0A); a GPS track (0x2C) when 01/31 has the GPS bit. */
         private suspend fun workout(h: WorkoutHeader, newSteps: Boolean): HuaweiWatchIngest.Workout? {
             val totalsReply = ask(HuaweiCommand.WORKOUT_TOTALS, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, h.number)))
+            refusal(HuaweiCommand.WORKOUT_TOTALS, totalsReply, "WORKOUT_TOTALS workout ${h.number}")?.let {
+                failures.add("workouts: WORKOUT_TOTALS workout ${h.number} answered 0x%X".format(it))
+                workoutDropped = true
+                return null
+            }
             if (!totalsReply.contains(0x81)) return null
             val totals = HuaweiWorkoutDecoder.totals(fields(totalsReply.tlv(0x81))) ?: return null
             val samples = ArrayList<HuaweiWorkoutDecoder.Sample>()
@@ -423,7 +488,17 @@ class HuaweiHistorySync(
                 if (newSteps) req.putByte(0x06, 1)
                 req.put(0x07)
                 val reply = ask(HuaweiCommand.WORKOUT_DATA, HuaweiTlv().put(0x81, req))
-                if (!reply.contains(0x81)) continue
+                val refused = refusal(HuaweiCommand.WORKOUT_DATA, reply, "WORKOUT_DATA workout ${h.number} page $page")
+                if (refused != null) {
+                    failures.add("workouts: WORKOUT_DATA workout ${h.number} page $page answered 0x%X".format(refused))
+                    workoutDropped = true
+                    continue
+                }
+                if (!reply.contains(0x81)) {
+                    failures.add("workouts: WORKOUT_DATA workout ${h.number} page $page returned no data")
+                    workoutDropped = true
+                    continue
+                }
                 val c = reply.tlv(0x81)
                 val header = c.bytesOrNull(0x04) ?: continue
                 val data = c.bytesOrNull(0x05) ?: continue
@@ -435,7 +510,17 @@ class HuaweiHistorySync(
             if (caps.supports(0x17, 0x0C)) {
                 for (index in 0 until h.paceCount) {
                     val reply = ask(HuaweiCommand.WORKOUT_PACE, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, h.number).putShort(0x08, index)))
-                    if (!reply.contains(0x81)) continue
+                    val refused = refusal(HuaweiCommand.WORKOUT_PACE, reply, "WORKOUT_PACE workout ${h.number} block $index")
+                    if (refused != null) {
+                        failures.add("workouts: WORKOUT_PACE workout ${h.number} block $index answered 0x%X".format(refused))
+                        workoutDropped = true
+                        continue
+                    }
+                    if (!reply.contains(0x81)) {
+                        failures.add("workouts: WORKOUT_PACE workout ${h.number} block $index returned no data")
+                        workoutDropped = true
+                        continue
+                    }
                     val c = reply.tlv(0x81)
                     // A reply for another workout or block is skipped, as Gadgetbridge's pace sync skips it.
                     if (!c.contains(0x02) || c.u16(0x02) != h.number || !c.contains(0x08) || c.u16(0x08) != index) continue
@@ -455,12 +540,28 @@ class HuaweiHistorySync(
 
         // MARK: helpers
 
+        /**
+         * The band's refusal code when [reply] carries a result (tag 0x7F) other than OK, else null. Every refusal
+         * is logged: service/command id, command and code, as the band sent them and nothing inferred.
+         */
+        private fun refusal(command: HuaweiCommand, reply: HuaweiTlv, what: String): Long? {
+            val code = reply.resultCode()
+            if (code == null || code == HuaweiTlv.RESULT_OK) return null
+            log("Huawei: %02X/%02X %s refused, %s answered 0x%X".format(command.serviceId, command.commandId, command, what, code))
+            return code
+        }
+
+        /** [ask] that throws [BandRefusedException] naming [what] and the code when the band refused. */
+        private suspend fun askChecked(command: HuaweiCommand, tlv: HuaweiTlv, what: String = command.name): HuaweiTlv {
+            val reply = ask(command, tlv)
+            refusal(command, reply, what)?.let { throw BandRefusedException(it, "$what answered 0x%X".format(it)) }
+            return reply
+        }
+
         /** A FitnessData count request `{81, 03 start, 04 end}` → `81{02 count}`. */
         private suspend fun countReply(command: HuaweiCommand, start: Long, end: Long): Int {
-            val reply = ask(command, HuaweiTlv().put(0x81).putInt(0x03, start.toInt()).putInt(0x04, end.toInt()))
-            val code = reply.resultCode()
-            if (code != null && code != HuaweiTlv.RESULT_OK) throw HuaweiProtocolException("$command answered 0x%X".format(code))
-            if (!reply.contains(0x81)) return 0
+            val reply = askChecked(command, HuaweiTlv().put(0x81).putInt(0x03, start.toInt()).putInt(0x04, end.toInt()))
+            if (!reply.contains(0x81)) throw HuaweiProtocolException("${command.name} returned no count")
             val c = reply.tlv(0x81)
             return if (c.contains(0x02)) c.u16(0x02) else 0
         }
@@ -480,6 +581,12 @@ class HuaweiHistorySync(
 
         const val MAX_WORKOUT_SPLITS = 3
         const val MAX_DICTIONARY_PAGES = 64
+
+        /** How long a band that did not serve the P2P dictionary is left alone. */
+        const val DICTIONARY_RETRY_SECONDS = 86_400L
+
+        /** The band's "not supported" result (100004), which a Band 10 gives the legacy sleep records. */
+        const val RESULT_NOT_SUPPORTED = 0x000186A4L
 
         /** The inner sample block's size and bitmap when a 17/0A reply omits them. */
         const val DEFAULT_INNER_LENGTH = 13
