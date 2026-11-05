@@ -32,7 +32,7 @@ enum WeeklySummaryNotifier {
         // Checked before the digest is built, so a denied permission does not rebuild it every time.
         guard await center.notificationSettings().authorizationStatus == .authorized else { return }
         let digest = await WeeklyDigestLoader.digest(repo: repo, anchorDay: WeeklySummaryPolicy.anchorDay(forWeek: week))
-        guard let body = WeeklySummaryPolicy.body(digest) else {
+        guard let body = WeeklyDigestText.notificationBody(digest) else {
             // Nothing to say about an empty week: mark it, so it is not rebuilt on every republish.
             UserDefaults.standard.set(week, forKey: lastWeekKey)
             return

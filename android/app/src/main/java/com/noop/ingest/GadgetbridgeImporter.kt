@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
@@ -56,9 +63,9 @@ object GadgetbridgeImporter {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                return ImportSummary.failure(SOURCE_LABEL, e.message ?: "Couldn't read the export.")
+                return ImportSummary.failure(SOURCE_LABEL, e.message ?: "Couldn't read the export.") { e.message ?: uiString(R.string.l10n_gadgetbridge_importer_couldn_t_read_the_export_a6a3eadd) }
             } ?: return ImportSummary.failure(
-                SOURCE_LABEL, "No Gadgetbridge database found. Use Gadgetbridge's \"Export database\" file.")
+                SOURCE_LABEL, "No Gadgetbridge database found. Use Gadgetbridge's \"Export database\" file.") { uiString(R.string.l10n_gadgetbridge_importer_no_gadgetbridge_database_found_use_gadgetbridge_d3b98e59) }
             return try {
                 SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READONLY).use { src ->
                     importFrom(src, db, zone, nowTs, onStored)
@@ -66,7 +73,7 @@ object GadgetbridgeImporter {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ImportSummary.failure(SOURCE_LABEL, "Import failed: ${e.message}")
+                ImportSummary.failure(SOURCE_LABEL, "Import failed: ${e.message}") { uiString(R.string.l10n_gadgetbridge_importer_import_failed_1_s_e32168fa, e.message.toString()) }
             }
         } finally {
             work.deleteRecursively()
@@ -133,13 +140,13 @@ object GadgetbridgeImporter {
     ): ImportSummary {
         if (!hasTable(src, "DEVICE") || !hasTable(src, "HUAWEI_ACTIVITY_SAMPLE")) {
             return ImportSummary.failure(
-                SOURCE_LABEL, "This isn't a Gadgetbridge database with Huawei data (no DEVICE / HUAWEI_ACTIVITY_SAMPLE).")
+                SOURCE_LABEL, "This isn't a Gadgetbridge database with Huawei data (no DEVICE / HUAWEI_ACTIVITY_SAMPLE).") { uiString(R.string.l10n_gadgetbridge_importer_this_isn_t_a_gadgetbridge_database_bc3d0924) }
         }
         val devices = ArrayList<Long>()
         src.rawQuery("SELECT _id FROM DEVICE WHERE LOWER(MANUFACTURER) = 'huawei'", null).use { c ->
             while (c.moveToNext()) devices.add(long(c, 0))
         }
-        if (devices.isEmpty()) return ImportSummary.failure(SOURCE_LABEL, "No Huawei device in this Gadgetbridge database.")
+        if (devices.isEmpty()) return ImportSummary.failure(SOURCE_LABEL, "No Huawei device in this Gadgetbridge database.") { uiString(R.string.l10n_gadgetbridge_importer_no_huawei_device_in_this_gadgetbridge_e1e23c5f) }
 
         val total = HuaweiIngestCounts()
         try {
@@ -166,7 +173,7 @@ object GadgetbridgeImporter {
                 total.days += c.days; total.metricPoints += c.metricPoints; total.workouts += c.workouts
             }
         }
-        if (!total.any) return ImportSummary.failure(SOURCE_LABEL, "No Huawei health rows found in this database.")
+        if (!total.any) return ImportSummary.failure(SOURCE_LABEL, "No Huawei health rows found in this database.") { uiString(R.string.l10n_gadgetbridge_importer_no_huawei_health_rows_found_in_c7f07fa9) }
         val counts = linkedMapOf(
             "hrSample" to total.hr, "deviceMetricSample" to total.deviceMetric, "sleepSession" to total.sleeps,
             "dailyMetric" to total.days, "metricSeries" to total.metricPoints, "workout" to total.workouts,
@@ -175,6 +182,7 @@ object GadgetbridgeImporter {
         return ImportSummary(
             source = SOURCE_LABEL, counts = counts, firstDay = day(firstTs), lastDay = day(lastTs),
             message = "Imported ${total.days} days, ${total.sleeps} sleeps and ${total.workouts} workouts from Gadgetbridge.",
+            localized = { uiString(R.string.l10n_gadgetbridge_importer_imported_1_s_2_s_and_18c6e4a2, uiPlural(R.plurals.l10n_gadgetbridge_importer_1_d_days_8808cc6b, total.days, total.days), uiPlural(R.plurals.l10n_gadgetbridge_importer_1_d_sleeps_8dae94eb, total.sleeps, total.sleeps), uiPlural(R.plurals.l10n_gadgetbridge_importer_1_d_workouts_acbb4e56, total.workouts, total.workouts)) },
         )
     }
 

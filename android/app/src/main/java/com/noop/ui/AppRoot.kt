@@ -833,7 +833,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         .padding(bottom = 24.dp),
                 ) {
                     Overline(
-                        "Quick actions",
+                        uiString(R.string.l10n_today_screen_quick_actions_e47e8042),
                         modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 6.dp),
                         color = Palette.textTertiary,
                     )
@@ -1006,7 +1006,7 @@ private fun MoreScreen(onNavigate: (String) -> Unit) {
     val skyBehindCards = remember { NoopPrefs.skyBehindCards(context) }
     ScreenScaffold(
         title = uiString(R.string.l10n_app_root_more_4bab2d8f),
-        subtitle = "Everything else, one tap away",
+        subtitle = uiString(R.string.l10n_app_root_everything_else_one_tap_away_6d748a38),
         topBackground = screenBackdropSlot(showDayCycleBackground, skyBehindCards),
         // Sky-behind-cards fills the viewport so the transparent cards reveal the sky the whole way down.
         fullBleedBackground = screenBackdropFullBleed(showDayCycleBackground, skyBehindCards),
@@ -1065,7 +1065,7 @@ private fun MoreGroupHeader(title: String, expanded: Boolean, onToggle: () -> Un
             .clickable(onClick = onToggle)
             .semantics {
                 contentDescription = title
-                stateDescription = if (expanded) "Expanded" else "Collapsed"
+                stateDescription = if (expanded) uiString(R.string.settings_disclosure_expanded) else uiString(R.string.settings_disclosure_collapsed)
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1394,7 +1394,7 @@ fun ComingSoon(text: String, modifier: Modifier = Modifier) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(text, style = NoopType.title2, color = Palette.textPrimary, textAlign = TextAlign.Center)
-                Overline("Coming soon", color = Palette.textSecondary)
+                Overline(uiString(R.string.l10n_app_root_coming_soon_e4115be2), color = Palette.textSecondary)
                 Text(
                     uiString(R.string.l10n_app_root_this_section_is_on_the_way_ca7c4a32),
                     style = NoopType.footnote,

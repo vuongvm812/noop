@@ -946,7 +946,7 @@ private struct LiveHeartReadout: View {
             }
             .frame(width: 210, height: 210)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(displayHR.map { "Heart rate \($0) beats per minute" } ?? "Heart rate not available")
+            .accessibilityLabel(displayHR.map { String(localized: "Heart rate \($0) beats per minute") } ?? String(localized: "Heart rate not available"))
             Text(signalTrustSummary)
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
@@ -1267,7 +1267,7 @@ private struct ActiveWorkoutLive: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: NoopMetrics.gap) {
-                stat("HR", model.bpm.map { "\($0)" } ?? "—",
+                stat(String(localized: "HR"), model.bpm.map { "\($0)" } ?? "—",
                      tint: model.bpm == nil ? StrandPalette.textPrimary : StrandPalette.metricRose)
                 stat(String(localized: "Avg"), workout.avgHr > 0 ? "\(workout.avgHr)" : "—")
                 stat(String(localized: "Peak"), workout.peakHr > 0 ? "\(workout.peakHr)" : "—")

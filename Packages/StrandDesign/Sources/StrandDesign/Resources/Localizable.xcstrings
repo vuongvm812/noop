@@ -51,6 +51,12 @@
             "value": "%lld kilka dni temu"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ngày trước"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -125,6 +131,12 @@
                 }
               }
             }
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld giờ"
           }
         },
         "zh-Hans": {
@@ -203,6 +215,12 @@
             "value": "%lld minut"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld phút"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -265,6 +283,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld punkty, średnia %@, zakres %@ do %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld điểm, trung bình %@, khoảng %@ đến %@"
           }
         },
         "zh-Hans": {
@@ -331,6 +355,12 @@
             "value": "Odczyty %lld"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld số đo"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -393,6 +423,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Treningi %lld"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld buổi tập"
           }
         },
         "zh-Hans": {
@@ -459,6 +495,12 @@
             "value": "%lldd temu"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld ngày trước"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -509,6 +551,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lldч назад"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld giờ trước"
           }
         },
         "zh-Hans": {
@@ -587,6 +635,12 @@
             "value": "%lldm temu"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld phút trước"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -637,6 +691,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 час"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 giờ"
           }
         },
         "zh-Hans": {
@@ -715,6 +775,12 @@
             "value": "1 minuta"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 phút"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -777,6 +843,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 trening"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 buổi tập"
           }
         },
         "zh-Hans": {
@@ -843,6 +915,12 @@
             "value": "CAŁOŚĆ"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HẾT SỨC"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -899,6 +977,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Бодрствование"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thức"
           }
         },
         "zh-Hans": {
@@ -971,6 +1055,12 @@
             "value": "Klasyczny"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cổ điển"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1035,6 +1125,12 @@
             "value": "WYKOŃCZONY"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CẠN KIỆT"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1091,6 +1187,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Тёмная"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tối"
           }
         },
         "zh-Hans": {
@@ -1157,6 +1259,12 @@
             "value": "Глубокий"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngủ sâu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1213,6 +1321,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "По умолчанию"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mặc định"
           }
         },
         "zh-Hans": {
@@ -1277,6 +1391,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ВЫСОКИЙ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CAO"
           }
         },
         "zh-Hans": {
@@ -1355,6 +1475,12 @@
             "value": "ŚWIATŁO"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NGỦ NÔNG"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1405,6 +1531,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "НИЗКИЙ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "THẤP"
           }
         },
         "zh-Hans": {
@@ -1477,6 +1609,12 @@
             "value": "Лёгкий"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngủ nông"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1547,6 +1685,12 @@
             "value": "UMIARKOWANY"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VỪA"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1603,6 +1747,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Нет данных"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không có dữ liệu"
           }
         },
         "zh-Hans": {
@@ -1675,6 +1825,12 @@
             "value": "Brak danych dotyczących tętna"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không có dữ liệu nhịp tim"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1725,6 +1881,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ПИК"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ĐỈNH"
           }
         },
         "zh-Hans": {
@@ -1803,6 +1965,12 @@
             "value": "GRUNTOWANY"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SẴN SÀNG"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1865,6 +2033,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Regeneracja kalendarz, %lld dni, średnia %lld, niska %lld, wysoka %lld"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lịch phục hồi, %lld ngày, trung bình %lld, thấp nhất %lld, cao nhất %lld"
           }
         },
         "zh-Hans": {
@@ -1931,6 +2105,12 @@
             "value": "Kalendarz Regeneracja, brak danych"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lịch phục hồi, không có dữ liệu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1993,6 +2173,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "INTENSYWNY"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RẤT NẶNG"
           }
         },
         "zh-Hans": {
@@ -2059,6 +2245,12 @@
             "value": "Etapy snu, %@"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Các giai đoạn giấc ngủ, %@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2123,6 +2315,12 @@
             "value": "Fazy ​​snu, brak danych"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giai đoạn giấc ngủ, không có dữ liệu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2179,6 +2377,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Синхронизация"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang đồng bộ"
           }
         },
         "zh-Hans": {
@@ -2251,6 +2455,12 @@
             "value": "Systemowy"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hệ thống"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2307,6 +2517,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сегодня"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hôm nay"
           }
         },
         "zh-Hans": {
@@ -2379,6 +2595,12 @@
             "value": "Trend, punkty %lld, najnowsze %@, niskie %@, wysokie %@"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xu hướng, %lld điểm, mới nhất %@, thấp nhất %@, cao nhất %@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2429,6 +2651,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Вчера"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hôm qua"
           }
         },
         "zh-Hans": {
@@ -2507,6 +2735,12 @@
             "value": "śpi %@"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ngủ %@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2571,6 +2805,12 @@
             "value": "średnia %@ bpm"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trung bình %@ bpm"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2621,6 +2861,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "только что"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vừa xong"
           }
         },
         "zh-Hans": {
@@ -2699,6 +2945,12 @@
             "value": "zakres od %@ do %@"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "khoảng %@ đến %@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2746,6 +2998,18 @@
           }
         },
         "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
+        "vi": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld"
@@ -3295,6 +3559,12 @@
             "value": "Готово"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xong"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3477,6 +3747,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Пульс, 24 часа"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhịp tim, 24 giờ"
           }
         },
         "zh-Hans": {
@@ -3963,6 +4239,12 @@
             "value": "Движение"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vận động"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4019,6 +4301,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Движение во сне"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chuyển động khi ngủ"
           }
         },
         "zh-Hans": {
@@ -4673,6 +4961,12 @@
             "value": "Сохранить"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lưu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5133,6 +5427,12 @@
             "value": "Очистить поиск"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xóa tìm kiếm"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5195,6 +5495,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Следующий день"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngày sau"
           }
         },
         "zh-Hans": {
@@ -5261,6 +5567,12 @@
             "value": "Выбрать дату"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chọn ngày"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5317,6 +5629,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Предыдущий день"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngày trước"
           }
         },
         "zh-Hans": {
@@ -5383,6 +5701,12 @@
             "value": "Тренд"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xu hướng"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5445,6 +5769,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pieno"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã điền"
           }
         },
         "zh-Hans": {
@@ -5511,6 +5841,12 @@
             "value": "Nastro"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruy băng"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5575,6 +5911,12 @@
             "value": "Заливка"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lấp đầy"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5637,6 +5979,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Заливка Garmin"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Garmin Fill"
           }
         },
         "zh-Hans": {
@@ -5710,6 +6058,12 @@
             "value": "Светлая"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngủ nông"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5772,6 +6126,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Дата"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngày"
           }
         },
         "zh-Hans": {
@@ -5838,6 +6198,12 @@
             "value": "Значение"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giá trị"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -5851,7 +6217,29 @@
           }
         }
       }
-    }
+    },
+    "Mint": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Minze"}},"es": {"stringUnit": {"state": "translated", "value": "Menta"}},"fr": {"stringUnit": {"state": "translated", "value": "Menthe"}},"it": {"stringUnit": {"state": "translated", "value": "Menta"}},"pl": {"stringUnit": {"state": "translated", "value": "Miętowy"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Menta"}},"ru": {"stringUnit": {"state": "translated", "value": "Мятный"}},"vi": {"stringUnit": {"state": "translated", "value": "Bạc hà"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "薄荷绿"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "薄荷"}}}},
+    "WHOOP Blue": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "WHOOP-Blau"}},"es": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"fr": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"it": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"pl": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"ru": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"vi": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "WHOOP Blue"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "WHOOP 藍"}}}},
+    "Custom": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Benutzerdefiniert"}},"es": {"stringUnit": {"state": "translated", "value": "Personalizado"}},"fr": {"stringUnit": {"state": "translated", "value": "Personnalisé"}},"it": {"stringUnit": {"state": "translated", "value": "Personalizzato"}},"pl": {"stringUnit": {"state": "translated", "value": "Własny"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Personalizado"}},"ru": {"stringUnit": {"state": "translated", "value": "Свой"}},"vi": {"stringUnit": {"state": "translated", "value": "Tùy chỉnh"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "自定义"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "自訂"}}}},
+    "Ocean": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Ozean"}},"es": {"stringUnit": {"state": "translated", "value": "Océano"}},"fr": {"stringUnit": {"state": "translated", "value": "Océan"}},"it": {"stringUnit": {"state": "translated", "value": "Oceano"}},"pl": {"stringUnit": {"state": "translated", "value": "Ocean"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Oceano"}},"ru": {"stringUnit": {"state": "translated", "value": "Океан"}},"vi": {"stringUnit": {"state": "translated", "value": "Đại dương"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "海洋"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "海洋"}}}},
+    "Midnight": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Mitternacht"}},"es": {"stringUnit": {"state": "translated", "value": "Medianoche"}},"fr": {"stringUnit": {"state": "translated", "value": "Minuit"}},"it": {"stringUnit": {"state": "translated", "value": "Mezzanotte"}},"pl": {"stringUnit": {"state": "translated", "value": "Północ"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Meia-noite"}},"ru": {"stringUnit": {"state": "translated", "value": "Полночь"}},"vi": {"stringUnit": {"state": "translated", "value": "Nửa đêm"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "午夜"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "午夜"}}}},
+    "Frosted": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Milchglas"}},"es": {"stringUnit": {"state": "translated", "value": "Esmerilado"}},"fr": {"stringUnit": {"state": "translated", "value": "Dépoli"}},"it": {"stringUnit": {"state": "translated", "value": "Satinato"}},"pl": {"stringUnit": {"state": "translated", "value": "Matowe"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Fosco"}},"ru": {"stringUnit": {"state": "translated", "value": "Матовое"}},"vi": {"stringUnit": {"state": "translated", "value": "Mờ kính"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "磨砂"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "霧面"}}}},
+    "Fit": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Fit"}},"es": {"stringUnit": {"state": "translated", "value": "Forma"}},"fr": {"stringUnit": {"state": "translated", "value": "Forme"}},"it": {"stringUnit": {"state": "translated", "value": "Forma"}},"pl": {"stringUnit": {"state": "translated", "value": "Dopasowanie"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Forma"}},"ru": {"stringUnit": {"state": "translated", "value": "Форма"}},"vi": {"stringUnit": {"state": "translated", "value": "Thể lực"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "体能"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "適能"}}}},
+    "Stretch": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Dehnen"}},"es": {"stringUnit": {"state": "translated", "value": "Estiramiento"}},"fr": {"stringUnit": {"state": "translated", "value": "Étirements"}},"it": {"stringUnit": {"state": "translated", "value": "Stretching"}},"pl": {"stringUnit": {"state": "translated", "value": "Rozciąganie"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Alongamentos"}},"ru": {"stringUnit": {"state": "translated", "value": "Растяжка"}},"vi": {"stringUnit": {"state": "translated", "value": "Giãn cơ"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "拉伸"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "伸展"}}}},
+    "Tile": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Kachel"}},"es": {"stringUnit": {"state": "translated", "value": "Recuadro"}},"fr": {"stringUnit": {"state": "translated", "value": "Tuile"}},"it": {"stringUnit": {"state": "translated", "value": "Riquadro"}},"pl": {"stringUnit": {"state": "translated", "value": "Kafelek"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Cartão"}},"ru": {"stringUnit": {"state": "translated", "value": "Плитка"}},"vi": {"stringUnit": {"state": "translated", "value": "Ô"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "卡片"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "磚塊"}}}},
+    "no movement data": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "keine Bewegungsdaten"}},"es": {"stringUnit": {"state": "translated", "value": "sin datos de movimiento"}},"fr": {"stringUnit": {"state": "translated", "value": "aucune donnée de mouvement"}},"it": {"stringUnit": {"state": "translated", "value": "nessun dato di movimento"}},"pl": {"stringUnit": {"state": "translated", "value": "brak danych o ruchu"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "sem dados de movimento"}},"ru": {"stringUnit": {"state": "translated", "value": "нет данных о движении"}},"vi": {"stringUnit": {"state": "translated", "value": "không có dữ liệu chuyển động"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "无运动数据"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "無動作資料"}}}},
+    "calm throughout": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "durchgehend ruhig"}},"es": {"stringUnit": {"state": "translated", "value": "en calma todo el tiempo"}},"fr": {"stringUnit": {"state": "translated", "value": "calme tout du long"}},"it": {"stringUnit": {"state": "translated", "value": "calmo per tutto il tempo"}},"pl": {"stringUnit": {"state": "translated", "value": "spokojnie przez cały czas"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "calmo durante todo o tempo"}},"ru": {"stringUnit": {"state": "translated", "value": "спокойно на протяжении всего времени"}},"vi": {"stringUnit": {"state": "translated", "value": "bình tĩnh suốt"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "全程平静"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "全程平靜"}}}},
+    "%lld%% of the night had elevated movement": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld%% der Nacht hatten erhöhte Bewegung"}},"es": {"stringUnit": {"state": "translated", "value": "%lld%% de la noche tuvo movimiento elevado"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld%% de la nuit avec un mouvement élevé"}},"it": {"stringUnit": {"state": "translated", "value": "Il %lld%% della notte ha avuto un movimento elevato"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld%% nocy miało podwyższony ruch"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld%% da noite teve movimento elevado"}},"ru": {"stringUnit": {"state": "translated", "value": "%lld%% ночи было повышенное движение"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld%% của đêm có chuyển động tăng cao"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "整晚有 %lld%% 的时间活动偏多"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "該晚有 %lld%% 的時間動作較多"}}}},
+    "Recovery %lld": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Erholung %lld"}},"es": {"stringUnit": {"state": "translated", "value": "Recuperación %lld"}},"fr": {"stringUnit": {"state": "translated", "value": "Récupération %lld"}},"it": {"stringUnit": {"state": "translated", "value": "Recupero %lld"}},"pl": {"stringUnit": {"state": "translated", "value": "Regeneracja %lld"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Recuperação %lld"}},"ru": {"stringUnit": {"state": "translated", "value": "Восстановление %lld"}},"vi": {"stringUnit": {"state": "translated", "value": "Phục hồi %lld"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "恢复 %lld"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "恢復 %lld"}}}},
+    "Strain %@": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Belastung %@"}},"es": {"stringUnit": {"state": "translated", "value": "Esfuerzo %@"}},"fr": {"stringUnit": {"state": "translated", "value": "Effort %@"}},"it": {"stringUnit": {"state": "translated", "value": "Sforzo %@"}},"pl": {"stringUnit": {"state": "translated", "value": "Wysiłek %@"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Esforço %@"}},"ru": {"stringUnit": {"state": "translated", "value": "Усилие %@"}},"vi": {"stringUnit": {"state": "translated", "value": "Mức tải %@"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "负荷 %@"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "強度 %@"}}}},
+    "%@ · recovery %lld": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%@ · Erholung %lld"}},"es": {"stringUnit": {"state": "translated", "value": "%@ · recuperación %lld"}},"fr": {"stringUnit": {"state": "translated", "value": "%@ · récupération %lld"}},"it": {"stringUnit": {"state": "translated", "value": "%@ · recupero %lld"}},"pl": {"stringUnit": {"state": "translated", "value": "%@ · regeneracja %lld"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%@ · recuperação %lld"}},"ru": {"stringUnit": {"state": "translated", "value": "%@ · восстановление %lld"}},"vi": {"stringUnit": {"state": "translated", "value": "%@ · phục hồi %lld"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%@ · 恢复 %lld"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ · 恢復 %lld"}}}},
+    "%lld percent, below the typical range of %lld to %lld percent": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Prozent, unter dem üblichen Bereich von %lld bis %lld Prozent"}},"es": {"stringUnit": {"state": "translated", "value": "%lld por ciento, por debajo del rango habitual de %lld a %lld por ciento"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld pour cent, en dessous de la plage habituelle de %lld à %lld pour cent"}},"it": {"stringUnit": {"state": "translated", "value": "%lld percento, sotto l'intervallo tipico da %lld a %lld percento"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld procent, poniżej typowego zakresu od %lld do %lld procent"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld por cento, abaixo da faixa típica de %lld a %lld por cento"}},"ru": {"stringUnit": {"state": "translated", "value": "%lld процентов, ниже типичного диапазона от %lld до %lld процентов"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld phần trăm, dưới dải điển hình từ %lld đến %lld phần trăm"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "百分之 %lld，低于百分之 %lld 至 %lld 的典型范围"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "百分之 %lld，低於百分之 %lld 至百分之 %lld 的典型範圍"}}}},
+    "%lld percent, above the typical range of %lld to %lld percent": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Prozent, über dem üblichen Bereich von %lld bis %lld Prozent"}},"es": {"stringUnit": {"state": "translated", "value": "%lld por ciento, por encima del rango habitual de %lld a %lld por ciento"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld pour cent, au-dessus de la plage habituelle de %lld à %lld pour cent"}},"it": {"stringUnit": {"state": "translated", "value": "%lld percento, sopra l'intervallo tipico da %lld a %lld percento"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld procent, powyżej typowego zakresu od %lld do %lld procent"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld por cento, acima da faixa típica de %lld a %lld por cento"}},"ru": {"stringUnit": {"state": "translated", "value": "%lld процентов, выше типичного диапазона от %lld до %lld процентов"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld phần trăm, trên dải điển hình từ %lld đến %lld phần trăm"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "百分之 %lld，高于百分之 %lld 至 %lld 的典型范围"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "百分之 %lld，高於百分之 %lld 至百分之 %lld 的典型範圍"}}}},
+    "%lld percent, within the typical range of %lld to %lld percent": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Prozent, innerhalb des üblichen Bereichs von %lld bis %lld Prozent"}},"es": {"stringUnit": {"state": "translated", "value": "%lld por ciento, dentro del rango habitual de %lld a %lld por ciento"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld pour cent, dans la plage habituelle de %lld à %lld pour cent"}},"it": {"stringUnit": {"state": "translated", "value": "%lld percento, nell'intervallo tipico da %lld a %lld percento"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld procent, w typowym zakresie od %lld do %lld procent"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld por cento, dentro da faixa típica de %lld a %lld por cento"}},"ru": {"stringUnit": {"state": "translated", "value": "%lld процентов, в пределах типичного диапазона от %lld до %lld процентов"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld phần trăm, trong dải điển hình từ %lld đến %lld phần trăm"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "百分之 %lld，在百分之 %lld 至 %lld 的典型范围内"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "百分之 %lld，在百分之 %lld 至百分之 %lld 的典型範圍內"}}}},
+    "%lld percent": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Prozent"}},"es": {"stringUnit": {"state": "translated", "value": "%lld por ciento"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld pour cent"}},"it": {"stringUnit": {"state": "translated", "value": "%lld percento"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld procent"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld por cento"}},"ru": {"stringUnit": {"state": "translated", "value": "%lld процентов"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld phần trăm"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "百分之 %lld"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "百分之 %lld"}}}},
+    "%@, below typical": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%@, unter dem Üblichen"}},"es": {"stringUnit": {"state": "translated", "value": "%@, por debajo de lo habitual"}},"fr": {"stringUnit": {"state": "translated", "value": "%@, en dessous de la normale"}},"it": {"stringUnit": {"state": "translated", "value": "%@, sotto la media"}},"pl": {"stringUnit": {"state": "translated", "value": "%@, poniżej typowego"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%@, abaixo do típico"}},"ru": {"stringUnit": {"state": "translated", "value": "%@, ниже типичного"}},"vi": {"stringUnit": {"state": "translated", "value": "%@, dưới mức điển hình"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%@，低于典型水平"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%@，低於典型值"}}}},
+    "%@, above typical": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%@, über dem Üblichen"}},"es": {"stringUnit": {"state": "translated", "value": "%@, por encima de lo habitual"}},"fr": {"stringUnit": {"state": "translated", "value": "%@, au-dessus de la normale"}},"it": {"stringUnit": {"state": "translated", "value": "%@, sopra la media"}},"pl": {"stringUnit": {"state": "translated", "value": "%@, powyżej typowego"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%@, acima do típico"}},"ru": {"stringUnit": {"state": "translated", "value": "%@, выше типичного"}},"vi": {"stringUnit": {"state": "translated", "value": "%@, trên mức điển hình"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%@，高于典型水平"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%@，高於典型值"}}}},
+    "%@, within typical range": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%@, im typischen Bereich"}},"es": {"stringUnit": {"state": "translated", "value": "%@, dentro del rango típico"}},"fr": {"stringUnit": {"state": "translated", "value": "%@, dans la plage typique"}},"it": {"stringUnit": {"state": "translated", "value": "%@, nell'intervallo tipico"}},"pl": {"stringUnit": {"state": "translated", "value": "%@, w typowym zakresie"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%@, dentro do intervalo típico"}},"ru": {"stringUnit": {"state": "translated", "value": "%@, в типичном диапазоне"}},"vi": {"stringUnit": {"state": "translated", "value": "%@, trong khoảng thông thường"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%@，在典型范围内"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%@，在典型範圍內"}}}}
   },
   "version": "1.0"
 }

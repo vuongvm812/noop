@@ -251,7 +251,7 @@ fun CoupledScreen(
             // The brief quotes the footer with the brand word, but the hard legal / anonymity rule wins over
             // the illustrative copy: this keeps the exact intent without the branding word. Byte-identical to
             // the Swift footer caption.
-            "A classic one-glance read of NOOP's own scores. Same data, different lens.",
+            uiString(R.string.l10n_coupled_screen_a_classic_one_glance_read_of_cbc0f10f),
             style = NoopType.footnote,
             color = Palette.textTertiary,
             modifier = Modifier.padding(top = 4.dp),
@@ -310,10 +310,10 @@ private fun HeroCard(
     onTap: () -> Unit,
 ) {
     val a11y = when {
-        recovery != null -> "Recovery ${recovery.roundToInt()} percent. See what shaped your Charge"
+        recovery != null -> uiString(R.string.l10n_coupled_screen_recovery_1_d_percent_see_what_a88ae414, recovery.roundToInt())
         calibrationNights != null ->
-            "Recovery calibrating, $calibrationNights of ${Baselines.minNightsSeed} nights"
-        else -> "Recovery, no data yet"
+            uiString(R.string.l10n_coupled_screen_recovery_calibrating_1_d_of_2_3b2dee3e, calibrationNights, Baselines.minNightsSeed)
+        else -> uiString(R.string.l10n_coupled_screen_recovery_no_data_yet_6e043208)
     }
     // The vessel runs LIVE (per-frame slosh + tilt) once there's a real value to show; an empty/calibrating
     // hero poses it static so a brand-new user's launch churn isn't fighting a live canvas (the Today
@@ -335,7 +335,7 @@ private fun HeroCard(
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "See what shaped your Charge",
+                onClickLabel = uiString(R.string.l10n_coupled_screen_see_what_shaped_your_charge_a0530d9f),
                 onClick = onTap,
             )
             .semantics { contentDescription = a11y },
@@ -410,7 +410,7 @@ private fun HeroCentre(recovery: Double?, readinessLevel: ReadinessEngine.Level)
         } else {
             // The honest empty read at the ring-label size (never the 56sp numeral, "No Data" would
             // overflow the ring interior), matching the Today hero rings' RingNoData idiom.
-            Text(COUPLED_NO_DATA, style = NoopType.headline, color = Palette.textSecondary)
+            Text(uiString(R.string.l10n_coupled_screen_no_data_4276e6ab), style = NoopType.headline, color = Palette.textSecondary)
         }
         Text(uiString(R.string.l10n_coupled_screen_recovery_b668d988), style = NoopType.overline, color = sampled)
         val wordRes = readinessWord(readinessLevel)
@@ -462,7 +462,7 @@ private fun StrainCard(dayStrain21: Double?, recovery: Double?, calories: Double
             ) {
                 if (dayStrain21 != null) {
                     val strainFrac = (dayStrain21 / COUPLED_STRAIN_OUT_OF).coerceIn(0.0, 1.0)
-                    Text(strainBandWord(dayStrain21 / COUPLED_STRAIN_OUT_OF), style = NoopType.overline, color = Palette.effortColor)
+                    Text(localizedStrainBandWord(strainBandWord(dayStrain21 / COUPLED_STRAIN_OUT_OF)), style = NoopType.overline, color = Palette.effortColor)
                     Spacer(Modifier.size(4.dp))
                     Box(modifier = Modifier.size(148.dp), contentAlignment = Alignment.Center) {
                         LiquidVessel(
@@ -498,10 +498,10 @@ private fun StrainCard(dayStrain21: Double?, recovery: Double?, calories: Double
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                HeroStat("Day Strain", dayStrain21?.let { String.format(Locale.US, "%.1f", it) } ?: COUPLED_NO_DATA, Palette.effortColor)
-                OptimalStat("Optimal", recovery)
-                HeroStat("Calories", calories?.let { "${it.roundToInt()} kcal" } ?: COUPLED_NO_DATA, Palette.metricAmber)
-                HeroStat("Workouts", workouts.toString(), Palette.textPrimary)
+                HeroStat(uiString(R.string.l10n_coupled_screen_day_strain_ec5de0da), dayStrain21?.let { String.format(Locale.US, "%.1f", it) } ?: uiString(R.string.l10n_coupled_screen_no_data_4276e6ab), Palette.effortColor)
+                OptimalStat(uiString(R.string.l10n_coupled_screen_optimal_5193a461), recovery)
+                HeroStat(uiString(R.string.l10n_coupled_screen_calories_3e62ecfe), calories?.let { "${it.roundToInt()} kcal" } ?: uiString(R.string.l10n_coupled_screen_no_data_4276e6ab), Palette.metricAmber)
+                HeroStat(uiString(R.string.l10n_coupled_screen_workouts_ccb58b22), workouts.toString(), Palette.textPrimary)
             }
         }
     }
@@ -536,7 +536,7 @@ private fun OptimalStat(title: String, recovery: Double?) {
         // neither - so that divergence belongs to all four coupled stats, not to this one. Adding a
         // maxLines here alone would truncate where the siblings wrap and where Swift shrinks: different
         // from both.
-        Text(optimalStrainRangeText(recovery), style = NoopType.number(20f), color = Palette.chargeColor)
+        Text(optimalStrainRangeText(recovery).let { if (it == COUPLED_NO_DATA) uiString(R.string.l10n_coupled_screen_no_data_4276e6ab) else it }, style = NoopType.number(20f), color = Palette.chargeColor)
         // animated = false matches the Swift call: the stat stack is a read-out, not an instrument, and a
         // posed tube costs nothing per frame.
         LiquidTube(
@@ -580,7 +580,7 @@ private fun SleepCard(
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Open Sleep",
+                onClickLabel = uiString(R.string.l10n_coupled_screen_open_sleep_2851f663),
                 onClick = onOpenSleep,
             )
             .liquidPress(interaction),
@@ -642,12 +642,22 @@ private fun SleepCard(
 
 /** The header subtitle "Today, d MMM". */
 private fun subtitleToday(): String =
-    "Today, " + SimpleDateFormat("d MMM", Locale.getDefault()).format(Date())
+    uiString(R.string.l10n_coupled_screen_today_1_s_d0cd2b7e, SimpleDateFormat("d MMM", Locale.getDefault()).format(Date()))
 
 /** "6h 42m" from a minutes count, for the slept-vs-needed read. Mirrors CoupledView.hoursMinutes EXACTLY. */
 internal fun hoursMinutes(minutes: Double): String {
     val total = minutes.roundToInt().coerceAtLeast(0)
     return "${total / 60}h ${total % 60}m"
+}
+
+/** Display form of a [strainBandWord] token (the tokens themselves stay English for the tests and parity). */
+private fun localizedStrainBandWord(word: String): String = when (word) {
+    "LIGHT" -> uiString(R.string.l10n_coupled_screen_light_0ff676fc)
+    "MODERATE" -> uiString(R.string.l10n_coupled_screen_moderate_e6295970)
+    "STRENUOUS" -> uiString(R.string.l10n_coupled_screen_strenuous_b2a67887)
+    "HIGH" -> uiString(R.string.l10n_coupled_screen_high_d77d0b27)
+    "ALL-OUT" -> uiString(R.string.l10n_coupled_screen_all_out_f6621584)
+    else -> word
 }
 
 /**

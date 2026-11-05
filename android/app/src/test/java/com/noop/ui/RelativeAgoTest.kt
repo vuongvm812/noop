@@ -1,6 +1,8 @@
 package com.noop.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -8,6 +10,9 @@ import org.junit.Test
  * line (B6 sync-status surfacing). Buckets to just-now / minutes / hours / days; clamps future times.
  */
 class RelativeAgoTest {
+
+    @Before fun englishStrings() = com.noop.EnglishTestStrings.install()
+    @After fun clearStrings() = com.noop.EnglishTestStrings.uninstall()
 
     private val now = 1_781_000_000L
 

@@ -414,7 +414,7 @@ struct WorkoutsView: View {
             await MainActor.run { postLogNote = nil }
             return
         }
-        let sentence = match.sentence()
+        let sentence = InsightsSentences.activityCost(match)
         await MainActor.run { withAnimation(.easeOut(duration: 0.2)) { postLogNote = sentence } }
         // Auto-dismiss after a few seconds (transient caption, not a permanent card).
         try? await Task.sleep(nanoseconds: 7_000_000_000)
@@ -1724,7 +1724,7 @@ struct WorkoutsView: View {
         case .detected:
             Menu("Re-label as") {
                 ForEach(Self.relabelSports, id: \.self) { sport in
-                    Button(sport) { relabel(row, to: sport) }
+                    Button(LocalizedStringKey(sport)) { relabel(row, to: sport) }
                 }
             }
             Button("Edit details…") { editWorkout(row) }

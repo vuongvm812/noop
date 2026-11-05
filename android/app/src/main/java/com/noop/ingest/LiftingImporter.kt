@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.data.ImportSummary
@@ -106,9 +113,9 @@ object LiftingImporter {
     ): ImportSummary {
         val bytes: ByteArray = try {
             context.contentResolver.openInputStream(uri)?.use { it.readCapped(MAX_BYTES) }
-                ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.")
+                ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.") { uiString(R.string.l10n_lifting_importer_could_not_open_the_selected_file_d412e6e8) }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_lifting_importer_could_not_read_the_file_1_65a3ad34, (e.message ?: uiString(R.string.l10n_lifting_importer_unknown_error_af6321ca))) }
         }
 
         val result = parse(bytes)
@@ -116,7 +123,7 @@ object LiftingImporter {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "No workouts found - point at a Hevy CSV export or a Liftosaur JSON export.",
-            )
+            ) { uiString(R.string.l10n_lifting_importer_no_workouts_found_point_at_a_65c666ac) }
         }
 
         val rows = result.sessions.map { s ->
@@ -155,6 +162,15 @@ object LiftingImporter {
                 }
                 if (result.skipped > 0) append(", ${result.skipped} skipped")
                 append(".")
+            },
+            localized = {
+                var m = uiPlural(R.plurals.l10n_lifting_importer_imported_1_d_workouts_26ce6a39, rows.size, rows.size)
+                if (totalVolume > 0) m = uiString(R.string.l10n_lifting_importer_1_s_2_s_kg_total_73b9288b, m, groupedKg(totalVolume))
+                if (result.firstDay != null && result.lastDay != null && result.firstDay != result.lastDay) {
+                    m = uiString(R.string.l10n_lifting_importer_1_s_from_2_s_to_077a4d45, m, result.firstDay, result.lastDay)
+                }
+                if (result.skipped > 0) m = uiString(R.string.l10n_lifting_importer_1_s_2_d_skipped_b267d095, m, result.skipped)
+                uiString(R.string.l10n_lifting_importer_1_s_68fdf139, m)
             },
         )
     }

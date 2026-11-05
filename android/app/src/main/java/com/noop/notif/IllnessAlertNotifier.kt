@@ -82,7 +82,7 @@ object IllnessAlertNotifier {
                 .setContentText(alert)
                 .setStyle(
                     NotificationCompat.BigTextStyle()
-                        .bigText("$alert\nOn-device estimate (approximate), not a diagnosis."),
+                        .bigText(context.getString(R.string.l10n_illness_alert_notifier_1_s_on_device_estimate_approximate_4484110a, alert)),
                 )
                 .setContentIntent(openApp)
                 .setAutoCancel(true)
@@ -98,13 +98,14 @@ object IllnessAlertNotifier {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // Re-creating an existing channel only refreshes its name and description (importance and the
+            // user\'s own settings are kept), so the channel follows the app language.
             mgr.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_ID, "Illness early-warning",
+                    CHANNEL_ID, context.getString(R.string.l10n_automations_screen_illness_early_warning_453ab477),
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ).apply {
-                    description = "A heads-up when resting HR, HRV, skin temp or respiration drift together vs your baseline."
+                    description = context.getString(R.string.l10n_illness_alert_notifier_a_heads_up_when_resting_hr_8bed9e04)
                 },
             )
         }

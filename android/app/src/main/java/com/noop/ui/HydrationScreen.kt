@@ -185,7 +185,7 @@ fun HydrationScreen(viewModel: AppViewModel) {
     // opted-out user still gets the plain surface. Mirrors the liquid Today scaffold.
     LazyScreenScaffold(
         title = uiString(R.string.l10n_hydration_screen_hydration_bdfb040f),
-        subtitle = "Your fluid intake today, on this phone only.",
+        subtitle = uiString(R.string.l10n_hydration_screen_your_fluid_intake_today_on_this_b4c5c1b8),
         topBackground = screenBackdropSlot(showDayCycleBackground, skyBehindCards),
         // Sky-behind-cards fills the viewport so the transparent cards reveal the sky the whole way
         // down (Today / Trends / Sleep / metric-detail parity - same two prefs, same two behaviours).
@@ -239,7 +239,7 @@ fun HydrationScreen(viewModel: AppViewModel) {
                                 color = Color.White,
                             )
                             Text(
-                                String.format(Locale.US, "of %.1f L", goalMl / 1000.0),
+                                uiString(R.string.l10n_hydration_screen_of_1_s_l_7aac5eab, String.format(Locale.US, "%.1f", goalMl / 1000.0)),
                                 style = NoopType.subhead,
                                 color = Color.White.copy(alpha = 0.72f),
                             )
@@ -317,7 +317,7 @@ fun HydrationScreen(viewModel: AppViewModel) {
         item {
             NoopCard(padding = 18.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Overline("Last 7 days")
+                    Overline(uiString(R.string.l10n_hydration_screen_last_7_days_df833fe8))
                     HydrationHistoryBars(history = history, goalMl = goalMl, accent = accent)
                 }
             }
@@ -328,7 +328,7 @@ fun HydrationScreen(viewModel: AppViewModel) {
         item {
             NoopCard(padding = 18.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Overline("Today")
+                    Overline(uiString(R.string.nav_today))
                     if (totalMl <= 0.0) {
                         Text(
                             uiString(R.string.l10n_hydration_screen_no_drinks_logged_yet_tap_sip_cc0d2f72),
@@ -448,7 +448,7 @@ private fun LiquidLogTile(
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Log $label",
+                onClickLabel = uiString(R.string.l10n_hydration_screen_log_1_s_859e54be, label),
                 onClick = onLog,
             )
             .padding(vertical = 14.dp),
@@ -588,7 +588,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawRoundRectBar(
 /** The single-letter weekday for a yyyy-MM-dd key (M T W T F S S), or "·" when unparseable. */
 private fun weekdayInitial(dayKey: String): String =
     runCatching {
-        LocalDate.parse(dayKey).format(DateTimeFormatter.ofPattern("EEE", Locale.US)).take(1)
+        LocalDate.parse(dayKey).format(DateTimeFormatter.ofPattern("EEEEE", Locale.getDefault()))
     }.getOrDefault("·")
 
 /**

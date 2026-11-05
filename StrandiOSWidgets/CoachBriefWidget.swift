@@ -143,18 +143,19 @@ struct CoachBriefWidgetView: View {
 
     /// The full brief text for the widget body, or a placeholder when there's no brief.
     private var briefDisplay: String {
-        entry.briefText ?? "No brief available."
+        entry.briefText ?? String(localized: "No brief available.")
     }
 
     /// One-line summary for the inline accessory (capped at ~100 chars).
     private var briefOneLine: String {
-        guard let text = entry.briefText else { return "Coach: no brief yet" }
+        guard let text = entry.briefText else { return String(localized: "Coach: no brief yet") }
         let firstLine = text.split(separator: "\n", omittingEmptySubsequences: true)
             .first.map(String.init) ?? text
         let trimmed = firstLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 100 else { return "Coach: \(trimmed)" }
+        guard trimmed.count > 100 else { return String(localized: "Coach: \(trimmed)") }
         let cut = trimmed.index(trimmed.startIndex, offsetBy: 100)
-        return "Coach: \(trimmed[..<cut].trimmingCharacters(in: .whitespaces))…"
+        let body = "\(trimmed[..<cut].trimmingCharacters(in: .whitespaces))…"
+        return String(localized: "Coach: \(body)")
     }
 }
 

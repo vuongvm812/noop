@@ -53,13 +53,14 @@ object SmartAlarmNotifier {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // Re-creating an existing channel only refreshes its name and description (importance and the
+            // user\'s own settings are kept), so the channel follows the app language.
             mgr.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_ID, "Smart alarm",
+                    CHANNEL_ID, context.getString(R.string.l10n_smart_alarm_notifier_smart_alarm_8f1cb9f0),
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
-                    description = "Your wake-up smart alarm went off on the strap."
+                    description = context.getString(R.string.l10n_smart_alarm_notifier_your_wake_up_smart_alarm_went_105e09b3)
                 },
             )
         }

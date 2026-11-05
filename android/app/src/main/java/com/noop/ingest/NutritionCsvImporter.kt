@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.data.ImportSummary
@@ -70,19 +77,19 @@ object NutritionCsvImporter {
             context.contentResolver.openInputStream(uri)?.use { it.readCapped(MAX_BYTES) }
                 ?: throw IllegalStateException("Could not open input stream for $uri")
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read CSV: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read CSV: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_nutrition_csv_importer_could_not_read_csv_1_s_9b424289, (e.message ?: uiString(R.string.l10n_nutrition_csv_importer_unknown_error_af6321ca))) }
         }
 
         val table = CsvTable.fromData(bytes)
         if (table.rows.isEmpty()) {
-            return ImportSummary.failure(SOURCE_LABEL, "CSV contained no data rows.")
+            return ImportSummary.failure(SOURCE_LABEL, "CSV contained no data rows.") { uiString(R.string.l10n_nutrition_csv_importer_csv_contained_no_data_rows_fe68ec36) }
         }
         if (resolveColumns(table.normalizedHeaders) == null) {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "Couldn't recognise the columns - expected a date column plus any of " +
                     "calories / protein / carbs / fat / weight.",
-            )
+            ) { uiString(R.string.l10n_nutrition_csv_importer_couldn_t_recognise_the_columns_expected_3a67423c) }
         }
 
         val rows = parse(table, deviceId)
@@ -90,7 +97,7 @@ object NutritionCsvImporter {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "No usable nutrition rows (check the date column format).",
-            )
+            ) { uiString(R.string.l10n_nutrition_csv_importer_no_usable_nutrition_rows_check_the_07544c8b) }
         }
 
         repo.upsertDevice(deviceId, name = "Nutrition CSV")
@@ -111,6 +118,11 @@ object NutritionCsvImporter {
                 if (dayCount != 1) append("s")
                 if (firstDay != null && lastDay != null) append(" ($firstDay → $lastDay)")
                 append(".")
+            },
+            localized = {
+                val dayText = uiPlural(R.plurals.l10n_nutrition_csv_importer_1_d_days_8808cc6b, dayCount, dayCount)
+                if (firstDay != null && lastDay != null) uiString(R.string.l10n_nutrition_csv_importer_imported_1_d_nutrition_values_across_f29e9342, rows.size, dayText, firstDay, lastDay)
+                else uiString(R.string.l10n_nutrition_csv_importer_imported_1_d_nutrition_values_across_8a6df5ca, rows.size, dayText)
             },
         )
     }

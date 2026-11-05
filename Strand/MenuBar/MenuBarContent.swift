@@ -218,13 +218,13 @@ public struct MenuBarContent: View {
     private var statsRow: some View {
         HStack(spacing: 0) {
             statCell(
-                "BATTERY",
+                String(localized: "BATTERY"),
                 strapBatteryPct.map { "\(Int($0.rounded()))%" } ?? "—",
                 tint: strapBatteryPct == nil ? StrandPalette.textPrimary : toneColor(batteryTone)
             )
             cellDivider
             statCell(
-                "RESTING HR",
+                String(localized: "RESTING HR"),
                 repo.today?.restingHr.map { "\($0)" } ?? "—",
                 tint: StrandPalette.textPrimary
             )

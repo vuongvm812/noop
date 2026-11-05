@@ -23,8 +23,8 @@ import java.util.TimeZone
 class MainSleepReasonCopyTest {
 
     private val saved = TimeZone.getDefault()
-    @Before fun pinUtc() { TimeZone.setDefault(TimeZone.getTimeZone("UTC")) }
-    @After fun restore() { TimeZone.setDefault(saved) }
+    @Before fun pinUtc() { TimeZone.setDefault(TimeZone.getTimeZone("UTC")); com.noop.EnglishTestStrings.install() }
+    @After fun restore() { TimeZone.setDefault(saved); com.noop.EnglishTestStrings.uninstall() }
 
     /** An arbitrary fixed UTC midnight (ref % 86400 == 0) so local == UTC under the pinned tz. */
     private val refMidnight = 1_749_513_600L

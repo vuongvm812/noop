@@ -1,5 +1,13 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.displayMessage
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.data.DailyMetric
@@ -112,12 +120,12 @@ object WearableExportImporter {
         val (files, truncated) = try {
             collectFiles(context, uri)
         } catch (e: Exception) {
-            return ImportSummary.failure("Wearable export", "Couldn't read the export: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure("Wearable export", "Couldn't read the export: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_wearable_export_importer_couldn_t_read_the_export_1_d2eba3e9, (e.message ?: uiString(R.string.l10n_wearable_export_importer_unknown_error_af6321ca))) }
         }
-        if (files.isEmpty()) return ImportSummary.failure("Wearable export", "No readable JSON/CSV in the export.")
+        if (files.isEmpty()) return ImportSummary.failure("Wearable export", "No readable JSON/CSV in the export.") { uiString(R.string.l10n_wearable_export_importer_no_readable_json_csv_in_the_11a371d3) }
 
         val brand = detectBrand(files)
-            ?: return ImportSummary.failure("Wearable export", "Not an Oura, Fitbit or Garmin data export.")
+            ?: return ImportSummary.failure("Wearable export", "Not an Oura, Fitbit or Garmin data export.") { uiString(R.string.l10n_wearable_export_importer_not_an_oura_fitbit_or_garmin_1381f4d7) }
 
         val parsed = when (brand) {
             Brand.OURA -> parseOura(files)
@@ -133,15 +141,18 @@ object WearableExportImporter {
                     "That file is Oura's raw heart-rate log, which has no daily sleep or recovery values to " +
                         "import. Export your Oura data as JSON (Account -> Export Data), or pick the daily/" +
                         "readiness CSV, and import that instead.",
-                )
+                ) { uiString(R.string.l10n_wearable_export_importer_that_file_is_oura_s_raw_1c0731bf) }
             }
-            return ImportSummary.failure(brand.label, "${brand.label} export held no sleep or daily wellness data.")
+            return ImportSummary.failure(brand.label, "${brand.label} export held no sleep or daily wellness data.") { uiString(R.string.l10n_wearable_export_importer_1_s_export_held_no_sleep_b877e320, brand.label) }
         }
         val summary = persist(repo, brand, parsed)
         // #70: never silently truncate. If the aggregate RAM budget tripped, the retained file set was
         // partial — surface it plainly rather than reporting a clean import over incomplete data.
         return if (truncated) {
-            summary.copy(message = summary.message + " (partial — export exceeded the ${MAX_TOTAL_BYTES shr 30} GB import memory budget)")
+            summary.copy(
+                message = summary.message + " (partial — export exceeded the ${MAX_TOTAL_BYTES shr 30} GB import memory budget)",
+                localized = { uiString(R.string.l10n_wearable_export_importer_1_s_partial_export_exceeded_the_b1516f5f, summary.displayMessage(), MAX_TOTAL_BYTES shr 30) },
+            )
         } else {
             summary
         }
@@ -854,6 +865,10 @@ object WearableExportImporter {
             counts = mapOf("dailyMetric" to dailyMetrics.size, "sleepSession" to sleepRows.size, "metricSeries" to series.size),
             firstDay = first, lastDay = last,
             message = "Imported ${parsed.days.size} days, ${sleepRows.size} sleeps from ${brand.label}$span",
+            localized = {
+                val head = uiString(R.string.l10n_wearable_export_importer_imported_1_s_2_s_from_fc83bfa6, uiPlural(R.plurals.l10n_wearable_export_importer_1_d_days_8808cc6b, parsed.days.size, parsed.days.size), uiPlural(R.plurals.l10n_wearable_export_importer_1_d_sleeps_8dae94eb, sleepRows.size, sleepRows.size), brand.label)
+                if (first != null && last != null && first != last) uiString(R.string.l10n_wearable_export_importer_1_s_2_s_3_s_5ece4fe5, head, first, last) else head
+            },
         )
     }
 

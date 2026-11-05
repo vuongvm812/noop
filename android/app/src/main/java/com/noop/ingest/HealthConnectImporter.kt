@@ -1,5 +1,10 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
@@ -312,7 +317,7 @@ object HealthConnectImporter {
         categories: Set<ImportCategory>? = null,
     ): ImportSummary {
         if (sdkStatus(context) != HealthConnectClient.SDK_AVAILABLE) {
-            return ImportSummary.failure(SOURCE, "Health Connect is not available on this device.")
+            return ImportSummary.failure(SOURCE, "Health Connect is not available on this device.") { uiString(R.string.l10n_health_connect_importer_health_connect_is_not_available_on_0336b16d) }
         }
 
         // Refile any legacy Health Connect data that landed in the shared "apple-health" bucket before
@@ -331,7 +336,7 @@ object HealthConnectImporter {
         val granted = try {
             client.permissionController.getGrantedPermissions()
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE, "Could not read Health Connect permissions: ${e.message}")
+            return ImportSummary.failure(SOURCE, "Could not read Health Connect permissions: ${e.message}") { uiString(R.string.l10n_health_connect_importer_could_not_read_health_connect_permissions_d3327cc8, e.message.toString()) }
         }
         // #645 follow-up: a user who predates the category selector has nothing stored — recover their
         // real scope from the grants before deciding what to read, or the first import after the update
@@ -349,7 +354,7 @@ object HealthConnectImporter {
             return ImportSummary.failure(
                 SOURCE,
                 "No selected Health Connect data types are granted. Allow at least one selected type, then import.",
-            )
+            ) { uiString(R.string.l10n_health_connect_importer_no_selected_health_connect_data_types_78fcfeff) }
         }
 
         val zone = ZoneId.systemDefault()
@@ -699,7 +704,7 @@ object HealthConnectImporter {
                 hydrationMl[day] = (hydrationMl[day] ?: 0.0) + r.volume.inMilliliters
             }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE, "Health Connect read failed: ${e.message}")
+            return ImportSummary.failure(SOURCE, "Health Connect read failed: ${e.message}") { uiString(R.string.l10n_health_connect_importer_health_connect_read_failed_1_s_e3e78a8b, e.message.toString()) }
         }
 
         // Zero-fill the whole hydration window and write it, BEFORE the "nothing found" bail below:
@@ -738,6 +743,7 @@ object HealthConnectImporter {
                 source = SOURCE,
                 counts = emptyMap(),
                 message = "No Health Connect data found to import.",
+                localized = { uiString(R.string.l10n_health_connect_importer_no_health_connect_data_found_to_344959db) },
             )
         }
 
@@ -860,7 +866,7 @@ object HealthConnectImporter {
                 repo.upsertWorkouts(workouts)
             }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE, "Saving Health Connect data failed: ${e.message}")
+            return ImportSummary.failure(SOURCE, "Saving Health Connect data failed: ${e.message}") { uiString(R.string.l10n_health_connect_importer_saving_health_connect_data_failed_1_27e47e19, e.message.toString()) }
         }
 
         // Opt-in profile weight sync. Hooked here rather than at the callers so every entry point
@@ -901,6 +907,10 @@ object HealthConnectImporter {
             lastDay = lastDay,
             message = if (total == 0) "Nothing new to import from Health Connect."
             else "Imported $total rows from Health Connect.",
+            localized = {
+                if (total == 0) uiString(R.string.l10n_health_connect_importer_nothing_new_to_import_from_health_fbc89bf2)
+                else uiString(R.string.l10n_health_connect_importer_imported_1_d_rows_from_health_617188bb, total)
+            },
         )
     }
 

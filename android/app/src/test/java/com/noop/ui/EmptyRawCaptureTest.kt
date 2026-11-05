@@ -1,6 +1,9 @@
 package com.noop.ui
 
+import com.noop.R
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,11 +64,11 @@ class EmptyRawCaptureTest {
      */
     @Test
     fun `an unbonded strap is told why, not told to wait`() {
-        val msg = LogExport.noCaptureMsgText(
+        val msg = LogExport.noCaptureMsgRes(
             whoop5Connected = true, captureEnabled = true, encryptedBond = false, sharingLog = false,
         )
-        assertTrue(msg.contains("encrypted pairing"))
-        assertFalse("waiting is not the remedy when the strap cannot pair",
-                    msg.contains("Let a 5/MG history sync run"))
+        assertEquals(R.string.l10n_log_export_raw_capture_is_on_but_this_8e358ddd, msg)
+        assertNotEquals("waiting is not the remedy when the strap cannot pair",
+                        R.string.l10n_log_export_raw_capture_is_on_let_a_f03d5686, msg)
     }
 }

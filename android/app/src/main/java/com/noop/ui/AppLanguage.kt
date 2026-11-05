@@ -21,7 +21,8 @@ enum class AppLanguage(val storageValue: String?, val autonym: String) {
     ITALIAN("it", "Italiano"),
     PORTUGUESE("pt-PT", "Português"),
     POLISH("pl", "Polski"),
-    CHINESE("zh", "中文");
+    CHINESE("zh", "中文"),
+    VIETNAMESE("vi", "Tiếng Việt");
 
     companion object {
         fun fromStorage(raw: String?): AppLanguage =

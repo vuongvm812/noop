@@ -75,13 +75,24 @@ import kotlin.math.roundToInt
 
 // MARK: - Window range (W / M / 3M / 6M / 1Y / ALL)
 
-private enum class ExploreRange(val days: Int?, val label: String, val windowName: String) {
+private enum class ExploreRange(val days: Int?, val label: String, private val windowNameEn: String) {
     Week(7, "W", "week"),
     Month(30, "M", "month"),
     Quarter(90, "3M", "quarter"),
     Half(180, "6M", "6 months"),
     Year(365, "1Y", "year"),
     All(null, "ALL", "all time");
+
+    /** Localized lower-case window name used inside captions. */
+    val windowName: String
+        get() = when (this) {
+            Week -> uiString(R.string.l10n_trends_explore_screen_week_c0ee32d8)
+            Month -> uiString(R.string.l10n_trends_explore_screen_month_021710fa)
+            Quarter -> uiString(R.string.l10n_trends_explore_screen_quarter_7fa1f943)
+            Half -> uiString(R.string.l10n_trends_explore_screen_6_months_cd75b86f)
+            Year -> uiString(R.string.l10n_trends_explore_screen_year_4ff0b153)
+            All -> uiString(R.string.l10n_trends_explore_screen_all_time_5ae5c422)
+        }
 
     /** This range plus every larger range, ascending , the auto-widen search order. */
     val widening: List<ExploreRange>
@@ -301,7 +312,7 @@ fun TrendsExploreScreen(vm: AppViewModel) {
                     key = k,
                     title = k.replace('_', ' ').replaceFirstChar { c -> c.uppercase() },
                     unit = "",
-                    category = "Other",
+                    category = uiString(R.string.l10n_trends_explore_screen_other_6e6a6f20),
                     accent = Palette.metricCyan,
                     higherIsBetter = null,
                     decimals = 1,
@@ -624,13 +635,13 @@ private fun HeroChartCard(
     fellBack: Boolean,
 ) {
     val heroValue = latest?.let { metric.format(it.value) } ?: ","
-    val asOf = latest?.let { "as of ${it.day}" } ?: "no readings yet"
+    val asOf = latest?.let { uiString(R.string.l10n_trends_explore_screen_as_of_1_s_a438333e, it.day) } ?: uiString(R.string.l10n_trends_explore_screen_no_readings_yet_7e0fe268)
     // The range bar above already prints the authoritative reading-count caption; the hero only
     // names its window so the count isn't doubled in one card height.
     val subtitle = if (fellBack) {
-        "Trailing ${effectiveRange.windowName}"
+        uiString(R.string.l10n_trends_explore_screen_trailing_1_s_c896b268, effectiveRange.windowName)
     } else {
-        "Trailing ${range.windowName}"
+        uiString(R.string.l10n_trends_explore_screen_trailing_1_s_c896b268, range.windowName)
     }
     // Wash the hero card in the metric's domain world (Charge green / Effort amber / Rest indigo).
     NoopCard(tint = domainTint(metric.category)) {
@@ -891,7 +902,6 @@ private fun rangeCaption(
 ): String {
     if (series.isEmpty()) return ","
     val n = windowed.size
-    val unit = if (n == 1) "reading" else "readings"
-    return if (fellBack) "$n $unit · sparse , widened to ${effectiveRange.windowName}"
-    else "$n $unit · ${range.windowName}"
+    return if (fellBack) uiPlural(R.plurals.l10n_trends_explore_screen_caption_readings_widened, n, n, effectiveRange.windowName)
+    else uiPlural(R.plurals.l10n_trends_explore_screen_caption_readings, n, n, range.windowName)
 }

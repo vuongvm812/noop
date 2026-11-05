@@ -48,9 +48,11 @@ object StrainTargetPolicy {
 
     /** Title + body for the nudge. [target] is the optimal-band low on the 0-21 coupled axis. NOOP's OWN
      *  wording — the feature is reimplemented behaviour, not copied copy. */
-    fun copy(target: Int): Pair<String, String> {
-        val title = "Optimal strain reached"
-        val body = "You've hit today's optimal strain target of $target. Nice work — your recovery earned it."
+    fun copy(target: Int, context: Context? = null): Pair<String, String> {
+        // [context] is null only on the JVM unit-test path, which has no Android resources to resolve.
+        val title = context?.getString(R.string.l10n_notifications_settings_screen_optimal_strain_reached_2862ec2b) ?: "Optimal strain reached"
+        val body = context?.getString(R.string.l10n_strain_target_notifier_you_ve_hit_today_s_optimal_d0fcc81f, target)
+            ?: "You've hit today's optimal strain target of $target. Nice work — your recovery earned it."
         return title to body
     }
 }
@@ -78,7 +80,7 @@ object StrainTargetNotifier {
             )
         ) return
         // Non-null: shouldNotify above required target != null before returning true.
-        val copy = StrainTargetPolicy.copy(target21!!)
+        val copy = StrainTargetPolicy.copy(target21!!, context)
         runCatching {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
@@ -113,13 +115,14 @@ object StrainTargetNotifier {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // Re-creating an existing channel only refreshes its name and description (importance and the
+            // user\'s own settings are kept), so the channel follows the app language.
             mgr.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_ID, "Daily reports",
+                    CHANNEL_ID, context.getString(R.string.l10n_notifications_settings_screen_daily_reports_c1a22a74),
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "A morning recap and post-workout summary, after your strap syncs."
+                    description = context.getString(R.string.l10n_strain_target_notifier_a_morning_recap_and_post_workout_6688d6d7)
                 },
             )
         }

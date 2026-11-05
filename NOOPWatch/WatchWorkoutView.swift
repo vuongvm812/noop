@@ -201,7 +201,7 @@ struct WatchWorkoutView: View {
         }
     }
 
-    private func stat(_ title: String, _ value: String, unit: String, tint: Color) -> some View {
+    private func stat(_ title: LocalizedStringKey, _ value: String, unit: String, tint: Color) -> some View {
         VStack(spacing: 2) {
             Text(title)
                 .font(StrandFont.overlineScaled(9))

@@ -122,10 +122,15 @@ public struct TypicalRangeBar: View {
         if let t = clampedTypical {
             let lo = Int((t.lowerBound * 100).rounded())
             let hi = Int((t.upperBound * 100).rounded())
-            let placement = clampedValue < t.lowerBound ? "below" : (clampedValue > t.upperBound ? "above" : "within")
-            return "\(pct) percent, \(placement) the typical range of \(lo) to \(hi) percent"
+            if clampedValue < t.lowerBound {
+                return String(localized: "\(pct) percent, below the typical range of \(lo) to \(hi) percent", bundle: .module)
+            }
+            if clampedValue > t.upperBound {
+                return String(localized: "\(pct) percent, above the typical range of \(lo) to \(hi) percent", bundle: .module)
+            }
+            return String(localized: "\(pct) percent, within the typical range of \(lo) to \(hi) percent", bundle: .module)
         }
-        return "\(pct) percent"
+        return String(localized: "\(pct) percent", bundle: .module)
     }
 }
 
@@ -209,8 +214,9 @@ public struct TypicalRangeRow: View {
         let base = parts.joined(separator: ", ")
         guard let t = typical else { return base }
         let v = min(max(value, 0), 1)
-        let placement = v < t.lowerBound ? "below typical" : (v > t.upperBound ? "above typical" : "within typical range")
-        return "\(base), \(placement)"
+        if v < t.lowerBound { return String(localized: "\(base), below typical", bundle: .module) }
+        if v > t.upperBound { return String(localized: "\(base), above typical", bundle: .module) }
+        return String(localized: "\(base), within typical range", bundle: .module)
     }
 }
 

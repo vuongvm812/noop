@@ -17,6 +17,7 @@ import com.noop.ui.NoopPrefs
 import com.noop.ui.NotificationRoute
 import com.noop.ui.UnitPrefs
 import com.noop.ui.WeeklyDigestLoader
+import com.noop.ui.WeeklyDigestText
 import com.noop.ui.appLaunchIntent
 import com.noop.ui.effortDisplayFactor
 import com.noop.ui.logicalDayKeyNow
@@ -239,12 +240,15 @@ object ScheduledReportNotifier {
                 WeeklySummaryPolicy.anchorDay(week), factor,
             )
         }.getOrNull() ?: return
-        val body = WeeklySummaryPolicy.body(digest)
-        if (body == null) {
+        // The policy decides whether the week has a headline at all (its English sentence is the engine's);
+        // the renderer then words that same headline in the app language.
+        val englishBody = WeeklySummaryPolicy.body(digest)
+        if (englishBody == null) {
             // Nothing to say about an empty week: mark it, so it is not rebuilt on every republish.
             NoopPrefs.setReportWeeklySummaryWeek(context, week)
             return
         }
+        val body = WeeklyDigestText.notificationBody(digest) ?: englishBody
         runCatching {
             ensureChannel(context)
             post(
@@ -292,7 +296,8 @@ object ScheduledReportNotifier {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         runCatching {
             val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+            // Re-creating an existing channel only refreshes its name and description (importance and the
+            // user\'s own settings are kept), so the channel follows the app language.
             mgr.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID, "Daily reports",

@@ -1065,7 +1065,7 @@ struct InsightsView: View {
         }()
         // Build the plain-English sentence ONCE and reuse it for both the visible
         // copy and the accessibility label (was computed twice per card).
-        let sentence = BehaviorInsights.sentence(e)
+        let sentence = InsightsSentences.effect(e)
 
         // The card wash reads as the OUTCOME's colour world (so the whole Behaviour
         // Effects section sits in one world), while the dot / StatTile accents stay
@@ -1105,13 +1105,13 @@ struct InsightsView: View {
                 ) {
                     StatTile(label: "With",
                              value: formatOutcome(e.meanWith),
-                             caption: "n = \(e.nWith)",
+                             caption: String(localized: "n = \(e.nWith)"),
                              accent: tintColor,
                              delta: deltaText,
                              deltaColor: tintColor)
                     StatTile(label: "Without",
                              value: formatOutcome(e.meanWithout),
-                             caption: "n = \(e.nWithout)",
+                             caption: String(localized: "n = \(e.nWithout)"),
                              accent: StrandPalette.textPrimary)
                 }
 
@@ -1122,7 +1122,7 @@ struct InsightsView: View {
                     Text("Effect size").strandOverline()
                     Spacer()
                     HStack(spacing: 6) {
-                        Text(String(format: "d = %.2f", e.cohensD))
+                        Text(String(localized: "d = \(String(format: "%.2f", e.cohensD))"))
                             .font(StrandFont.captionNumber)
                             .foregroundStyle(tintColor)
                         Text(effectMagnitudeWord(e.cohensD))
@@ -1192,7 +1192,7 @@ struct InsightsView: View {
                     Spacer(minLength: 8)
                     ScoreStatePill(scoreState)
                 }
-                Text(cost.sentence())
+                Text(InsightsSentences.activityCost(cost))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1317,7 +1317,7 @@ struct InsightsView: View {
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
                 Spacer()
-                Text(String(format: "r = %+.2f", r))
+                Text(String(localized: "r = \(String(format: "%+.2f", r))"))
                     .font(StrandFont.number(16))
                     .foregroundStyle(strength)
                 StatePill(rel.corr.pApprox < 0.05 ? "p < 0.05" : "n.s.",
@@ -1451,7 +1451,7 @@ private struct RBar: View {
         .overlay(alignment: .center) {
             if hovering {
                 ChartTooltip(
-                    value: String(format: "r = %+.2f", r),
+                    value: String(localized: "r = \(String(format: "%+.2f", r))"),
                     label: label,
                     accent: color
                 )

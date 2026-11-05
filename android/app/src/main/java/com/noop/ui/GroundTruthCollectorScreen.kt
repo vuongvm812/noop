@@ -179,7 +179,7 @@ fun GroundTruthCollectorScreen(vm: AppViewModel) {
                             } catch (failure: Throwable) {
                                 if (failure is kotlinx.coroutines.CancellationException) throw failure
                                 Toast.makeText(context, context.getString(R.string.ground_truth_export_failed,
-                                    "${failure.javaClass.simpleName}: ${failure.message ?: "unknown error"}"), Toast.LENGTH_LONG).show()
+                                    "${failure.javaClass.simpleName}: ${failure.message ?: uiString(R.string.l10n_ground_truth_collector_screen_unknown_error_af6321ca)}"), Toast.LENGTH_LONG).show()
                             } finally {
                                 exportingSessionId = null
                             }

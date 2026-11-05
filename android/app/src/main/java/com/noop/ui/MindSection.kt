@@ -48,7 +48,17 @@ import kotlin.math.abs
 // mood is self-knowledge, not a score, so nothing here is tinted good/bad.
 
 /** One face on the check-in scale. `value` is the stored 1.0–5.0 contract value. */
-private data class MoodFace(val emoji: String, val value: Double, val word: String)
+private data class MoodFace(val emoji: String, val value: Double, val wordEn: String) {
+    /** Localized one-word label for the face. */
+    val word: String
+        get() = when (value.toInt()) {
+            1 -> uiString(R.string.l10n_mind_section_awful_b0dd1518)
+            2 -> uiString(R.string.l10n_mind_section_low_a124947c)
+            3 -> uiString(R.string.l10n_mind_section_okay_d5445583)
+            4 -> uiString(R.string.l10n_mind_section_good_61dedcf0)
+            else -> uiString(R.string.l10n_mind_section_great_bd846adf)
+        }
+}
 
 private val MOOD_FACES = listOf(
     MoodFace("😞", 1.0, "Awful"),   // 😞
@@ -65,9 +75,7 @@ private const val MIND_GATE_DAYS = CorrelationEngine.minPairs
 private const val MIND_MIN_ABS_R = 0.3
 
 /** Shared verbatim footnote — IDENTICAL string on macOS/iOS; do not reword. */
-private const val MIND_FOOTNOTE =
-    "Self-tracking, not a clinical assessment. If low mood persists, talk to a " +
-        "professional. You deserve support."
+private fun mindFootnote(): String = uiString(R.string.l10n_mind_section_self_tracking_not_a_clinical_assessment_0aea15a7)
 
 // MARK: - Section
 
@@ -102,7 +110,7 @@ fun MindSection(vm: AppViewModel) {
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-        SectionHeader("Mind", overline = "Mood check-in")
+        SectionHeader(uiString(R.string.l10n_mind_section_mind_59e63f7e), overline = uiString(R.string.l10n_mind_section_mood_check_in_38e5858e))
 
         NoopCard {
             Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
@@ -156,7 +164,7 @@ fun MindSection(vm: AppViewModel) {
                             Text(face.word, style = NoopType.headline, color = Palette.textPrimary)
                             Text(uiString(R.string.l10n_mind_section_logged_today_0071a46c), style = NoopType.caption, color = Palette.textTertiary)
                         }
-                        MoodChip("Edit") { editing = true }
+                        MoodChip(uiString(R.string.l10n_mind_section_edit_5301648d)) { editing = true }
                     }
                 }
 
@@ -190,7 +198,7 @@ fun MindSection(vm: AppViewModel) {
             }
         }
 
-        Text(MIND_FOOTNOTE, style = NoopType.footnote, color = Palette.textTertiary)
+        Text(mindFootnote(), style = NoopType.footnote, color = Palette.textTertiary)
     }
 }
 
@@ -201,7 +209,7 @@ fun MindSection(vm: AppViewModel) {
 @Composable
 private fun MoodFaceButton(face: MoodFace, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
-    val desc = "${face.word}, mood ${face.value.toInt()} of 5"
+    val desc = uiString(R.string.l10n_mind_section_1_s_mood_2_d_of_57d4b070, face.word, face.value.toInt())
     Box(
         modifier = Modifier
             .clip(shape)
@@ -240,13 +248,14 @@ private fun MoodChip(label: String, onClick: () -> Unit) {
  *  Neutral colours — r is information here, not a verdict. */
 @Composable
 private fun MindCorrelationRow(line: MindLine) {
-    val dir = if (line.r > 0) "positive" else if (line.r < 0) "negative" else "flat"
-    val sentence = "${mindStrengthWord(line.r)} $dir relationship (n = ${line.n})."
+    val dir = if (line.r > 0) uiString(R.string.l10n_mind_section_positive_c4c6c572) else if (line.r < 0) uiString(R.string.l10n_mind_section_negative_cb47297f) else uiString(R.string.l10n_mind_section_flat_b9c7b42d)
+    val lineTitle = uiString(line.titleRes)
+    val sentence = uiString(R.string.l10n_mind_section_1_s_2_s_relationship_n_930658dc, mindStrengthWord(line.r), dir, line.n)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .semantics { contentDescription = uiString(R.string.l10n_mind_section_line_title_sentence_6d3418f9, line.title, sentence) },
+            .semantics { contentDescription = uiString(R.string.l10n_mind_section_line_title_sentence_6d3418f9, lineTitle, sentence) },
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Row(
@@ -254,7 +263,7 @@ private fun MindCorrelationRow(line: MindLine) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                line.title,
+                lineTitle,
                 style = NoopType.subhead,
                 color = Palette.textPrimary,
                 modifier = Modifier.weight(1f),
@@ -272,7 +281,7 @@ private fun MindCorrelationRow(line: MindLine) {
 // MARK: - Correlation math
 
 /** A computed mood ↔ outcome line. */
-private data class MindLine(val title: String, val r: Double, val n: Int)
+private data class MindLine(@androidx.annotation.StringRes val titleRes: Int, val r: Double, val n: Int)
 
 /**
  * Up to three mood ↔ body lines over the cached daily metrics: HRV, recovery and
@@ -283,27 +292,27 @@ private fun buildMindCorrelations(
     days: List<DailyMetric>,
     mood: List<Pair<String, Double>>,
 ): List<MindLine> {
-    fun line(title: String, series: List<Pair<String, Double>>): MindLine? {
+    fun line(@androidx.annotation.StringRes titleRes: Int, series: List<Pair<String, Double>>): MindLine? {
         // Same gates as the Swift MindSection: n ≥ minPairs and |r| ≥ 0.3, strongest first, three lines.
         val c = CorrelationEngine.pearson(CorrelationEngine.alignByDay(series, mood)) ?: return null
         if (c.n < MIND_GATE_DAYS || abs(c.r) < MIND_MIN_ABS_R) return null
-        return MindLine(title, c.r, c.n)
+        return MindLine(titleRes, c.r, c.n)
     }
     return listOfNotNull(
-        line("Mood ↔ HRV", days.mapNotNull { d -> d.avgHrv?.let { d.day to it } }),
-        line("Mood ↔ Recovery", days.mapNotNull { d -> d.recovery?.let { d.day to it } }),
-        line("Mood ↔ Sleep duration", days.mapNotNull { d -> d.totalSleepMin?.let { d.day to it } }),
+        line(R.string.l10n_mind_section_mood_hrv_c115b673, days.mapNotNull { d -> d.avgHrv?.let { d.day to it } }),
+        line(R.string.l10n_mind_section_mood_recovery_eebeb0f2, days.mapNotNull { d -> d.recovery?.let { d.day to it } }),
+        line(R.string.l10n_mind_section_mood_sleep_duration_f373ab00, days.mapNotNull { d -> d.totalSleepMin?.let { d.day to it } }),
     ).sortedByDescending { abs(it.r) }.take(3)
 }
 
 private fun mindStrengthWord(r: Double): String {
     val m = abs(r)
     return when {
-        m < 0.1 -> "No"
-        m < 0.3 -> "A weak"
-        m < 0.5 -> "A moderate"
-        m < 0.7 -> "A strong"
-        else -> "A very strong"
+        m < 0.1 -> uiString(R.string.l10n_mind_section_no_816c52fd)
+        m < 0.3 -> uiString(R.string.l10n_mind_section_a_weak_750ab75b)
+        m < 0.5 -> uiString(R.string.l10n_mind_section_a_moderate_d2212fac)
+        m < 0.7 -> uiString(R.string.l10n_mind_section_a_strong_8c0ccb3c)
+        else -> uiString(R.string.l10n_mind_section_a_very_strong_b796e265)
     }
 }
 

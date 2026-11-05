@@ -588,7 +588,7 @@ enum DataBackup {
         var errorDescription: String? {
             switch self {
             case .entryTooLarge(let name):
-                return "\(name) is too large to restore safely."
+                return String(localized: "\(name) is too large to restore safely.")
             }
         }
     }

@@ -1,5 +1,10 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.ble.PuffinExperiment
@@ -205,7 +210,17 @@ object CaptureImporter {
             if (rejectCount > 0) append(" Archived $rejectCount undecodable frame(s) for a future decoder.")
             if (parsed.truncated) append(" File was very large - imported the first ${MAX_FRAMES} frames only.")
         }
-        return ImportSummary(SOURCE_LABEL, counts, first, last, message)
+        return ImportSummary(SOURCE_LABEL, counts, first, last, message, localized = {
+            var m = if (first != null && last != null) {
+                uiString(R.string.l10n_capture_importer_imported_1_d_rows_from_2_f5b7a9ba, total, decoded.offloadFrames, first, last)
+            } else {
+                uiString(R.string.l10n_capture_importer_imported_1_d_rows_from_2_6475af31, total, decoded.offloadFrames)
+            }
+            if (parsed.skipped > 0) m = uiString(R.string.l10n_capture_importer_1_s_skipped_2_d_unrecognised_d87206cf, m, parsed.skipped)
+            if (rejectCount > 0) m = uiString(R.string.l10n_capture_importer_1_s_archived_2_d_undecodable_4e28fa8e, m, rejectCount)
+            if (parsed.truncated) m = uiString(R.string.l10n_capture_importer_1_s_file_was_very_large_16f5c9b7, m, MAX_FRAMES)
+            m
+        })
     }
 
     private fun InsertCounts.plus(o: InsertCounts) = InsertCounts(
@@ -268,15 +283,15 @@ object CaptureImporter {
         val parsed = try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 input.bufferedReader(Charsets.UTF_8).use { parse(it) }
-            } ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the file.")
+            } ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the file.") { uiString(R.string.l10n_capture_importer_could_not_open_the_file_5db20729) }
         } catch (e: JSONException) {
             return ImportSummary.failure(
                 SOURCE_LABEL, "Not a valid capture.json (expected a JSON array of frames).",
-            )
+            ) { uiString(R.string.l10n_capture_importer_not_a_valid_capture_json_expected_ff812e24) }
         } catch (e: SecurityException) {
-            return ImportSummary.failure(SOURCE_LABEL, "No permission to read that file.")
+            return ImportSummary.failure(SOURCE_LABEL, "No permission to read that file.") { uiString(R.string.l10n_capture_importer_no_permission_to_read_that_file_8e2e3041) }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_capture_importer_could_not_read_the_file_1_65a3ad34, (e.message ?: uiString(R.string.l10n_capture_importer_unknown_error_af6321ca))) }
         }
 
         // Test Centre → Experimental algorithms: re-derive v26 PPG-HR with the opt-in sub-lag interpolation
@@ -293,12 +308,12 @@ object CaptureImporter {
         if (decoded.batches.isEmpty()) {
             val archived = decoded.rejects.values.sumOf { it.size }
             return if (archived == 0) {
-                ImportSummary.failure(SOURCE_LABEL, "No historical WHOOP frames found in this file.")
+                ImportSummary.failure(SOURCE_LABEL, "No historical WHOOP frames found in this file.") { uiString(R.string.l10n_capture_importer_no_historical_whoop_frames_found_in_62460ea7) }
             } else {
                 ImportSummary.failure(
                     SOURCE_LABEL,
                     "No frames could be decoded yet; archived $archived undecodable frame(s) for a future decoder.",
-                )
+                ) { uiString(R.string.l10n_capture_importer_no_frames_could_be_decoded_yet_1dc07d82, archived) }
             }
         }
 

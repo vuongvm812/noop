@@ -29,6 +29,12 @@ data class ImportSummary(
      * would quietly overstate coverage.
      */
     val columnCoverageRows: Int = 0,
+    /**
+     * Localized rendering of [message], resolved lazily at display time. [message] stays English because
+     * it is also written to the strap log and asserted by the JVM tests, which run without an Application;
+     * the UI shows `com.noop.ui.displayMessage`, which falls back to [message] when no localized form was supplied.
+     */
+    val localized: (() -> String)? = null,
 ) {
     val totalRows: Int get() = counts.values.sum()
 

@@ -73,12 +73,11 @@ import kotlin.math.roundToInt
 /** One-line spoken summary of a numeric series: count + latest + low/high. Empty → "No data". */
 private fun seriesSummary(values: List<Double>, noun: String): String {
     val clean = values.filter { it.isFinite() }
-    if (clean.isEmpty()) return "$noun, no data"
+    if (clean.isEmpty()) return chartScrubString(R.string.l10n_charts_1_s_no_data_4103be88, "%1\$s, no data", noun)
     val last = clean.last()
     val lo = clean.min()
     val hi = clean.max()
-    return "$noun, ${clean.size} points, latest ${formatLineValue(last)}, " +
-        "low ${formatLineValue(lo)}, high ${formatLineValue(hi)}"
+    return chartScrubString(R.string.l10n_charts_1_s_2_d_points_latest_02c84e49, "%1\$s, %2\$d points, latest %3\$s, low %4\$s, high %5\$s", noun, clean.size, formatLineValue(last), formatLineValue(lo), formatLineValue(hi))
 }
 
 /**
@@ -247,7 +246,7 @@ fun Sparkline(
     // ONE collapsed semantics node (see "Accessibility summaries"): the delegate reads a single trend
     // summary instead of walking the canvas. clearAndSetSemantics drops any child nodes (there are none
     // here) and contributes exactly this contentDescription. Changes no drawing.
-    val axSummary = seriesSummary(values, "Trend")
+    val axSummary = seriesSummary(values, chartScrubString(R.string.trends_trend, "Trend"))
     val cleanValues = remember(values) { values.filter { it.isFinite() } }
     val cleanLabels = remember(values, selectionLabels) {
         if (selectionLabels == null || selectionLabels.size != values.size) null
@@ -492,7 +491,7 @@ fun LineChart(
     // accessibility delegate reads a single trend summary rather than descending into the canvas. The
     // summary uses the same finite-filtered values the line draws. With selection on, the node also
     // carries the selected reading as its state and Next/Previous point actions (#58), still one node.
-    val axSummary = seriesSummary(cleanValues, "Trend")
+    val axSummary = seriesSummary(cleanValues, chartScrubString(R.string.trends_trend, "Trend"))
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -880,7 +879,7 @@ fun BarChart(
     // ONE collapsed semantics node so the a11y delegate reads a single bar-series summary instead of
     // walking every bar. Summarises the (zeroed-non-finite) source values the bars are scaled from. With
     // selection on it also carries the selected bar as its state and Next/Previous point actions (#58).
-    val axSummary = seriesSummary(cleanValues, "Bars")
+    val axSummary = seriesSummary(cleanValues, chartScrubString(R.string.settings_trend_bars, "Bars"))
     // Remembered on everything it captures: a scrub step recomposes this chart (the TalkBack state), and
     // a fresh drawWithCache lambda would rebuild every bar's geometry each time.
     val barDrawing = remember(
@@ -1087,7 +1086,7 @@ fun SegmentBar(
     // drawWithCache (keyed on segments + the implicit size); the draw lambda replays the segment list.
     // ONE collapsed semantics node so the a11y delegate doesn't walk each segment. The segments are a
     // caller-supplied colour breakdown with no inherent label, so the summary is just the segment count.
-    val axSummary = if (segments.isEmpty()) "Breakdown, no data" else "Breakdown, ${segments.size} segments"
+    val axSummary = if (segments.isEmpty()) chartScrubString(R.string.l10n_charts_1_s_no_data_4103be88, "%1\$s, no data", chartScrubString(R.string.l10n_charts_breakdown_fd91b3cc, "Breakdown")) else chartScrubString(R.string.l10n_charts_1_s_2_d_segments_d26df85e, "%1\$s, %2\$d segments", chartScrubString(R.string.l10n_charts_breakdown_fd91b3cc, "Breakdown"), segments.size)
     val weights = remember(segments) { segments.map { it.second } }
     val scrubCallouts = callouts?.takeIf { it.size == segments.size }
     var selected by remember(segments) { mutableIntStateOf(-1) }
@@ -1385,7 +1384,7 @@ fun TimelineChart(
 
     // ONE collapsed semantics node (summary of the VISIBLE window) so the a11y delegate reads a single
     // line instead of walking the canvas; recomputes as the zoom/pan window changes. Changes no drawing.
-    val axSummary = seriesSummary(vis.map { it.value }, "Timeline")
+    val axSummary = seriesSummary(vis.map { it.value }, chartScrubString(R.string.l10n_charts_timeline_018514a3, "Timeline"))
     Box(
         modifier = modifier
             .fillMaxWidth()

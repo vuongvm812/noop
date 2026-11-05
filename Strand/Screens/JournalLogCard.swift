@@ -165,7 +165,9 @@ struct JournalLogCard: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("\(group.title), \(groupItems.count) items, \(collapsed ? "collapsed" : "expanded")")
+                .accessibilityLabel(collapsed
+                    ? String(localized: "\(group.title), \(groupItems.count) items, collapsed")
+                    : String(localized: "\(group.title), \(groupItems.count) items, expanded"))
 
                 if !collapsed {
                     ForEach(groupItems) { item in itemRow(item) }

@@ -39,6 +39,12 @@
             "value": "%@ вдохов/мин"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ nhịp thở/phút"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -101,6 +107,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ темп"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tốc độ %@"
           }
         },
         "zh-Hans": {
@@ -167,6 +179,12 @@
             "value": "%@ · %@с вдох / %@с выдох"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %@s vào / %@s ra"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -229,6 +247,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · %lld ккал"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · %lld kcal"
           }
         },
         "zh-Hans": {
@@ -319,6 +343,12 @@
             }
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld nhịp thở · %@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -407,6 +437,12 @@
             }
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Còn %1$lld giây trong %2$@"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -471,6 +507,12 @@
             "value": "Разрешить доступ"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cho phép truy cập"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -533,6 +575,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Квадрат"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Box"
           }
         },
         "zh-Hans": {
@@ -605,6 +653,12 @@
             "value": "Дышать"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thở"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -661,6 +715,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Вдох"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hít vào"
           }
         },
         "zh-Hans": {
@@ -751,6 +811,12 @@
             }
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hít vào trong %lld giây"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -813,6 +879,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Выдох"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thở ra"
           }
         },
         "zh-Hans": {
@@ -903,6 +975,12 @@
             }
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thở ra trong %lld giây"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -973,6 +1051,12 @@
             "value": "Заряд"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Năng lượng"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1029,6 +1113,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Когерентность"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đồng bộ nhịp"
           }
         },
         "zh-Hans": {
@@ -1095,6 +1185,12 @@
             "value": "ГОТОВО"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XONG"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1157,6 +1253,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Готово"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xong"
           }
         },
         "zh-Hans": {
@@ -1229,6 +1331,12 @@
             "value": "Усилие"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gắng sức"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1285,6 +1393,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Завершить"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết thúc"
           }
         },
         "zh-Hans": {
@@ -1351,6 +1465,12 @@
             "value": "Завершить тренировку"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết thúc buổi tập"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1415,6 +1535,12 @@
             "value": "Функциональная сила"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sức mạnh chức năng"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1477,6 +1603,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Разрешить доступ к Health"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấp quyền truy cập Sức khỏe"
           }
         },
         "zh-Hans": {
@@ -1549,6 +1681,12 @@
             "value": "ПУЛЬС"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NHỊP TIM"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1605,6 +1743,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ЧСС недоступна"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không có nhịp tim"
           }
         },
         "zh-Hans": {
@@ -1671,6 +1815,12 @@
             "value": "Пульс и энергия в реальном времени, записанные на запястье. Остаются на устройстве."
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhịp tim và năng lượng trực tiếp, ghi ngay trên cổ tay bạn. Lưu trên thiết bị."
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1735,6 +1885,12 @@
             "value": "Откройте NOOP на iPhone для синхронизации"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở NOOP trên iPhone để đồng bộ"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1797,6 +1953,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ПАУЗА"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TẠM DỪNG"
           }
         },
         "zh-Hans": {
@@ -1869,6 +2031,12 @@
             "value": "Пауза"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tạm dừng"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1925,6 +2093,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "ЗАПИСЬ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ĐANG GHI"
           }
         },
         "zh-Hans": {
@@ -1991,6 +2165,12 @@
             "value": "ОТДЫХ"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "NGHỈ NGƠI"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2055,6 +2235,12 @@
             "value": "Готовы дышать"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sẵn sàng thở"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2117,6 +2303,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Расслабьтесь"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thư giãn"
           }
         },
         "zh-Hans": {
@@ -2189,6 +2381,12 @@
             "value": "Сбросить"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đặt lại"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2251,6 +2449,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Отдых"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nghỉ ngơi"
           }
         },
         "zh-Hans": {
@@ -2317,6 +2521,12 @@
             "value": "Перезапустить"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khởi động lại"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2373,6 +2583,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Продолжить"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiếp tục"
           }
         },
         "zh-Hans": {
@@ -2439,6 +2655,12 @@
             "value": "Раунд %lld из %lld"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiệp %lld trên %lld"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2503,6 +2725,12 @@
             "value": "СЕК"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GIÂY"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2565,6 +2793,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Сессия завершена"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên đã xong"
           }
         },
         "zh-Hans": {
@@ -2637,6 +2871,12 @@
             "value": "Старт"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bắt đầu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2701,6 +2941,12 @@
             "value": "Начать сессию"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bắt đầu phiên"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2757,6 +3003,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Стоп"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dừng"
           }
         },
         "zh-Hans": {
@@ -2829,6 +3081,12 @@
             "value": "Остановить сессию"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dừng phiên"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -2885,6 +3143,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "РАБОТА"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CÔNG VIỆC"
           }
         },
         "zh-Hans": {
@@ -2951,6 +3215,12 @@
             "value": "Тренировка"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buổi tập"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3015,6 +3285,12 @@
             "value": "Тренировка сохранена"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã lưu buổi tập"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3077,6 +3353,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "на %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tính đến %@"
           }
         },
         "zh-Hans": {
@@ -3149,6 +3431,12 @@
             "value": "уд/мин"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bpm"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3219,6 +3507,12 @@
             "value": "cal"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cal"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3269,6 +3563,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "устарело · %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cũ · %@"
           }
         },
         "zh-Hans": {
@@ -3341,6 +3641,12 @@
             "value": "%lld"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3394,6 +3700,12 @@
           }
         },
         "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/ %lld"
+          }
+        },
+        "vi": {
           "stringUnit": {
             "state": "translated",
             "value": "/ %lld"
@@ -3463,6 +3775,12 @@
             "value": "Открыто"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3525,6 +3843,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "5 мин"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 phút"
           }
         },
         "zh-Hans": {
@@ -3591,6 +3915,12 @@
             "value": "10 мин"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 phút"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3653,6 +3983,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "15 мин"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 phút"
           }
         },
         "zh-Hans": {
@@ -3719,6 +4055,12 @@
             "value": "Задержка…"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giữ…"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3783,6 +4125,12 @@
             "value": "Deep"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngủ sâu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3842,6 +4190,12 @@
           }
         },
         "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "4-7-8"
+          }
+        },
+        "vi": {
           "stringUnit": {
             "state": "translated",
             "value": "4-7-8"
@@ -3911,6 +4265,12 @@
             "value": "Когерентное"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhất quán"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -3970,6 +4330,12 @@
           }
         },
         "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Presence"
+          }
+        },
+        "vi": {
           "stringUnit": {
             "state": "translated",
             "value": "Presence"
@@ -4039,6 +4405,12 @@
             "value": "Mid"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giữa"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4103,6 +4475,12 @@
             "value": "Punch"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đấm"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4159,6 +4537,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "С подсказками"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Có hướng dẫn"
           }
         },
         "zh-Hans": {
@@ -4219,6 +4603,12 @@
             "value": "5м"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5p"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4275,6 +4665,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "10м"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 phút"
           }
         },
         "zh-Hans": {
@@ -4335,6 +4731,12 @@
             "value": "15м"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 phút"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4391,6 +4793,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Задержка"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giữ"
           }
         },
         "zh-Hans": {
@@ -4451,6 +4859,12 @@
             "value": "Следуйте подсказке"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theo tín hiệu"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -4464,7 +4878,15 @@
           }
         }
       }
-    }
+    },
+    "Hold for %lld seconds": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Sekunden halten"}},"es": {"stringUnit": {"state": "translated", "value": "Mantén %lld segundos"}},"fr": {"stringUnit": {"state": "translated", "value": "Maintenir pendant %lld secondes"}},"it": {"stringUnit": {"state": "translated", "value": "Tieni premuto per %lld secondi"}},"pl": {"stringUnit": {"state": "translated", "value": "Przytrzymaj przez %lld s"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Mantém durante %lld segundos"}},"ru": {"stringUnit": {"state": "translated", "value": "Удерживайте %lld секунд"}},"vi": {"stringUnit": {"state": "translated", "value": "Giữ trong %lld giây"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "保持 %lld 秒"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "按住 %lld 秒"}}}},
+    "Follow the guided cue": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Dem geführten Hinweis folgen"}},"es": {"stringUnit": {"state": "translated", "value": "Sigue la indicación guiada"}},"fr": {"stringUnit": {"state": "translated", "value": "Suivez l'indication guidée"}},"it": {"stringUnit": {"state": "translated", "value": "Segui il segnale guidato"}},"pl": {"stringUnit": {"state": "translated", "value": "Podążaj za sygnałem przewodnim"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Segue o aviso guiado"}},"ru": {"stringUnit": {"state": "translated", "value": "Следуйте подсказке"}},"vi": {"stringUnit": {"state": "translated", "value": "Làm theo tín hiệu hướng dẫn"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "跟随引导提示"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "跟隨引導提示"}}}},
+    "%lld breaths · %@/%@": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%lld Atemzüge · %@/%@"}},"es": {"stringUnit": {"state": "translated", "value": "%lld respiraciones · %@/%@"}},"fr": {"stringUnit": {"state": "translated", "value": "%lld respirations · %@/%@"}},"it": {"stringUnit": {"state": "translated", "value": "%lld respiri · %@/%@"}},"pl": {"stringUnit": {"state": "translated", "value": "%lld oddechów · %@/%@"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%lld respirações · %@/%@"}},"ru": {"stringUnit": {"state": "translated", "value": "Вдохов: %lld · %@/%@"}},"vi": {"stringUnit": {"state": "translated", "value": "%lld nhịp thở · %@/%@"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%lld 次呼吸 · %@/%@"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%lld 次呼吸 · %@／%@"}}}},
+    "%@ · guided": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "%@ · geführt"}},"es": {"stringUnit": {"state": "translated", "value": "%@ · guiado"}},"fr": {"stringUnit": {"state": "translated", "value": "%@ · guidé"}},"it": {"stringUnit": {"state": "translated", "value": "%@ · guidato"}},"pl": {"stringUnit": {"state": "translated", "value": "%@ · z przewodnikiem"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "%@ · guiado"}},"ru": {"stringUnit": {"state": "translated", "value": "%@ · с подсказками"}},"vi": {"stringUnit": {"state": "translated", "value": "%@ · có hướng dẫn"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "%@ · 引导式"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ · 引導式"}}}},
+    "Regular": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Regelmäßig"}},"es": {"stringUnit": {"state": "translated", "value": "Regular"}},"fr": {"stringUnit": {"state": "translated", "value": "Régulier"}},"it": {"stringUnit": {"state": "translated", "value": "Regolare"}},"pl": {"stringUnit": {"state": "translated", "value": "Regularny"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Regular"}},"ru": {"stringUnit": {"state": "translated", "value": "Обычный"}},"vi": {"stringUnit": {"state": "translated", "value": "Đều đặn"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "规律"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "規律"}}}},
+    "Push": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Push"}},"es": {"stringUnit": {"state": "translated", "value": "Push"}},"fr": {"stringUnit": {"state": "translated", "value": "Push"}},"it": {"stringUnit": {"state": "translated", "value": "Push"}},"pl": {"stringUnit": {"state": "translated", "value": "Wypchnij"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Push"}},"ru": {"stringUnit": {"state": "translated", "value": "Push"}},"vi": {"stringUnit": {"state": "translated", "value": "Đẩy"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "推送"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "加強"}}}},
+    "ENERGY": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "ENERGIE"}},"es": {"stringUnit": {"state": "translated", "value": "ENERGÍA"}},"fr": {"stringUnit": {"state": "translated", "value": "ÉNERGIE"}},"it": {"stringUnit": {"state": "translated", "value": "ENERGIA"}},"pl": {"stringUnit": {"state": "translated", "value": "ENERGIA"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "ENERGIA"}},"ru": {"stringUnit": {"state": "translated", "value": "ЭНЕРГИЯ"}},"vi": {"stringUnit": {"state": "translated", "value": "NĂNG LƯỢNG"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "能量"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "能量"}}}},
+    "AVG HR": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Ø HF"}},"es": {"stringUnit": {"state": "translated", "value": "FC MEDIA"}},"fr": {"stringUnit": {"state": "translated", "value": "FC MOY"}},"it": {"stringUnit": {"state": "translated", "value": "FC MEDIA"}},"pl": {"stringUnit": {"state": "translated", "value": "ŚR. TĘTNO"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "FC MÉD."}},"ru": {"stringUnit": {"state": "translated", "value": "СР. ПУЛЬС"}},"vi": {"stringUnit": {"state": "translated", "value": "NT TB"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "平均心率"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "平均心率"}}}}
   },
   "version": "1.0"
 }

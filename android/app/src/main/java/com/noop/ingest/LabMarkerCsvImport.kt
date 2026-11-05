@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.analytics.LabMarkerCategory
@@ -110,7 +117,7 @@ object LabMarkerCsvImport {
             context.contentResolver.openInputStream(uri)?.use { it.readCapped(MAX_BYTES) }
                 ?: throw IllegalStateException("Could not open input stream for $uri")
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read CSV: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read CSV: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_lab_marker_csv_import_could_not_read_csv_1_s_9b424289, (e.message ?: uiString(R.string.l10n_lab_marker_csv_import_unknown_error_af6321ca))) }
         }
 
         // Route a WHOOP biomarker export to its vendor parser (packed units, US 2-digit dates, a Status
@@ -135,13 +142,13 @@ object LabMarkerCsvImport {
             }
         }
         if (result.fileTooLarge) {
-            return ImportSummary.failure(SOURCE_LABEL, "That file is too large for a markers CSV import.")
+            return ImportSummary.failure(SOURCE_LABEL, "That file is too large for a markers CSV import.") { uiString(R.string.l10n_lab_marker_csv_import_that_file_is_too_large_for_58a5114b) }
         }
         if (result.rows.isEmpty()) {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "No usable rows found. Check the file has date, marker and value columns.",
-            )
+            ) { uiString(R.string.l10n_lab_marker_csv_import_no_usable_rows_found_check_the_8927343e) }
         }
 
         val markerRows = result.rows.map { r ->
@@ -189,6 +196,20 @@ object LabMarkerCsvImport {
                 if (result.notMeasured > 0) {
                     append(" ${result.notMeasured} not measured.")
                 }
+            },
+            localized = {
+                val readings = uiPlural(R.plurals.l10n_lab_marker_csv_import_1_d_readings_fca1d667, result.importedReadings, result.importedReadings)
+                val markers = uiPlural(R.plurals.l10n_lab_marker_csv_import_1_d_markers_49f7f9f2, result.distinctMarkers, result.distinctMarkers)
+                var m = if (result.earliestDay != null && result.latestDay != null &&
+                    result.earliestDay != result.latestDay
+                ) {
+                    uiString(R.string.l10n_lab_marker_csv_import_imported_1_s_across_2_s_4b0dc376, readings, markers, result.earliestDay, result.latestDay)
+                } else {
+                    uiString(R.string.l10n_lab_marker_csv_import_imported_1_s_across_2_s_f4b66a05, readings, markers)
+                }
+                if (result.skippedRows > 0) m = uiPlural(R.plurals.l10n_lab_marker_csv_import_1_s_2_d_rows_skipped_5b100d6f, result.skippedRows, m, result.skippedRows)
+                if (result.notMeasured > 0) m = uiString(R.string.l10n_lab_marker_csv_import_1_s_2_d_not_measured_b678418c, m, result.notMeasured)
+                m
             },
         )
     }

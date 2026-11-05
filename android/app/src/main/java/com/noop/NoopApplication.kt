@@ -243,8 +243,20 @@ class NoopApplication : Application() {
     companion object {
         @Volatile private var instance: NoopApplication? = null
 
+        /**
+         * Test seam: plain-JVM unit tests have no Application, so a test can install a resolver that
+         * reads the English `values/` resources instead. Never set in production code.
+         */
+        interface DetachedStrings {
+            fun string(@StringRes id: Int, vararg formatArgs: Any): String
+            fun plural(@PluralsRes id: Int, count: Int, vararg formatArgs: Any): String
+        }
+
+        @Volatile internal var detachedStrings: DetachedStrings? = null
+
         /** Resolve app-owned UI copy from composable and non-composable presentation helpers alike. */
         fun localizedString(@StringRes id: Int, vararg formatArgs: Any): String {
+            if (instance == null) detachedStrings?.let { return it.string(id, *formatArgs) }
             val app = checkNotNull(instance) { "NoopApplication is not attached" }
             return if (formatArgs.isEmpty()) app.getString(id) else app.getString(id, *formatArgs)
         }
@@ -253,6 +265,7 @@ class NoopApplication : Application() {
          *  locale's own plural rules. Same Application-resources path, so it stays locale-aware off the
          *  composition. */
         fun localizedPlural(@PluralsRes id: Int, count: Int, vararg formatArgs: Any): String {
+            if (instance == null) detachedStrings?.let { return it.plural(id, count, *formatArgs) }
             val app = checkNotNull(instance) { "NoopApplication is not attached" }
             return app.resources.getQuantityString(id, count, *formatArgs)
         }
