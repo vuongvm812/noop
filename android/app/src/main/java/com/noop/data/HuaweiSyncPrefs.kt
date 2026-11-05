@@ -30,6 +30,9 @@ class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor {
     override fun lastSyncAt(deviceId: String): Long? = long(deviceId, "syncAt")
     override fun emptyStreak(deviceId: String): Int = prefs.getInt(key(deviceId, "emptyStreak"), 0)
 
+    override fun dictUnavailableUntil(deviceId: String): Long? = long(deviceId, "dictUnavailableUntil")
+    override fun setDictUnavailableUntil(deviceId: String, ts: Long) = putLong(deviceId, "dictUnavailableUntil", ts)
+
     override fun recordSyncOutcome(deviceId: String, at: Long, empty: Boolean) {
         prefs.edit()
             .putLong(key(deviceId, "syncAt"), at)
