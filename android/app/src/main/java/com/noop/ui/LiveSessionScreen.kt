@@ -196,7 +196,7 @@ private fun LiveSessionBody(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(uiString(R.string.l10n_live_session_screen_live_session_73c925a5), style = NoopType.title1, color = Palette.textPrimary)
-            StatePill("BETA", tone = StrandTone.Accent, showsDot = false)
+            StatePill(uiString(R.string.today_beta), tone = StrandTone.Accent, showsDot = false)
         }
 
         Spacer(Modifier.weight(1f))
@@ -215,8 +215,8 @@ private fun LiveSessionBody(
         // The one line of copy. STALE says so honestly (coaching paused, nothing accrues); otherwise the
         // guarding promise — the whole design is that this screen has nothing to watch.
         Text(
-            if (stale) "Signal lost — coaching paused."
-            else "Guarding your session. Silence means you're on track.",
+            if (stale) uiString(R.string.l10n_live_session_screen_signal_lost_coaching_paused_8dd2756b)
+            else uiString(R.string.l10n_live_session_screen_guarding_your_session_silence_means_you_ecf79fc5),
             style = NoopType.subhead,
             color = if (stale) Palette.textTertiary else Palette.textSecondary,
             textAlign = TextAlign.Center,
@@ -287,10 +287,10 @@ private fun GuardianRing(
     val breathing = !stale && settled && position == LiveSessionEngine.Position.IN_BAND && !renderStill
 
     val stateLabel = when {
-        stale -> "Signal lost, coaching paused"
-        position == LiveSessionEngine.Position.ABOVE -> "Above today's band"
-        position == LiveSessionEngine.Position.BELOW -> "Below today's band"
-        else -> "In today's band"
+        stale -> uiString(R.string.l10n_live_session_screen_signal_lost_coaching_paused_130ab435)
+        position == LiveSessionEngine.Position.ABOVE -> uiString(R.string.l10n_live_session_screen_above_today_s_band_74f69236)
+        position == LiveSessionEngine.Position.BELOW -> uiString(R.string.l10n_live_session_screen_below_today_s_band_33398a2f)
+        else -> uiString(R.string.l10n_live_session_screen_in_today_s_band_2c815692)
     }
     Box(
         modifier = Modifier
@@ -414,10 +414,10 @@ private fun LiveSessionSummary(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Overline("Live Session", color = teal)
+                Overline(uiString(R.string.l10n_live_session_screen_live_session_73c925a5), color = teal)
                 Text(uiString(R.string.l10n_live_session_screen_session_summary_f9418e16), style = NoopType.title1, color = Palette.textPrimary)
             }
-            StatePill("BETA", tone = StrandTone.Accent, showsDot = false)
+            StatePill(uiString(R.string.today_beta), tone = StrandTone.Accent, showsDot = false)
         }
 
         // The stale auto-end declares itself — an unexplained early end would read as a bug.
@@ -466,9 +466,11 @@ private fun LiveSessionSummary(
 
         // The streak line — only once the rows have loaded (no placeholder number, ever).
         guardedCount?.let { n ->
-            val sessions = "$n session${if (n == 1) "" else "s"} guarded"
-            val run = if (streakDays >= 2) " · $streakDays days in a row" else ""
-            Text(sessions + run, style = NoopType.subhead, color = teal)
+            val sessions = uiPlural(R.plurals.l10n_live_session_screen_1_d_sessions_guarded_3f8a1ac9, n, n)
+            val line = if (streakDays >= 2)
+                uiString(R.string.l10n_coach_screen_provider_displayname_model_8b39f761, sessions, uiPlural(R.plurals.l10n_live_session_screen_1_d_days_in_a_row_e388af0b, streakDays, streakDays))
+            else sessions
+            Text(line, style = NoopType.subhead, color = teal)
         }
 
         Spacer(Modifier.height(12.dp))
@@ -492,19 +494,19 @@ private fun LiveSessionSummary(
  * engine coaches to its middle-of-the-road default band, and we never invent a percentage.
  */
 internal fun liveSessionChargeSentence(charge: Double?): String {
-    if (charge == null) return "No Charge yet today — guarding a middle-of-the-road band."
+    if (charge == null) return uiString(R.string.l10n_live_session_screen_no_charge_yet_today_guarding_a_7f68c291)
     val pct = charge.roundToInt()
     return when {
-        pct < 34 -> "Today's ceiling is lower — Charge is $pct%."
-        pct < 67 -> "A middling day — Charge is $pct%, so the band sits mid-range."
-        else -> "Plenty in the tank — Charge is $pct%, so today's ceiling is higher."
+        pct < 34 -> uiString(R.string.l10n_live_session_screen_today_s_ceiling_is_lower_charge_c6102bea, pct)
+        pct < 67 -> uiString(R.string.l10n_live_session_screen_a_middling_day_charge_is_1_a0aea717, pct)
+        else -> uiString(R.string.l10n_live_session_screen_plenty_in_the_tank_charge_is_c3cb85c4, pct)
     }
 }
 
 /** The summary's cue-count line. Zero cues is the headline case (silence IS the coaching). */
 internal fun liveSessionCueLine(pushCount: Int, easeCount: Int): String {
-    if (pushCount == 0 && easeCount == 0) return "No buzzes sent."
-    val push = "$pushCount push nudge${if (pushCount == 1) "" else "s"}"
-    val ease = "$easeCount ease-off${if (easeCount == 1) "" else "s"}"
-    return "$push · $ease"
+    if (pushCount == 0 && easeCount == 0) return uiString(R.string.l10n_live_session_screen_no_buzzes_sent_02390b0c)
+    val push = uiPlural(R.plurals.l10n_live_session_screen_1_d_push_nudges_7715afa7, pushCount, pushCount)
+    val ease = uiPlural(R.plurals.l10n_live_session_screen_1_d_ease_offs_c5c2f45f, easeCount, easeCount)
+    return uiString(R.string.l10n_coach_screen_provider_displayname_model_8b39f761, push, ease)
 }

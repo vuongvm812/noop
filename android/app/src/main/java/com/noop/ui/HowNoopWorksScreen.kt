@@ -1,5 +1,6 @@
 package com.noop.ui
 
+import androidx.annotation.StringRes
 import com.noop.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
@@ -61,51 +62,39 @@ import androidx.compose.ui.unit.dp
  * exactly so the three platforms stay in lockstep.
  */
 private enum class PrimerSection(
-    val title: String,
-    val body: String,
+    @StringRes private val titleRes: Int,
+    @StringRes private val bodyRes: Int,
     val icon: ImageVector,
 ) {
     SLEEP(
-        title = uiString(R.string.l10n_how_noop_works_screen_how_your_sleep_is_sorted_6a8e82e0),
-        body = "NOOP picks your main sleep as your longest real block, and (once it has " +
-            "learned your usual hours) the one nearest your normal sleep time. Everything " +
-            "else that day is a nap. You can always edit bed and wake times.",
+        titleRes = R.string.l10n_how_noop_works_screen_how_your_sleep_is_sorted_6a8e82e0,
+        bodyRes = R.string.l10n_how_noop_works_screen_noop_picks_your_main_sleep_as_edf2abdf,
         icon = Icons.Filled.Bedtime,
     ),
     SCORES(
-        title = uiString(R.string.l10n_how_noop_works_screen_how_your_scores_work_21a0e2be),
-        body = "Charge, Effort and Rest are scored on your own device from your strap data. " +
-            "Charge needs about four nights of sleep to learn your baseline (that's \"Calibrating\", " +
-            "counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. " +
-            "On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you " +
-            "have worn it across a few nights. That's the strap's sync limit, not a fault. " +
-            "Before there's a number, NOOP shows what it can without faking one.",
+        titleRes = R.string.l10n_how_noop_works_screen_how_your_scores_work_21a0e2be,
+        bodyRes = R.string.l10n_how_noop_works_screen_charge_effort_and_rest_are_scored_a8ea1d42,
         icon = Icons.Filled.Insights,
     ),
     SCORE_RECIPE(
-        title = uiString(R.string.l10n_how_noop_works_screen_how_your_scores_are_computed_1b2d6c30),
-        body = "Charge weighs five signals against your own baseline: your overnight HRV matters most, " +
-            "then your resting heart rate, how well you slept, your breathing rate, and how far your skin " +
-            "temperature drifted from normal. Higher HRV and lower resting heart rate lift Charge; a big " +
-            "skin-temperature drift in either direction lowers it. Each signal is measured as how far " +
-            "tonight sits from your personal baseline, never an absolute target. If a signal is missing, " +
-            "it's dropped and the rest are reweighted, so the number always reflects only what was " +
-            "actually measured. The \"What shaped it\" breakdown under the Charge ring shows each signal's " +
-            "point contribution.",
+        titleRes = R.string.l10n_how_noop_works_screen_how_your_scores_are_computed_1b2d6c30,
+        bodyRes = R.string.l10n_how_noop_works_screen_charge_weighs_five_signals_against_your_140a58e2,
         icon = Icons.Filled.Calculate,
     ),
     RECORDING(
-        title = uiString(R.string.l10n_how_noop_works_screen_what_recording_means_b896c422),
-        body = "When your strap is connected NOOP is saving data live. \"Last synced\" tells " +
-            "you how fresh it is. If it says \"Not recording\", reconnect.",
+        titleRes = R.string.l10n_how_noop_works_screen_what_recording_means_b896c422,
+        bodyRes = R.string.l10n_how_noop_works_screen_when_your_strap_is_connected_noop_79a2fca7,
         icon = Icons.Filled.Sensors,
     ),
     PROVENANCE(
-        title = uiString(R.string.l10n_how_noop_works_screen_where_your_numbers_come_from_e169963a),
-        body = "A badge shows whether a number was scored on-device by NOOP, or imported " +
-            "from Whoop or Apple Health.",
+        titleRes = R.string.l10n_how_noop_works_screen_where_your_numbers_come_from_e169963a,
+        bodyRes = R.string.l10n_how_noop_works_screen_a_badge_shows_whether_a_number_260365d0,
         icon = Icons.Filled.Verified,
     );
+
+    /** Resolved on read so a language change applies without a process restart. */
+    val title: String get() = uiString(titleRes)
+    val body: String get() = uiString(bodyRes)
 
     /** The accent each section uses — matched to the surface it explains for continuity. */
     val accent: Color
@@ -176,7 +165,7 @@ private fun Header(onClose: () -> Unit) {
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Overline("The basics", color = Palette.textTertiary)
+            Overline(uiString(R.string.l10n_how_noop_works_screen_the_basics_dd7a1e79), color = Palette.textTertiary)
             Text(uiString(R.string.l10n_how_noop_works_screen_how_noop_works_3396b27a), style = NoopType.display(26f), color = Palette.textPrimary)
             Text(
                 uiString(R.string.l10n_how_noop_works_screen_sleep_scores_recording_where_your_numbers_1b3e981f),
@@ -201,7 +190,7 @@ private fun Header(onClose: () -> Unit) {
 private fun IntroCard() {
     NoopCard(padding = 20.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Overline("The one rule")
+            Overline(uiString(R.string.l10n_how_noop_works_screen_the_one_rule_77e66956))
             Text(
                 uiString(R.string.l10n_how_noop_works_screen_noop_never_shows_you_a_number_d1db9958),
                 style = NoopType.subhead,

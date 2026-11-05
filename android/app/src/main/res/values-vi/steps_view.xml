@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="steps_history">Lịch sử số bước của bạn.</string>
+    <string name="steps_loading">Đang tải lịch sử bước.</string>
+    <string name="steps_loading_title">Đang tải…</string>
+    <string name="steps_empty_title">Chưa có số bước</string>
+    <string name="steps_empty_body">Số bước đã ghi hoặc đã nhập sẽ hiện ở đây.</string>
+    <string name="steps_empty_range">Không có số bước nào được ghi trong khoảng thời gian này. Hãy chọn khoảng dài hơn.</string>
+    <string name="steps_ranges_hint">Các khoảng thời gian dài hơn sẽ có khi ghi được nhiều ngày hơn.</string>
+    <string name="steps_as_of">Tính đến %1$s</string>
+    <string name="steps_latest">Gần nhất</string>
+    <string name="steps_readings">Chỉ số đo</string>
+    <string name="steps_min">Tối thiểu</string>
+    <string name="steps_avg">Trung bình</string>
+    <string name="steps_max">Tối đa</string>
+    <string name="steps_unit">bước</string>
+    <string name="steps_value">%1$s bước</string>
+    <string name="steps_mean_value">%1$s bước trung bình mỗi ngày đã ghi</string>
+    <string name="steps_chart_mean">TB %1$s bước/ngày</string>
+    <string name="steps_week_of">Tuần của %1$s</string>
+    <string name="steps_chart_summary">Số bước, %1$d cột. %2$s</string>
+    <string name="steps_no_data">Số bước, không có dữ liệu</string>
+    <string name="steps_average_30">Số bước trung bình 30 ngày</string>
+    <string name="steps_average_subtitle">Trung bình trượt trong 30 ngày qua</string>
+    <string name="steps_average_coverage">Đã ghi %1$d trên 30 ngày</string>
+    <string-array name="steps_ranges"><item>1 tuần</item><item>2 tuần</item><item>3 tuần</item><item>1 tháng</item><item>3 tháng</item><item>6 tháng</item><item>1 năm</item><item>TẤT CẢ</item></string-array>
+</resources>

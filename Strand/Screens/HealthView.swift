@@ -355,7 +355,7 @@ private struct HeartRateSection: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityLabel("Live heart rate over time")
-                .accessibilityValue(hasLiveHR ? "\(displayHR ?? 0) beats per minute, zone \(zone)" : "no data")
+                .accessibilityValue(hasLiveHR ? String(localized: "\(displayHR ?? 0) beats per minute, zone \(zone)") : String(localized: "no data"))
             } else {
                 VStack(spacing: NoopMetrics.space2) {
                     // The big fallback numeral ticks up to the live value (the hero number) — under

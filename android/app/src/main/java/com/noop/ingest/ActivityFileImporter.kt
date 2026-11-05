@@ -1,5 +1,11 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.summaryTextLocalized
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import android.util.Xml
@@ -197,9 +203,9 @@ object ActivityFileImporter {
         val filename = displayName(context, uri)
         val bytes: ByteArray = try {
             context.contentResolver.openInputStream(uri)?.use { it.readCapped(MAX_BYTES) }
-                ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.")
+                ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.") { uiString(R.string.l10n_activity_file_importer_could_not_open_the_selected_file_d412e6e8) }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read the file: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_activity_file_importer_could_not_read_the_file_1_65a3ad34, (e.message ?: uiString(R.string.l10n_activity_file_importer_unknown_error_af6321ca))) }
         }
 
         val result = parse(bytes, filename)
@@ -209,7 +215,7 @@ object ActivityFileImporter {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "No usable activity found - point at a .gpx, .tcx or .fit workout file.",
-            )
+            ) { uiString(R.string.l10n_activity_file_importer_no_usable_activity_found_point_at_daa3cb33) }
         }
 
         val row = WorkoutRow(
@@ -274,6 +280,7 @@ object ActivityFileImporter {
             firstDay = dayString(activity.startTs),
             lastDay = dayString(activity.endTs),
             message = summaryText(activity),
+            localized = { summaryTextLocalized(activity) },
         )
     }
 
@@ -587,6 +594,7 @@ object ActivityFileImporter {
         if (a.steps != null && a.steps > 0) parts.add("${a.steps} steps")
         return parts.joinToString(" · ")
     }
+
 
     private fun dayString(ts: Long): String =
         Instant.ofEpochSecond(ts).atOffset(ZoneOffset.UTC).toLocalDate().toString()

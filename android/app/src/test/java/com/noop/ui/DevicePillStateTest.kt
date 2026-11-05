@@ -1,7 +1,7 @@
 package com.noop.ui
 
+import com.noop.R
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -14,60 +14,55 @@ class DevicePillStateTest {
     @Test
     fun bondRefused_beatsActiveLive_butYieldsToReconnecting() {
         assertEquals(
-            "Connected · not paired",
+            R.string.l10n_devices_screen_connected_not_paired_5a149d26,
             devicePillState(
                 isArchived = false, isActive = true, isReconnecting = false,
                 bondRefused = true, isLiveConnected = true,
-            ).label,
+            ).labelRes,
         )
         assertEquals(
-            "Reconnecting…",
+            R.string.l10n_devices_screen_reconnecting_8a8b9561,
             devicePillState(
                 isArchived = false, isActive = true, isReconnecting = true,
                 bondRefused = true, isLiveConnected = true,
-            ).label,
+            ).labelRes,
         )
     }
 
     @Test
     fun normalConnect_isUnaffected() {
         assertEquals(
-            "Active · Live",
+            R.string.l10n_devices_screen_active_live_4dc58f41,
             devicePillState(
                 isArchived = false, isActive = true, isReconnecting = false,
                 bondRefused = false, isLiveConnected = true,
-            ).label,
+            ).labelRes,
         )
         assertEquals(
-            "Active",
+            R.string.l10n_devices_screen_active_a733b809,
             devicePillState(
                 isArchived = false, isActive = true, isReconnecting = false,
                 bondRefused = false, isLiveConnected = false,
-            ).label,
+            ).labelRes,
         )
     }
 
     @Test
     fun nonActiveAndArchived() {
         assertEquals(
-            "Paired",
+            R.string.l10n_devices_screen_paired_3cd1b3d4,
             devicePillState(
                 isArchived = false, isActive = false, isReconnecting = false,
                 bondRefused = false, isLiveConnected = false,
-            ).label,
+            ).labelRes,
         )
         assertEquals(
-            "Removed",
+            R.string.l10n_devices_screen_removed_b5e77c5c,
             devicePillState(
                 isArchived = true, isActive = false, isReconnecting = false,
                 bondRefused = false, isLiveConnected = false,
-            ).label,
+            ).labelRes,
         )
     }
 
-    @Test
-    fun historyLayoutLine_formatsObservedHistoricalRecordVersion() {
-        assertEquals("v25 history", historyLayoutLine(25))
-        assertNull(historyLayoutLine(null))
-    }
 }

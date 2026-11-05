@@ -1,5 +1,10 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import com.noop.data.DailyMetric
@@ -95,14 +100,14 @@ object WhoopCsvImporter {
         val (csvData, truncated) = try {
             loadCsvData(context, uri)
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Could not read export: ${e.message ?: "unknown error"}")
+            return ImportSummary.failure(SOURCE_LABEL, "Could not read export: ${e.message ?: "unknown error"}") { uiString(R.string.l10n_whoop_csv_importer_could_not_read_export_1_s_df8defaf, (e.message ?: uiString(R.string.l10n_whoop_csv_importer_unknown_error_af6321ca))) }
         }
 
         if (csvData.isEmpty()) {
             return ImportSummary.failure(
                 SOURCE_LABEL,
                 "No WHOOP CSVs found (expected physiological_cycles.csv, sleeps.csv, workouts.csv or journal_entries.csv)."
-            )
+            ) { uiString(R.string.l10n_whoop_csv_importer_no_whoop_csvs_found_expected_physiological_47c06eaf) }
         }
 
         val cycles = csvData[CYCLES_NAME]?.let { parseCycles(CsvTable.fromData(it), deviceId) } ?: emptyList()
@@ -122,7 +127,7 @@ object WhoopCsvImporter {
         val daily = mergeDaily(cycles, sleepDaily)
 
         if (daily.isEmpty() && sleepSessions.isEmpty() && workouts.isEmpty() && journal.isEmpty()) {
-            return ImportSummary.failure(SOURCE_LABEL, "Export contained no usable WHOOP rows.")
+            return ImportSummary.failure(SOURCE_LABEL, "Export contained no usable WHOOP rows.") { uiString(R.string.l10n_whoop_csv_importer_export_contained_no_usable_whoop_rows_881cbfea) }
         }
 
         repo.upsertDevice(deviceId, name = "WHOOP")
@@ -174,6 +179,12 @@ object WhoopCsvImporter {
             firstDay = firstDay,
             lastDay = lastDay,
             message = message,
+            localized = {
+                var m = if (firstDay != null && lastDay != null) uiString(R.string.l10n_whoop_csv_importer_imported_1_d_whoop_rows_2_96e73ac4, total, firstDay, lastDay)
+                else uiString(R.string.l10n_whoop_csv_importer_imported_1_d_whoop_rows_83ed2c03, total)
+                if (truncated) m = uiString(R.string.l10n_whoop_csv_importer_1_s_partial_export_exceeded_the_b1516f5f, m, MAX_TOTAL_BYTES shr 30)
+                m
+            },
             columnCoverage = importColumnCoverage(cycles),
             columnCoverageRows = cycles.size,
         )

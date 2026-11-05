@@ -103,7 +103,7 @@ fun IntelligenceScreen(vm: AppViewModel) {
 
     LazyScreenScaffold(
         title = uiString(R.string.l10n_intelligence_screen_intelligence_c698f940),
-        subtitle = "Charge, effort and rest - scored with the model, explained in plain terms.",
+        subtitle = uiString(R.string.l10n_intelligence_screen_charge_effort_and_rest_scored_with_801fda8a),
     ) {
         item { forecast?.let { ForecastCard(it) } }
         item { ExplainerCard(effortScale) }
@@ -125,7 +125,7 @@ fun IntelligenceScreen(vm: AppViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(Metrics.gap),
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Overline("Recent")
+                        Overline(uiString(R.string.l10n_intelligence_screen_recent_76eec760))
                         Text(uiString(R.string.l10n_intelligence_screen_by_day_2e5d14ca), style = NoopType.title2, color = Palette.textPrimary)
                     }
                     SegmentedPillControl(
@@ -179,7 +179,7 @@ private fun ForecastCard(f: RecoveryForecast) {
     val charge = f.charge.roundToInt()
     val band = f.band.roundToInt()
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-        SectionHeader("Tomorrow's Charge", overline = "Evening forecast", trailing = "Estimate")
+        SectionHeader(uiString(R.string.l10n_intelligence_screen_tomorrow_s_charge_b98be38b), overline = uiString(R.string.l10n_intelligence_screen_evening_forecast_0cf05da1), trailing = uiString(R.string.l10n_intelligence_screen_estimate_2352230a))
         NoopCard(padding = 20.dp) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -296,12 +296,12 @@ private fun EmptyNote() {
 private fun ModelBreakdownCard(effortScale: EffortScale) {
     NoopCard(padding = 20.dp, tint = Palette.chargeColor) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Overline("Charge model")
-            WeightRow("Heart-rate variability", "~55%", 0.55f, Palette.metricPurple)
-            WeightRow("Resting heart rate", "~20%", 0.20f, Palette.metricRose)
-            WeightRow("Rest quality", "~15%", 0.15f, Palette.metricCyan)
-            WeightRow("Respiration", "~5%", 0.05f, Palette.accent)
-            WeightRow("Skin-temperature deviation", "~5%", 0.05f, Palette.metricAmber)
+            Overline(uiString(R.string.l10n_intelligence_screen_charge_model_e86b0ed5))
+            WeightRow(uiString(R.string.l10n_intelligence_screen_heart_rate_variability_a137586d), "~55%", 0.55f, Palette.metricPurple)
+            WeightRow(uiString(R.string.l10n_intelligence_screen_resting_heart_rate_348928d6), "~20%", 0.20f, Palette.metricRose)
+            WeightRow(uiString(R.string.l10n_intelligence_screen_rest_quality_0d9fbf48), "~15%", 0.15f, Palette.metricCyan)
+            WeightRow(uiString(R.string.l10n_intelligence_screen_respiration_59da5ee8), "~5%", 0.05f, Palette.accent)
+            WeightRow(uiString(R.string.l10n_intelligence_screen_skin_temperature_deviation_2a1a4608), "~5%", 0.05f, Palette.metricAmber)
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
@@ -383,24 +383,24 @@ private fun DayCard(d: DailyMetric, effortScale: EffortScale) {
                 // import covers reads "Whoop" / "Apple Health". Computed rows keep the charge tint; imports
                 // use the accent tint to stand out. Mirrors macOS IntelligenceEngine.DaySource. (Sleep §2.6.)
                 val src = daySourceBadge(d.deviceId)
-                SourceBadge(src.first, tint = src.second)
+                SourceBadge(localizedDaySourceLabel(src.first), tint = src.second)
             }
 
             Row(modifier = Modifier.fillMaxWidth()) {
                 DayStat(
-                    "Charge",
+                    uiString(R.string.l10n_intelligence_screen_charge_d4e1aee4),
                     d.recovery?.let { "${it.roundToInt()}%" } ?: "—",
                     d.recovery?.let { Palette.recoveryColor(it) } ?: Palette.textSecondary,
                     Modifier.weight(1f),
                 )
                 DayStat(
-                    "Effort",
+                    uiString(R.string.l10n_intelligence_screen_effort_8c974bc6),
                     d.strain?.let { UnitFormatter.effortDisplay(it, effortScale) } ?: "—",
                     d.strain?.let { Palette.strainColor(it) } ?: Palette.textSecondary,
                     Modifier.weight(1f),
                 )
                 DayStat(
-                    "Rest",
+                    uiString(R.string.l10n_intelligence_screen_rest_b79e5f48),
                     sleepValue(d.totalSleepMin),
                     Palette.restColor,
                     Modifier.weight(1f),
@@ -412,7 +412,7 @@ private fun DayCard(d: DailyMetric, effortScale: EffortScale) {
                     Modifier.weight(1f),
                 )
                 DayStat(
-                    "RHR",
+                    uiString(R.string.l10n_intelligence_screen_rhr_04edf9b3),
                     d.restingHr?.toString() ?: "—",
                     Palette.metricRose,
                     Modifier.weight(1f),
@@ -458,6 +458,10 @@ private fun sleepValue(totalMin: Double?): String {
     return "${total / 60}h ${total % 60}m"
 }
 
+/** Display form of a [daySourceBadge] label: only the generic "On-device" is translated (brand names stay). */
+internal fun localizedDaySourceLabel(label: String): String =
+    if (label == "On-device") uiString(R.string.l10n_intelligence_screen_on_device_1e0b0d25) else label
+
 /**
  * The By-Day source badge (label + tint) for a merged [DailyMetric], from the WINNING row's [deviceId].
  * The By-Day numbers are always NOOP's on-device scores, but when an import covers the day it wins the
@@ -491,14 +495,7 @@ private fun prettyDay(day: String): String {
         val mo = parts[1].toInt()
         val da = parts[2].toInt()
         val cal = Calendar.getInstance().apply { set(y, mo - 1, da) }
-        val dow = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")[
-            cal.get(Calendar.DAY_OF_WEEK) - 1,
-        ]
-        val month = arrayOf(
-            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-        )[mo - 1]
-        "$dow $da $month"
+        java.text.SimpleDateFormat("EEE d MMM", java.util.Locale.getDefault()).format(cal.time)
     } catch (_: Exception) {
         day
     }

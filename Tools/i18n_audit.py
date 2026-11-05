@@ -274,8 +274,20 @@ ANDROID_DIRS = [
 # `Snackbar(`/`TopAppBar(` do not currently appear anywhere in this codebase;
 # kept for whatever future call sites use them, since `Text(` always does
 # take its content as the first argument here.
-ANDROID_CALL_PATTERN = re.compile(r"\b(?:Text|Snackbar|TopAppBar|setContentTitle|setContentText)\s*\(")
-ANDROID_KWARG_PATTERN = re.compile(r"\b(?:title|label|text|contentDescription|placeholder)\s*=\s*")
+# SectionHeader / RoadmapNote / StatePill take their text as the first positional argument, and
+# Toast.makeText's text is its second; the first-argument span below covers the composables, and
+# ANDROID_TOAST_PATTERN reads the Toast text on its own.
+ANDROID_CALL_PATTERN = re.compile(
+    r"\b(?:Text|Snackbar|TopAppBar|setContentTitle|setContentText|setBigContentTitle|setSummaryText"
+    r"|SectionHeader|RoadmapNote|StatePill|bigText)\s*\("
+)
+ANDROID_TOAST_PATTERN = re.compile(r"\bToast\.makeText\s*\(")
+# Named slots that carry UI copy in this codebase's shared components (SourceCard subtitle, metric
+# captions, card body/detail lines, dialog messages, pill primary/secondary lines, section overlines).
+ANDROID_KWARG_PATTERN = re.compile(
+    r"\b(?:title|label|text|contentDescription|placeholder|subtitle|caption|body|detail|message"
+    r"|secondary|primary|overline|trailing|headline|hint|supportingText|description|footnote)\s*=\s*"
+)
 ANDROID_UI_STRING_PATTERN = re.compile(
     r"\buiString\s*\(\s*R\.string\.([A-Za-z_][A-Za-z0-9_]*)"
 )
@@ -456,6 +468,12 @@ def scan_android(read: Reader | None = None) -> list[tuple[str, int, str]]:
             for m in ANDROID_CALL_PATTERN.finditer(text):
                 open_paren = m.end() - 1
                 record(open_paren + 1, _argument_span_end(text, open_paren + 1))
+
+            # `Toast.makeText(context, "text", length)`: the text is the SECOND argument.
+            for m in ANDROID_TOAST_PATTERN.finditer(text):
+                first_end = _argument_span_end(text, m.end())
+                if first_end < len(text) and text[first_end] == ",":
+                    record(first_end + 1, _argument_span_end(text, first_end + 1))
 
             # `title = if (x) "a" else "b"` / `AlertDialog(text = { Text(if
             # (x) "a" else "b") })` — any call this scanner doesn't otherwise

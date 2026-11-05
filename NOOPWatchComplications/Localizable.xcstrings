@@ -51,6 +51,12 @@
             "value": "%@ %lld"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %lld"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -113,6 +119,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kalibracja %@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ đang hiệu chỉnh"
           }
         },
         "zh-Hans" : {
@@ -179,6 +191,12 @@
             "value": "%@ niedostępny"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ không khả dụng"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -235,6 +253,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Заряд"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Năng lượng"
           }
         },
         "zh-Hans": {
@@ -307,6 +331,12 @@
             "value": "Energia %lld na 100"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng %lld trên 100"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -369,6 +399,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Energia %lld · %lld bpm%@"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng %lld · %lld bpm%@"
           }
         },
         "zh-Hans" : {
@@ -435,6 +471,12 @@
             "value": "Energia %lld%@"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng %lld%@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -497,6 +539,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kalibracja Energia"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng đang hiệu chỉnh"
           }
         },
         "zh-Hans" : {
@@ -563,6 +611,12 @@
             "value": "Kalibracja Energia, wymaga więcej danych"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang hiệu chỉnh Năng lượng, cần thêm dữ liệu"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -625,6 +679,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Energia nieaktualny, ostatnia synchronizacja %@. Otwórz NOOP na iPhonie."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng đã cũ, đồng bộ lần cuối %@. Hãy mở NOOP trên iPhone."
           }
         },
         "zh-Hans" : {
@@ -691,6 +751,12 @@
             "value": "Energia nieaktualne · %@"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng đã cũ · %@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -753,6 +819,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Energia niedostępny"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng không khả dụng"
           }
         },
         "zh-Hans" : {
@@ -819,6 +891,12 @@
             "value": "Energia · %@"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng · %@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -881,6 +959,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Energia · kal"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng · cal"
           }
         },
         "zh-Hans" : {
@@ -947,6 +1031,12 @@
             "value": "Energia –"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Năng lượng –"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1005,6 +1095,12 @@
             "value": "Усилие"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gắng sức"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1061,6 +1157,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "NOOP Заряд"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Năng lượng NOOP"
           }
         },
         "zh-Hans": {
@@ -1139,6 +1241,12 @@
             "value": "NOOP · otwórz na iPhonie"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOOP · mở trên iPhone"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1201,6 +1309,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "NOOP. %@, %@, %@."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOOP. %@, %@, %@."
           }
         },
         "zh-Hans" : {
@@ -1267,6 +1381,12 @@
             "value": "NOOP. Nie ma jeszcze danych. Otwórz NOOP na swoim iPhonie, aby przeprowadzić synchronizację."
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOOP. Chưa có dữ liệu, hãy mở NOOP trên iPhone để đồng bộ."
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1329,6 +1449,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "NOOP. Wyniki nieaktualne, ostatnia synchronizacja %@. Otwórz NOOP na iPhonie, aby odświeżyć."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "NOOP. Điểm số đã cũ, đồng bộ lần cuối %@. Mở NOOP trên iPhone để làm mới."
           }
         },
         "zh-Hans" : {
@@ -1395,6 +1521,12 @@
             "value": "Brak danych, otwórz NOOP na iPhonie"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không có dữ liệu, hãy mở NOOP trên iPhone"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1459,6 +1591,12 @@
             "value": "Otwórz NOOP"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mở NOOP"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1517,6 +1655,12 @@
             "value": "Отдых"
           }
         },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nghỉ ngơi"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -1573,6 +1717,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ваш заряд (восстановление) на циферблате, с показателями «Усилие» и «Отдых» в прямоугольной карточке."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Năng lượng (phục hồi) của bạn trên mặt đồng hồ, với Gắng sức và Nghỉ ngơi trong thẻ chữ nhật."
           }
         },
         "zh-Hans": {
@@ -1651,6 +1801,12 @@
             "value": "jakiś czas temu"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "một lúc trước"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1713,6 +1869,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "kal"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cal"
           }
         },
         "zh-Hans" : {
@@ -1779,6 +1941,12 @@
             "value": "stary"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cũ"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1843,6 +2011,12 @@
             "value": "otwórz iPhone'a"
           }
         },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mở iPhone"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -1905,6 +2079,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "nieświeży"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cũ"
           }
         },
         "zh-Hans" : {

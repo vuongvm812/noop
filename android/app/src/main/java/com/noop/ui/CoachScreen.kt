@@ -97,7 +97,7 @@ fun CoachScreen(vm: CoachViewModel = viewModel(), onOpenSettings: () -> Unit = {
 
     ScreenScaffold(
         title = uiString(R.string.l10n_coach_screen_coach_b32c9ad3),
-        subtitle = "Ask about your recovery, strain, sleep and HRV, grounded in your own numbers.",
+        subtitle = uiString(R.string.l10n_coach_screen_ask_about_your_recovery_strain_sleep_57c69325),
         // LIQUID SKY BACKDROP (the pilot pattern — LiquidScreenSky.kt): the liquid sky sits behind the
         // header and the cards float over the flat canvas below. Reuses the shared LiquidScreenSky() slot
         // verbatim; when the day-cycle background is off, the scaffold paints the plain surface instead.
@@ -141,17 +141,15 @@ private fun CoachSetup(vm: CoachViewModel) {
             }
             Text(
                 if (isCustom)
-                    "Point the coach at any OpenAI-compatible server: a local model (Ollama, LM " +
-                        "Studio, llama.cpp) keeps everything on your device; an API key is optional."
+                    uiString(R.string.l10n_coach_screen_point_the_coach_at_any_openai_d1543415)
                 else
-                    "Bring your own API key. It is stored encrypted on this device and only used to " +
-                        "send your question plus a short summary of your metrics to the provider you pick.",
+                    uiString(R.string.l10n_coach_screen_bring_your_own_api_key_it_43bb3e4c),
                 style = NoopType.subhead, color = Palette.textSecondary,
             )
 
             // Provider choice.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Overline("Provider")
+                Overline(uiString(R.string.l10n_coach_screen_provider_7ceee3f3))
                 SegmentedPillControl(
                     items = AiProvider.entries,
                     selection = provider,
@@ -163,7 +161,7 @@ private fun CoachSetup(vm: CoachViewModel) {
             // Server URL, Custom (local LLM) only.
             if (isCustom) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Overline("Server URL")
+                    Overline(uiString(R.string.l10n_coach_screen_server_url_1d5d1eff))
                     OutlinedTextField(
                         value = customBaseUrl,
                         onValueChange = { vm.setCustomBaseUrl(context, it) },
@@ -198,7 +196,7 @@ private fun CoachSetup(vm: CoachViewModel) {
             // Model dropdown + live-list refresh.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Overline("Model")
+                    Overline(uiString(R.string.l10n_coach_screen_model_68c2cc7f))
                     Spacer(Modifier.weight(1f))
                     RefreshModelsButton(
                         refreshing = refreshingModels,
@@ -216,12 +214,12 @@ private fun CoachSetup(vm: CoachViewModel) {
 
             // Masked key field, optional for a local Custom server.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Overline(if (isCustom) "API Key (optional)" else "API Key")
+                Overline(if (isCustom) uiString(R.string.l10n_coach_screen_api_key_optional_2e560a44) else uiString(R.string.l10n_coach_screen_api_key_47acd202))
                 CoachKeyField(
                     value = keyInput,
                     onValueChange = { keyInput = it },
-                    placeholder = if (isCustom) "Only if your server requires one"
-                                  else "Paste your ${provider.displayName} key",
+                    placeholder = if (isCustom) uiString(R.string.l10n_coach_screen_only_if_your_server_requires_one_5369cfe1)
+                                  else uiString(R.string.l10n_coach_screen_paste_your_1_s_key_399371ac, provider.displayName),
                 )
             }
 
@@ -579,7 +577,7 @@ private fun ChatBubble(msg: ChatMsg, vm: CoachViewModel) {
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Overline(
-                    if (isUser) "You" else "Coach",
+                    if (isUser) uiString(R.string.l10n_coach_screen_you_905cb326) else uiString(R.string.l10n_coach_screen_coach_b32c9ad3),
                     color = if (isUser) Palette.accentHover else Palette.textTertiary,
                 )
                 if (isUser) {
@@ -609,7 +607,7 @@ private fun ChatBubble(msg: ChatMsg, vm: CoachViewModel) {
                             putExtra(android.content.Intent.EXTRA_TEXT, msg.text)
                         }
                         context.startActivity(
-                            android.content.Intent.createChooser(sendIntent, "Share Coach advice")
+                            android.content.Intent.createChooser(sendIntent, uiString(R.string.l10n_coach_screen_share_coach_advice_34aaa70b))
                         )
                         showMenu = false
                     },
@@ -661,7 +659,7 @@ internal val SUGGESTED_PROMPTS: List<String> get() = CoachPrompts.SUGGESTIONS
 @Composable
 private fun SuggestedPrompts(prompts: List<String>, onPick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Overline("Try asking")
+        Overline(uiString(R.string.l10n_coach_screen_try_asking_3e027713))
         // Simple wrapped column of chips (one per row keeps long prompts readable).
         prompts.forEach { prompt ->
             val shape = RoundedCornerShape(50)
@@ -844,7 +842,7 @@ internal fun RefreshModelsButton(
             )
         }
         Text(
-            if (refreshing) "Fetching…" else "Refresh models",
+            if (refreshing) uiString(R.string.l10n_coach_screen_fetching_2246be56) else uiString(R.string.l10n_coach_screen_refresh_models_ba6da3f2),
             style = NoopType.caption,
             color = if (active) Palette.textPrimary else Palette.textTertiary,
         )
@@ -1042,7 +1040,7 @@ private fun MicButton(
     val bg = if (isRecording) Palette.statusCritical.copy(alpha = 0.15f) else Palette.surfaceInset
     val tint = if (isRecording) Palette.statusCritical else Palette.textSecondary
     val interaction = remember { MutableInteractionSource() }
-    val desc = if (isRecording) "Stop voice input" else "Voice input"
+    val desc = if (isRecording) uiString(R.string.l10n_coach_screen_stop_voice_input_ecbbdf34) else uiString(R.string.l10n_coach_screen_voice_input_c0b2cee0)
     val statusSuffix = statusMessage?.let { stringResource(R.string.coach_status_suffix, it) } ?: ""
     Box(
         modifier = Modifier
@@ -1116,11 +1114,9 @@ private fun PrivacyNote(local: Boolean = false) {
         Icon(Icons.Filled.Lock, contentDescription = null, tint = Palette.textTertiary, modifier = Modifier.size(13.dp))
         Text(
             if (local)
-                "The coach talks only to the server URL you set. Point it at a local model to " +
-                    "keep everything on your device. Nothing is sent until you ask."
+                uiString(R.string.l10n_coach_screen_the_coach_talks_only_to_the_c02eb37f)
             else
-                "Private by default: only your question and a short metrics summary are sent, " +
-                    "and only after you set a key.",
+                uiString(R.string.l10n_coach_screen_private_by_default_only_your_question_feea1391),
             style = NoopType.footnote,
             color = Palette.textTertiary,
         )

@@ -400,7 +400,7 @@ private fun WeeklyDigestNav(
                 NoopCard { WeeklyDigestContent(digest = digest, compact = true) }
             }
             NoopButton(
-                text = "Share recap",
+                text = uiString(R.string.l10n_trends_screen_share_recap_c1268ca7),
                 leadingIcon = Icons.Filled.IosShare,
                 kind = NoopButtonKind.Secondary,
                 onClick = {
@@ -554,13 +554,24 @@ private fun PipScoreRow(
 // MARK: - Range control model (ported from TrendsView.Range)
 
 /** W(7) / M(30) / 3M(90) / 6M(180) / 1Y(365) / ALL. */
-private enum class TrendsRange(val days: Int?, val label: String, val longName: String) {
+private enum class TrendsRange(val days: Int?, val label: String, private val longNameEn: String) {
     Week(7, "W", "week"),
     Month(30, "M", "month"),
     Quarter(90, "3M", "3 months"),
     Half(180, "6M", "6 months"),
     Year(365, "1Y", "year"),
     All(null, "ALL", "all history");
+
+    /** Localized lower-case window name used inside captions. */
+    val longName: String
+        get() = when (this) {
+            Week -> uiString(R.string.l10n_trends_screen_week_c0ee32d8)
+            Month -> uiString(R.string.l10n_trends_screen_month_021710fa)
+            Quarter -> uiString(R.string.l10n_trends_screen_3_months_b9e4e6ff)
+            Half -> uiString(R.string.l10n_trends_screen_6_months_cd75b86f)
+            Year -> uiString(R.string.l10n_trends_screen_year_4ff0b153)
+            All -> uiString(R.string.l10n_trends_screen_all_history_eb5df7d2)
+        }
 
     /** This range plus every LARGER range, ascending , the auto-expand search order. */
     val widening: List<TrendsRange>
@@ -662,11 +673,10 @@ private fun windowPoints(
 
 /** Caption text, mirroring TrendsView.caption(count:eff:). */
 private fun caption(count: Int, eff: TrendsRange, selected: TrendsRange): String {
-    val unit = if (count == 1) "reading" else "readings"
     return if (eff != selected) {
-        "$count $unit · sparse , widened to ${eff.longName}"
+        uiPlural(R.plurals.l10n_trends_screen_caption_readings_widened, count, count, eff.longName)
     } else {
-        "$count $unit · ${selected.longName}"
+        uiPlural(R.plurals.l10n_trends_screen_caption_readings, count, count, selected.longName)
     }
 }
 
@@ -1090,14 +1100,14 @@ private fun RecoveryHistoryCard(days: List<DailyMetric>, range: TrendsRange) {
         days.takeLast(span).mapNotNull { it.recovery }
     }
     val title = if (range == TrendsRange.All && days.size > 365) {
-        "Charge , all history"
+        uiString(R.string.l10n_trends_screen_charge_all_history_65d547c5)
     } else {
-        "Charge , past year"
+        uiString(R.string.l10n_trends_screen_charge_past_year_c61f511e)
     }
 
     NoopCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SectionHeader(title, overline = stringResource(R.string.trends_calendar), trailing = "${recovery.size} days")
+            SectionHeader(title, overline = stringResource(R.string.trends_calendar), trailing = uiPlural(R.plurals.trends_n_days, recovery.size, recovery.size))
             if (recovery.size >= 2) {
                 BarChart(
                     values = recovery,

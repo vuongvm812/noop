@@ -1,9 +1,12 @@
 package com.noop.ui
 
+import com.noop.R
+
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import com.noop.BuildConfig
 import com.noop.ble.PuffinExperiment
@@ -97,10 +100,10 @@ object LogExport {
                 putExtra(Intent.EXTRA_SUBJECT, suggestedName)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(send, "Share report bundle"))
+            context.startActivity(Intent.createChooser(send, uiString(R.string.l10n_log_export_share_report_bundle_5180b7f2)))
             file
         }.onFailure {
-            Toast.makeText(context, "Couldn't export the bundle: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_log_export_couldn_t_export_the_bundle_1_edf7a79c, it.message.toString()), Toast.LENGTH_LONG).show()
         }.getOrNull()
 
     /**
@@ -236,7 +239,7 @@ object LogExport {
             ?: emptyList()
         var removed = 0
         for (f in files) if (runCatching { f.delete() }.getOrDefault(false)) removed++
-        val message = if (removed > 0) "Cleared $removed scheduled export file(s)." else "No scheduled exports to clear."
+        val message = if (removed > 0) uiString(R.string.l10n_log_export_cleared_1_d_scheduled_export_file_fb60266e, removed) else uiString(R.string.l10n_log_export_no_scheduled_exports_to_clear_5e0a3449)
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         return removed
     }
@@ -318,7 +321,7 @@ object LogExport {
             if (out == null) {
                 Toast.makeText(
                     context,
-                    "No detailed capture yet — turn on \"Detailed capture to file\" in Test Centre first.",
+                    uiString(R.string.l10n_log_export_no_detailed_capture_yet_turn_on_9f0b6a34),
                     Toast.LENGTH_LONG,
                 ).show()
                 return
@@ -326,12 +329,12 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, out))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP detailed capture log")
+                putExtra(Intent.EXTRA_SUBJECT, uiString(R.string.l10n_log_export_noop_detailed_capture_log_88efe8d2))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(send, "Share captured log"))
+            context.startActivity(Intent.createChooser(send, uiString(R.string.l10n_log_export_share_captured_log_a7c36844)))
         }.onFailure {
-            Toast.makeText(context, "Couldn't share the capture: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_log_export_couldn_t_share_the_capture_1_009166c2, it.message.toString()), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -367,12 +370,12 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, file))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP strap log")
+                putExtra(Intent.EXTRA_SUBJECT, uiString(R.string.l10n_log_export_noop_strap_log_1f665339))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(send, "Share strap log"))
+            context.startActivity(Intent.createChooser(send, uiString(R.string.l10n_log_export_share_strap_log_b7fb80bb)))
         }.onFailure {
-            Toast.makeText(context, "Couldn't share the log: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_log_export_couldn_t_share_the_log_1_565ad2d4, it.message.toString()), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -386,12 +389,12 @@ object LogExport {
         whoop5Connected: Boolean,
         encryptedBond: Boolean,
         sharingLog: Boolean,
-    ): String = noCaptureMsgText(
+    ): String = uiString(noCaptureMsgRes(
         whoop5Connected = whoop5Connected,
         captureEnabled = PuffinExperiment.from(context).isCaptureEnabled,
         encryptedBond = encryptedBond,
         sharingLog = sharingLog,
-    )
+    ))
 
     /**
      * The trailing "Last crash" section of a shared strap log, with its PII scrubbed.
@@ -442,26 +445,25 @@ object LogExport {
      * Split from the Context-reading wrapper so the wording is unit-testable — the repo's test classpath
      * has no mocking framework, by preference: helpers worth asserting are made pure rather than mocked.
      */
-    internal fun noCaptureMsgText(
+    @StringRes
+    internal fun noCaptureMsgRes(
         whoop5Connected: Boolean,
         captureEnabled: Boolean,
         encryptedBond: Boolean,
         sharingLog: Boolean,
-    ): String {
-        val tail = if (sharingLog) " Sharing the strap log." else ""
+    ): Int {
         return when {
             !whoop5Connected ->
-                "Raw capture records WHOOP 5/MG history syncs and doesn't apply to WHOOP 4.0 (already fully decoded).$tail"
+                if (sharingLog) R.string.l10n_log_export_raw_capture_records_whoop_5_mg_faa25108 else R.string.l10n_log_export_raw_capture_records_whoop_5_mg_ff76d2c9
             !captureEnabled ->
-                "No raw capture yet. Turn on \"Record 5/MG raw capture\" above, then let a history sync run.$tail"
+                if (sharingLog) R.string.l10n_log_export_no_raw_capture_yet_turn_on_c1480f88 else R.string.l10n_log_export_no_raw_capture_yet_turn_on_fce08452
             // #1635: do NOT tell someone to wait for a history sync their strap cannot reach. Without the
             // encrypted bond there is no puffin channel and no offload, so "let a sync run" names a remedy
             // that will never arrive — the same confidently-wrong guidance this issue kept producing.
             !encryptedBond ->
-                "Raw capture is on, but this strap is on live HR only — history sync needs the full " +
-                    "encrypted pairing, so there are no sync frames to capture yet.$tail"
+                if (sharingLog) R.string.l10n_log_export_raw_capture_is_on_but_this_711e8259 else R.string.l10n_log_export_raw_capture_is_on_but_this_8e358ddd
             else ->
-                "Raw capture is on. Let a 5/MG history sync run, then try again.$tail"
+                if (sharingLog) R.string.l10n_log_export_raw_capture_is_on_let_a_dac97e2b else R.string.l10n_log_export_raw_capture_is_on_let_a_f03d5686
         }
     }
 
@@ -483,12 +485,12 @@ object LogExport {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, fileUri(context, out))
-                putExtra(Intent.EXTRA_SUBJECT, "NOOP 5/MG protocol capture")
+                putExtra(Intent.EXTRA_SUBJECT, uiString(R.string.l10n_log_export_noop_5_mg_protocol_capture_4f2e0157))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(send, "Share 5/MG capture"))
+            context.startActivity(Intent.createChooser(send, uiString(R.string.l10n_log_export_share_5_mg_capture_0a8b239b)))
         }.onFailure {
-            Toast.makeText(context, "Couldn't share the capture: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_log_export_couldn_t_share_the_capture_1_009166c2, it.message.toString()), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -519,7 +521,7 @@ object LogExport {
             val name = "noop-export-${timestamp()}.zip"
             exportBundle(context, entries, name)
         }.onFailure {
-            Toast.makeText(context, "Couldn't export the pair: ${it.message}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_log_export_couldn_t_export_the_pair_1_085b6426, it.message.toString()), Toast.LENGTH_LONG).show()
         }
     }
 }

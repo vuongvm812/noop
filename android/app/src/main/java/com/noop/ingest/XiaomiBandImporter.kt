@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
@@ -61,21 +68,21 @@ object XiaomiBandImporter {
         val dbFile = try {
             resolveDatabase(context, uri)
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, e.message ?: "Couldn't read the export.")
+            return ImportSummary.failure(SOURCE_LABEL, e.message ?: "Couldn't read the export.") { e.message ?: uiString(R.string.l10n_xiaomi_band_importer_couldn_t_read_the_export_a6a3eadd) }
         } ?: return ImportSummary.failure(
-            SOURCE_LABEL, "No Mi Fitness database found (looked for DataBase/<id>/de/<id>.db).")
+            SOURCE_LABEL, "No Mi Fitness database found (looked for DataBase/<id>/de/<id>.db).") { uiString(R.string.l10n_xiaomi_band_importer_no_mi_fitness_database_found_looked_58a5cd43) }
 
         try {
             SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
                 val days = readDays(db)
                 val sleeps = readSleeps(db)
                 if (days.isEmpty() && sleeps.isEmpty()) {
-                    return ImportSummary.failure(SOURCE_LABEL, "No Mi Fitness health rows found.")
+                    return ImportSummary.failure(SOURCE_LABEL, "No Mi Fitness health rows found.") { uiString(R.string.l10n_xiaomi_band_importer_no_mi_fitness_health_rows_found_fe53e70c) }
                 }
                 return persist(repo, deviceId, days, sleeps)
             }
         } catch (e: Exception) {
-            return ImportSummary.failure(SOURCE_LABEL, "Import failed: ${e.message}")
+            return ImportSummary.failure(SOURCE_LABEL, "Import failed: ${e.message}") { uiString(R.string.l10n_xiaomi_band_importer_import_failed_1_s_e32168fa, e.message.toString()) }
         } finally {
             // Clean up only files we extracted into our own cache dir.
             if (dbFile.absolutePath.startsWith(context.cacheDir.absolutePath)) {
@@ -312,6 +319,10 @@ object XiaomiBandImporter {
             counts = mapOf("dailyMetric" to dailyMetrics.size, "sleepSession" to sleepRows.size, "metricSeries" to series.size),
             firstDay = first, lastDay = last,
             message = "Imported ${days.size} days, ${sleepRows.size} sleeps$span",
+            localized = {
+                val head = uiString(R.string.l10n_xiaomi_band_importer_imported_1_s_2_s_9caebbb0, uiPlural(R.plurals.l10n_xiaomi_band_importer_1_d_days_8808cc6b, days.size, days.size), uiPlural(R.plurals.l10n_xiaomi_band_importer_1_d_sleeps_8dae94eb, sleepRows.size, sleepRows.size))
+                if (first != null && last != null && first != last) uiString(R.string.l10n_xiaomi_band_importer_1_s_2_s_3_s_5ece4fe5, head, first, last) else head
+            },
         )
     }
 

@@ -117,12 +117,12 @@ struct InsightsHubView: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    StatePill(LocalizedStringKey(r.leadLagText), tone: .accent, showsDot: false)
+                    StatePill(InsightsSentences.leadLagKey(r.lag), tone: .accent, showsDot: false)
                     ScoreStatePill(Self.scoreState(r.confidence))
                 }
 
                 // The engine's sign-aware sentence (includes the lead/lag clause).
-                Text(r.sentence())
+                Text(InsightsSentences.ranked(r))
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -132,13 +132,13 @@ struct InsightsHubView: View {
                           alignment: .leading, spacing: NoopMetrics.gap) {
                     StatTile(label: "With",
                              value: outcome.format(e.meanWith),
-                             caption: "n = \(e.nWith)",
+                             caption: String(localized: "n = \(e.nWith)"),
                              accent: tintColor,
                              delta: deltaText,
                              deltaColor: tintColor)
                     StatTile(label: "Without",
                              value: outcome.format(e.meanWithout),
-                             caption: "n = \(e.nWithout)",
+                             caption: String(localized: "n = \(e.nWithout)"),
                              accent: StrandPalette.textPrimary)
                 }
 
@@ -149,7 +149,7 @@ struct InsightsHubView: View {
                     Text("Effect size").strandOverline()
                     Spacer()
                     HStack(spacing: 6) {
-                        Text(String(format: "d = %.2f", e.cohensD))
+                        Text(String(localized: "d = \(String(format: "%.2f", e.cohensD))"))
                             .font(StrandFont.captionNumber)
                             .foregroundStyle(tintColor)
                         Text(Self.effectMagnitudeWord(e.cohensD))
@@ -161,7 +161,7 @@ struct InsightsHubView: View {
         }
         .accessibilityElement(children: .combine)
         // One whole-string key; the args are complete sentences, never concatenated tails.
-        .accessibilityLabel(String(localized: "\(r.sentence()) Cohen's d \(String(format: "%.2f", e.cohensD)). \(Self.scoreState(r.confidence).accessibilityWord)"))
+        .accessibilityLabel(String(localized: "\(InsightsSentences.ranked(r)) Cohen's d \(String(format: "%.2f", e.cohensD)). \(Self.scoreState(r.confidence).accessibilityWord)"))
     }
 
     // MARK: - Alcohol / caffeine dose-response
@@ -268,7 +268,7 @@ private struct DoseResponseCardView: View {
                 header(r)
 
                 // The engine's honest read sentence (prior / yours / contradicts-prior).
-                Text(r.sentence())
+                Text(InsightsSentences.dose(r))
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -701,7 +701,7 @@ final class InsightsHubViewModel: ObservableObject {
         let latestOutcome: Double?
 
         var id: String { behavior.rawValue }
-        var outcomeName: String { response.outcome }
+        var outcomeName: String { InsightsSentences.displayOutcome(response.outcome) }
 
         var title: String {
             switch behavior {

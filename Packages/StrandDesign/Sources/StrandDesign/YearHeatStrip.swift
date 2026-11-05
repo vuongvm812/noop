@@ -48,7 +48,7 @@ public struct YearHeatStrip: View {
         spacing: CGFloat = 3,
         showsMonthLabels: Bool = true,
         showsHover: Bool = true,
-        valueFormat: @escaping (Double) -> String = { "Recovery \(Int($0.rounded()))" }
+        valueFormat: ((Double) -> String)? = nil
     ) {
         let sorted = days.sorted { $0.date < $1.date }
         self.days = sorted
@@ -56,7 +56,7 @@ public struct YearHeatStrip: View {
         self.spacing = spacing
         self.showsMonthLabels = showsMonthLabels
         self.showsHover = showsHover
-        self.valueFormat = valueFormat
+        self.valueFormat = valueFormat ?? { String(localized: "Recovery \(Int($0.rounded()))", bundle: .module) }
         self.weeks = YearHeatStrip.buildWeeks(from: sorted)
     }
 
@@ -320,7 +320,7 @@ public struct YearHeatStrip: View {
                 .fill(StrandPalette.recoveryColor(score))
                 .frame(width: cellSize, height: cellSize)
                 .opacity(isHovered ? 1.0 : (hoverCell == nil ? 1.0 : 0.78))
-                .help("\(DateFormatterCache.day.string(from: day.date)) · recovery \(Int(score.rounded()))")
+                .help(String(localized: "\(DateFormatterCache.day.string(from: day.date)) · recovery \(Int(score.rounded()))", bundle: .module))
                 // No per-cell a11y element: the whole strip is one collapsed VoiceOver element (see the
                 // `children: .ignore` summary on the body), so per-day detail no longer builds an O(days)
                 // semantics subtree. The `.help` above stays — it's a macOS pointer tooltip, not an a11y node.

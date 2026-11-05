@@ -81,7 +81,7 @@ struct NOOPLiveActivity: Widget {
 /// read as "the number doesn't line up with its label". `fixedSize` stops either line truncating so the
 /// pairing is never clipped at narrow widths.
 @ViewBuilder
-private func bannerStat(label: String, value: String) -> some View {
+private func bannerStat(label: LocalizedStringKey, value: String) -> some View {
     VStack(alignment: .center, spacing: 2) {
         Text(label).font(.caption2).foregroundStyle(StrandPalette.textSecondary)
         Text(value).font(.headline).foregroundStyle(StrandPalette.textPrimary)
@@ -93,7 +93,7 @@ private func bannerStat(label: String, value: String) -> some View {
 /// Dynamic Island expanded-region stat column (label over value). File-scope for the same reason as
 /// `bannerStat`. #759 - centre-aligned + `fixedSize` for the same value-under-its-label fix as the banner.
 @ViewBuilder
-private func statColumn(label: String, value: String) -> some View {
+private func statColumn(label: LocalizedStringKey, value: String) -> some View {
     VStack(alignment: .center, spacing: 1) {
         Text(label).font(.caption2).foregroundStyle(.secondary)
         Text(value).font(.headline)

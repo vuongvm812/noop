@@ -814,8 +814,8 @@ private fun ImportStep(viewModel: AppViewModel) {
             // tagged IMPORT, iff the mode is on. Gated zero-cost when off; shared with the Data Sources flow.
             emitImportTrace(context, viewModel, summary)
             busy = false
-            status = summary.message
-            Toast.makeText(context, summary.message, Toast.LENGTH_LONG).show()
+            status = summary.displayMessage()
+            Toast.makeText(context, summary.displayMessage(), Toast.LENGTH_LONG).show()
         }
     }
 

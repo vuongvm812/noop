@@ -209,7 +209,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         busy = true
         scope.launch {
             val summary = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse { ImportSummary.failure("Import", it.message ?: "failed") }
+                runCatching { block() }.getOrElse { ImportSummary.failure("Import", it.message ?: uiString(R.string.l10n_data_sources_screen_failed_5f5f8758)) }
             }
             // Mirror the import into the SAME exported strap log the WHOOP path uses (issue #421 parity),
             // so a tester's file import is captured in a shared debug bundle. On success: brand label +
@@ -231,7 +231,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
             emitImportTrace(context, vm, summary)
             refreshCounts()
             busy = false
-            Toast.makeText(context, summary.message, Toast.LENGTH_LONG).show()
+            Toast.makeText(context, summary.displayMessage(), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -321,7 +321,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         if (granted.any { it in selectedPermissions }) {
             runImport { HealthConnectImporter.import(context, vm.repo, ProfileStore.from(context).heightCm) }
         } else {
-            Toast.makeText(context, "Health Connect access not granted.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_data_sources_screen_health_connect_access_not_granted_bd5568ae), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -372,7 +372,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
             vm.writebackHealthConnectNow()
         } else {
             vm.setHcWriteback(false)
-            Toast.makeText(context, "Health Connect write access not granted.", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, uiString(R.string.l10n_data_sources_screen_health_connect_write_access_not_granted_b9ceacd3), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -435,7 +435,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
     val garminSource by vm.garminSource.collectAsStateWithLifecycle()
     LazyScreenScaffold(
         title = uiString(R.string.l10n_data_sources_screen_data_sources_5e43d6bb),
-        subtitle = "Everything stays on this phone. Bring your history in once, then it's yours.",
+        subtitle = uiString(R.string.l10n_data_sources_screen_everything_stays_on_this_phone_bring_ed4f6508),
     ) {
         // --- Garmin watch (active GFDI source) ---
         if (garminSource != null) {
@@ -447,18 +447,16 @@ fun DataSourcesScreen(vm: AppViewModel) {
         SourceCard(
             title = uiString(R.string.l10n_data_sources_screen_whoop_history_db101974),
             icon = Icons.Filled.MonitorHeart,
-            subtitle = "Recovery, strain, sleep and workouts, stored locally. Import a full " +
-                "WHOOP data export (.zip) from app.whoop.com → Data Management and it " +
-                "backfills your whole history in about a minute. Working now on Android.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_recovery_strain_sleep_and_workouts_stored_baf2c12f),
         ) {
             StatePill(
-                title = if (whoopHasHr) "Streaming locally" else "No samples yet",
+                title = if (whoopHasHr) uiString(R.string.l10n_data_sources_screen_streaming_locally_31e9ecbc) else uiString(R.string.l10n_data_sources_screen_no_samples_yet_32176ebe),
                 tone = if (whoopHasHr) StrandTone.Positive else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = whoopDays?.let { "$it days" } ?: "—",
-                secondary = whoopWorkouts?.let { "$it workouts stored" } ?: "Counting…",
+                primary = whoopDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_days_8808cc6b, it, it) } ?: "—",
+                secondary = whoopWorkouts?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_workouts_stored_5dfb4699, it, it) } ?: uiString(R.string.l10n_data_sources_screen_counting_c92a5b8a),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_whoop_export_zip_16f4176b),
@@ -475,19 +473,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_apple_health_b19b87da),
             icon = Icons.Filled.FavoriteBorder,
             tint = Palette.metricCyan,
-            subtitle = "Import HR, HRV, sleep, SpO₂ and steps from an Apple Health export. On " +
-                "an iPhone: Health app → tap your photo → Export All Health Data, then " +
-                "import the .zip here. Working now on Android.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_hr_hrv_sleep_spo_and_55a34bbf),
         ) {
             val hasApple = (appleDays ?: 0) > 0 || (appleWorkouts ?: 0) > 0
             StatePill(
-                title = if (hasApple) "Imported" else "Nothing imported",
+                title = if (hasApple) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasApple) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = appleDays?.let { "$it days" } ?: "—",
-                secondary = appleWorkouts?.let { "$it workouts" } ?: "Counting…",
+                primary = appleDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_days_8808cc6b, it, it) } ?: "—",
+                secondary = appleWorkouts?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_workouts_acbb4e56, it, it) } ?: uiString(R.string.l10n_data_sources_screen_counting_c92a5b8a),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_apple_health_export_533fca27),
@@ -516,16 +512,14 @@ fun DataSourcesScreen(vm: AppViewModel) {
         SourceCard(
             title = uiString(R.string.l10n_data_sources_screen_health_connect_be6bca3e),
             icon = Icons.Filled.MonitorHeart,
-            subtitle = "Pull steps, heart rate, HRV, sleep, SpO₂, weight and workouts straight from " +
-                "Android's Health Connect. No file needed. On-device; it never overwrites richer " +
-                "WHOOP data, and writes nothing unless you opt in to sharing back below.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_pull_steps_heart_rate_hrv_sleep_984acfe1),
         ) {
             val hasHc = (hcDays ?: 0) > 0 || (hcWorkouts ?: 0) > 0
             if (hasHc) {
                 StatePill(title = uiString(R.string.l10n_data_sources_screen_imported_434eb26f), tone = StrandTone.Accent, showsDot = true)
                 CountLine(
-                    primary = hcDays?.let { "$it days" } ?: "—",
-                    secondary = hcWorkouts?.let { "$it workouts" } ?: "Counting…",
+                    primary = hcDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_days_8808cc6b, it, it) } ?: "—",
+                    secondary = hcWorkouts?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_workouts_acbb4e56, it, it) } ?: uiString(R.string.l10n_data_sources_screen_counting_c92a5b8a),
                 )
             }
             if (healthConnectAvailable) {
@@ -595,7 +589,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
                     Text(
                         uiString(
                             R.string.l10n_data_sources_screen_last_sync_b793ffab,
-                            if (hcLastSync == 0L) "not yet"
+                            if (hcLastSync == 0L) uiString(R.string.l10n_data_sources_screen_not_yet_3a230353)
                             else DateUtils.getRelativeTimeSpanString(hcLastSync).toString(),
                         ),
                         style = NoopType.footnote,
@@ -662,7 +656,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
                     }
                 }
             } else {
-                RoadmapNote("Health Connect isn't set up on this device. Install it from Google Play, then return here to import.")
+                RoadmapNote(uiString(R.string.l10n_data_sources_screen_health_connect_isn_t_set_up_498e793d))
             }
         }
         }
@@ -673,19 +667,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_nutrition_csv_1c1315d9),
             icon = Icons.Filled.Restaurant,
             tint = Palette.metricAmber,
-            subtitle = "Import daily calories, protein, carbs, fat and body weight from a " +
-                "nutrition CSV: a MyFitnessPal or Cronometer export, or any spreadsheet " +
-                "with a date column plus those values. Meal-level rows are summed per day.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_daily_calories_protein_carbs_fat_f11e82ef),
         ) {
             val hasNutrition = (nutritionDays ?: 0) > 0 || (nutritionWeighIns ?: 0) > 0
             StatePill(
-                title = if (hasNutrition) "Imported" else "Nothing imported",
+                title = if (hasNutrition) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasNutrition) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = nutritionDays?.let { "$it days logged" } ?: "—",
-                secondary = nutritionWeighIns?.let { "$it weigh-ins" } ?: "Counting…",
+                primary = nutritionDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_days_logged_122e12cd, it, it) } ?: "—",
+                secondary = nutritionWeighIns?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_weigh_ins_cc17bf2f, it, it) } ?: uiString(R.string.l10n_data_sources_screen_counting_c92a5b8a),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_nutrition_csv_2c748273),
@@ -731,20 +723,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_xiaomi_mi_band_edeab3bc),
             icon = Icons.Filled.Watch,
             tint = Palette.metricPurple,
-            subtitle = "Import a Mi Band / Smart Band 8, 9 or 10's full history (steps, heart rate, " +
-                "resting HR, sleep stages, SpO₂, stress and sleep score) straight from the Mi Fitness " +
-                "app's on-device database. Fully offline; no Xiaomi account or Bluetooth. Export the Mi " +
-                "Fitness folder (or its .db / a .zip of it) from your phone and choose it here.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_a_mi_band_smart_band_86511f3c),
         ) {
             val hasXiaomi = (xiaomiDays ?: 0) > 0
             StatePill(
-                title = if (hasXiaomi) "Imported" else "Nothing imported",
+                title = if (hasXiaomi) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasXiaomi) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = xiaomiDays?.let { "$it days imported" } ?: "—",
-                secondary = if (xiaomiDays == null) "Counting…" else "Mi Band / Smart Band 8 · 9 · 10",
+                primary = xiaomiDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_days_imported_6ce2539c, it, it) } ?: "—",
+                secondary = if (xiaomiDays == null) uiString(R.string.l10n_data_sources_screen_counting_c92a5b8a) else uiString(R.string.l10n_data_sources_screen_mi_band_smart_band_8_9_a018493d),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_mi_band_export_e587801c),
@@ -761,20 +750,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_lifting_log_hevy_liftosaur_11df48df),
             icon = Icons.Filled.FitnessCenter,
             tint = DomainTheme.Effort.color,
-            subtitle = "Import your strength-training history from a Hevy CSV export or a Liftosaur " +
-                "JSON export. Each workout becomes a Strength session with a training-volume " +
-                "estimate (weight × reps). It's a volume figure, not a measured strain, so it never " +
-                "changes your Effort.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_your_strength_training_history_from_c6264c8b),
         ) {
             val hasLifting = (liftingWorkouts ?: 0) > 0
             StatePill(
-                title = if (hasLifting) "Imported" else "Nothing imported",
+                title = if (hasLifting) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasLifting) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = liftingWorkouts?.let { "$it workouts" } ?: "—",
-                secondary = "volume load shown per session",
+                primary = liftingWorkouts?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_workouts_acbb4e56, it, it) } ?: "—",
+                secondary = uiString(R.string.l10n_data_sources_screen_volume_load_shown_per_session_6089c92a),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_lifting_log_8fac7b68),
@@ -791,19 +777,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_workout_file_gpx_tcx_fit_5469c068),
             icon = Icons.Filled.Map,
             tint = Palette.metricAmber,
-            subtitle = "Import a single exported workout file from any brand (Garmin, Coros, Suunto, " +
-                "Wahoo, Polar, Strava, Apple) straight off your phone. GPS route, distance, heart rate " +
-                "and calories come in where the file has them. Fully offline; nothing leaves your phone.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_a_single_exported_workout_file_50fd5932),
         ) {
             val hasFiles = (activityFiles ?: 0) > 0
             StatePill(
-                title = if (hasFiles) "Imported" else "Nothing imported",
+                title = if (hasFiles) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasFiles) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = activityFiles?.let { "$it workouts" } ?: "—",
-                secondary = "GPX · TCX · FIT (one workout per file)",
+                primary = activityFiles?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_workouts_acbb4e56, it, it) } ?: "—",
+                secondary = uiString(R.string.l10n_data_sources_screen_gpx_tcx_fit_one_workout_per_0d88f32b),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_workout_file_a3a28e06),
@@ -820,21 +804,17 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_oura_fitbit_garmin_export_7b21682f),
             icon = Icons.Filled.Watch,
             tint = Palette.metricPurple,
-            subtitle = "Import your own data export from Oura, Fitbit or Garmin: sleep, resting heart " +
-                "rate, HRV, steps and more, where the export has them. Download it from the brand's app " +
-                "(Oura: Account → Export Data; Fitbit: Google Takeout; Garmin: Export Your Data), then " +
-                "choose the file here. Fully offline; nothing leaves your phone. Each brand's own " +
-                "readiness or sleep score is kept for reference only. Your scores stay yours.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_import_your_own_data_export_from_afabfbe1),
         ) {
             val hasDays = (wearableDays ?: 0) > 0
             StatePill(
-                title = if (hasDays) "Imported" else "Nothing imported",
+                title = if (hasDays) uiString(R.string.l10n_data_sources_screen_imported_434eb26f) else uiString(R.string.l10n_data_sources_screen_nothing_imported_04e51fdb),
                 tone = if (hasDays) StrandTone.Accent else StrandTone.Neutral,
                 showsDot = true,
             )
             CountLine(
-                primary = wearableDays?.let { "$it day metrics" } ?: "—",
-                secondary = "Oura JSON · Fitbit Takeout · Garmin GDPR (daily metrics + sleep)",
+                primary = wearableDays?.let { uiPlural(R.plurals.l10n_data_sources_screen_1_d_day_metrics_055c2075, it, it) } ?: "—",
+                secondary = uiString(R.string.l10n_data_sources_screen_oura_json_fitbit_takeout_garmin_gdpr_304306f2),
             )
             BackupButton(
                 label = uiString(R.string.l10n_data_sources_screen_import_wearable_export_0545c430),
@@ -851,24 +831,20 @@ fun DataSourcesScreen(vm: AppViewModel) {
             title = uiString(R.string.l10n_data_sources_screen_broadcast_hr_from_this_phone_10e5605c),
             icon = Icons.Filled.MonitorHeart,
             tint = DomainTheme.Effort.color,
-            subtitle = "Re-share your live strap heart rate over Bluetooth as a standard heart-rate " +
-                "sensor, so a gym treadmill, bike, Zwift, Peloton or any fitness app nearby can read " +
-                "it. Works on any WHOOP (4.0 or 5.0/MG) because your phone does the broadcasting. " +
-                "If your strap or watch already broadcasts heart rate directly to another device, " +
-                "you can leave this off. Local Bluetooth only. Nothing leaves your phone. Off by default.",
+            subtitle = uiString(R.string.l10n_data_sources_screen_re_share_your_live_strap_heart_a1ff87dc),
         ) {
             if (hrBroadcast) {
                 val (label, tone) =
-                    if (hrBroadcastAdvertising) "Broadcasting" to StrandTone.Positive
-                    else "Starting…" to StrandTone.Warning
+                    if (hrBroadcastAdvertising) uiString(R.string.l10n_data_sources_screen_broadcasting_ba459229) to StrandTone.Positive
+                    else uiString(R.string.l10n_data_sources_screen_starting_e5f58095) to StrandTone.Warning
                 StatePill(title = label, tone = tone, showsDot = true, pulsing = !hrBroadcastAdvertising)
                 CountLine(
-                    primary = if (hrBroadcastAdvertising) "Standard HR sensor (0x180D)" else "—",
+                    primary = if (hrBroadcastAdvertising) uiString(R.string.l10n_data_sources_screen_standard_hr_sensor_0x180d_9ffe2c86) else "—",
                     secondary = when {
                         hrBroadcastSubscribers > 0 ->
-                            "$hrBroadcastSubscribers ${if (hrBroadcastSubscribers == 1) "device" else "devices"} reading"
-                        live.heartRate != null -> "Sharing ${live.heartRate} bpm · waiting for a device"
-                        else -> "No live heart rate yet · open Live to pair your strap"
+                            uiPlural(R.plurals.l10n_data_sources_screen_1_d_devices_reading_c2e90fd2, hrBroadcastSubscribers, hrBroadcastSubscribers)
+                        live.heartRate != null -> uiString(R.string.l10n_data_sources_screen_sharing_1_s_bpm_waiting_for_2c33d59d, live.heartRate.toString())
+                        else -> uiString(R.string.l10n_data_sources_screen_no_live_heart_rate_yet_open_5b55dcec)
                     },
                 )
             } else {
@@ -955,10 +931,10 @@ fun DataSourcesScreen(vm: AppViewModel) {
                 // unbonded offload probe is a second way in — it sets bonded on a strap that answered a
                 // command without ever having sent an HR reading. Both are the same state: reachable over
                 // the open profile, never encrypted.
-                live.encryptedBond -> "Bonded, streaming." to StrandTone.Positive
-                live.bonded -> "Live HR (not fully paired)" to StrandTone.Warning
-                live.connected -> "Connected, pairing…" to StrandTone.Warning
-                else -> "Not connected. Open Live to pair." to StrandTone.Critical
+                live.encryptedBond -> uiString(R.string.l10n_data_sources_screen_bonded_streaming_3ceaa05e) to StrandTone.Positive
+                live.bonded -> uiString(R.string.l10n_data_sources_screen_live_hr_not_fully_paired_6fd6ddb1) to StrandTone.Warning
+                live.connected -> uiString(R.string.l10n_data_sources_screen_connected_pairing_22609f31) to StrandTone.Warning
+                else -> uiString(R.string.l10n_data_sources_screen_not_connected_open_live_to_pair_f2cef74b) to StrandTone.Critical
             }
             StatePill(title = label, tone = tone, showsDot = true, pulsing = live.connected && !live.bonded)
             val strapBroadcastTitle = uiString(R.string.raw_diag_broadcast_hr)
@@ -1032,7 +1008,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
                         refreshCounts()
                         vm.loadWorkouts()
                         busy = false
-                        Toast.makeText(context, "Removed Apple Health imported data.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, uiString(R.string.l10n_data_sources_screen_removed_apple_health_imported_data_8e5c632e), Toast.LENGTH_LONG).show()
                     }
                 }) {
                     Text(uiString(R.string.l10n_data_sources_screen_remove_e963907d), style = NoopType.body, color = Palette.statusCritical)

@@ -136,13 +136,12 @@ fun WeeklyDigestScreen(vm: AppViewModel) {
     val factor = effortDisplayFactor(UnitPrefs.effortScale(LocalContext.current))
     val anchorDay = logicalDayKeyNow()
     val inputs = rememberWeeklyDigestInputs(days, anchorDay)
-    ScreenScaffold(title = uiString(R.string.l10n_weekly_digest_card_week_in_review_66d95a07), subtitle = "Your Monday-to-Sunday, read in one glance.") {
+    ScreenScaffold(title = uiString(R.string.l10n_weekly_digest_card_week_in_review_66d95a07), subtitle = uiString(R.string.l10n_weekly_digest_card_your_monday_to_sunday_read_in_c475888a)) {
         val digest = buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch)
         if (digest.isEmpty) {
             DataPendingNote(
                 title = uiString(R.string.l10n_weekly_digest_card_no_readings_this_week_yet_0745a2df),
-                body = "Wear your strap or import your WHOOP export in Data Sources. Once this week has a " +
-                    "day or two of data, your week-in-review appears here.",
+                body = uiString(R.string.l10n_weekly_digest_card_wear_your_strap_or_import_your_b3211f76),
             )
         } else {
             NoopCard { WeeklyDigestContent(digest = digest, compact = false) }
@@ -193,7 +192,7 @@ fun WeeklyDigestContent(digest: WeeklyDigest, compact: Boolean = false) {
         // Focal points — the plain-English read, most salient first.
         if (digest.focalPoints.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                digest.focalPoints.forEach { FocalRow(it) }
+                WeeklyDigestText.focalLines(digest).forEach { FocalRow(it) }
             }
         }
 
@@ -222,7 +221,7 @@ fun WeeklyDigestContent(digest: WeeklyDigest, compact: Boolean = false) {
                         color = Palette.textTertiary,
                     )
                 }
-                Text(digest.balance.sentence, style = NoopType.footnote, color = Palette.textTertiary)
+                Text(WeeklyDigestText.balance(digest.balance), style = NoopType.footnote, color = Palette.textTertiary)
                 Text(
                     uiString(R.string.l10n_weekly_digest_card_informational_only_not_medical_advice_593feb77),
                     style = NoopType.footnote,
@@ -418,7 +417,7 @@ private fun chipTone(s: WeeklyMetricSummary): Color = when {
 
 /** The localized display name for a digest metric; [WeeklyMetric.label] stays English for narration. */
 @StringRes
-private fun WeeklyMetric.labelRes(): Int = when (this) {
+internal fun WeeklyMetric.labelRes(): Int = when (this) {
     WeeklyMetric.CHARGE -> R.string.today_metric_charge
     WeeklyMetric.EFFORT -> R.string.today_metric_effort
     WeeklyMetric.REST -> R.string.today_metric_rest

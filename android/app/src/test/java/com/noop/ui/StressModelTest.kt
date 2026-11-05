@@ -4,6 +4,8 @@ import com.noop.data.DailyMetric
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 /**
@@ -15,6 +17,9 @@ import org.junit.Test
  * StressModelCarryTests.
  */
 class StressModelTest {
+
+    @Before fun englishStrings() = com.noop.EnglishTestStrings.install()
+    @After fun clearStrings() = com.noop.EnglishTestStrings.uninstall()
 
     private fun day(d: String, rhr: Int?, hrv: Double?) =
         DailyMetric(deviceId = "my-whoop", day = d, restingHr = rhr, avgHrv = hrv)

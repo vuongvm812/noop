@@ -108,7 +108,7 @@ struct TestCentreView: View {
     /// The exact frame that would go on the wire, so it can be read BEFORE sending.
     private var userInfoFramePreview: String {
         guard let v = userInfoValueBytes, let cmd = try? OuraUserInfoWrite.command(userInfoField, value: v) else {
-            return "enter a value"
+            return String(localized: "enter a value")
         }
         return cmd.bytes.map { String(format: "%02x", $0) }.joined()
     }
@@ -500,8 +500,8 @@ struct TestCentreView: View {
             Button("Write", role: .destructive) {
                 guard let v = userInfoValueBytes else { return }
                 if model.sourceCoordinator?.ouraSource?.writeUserInfo(field: userInfoField, value: v) != true {
-                    infoTitle = "Not written"
-                    infoMessage = "No connected Oura ring. Connect the ring, then try again."
+                    infoTitle = String(localized: "Not written")
+                    infoMessage = String(localized: "No connected Oura ring. Connect the ring, then try again.")
                     showInfo = true
                 }
             }
@@ -544,8 +544,8 @@ struct TestCentreView: View {
             Button("Cancel", role: .cancel) { }
             Button("Write", role: .destructive) {
                 if model.sourceCoordinator?.ouraSource?.writeFeatureMode(feature: pending.feature, mode: pending.mode) != true {
-                    infoTitle = "Not written"
-                    infoMessage = "No connected Oura ring. Connect the ring, then try again."
+                    infoTitle = String(localized: "Not written")
+                    infoMessage = String(localized: "No connected Oura ring. Connect the ring, then try again.")
                     showInfo = true
                 }
             }
@@ -785,7 +785,12 @@ struct TestCentreView: View {
                        "declined \(result.declinedCount), no raw data \(result.noRawDataCount) " +
                        "(\(anchorNote), \(endNote))"
             live.append(log: line)
-            skinTempBackfillStatus = line
+            // The strap log keeps the English line; the on-screen status is localized as one phrase.
+            let shownAnchor = result.windowAnchorRaw != nil
+                ? String(localized: "anchor from current window")
+                : String(localized: "no 4.0 anchor (5/MG or too few worn samples)")
+            let shownEnd = result.reachedEnd ? String(localized: "reached end") : String(localized: "hit page budget")
+            skinTempBackfillStatus = String(localized: "skin-temp backfill (#1853): filled \(result.filledCount), declined \(result.declinedCount), no raw data \(result.noRawDataCount) (\(shownAnchor), \(shownEnd))")
             skinTempBackfillRunning = false
             // Refresh so the newly-filled absolutes show in the charts/explorer.
             await model.repo.refresh()

@@ -4450,7 +4450,7 @@ private fun sleepSourceSubtitle(card: DashboardCard, day: DailyMetric?): String?
     if (card != DashboardCard.SLEEP) return null
     val d = day ?: return null
     if (d.totalSleepMin == null) return null
-    val source = daySourceBadge(d.deviceId).first
+    val source = localizedDaySourceLabel(daySourceBadge(d.deviceId).first)
     return uiString(R.string.today_sleep_source_last_night, source)
 }
 
@@ -6145,7 +6145,7 @@ private fun MetricGrid(
     // #760/#792: the caption under an ESTIMATED Steps tile: the engine's STATUS line (manual k, or
     // k=… from N days + confidence tier) so a frozen-looking estimate self-explains. Built from the SAME
     // persisted calibration the estimate used; defaults to a bare "est." for callers that don't supply it.
-    stepsEstimateCaption: String = "est.",
+    stepsEstimateCaption: String = uiString(R.string.l10n_today_screen_est_2f3035ba),
     // #1491: the blank-tile line for a strap that ESTIMATES steps — null for a 5/MG (its strap reports a
     // real count) and for a user who has never selected a model, so neither is told to calibrate anything.
     stepsCalibrationPrompt: String? = null,
@@ -8163,7 +8163,7 @@ private fun sleepValue(d: DailyMetric?): String {
  */
 private fun restCaption(d: DailyMetric?): String? = when {
     d?.totalSleepMin != null -> sleepValue(d)
-    d?.efficiency != null -> String.format(Locale.getDefault(), "%.0f%% eff", d.efficiency)
+    d?.efficiency != null -> uiString(R.string.l10n_today_screen_1_s_eff_f09ad3cf, String.format(Locale.getDefault(), "%.0f", d.efficiency))
     else -> null
 }
 

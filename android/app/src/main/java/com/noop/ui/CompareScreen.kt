@@ -90,7 +90,7 @@ import kotlin.math.abs
 /** One interrogable metric: how to fetch it (key+source), how to label/format it. */
 data class CompareMetric(
     val key: String,
-    val title: String,
+    val titleEn: String,
     val category: String,
     val unit: String,
     val source: String,      // "my-whoop" or "apple-health"
@@ -98,9 +98,52 @@ data class CompareMetric(
     // Optional honesty note shown in the metric picker (e.g. BMI is derived from the profile height
     // when it comes from Health Connect, since Health Connect carries no measured BMI record). The
     // parity-locked [title] stays identical to the iOS MetricCatalog; the caveat lives here instead.
-    val note: String? = null,
+    val noteEn: String? = null,
 ) {
     val id: String get() = "$source:$key"
+
+    /** Localized display title; [titleEn] is the parity-locked English fallback. */
+    val title: String
+        get() = when (key) {
+            "avg_hr" -> uiString(R.string.l10n_compare_screen_average_heart_rate_2e95311f)
+            "max_hr" -> uiString(R.string.l10n_compare_screen_max_heart_rate_5f8b2739)
+            "energy_kcal" -> uiString(R.string.l10n_compare_screen_calories_3e62ecfe)
+            "vo2max" -> uiString(R.string.l10n_compare_screen_vo_max_21214fb6)
+            "fitness_age" -> uiString(R.string.l10n_compare_screen_fitness_age_12383b4a)
+            "vo2max_est" -> uiString(R.string.l10n_compare_screen_vo_max_estimated_01930b53)
+            "vitality" -> uiString(R.string.l10n_compare_screen_vitality_be320b06)
+            "body_age" -> uiString(R.string.l10n_compare_screen_body_age_8a2512e6)
+            "recovery" -> uiString(R.string.l10n_compare_screen_charge_d4e1aee4)
+            "hrv" -> uiString(R.string.l10n_compare_screen_heart_rate_variability_20f0069e)
+            "rhr" -> uiString(R.string.l10n_compare_screen_resting_heart_rate_9700f4d8)
+            "resp_rate" -> uiString(R.string.l10n_compare_screen_respiratory_rate_3fbb532f)
+            "spo2" -> uiString(R.string.l10n_compare_screen_blood_oxygen_a8ad9ff5)
+            "skin_temp" -> uiString(R.string.l10n_compare_screen_skin_temperature_f59127f6)
+            "sleep_performance" -> uiString(R.string.l10n_compare_screen_rest_b79e5f48)
+            "sleep_total_min" -> uiString(R.string.l10n_compare_screen_asleep_time_ccde95a8)
+            "sleep_efficiency" -> uiString(R.string.l10n_compare_screen_sleep_efficiency_b4b5c293)
+            "sleep_deep_min" -> uiString(R.string.l10n_compare_screen_deep_sws_sleep_4ec27b34)
+            "sleep_rem_min" -> uiString(R.string.l10n_compare_screen_rem_sleep_77605e30)
+            "sleep_light_min" -> uiString(R.string.l10n_compare_screen_light_sleep_d4bbaf3a)
+            "strain" -> uiString(R.string.l10n_compare_screen_effort_8c974bc6)
+            "steps" -> uiString(R.string.l10n_compare_screen_steps_cdde4f20)
+            "steps_est" -> uiString(R.string.l10n_compare_screen_steps_estimated_7e9cc534)
+            "active_kcal" -> uiString(R.string.l10n_compare_screen_active_energy_2d3288f9)
+            "weight" -> uiString(R.string.l10n_compare_screen_weight_69c0b815)
+            "body_fat" -> uiString(R.string.l10n_compare_screen_body_fat_13aeec7b)
+            "lean_mass" -> uiString(R.string.l10n_compare_screen_lean_body_mass_bf9a784a)
+            "bmi" -> uiString(R.string.l10n_compare_screen_bmi_aa26664f)
+            "calories_in" -> uiString(R.string.l10n_compare_screen_calories_in_72369125)
+            "protein_g" -> uiString(R.string.l10n_compare_screen_protein_26ed353d)
+            "carbs_g" -> uiString(R.string.l10n_compare_screen_carbs_d1b71194)
+            "fat_g" -> uiString(R.string.l10n_compare_screen_fat_7b71bd0c)
+            "mood" -> uiString(R.string.l10n_compare_screen_mood_c16981e6)
+            else -> titleEn
+        }
+
+    /** Localized honesty note shown in the metric picker, or null. */
+    val note: String?
+        get() = noteEn?.let { uiString(R.string.l10n_compare_screen_from_health_connect_this_is_derived_58d77d8a) }
 
     fun format(v: Double): String {
         val n = if (decimals == 0) {
@@ -151,6 +194,18 @@ data class CompareMetric(
 private object CompareCatalog {
     val categories = listOf("Heart", "Charge", "Rest", "Effort", "Health", "Nutrition", "Mind")
 
+    /** Localized display label for a [categories] entry. */
+    fun categoryLabel(c: String): String = when (c) {
+        "Heart" -> uiString(R.string.l10n_compare_screen_heart_2a37335e)
+        "Charge" -> uiString(R.string.l10n_compare_screen_charge_d4e1aee4)
+        "Rest" -> uiString(R.string.l10n_compare_screen_rest_b79e5f48)
+        "Effort" -> uiString(R.string.l10n_compare_screen_effort_8c974bc6)
+        "Health" -> uiString(R.string.l10n_compare_screen_health_3703cd21)
+        "Nutrition" -> uiString(R.string.l10n_compare_screen_nutrition_b3c68d7a)
+        "Mind" -> uiString(R.string.l10n_compare_screen_mind_59e63f7e)
+        else -> c
+    }
+
     val all: List<CompareMetric> = listOf(
         // Heart
         CompareMetric("avg_hr", "Average Heart Rate", "Heart", "bpm", "my-whoop", 0),
@@ -189,7 +244,7 @@ private object CompareCatalog {
         CompareMetric("lean_mass", "Lean Body Mass", "Health", "kg", "apple-health", 1),
         CompareMetric(
             "bmi", "BMI", "Health", "", "apple-health", 1,
-            note = "From Health Connect this is derived from your weight and profile height.",
+            noteEn = "From Health Connect this is derived from your weight and profile height.",
         ),
         // Nutrition (imported from a food-tracker CSV — calories-in next to calories-out).
         // Mirrors the macOS MetricCatalog entries exactly (same keys + sources, v2.2.0 parity).
@@ -228,13 +283,24 @@ private object CompareCatalog {
 // MARK: - Range control (shared spec — W / M / 3M / 6M / 1Y / ALL)
 
 /** The canonical Strand range window. [days] == null means ALL of history. */
-private enum class CompareRange(val label: String, val days: Int?, val phrase: String) {
+private enum class CompareRange(val label: String, val days: Int?, private val phraseEn: String) {
     Week("W", 7, "the last 7 days"),
     Month("M", 30, "30 days"),
     Quarter("3M", 90, "3 months"),
     Half("6M", 180, "6 months"),
     Year("1Y", 365, "1 year"),
     All("ALL", null, "all history");
+
+    /** Localized phrase for the window, used inside sentences. */
+    val phrase: String
+        get() = when (this) {
+            Week -> uiString(R.string.l10n_compare_screen_the_last_7_days_02bc1e5f)
+            Month -> uiString(R.string.l10n_compare_screen_30_days_7d4278a8)
+            Quarter -> uiString(R.string.l10n_compare_screen_3_months_b9e4e6ff)
+            Half -> uiString(R.string.l10n_compare_screen_6_months_cd75b86f)
+            Year -> uiString(R.string.l10n_compare_screen_1_year_afe36da6)
+            All -> uiString(R.string.l10n_compare_screen_all_history_eb5df7d2)
+        }
 
     /** This range plus every LARGER range, ascending — the auto-expand search order. */
     val widening: List<CompareRange>
@@ -437,14 +503,13 @@ fun CompareScreen(vm: AppViewModel) {
 
     val rangeCaption: String = run {
         val total = activeSeries.sumOf { it.rows.size }
-        val unit = if (total == 1) "reading" else "readings"
-        val base = "$total $unit across ${activeSeries.size} · ${range.phrase}"
-        if (anyWidened) "$base · sparse widened" else base
+        val base = uiPlural(R.plurals.l10n_compare_screen_readings_across, total, total, activeSeries.size, range.phrase)
+        if (anyWidened) uiString(R.string.l10n_compare_screen_1_s_sparse_widened_c03dd887, base) else base
     }
 
     LazyScreenScaffold(
         title = uiString(R.string.l10n_compare_screen_compare_8d105cf4),
-        subtitle = "Overlay signals, draw conclusions.",
+        subtitle = uiString(R.string.l10n_compare_screen_overlay_signals_draw_conclusions_d4fb7bee),
         // Liquid sky backdrop (LiquidScreenSky.kt) in the scaffold's topBackground slot, gated on the
         // day-cycle preference — the same pilot plumbing the liquid Today uses.
         topBackground = screenBackdropSlot(showDayCycleBackground, skyBehindCards),
@@ -456,7 +521,7 @@ fun CompareScreen(vm: AppViewModel) {
         // ── Metric picker section (chips + range control)
         item {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-            SectionHeader("Metrics", overline = "Overlay 2-4 signals")
+            SectionHeader(uiString(R.string.l10n_compare_screen_metrics_ddf6a1f0), overline = uiString(R.string.l10n_compare_screen_overlay_2_4_signals_7bba888f))
             NoopCard {
                 Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
                     SegmentedPillControl(
@@ -470,7 +535,7 @@ fun CompareScreen(vm: AppViewModel) {
                     )
 
                     // #492: this used to share a row with the segmented range picker. On narrow
-                    // screens the picker consumed the width and collapsed "Add metric" into a
+                    // screens the picker consumed the width and collapsed uiString(R.string.l10n_compare_screen_add_metric_0a6b5a85) into a
                     // one-character-wide column. Give the action its own trailing-aligned row so
                     // both controls retain their intended intrinsic width.
                     Row(
@@ -527,7 +592,7 @@ fun CompareScreen(vm: AppViewModel) {
 
         if (selected.size < minSelection) {
             item {
-                EmptyNote("Pick at least two metrics above to overlay them and read how they move together.")
+                EmptyNote(uiString(R.string.l10n_compare_screen_pick_at_least_two_metrics_above_9a527d34))
             }
         } else {
             val nonEmpty = activeSeries.filter { it.rows.isNotEmpty() }
@@ -536,12 +601,11 @@ fun CompareScreen(vm: AppViewModel) {
                     item {
                         DataPendingNote(
                             title = uiString(R.string.l10n_compare_screen_compare_needs_at_least_two_metrics_2bfe1fad),
-                            body = "Compare needs at least two metrics with history. Import your " +
-                                "WHOOP export in Data Sources first.",
+                            body = uiString(R.string.l10n_compare_screen_compare_needs_at_least_two_metrics_44ec15c9),
                         )
                     }
                 } else {
-                    item { EmptyNote("Reading your history…") }
+                    item { EmptyNote(uiString(R.string.l10n_compare_screen_reading_your_history_cdde0088)) }
                 }
             } else {
                 item { OverlaySection(nonEmpty, range, anyWidened) }
@@ -613,7 +677,7 @@ private fun AddMetricMenu(
                 modifier = Modifier.size(16.dp),
             )
             Text(
-                if (atMax) "Max 4" else "Add metric",
+                if (atMax) uiString(R.string.l10n_compare_screen_max_4_2e3d8d84) else uiString(R.string.l10n_compare_screen_add_metric_0a6b5a85),
                 style = NoopType.subhead,
                 color = tint,
                 maxLines = 1,
@@ -629,7 +693,7 @@ private fun AddMetricMenu(
                 val metrics = CompareCatalog.inCategory(category)
                 if (metrics.isNotEmpty()) {
                     Text(
-                        category.uppercase(),
+                        CompareCatalog.categoryLabel(category).uppercase(),
                         style = NoopType.overline,
                         color = Palette.textTertiary,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -765,17 +829,17 @@ private fun OverlaySection(
     anyWidened: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-        SectionHeader("Overlay", overline = range.phrase, trailing = "${series.size} series")
+        SectionHeader(uiString(R.string.l10n_compare_screen_overlay_249450cb), overline = range.phrase, trailing = uiPlural(R.plurals.l10n_compare_screen_series_count, series.size, series.size))
         // Anchor the overlay card to the brand-green chrome world; each line keeps its own categorical
         // series colour so the overlaid lines stay distinguishable against the wash.
         NoopCard(tint = Palette.accent) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Overline("Normalized overlay")
+                Overline(uiString(R.string.l10n_compare_screen_normalized_overlay_8c6cf2ef))
                 Text(
                     if (anyWidened) {
-                        "Each line min-max normalized · sparse series widened past ${range.phrase}"
+                        uiString(R.string.l10n_compare_screen_each_line_min_max_normalized_sparse_98c4cb04, range.phrase)
                     } else {
-                        "Each line min-max normalized within ${range.phrase}"
+                        uiString(R.string.l10n_compare_screen_each_line_min_max_normalized_within_d384d684, range.phrase)
                     },
                     style = NoopType.footnote,
                     color = Palette.textTertiary,
@@ -790,9 +854,9 @@ private fun OverlaySection(
 
                 // Endpoint axis labels (low / high), mirroring the normalized macOS y-axis.
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    Text("low", style = NoopType.footnote, color = Palette.textTertiary)
+                    Text(uiString(R.string.l10n_compare_screen_low_36a883e7), style = NoopType.footnote, color = Palette.textTertiary)
                     Spacer(Modifier.weight(1f))
-                    Text("high", style = NoopType.footnote, color = Palette.textTertiary)
+                    Text(uiString(R.string.l10n_compare_screen_high_9235afd3), style = NoopType.footnote, color = Palette.textTertiary)
                 }
 
                 HorizontalDivider(color = Palette.hairline)
@@ -1249,9 +1313,9 @@ private fun CorrelationSection(series: List<CompareSeries>, range: CompareRange)
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader(
-            "How They Move Together",
+            uiString(R.string.l10n_compare_screen_how_they_move_together_7c123543),
             overline = uiString(R.string.l10n_compare_screen_method_overline, methodLabel(method), range.phrase),
-            trailing = if (pairs.isEmpty()) null else "${pairs.size} pairs",
+            trailing = if (pairs.isEmpty()) null else uiPlural(R.plurals.l10n_compare_screen_pairs_count, pairs.size, pairs.size),
         )
         val methodDescription = uiString(R.string.l10n_compare_screen_correlation_method)
         SegmentedPillControl(
@@ -1341,16 +1405,19 @@ private fun PairCard(p: PairResult) {
 // MARK: - Insight language (ported from CompareView)
 
 private fun insightSentence(p: PairResult): String {
-    val head = ("${p.a.metric.title} ↔ ${p.b.metric.title}: r = ${signedR(p.r)} " +
-        "(${strengthWord(p.r)} ${directionWord(p.r)}) over ${p.n} shared days.")
+    val head = uiString(R.string.l10n_compare_screen_1_s_2_s_r_3_64a86a6e, p.a.metric.title, p.b.metric.title, signedR(p.r), strengthWord(p.r), directionWord(p.r), p.n)
         .replace("  ", " ").replace(" )", ")")
     if (abs(p.r) < 0.3) {
-        return "$head No clear relationship - they move largely independently."
+        return uiString(R.string.l10n_compare_screen_1_s_2_s_78c505fe, head, uiString(R.string.l10n_compare_screen_no_clear_relationship_they_move_largely_9e5e781b))
     }
     val aT = p.a.metric.title.lowercase()
     val bT = p.b.metric.title.lowercase()
-    val verb = if (p.r < 0) "tends to fall" else "tends to rise"
-    return "$head When $aT rises, $bT $verb - a ${strengthWord(p.r)} ${directionWord(p.r)} link."
+    val tail = if (p.r < 0) {
+        uiString(R.string.l10n_compare_screen_when_1_s_rises_2_s_77f831a2, aT, bT, strengthWord(p.r), directionWord(p.r))
+    } else {
+        uiString(R.string.l10n_compare_screen_when_1_s_rises_2_s_ad140b83, aT, bT, strengthWord(p.r), directionWord(p.r))
+    }
+    return uiString(R.string.l10n_compare_screen_1_s_2_s_78c505fe, head, tail)
 }
 
 private fun signedR(r: Double): String {
@@ -1361,17 +1428,17 @@ private fun signedR(r: Double): String {
 private fun strengthWord(r: Double): String {
     val a = abs(r)
     return when {
-        a < 0.1 -> "negligible"
-        a < 0.3 -> "weak"
-        a < 0.5 -> "moderate"
-        a < 0.7 -> "strong"
-        else -> "very strong"
+        a < 0.1 -> uiString(R.string.l10n_compare_screen_negligible_89891430)
+        a < 0.3 -> uiString(R.string.l10n_compare_screen_weak_1ded3053)
+        a < 0.5 -> uiString(R.string.l10n_compare_screen_moderate_78cd1257)
+        a < 0.7 -> uiString(R.string.l10n_compare_screen_strong_0117691d)
+        else -> uiString(R.string.l10n_compare_screen_very_strong_3e7b4c04)
     }
 }
 
 private fun directionWord(r: Double): String {
     if (abs(r) < 0.1) return ""
-    return if (r >= 0) "positive" else "negative"
+    return if (r >= 0) uiString(R.string.l10n_compare_screen_positive_c4c6c572) else uiString(R.string.l10n_compare_screen_negative_cb47297f)
 }
 
 private fun correlationColor(r: Double): Color {

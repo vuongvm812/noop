@@ -273,6 +273,35 @@ enum class BalanceRead {
         }
 }
 
+/**
+ * A focal point as structured data, so a UI layer can render it in the user's language instead
+ * of showing the engine's English sentence. Additive: [WeeklyDigest.focalPoints] is unchanged;
+ * [WeeklyDigest.focalDetails] is the same selection (same order) in structured form. Numbers are
+ * carried pre-formatted exactly as the English sentence prints them. Swift twin: `WeeklyFocal`.
+ */
+sealed class WeeklyFocal {
+    /** How big a week-over-week move is. */
+    sealed class Magnitude {
+        /** Whole percent ("12" in "12%"). */
+        data class Percent(val value: Int) : Magnitude()
+        /** A bare points figure ("3.5" in "3.5 pts"). */
+        data class Points(val value: String) : Magnitude()
+        /** A figure in the metric's own unit. */
+        data class Unit(val value: String, val unit: String) : Magnitude()
+    }
+
+    /** One metric's move. [delta] is -1 / 0 / 1; [goodness] is 1 (good sign) / -1 (worth a look) / 0. */
+    data class Mover(
+        val metric: WeeklyMetric, val delta: Int, val magnitude: Magnitude, val rollup: WeeklyRollup,
+        val thisValue: String, val lastValue: String, val goodness: Int,
+    ) : WeeklyFocal()
+    data class Balance(val read: BalanceRead) : WeeklyFocal()
+    data class EarlyWeek(val days: Int) : WeeklyFocal()
+    data class SparseLastWeek(val days: Int) : WeeklyFocal()
+    data class SteadyRest(val sd: String) : WeeklyFocal()
+    object Steady : WeeklyFocal()
+}
+
 /** The complete week-in-review. */
 data class WeeklyDigest(
     /** The Monday that anchors "this week" ("yyyy-MM-dd"). */
@@ -289,6 +318,8 @@ data class WeeklyDigest(
     val balance: BalanceRead,
     /** 1–2 plain-English focal points, most salient first. */
     val focalPoints: List<String>,
+    /** The same focal points as structured data, for localized rendering. */
+    val focalDetails: List<WeeklyFocal> = emptyList(),
 ) {
     fun summary(metric: WeeklyMetric): WeeklyMetricSummary? = metrics.firstOrNull { it.metric == metric }
 
@@ -373,11 +404,12 @@ object WeeklyDigestEngine {
 
         val balance = balanceRead(summaries)
         val focal = focalPoints(summaries, balance, restConsistency, effortDisplayFactor, span)
+        val focalDetails = focalEntries(summaries, balance, restConsistency, effortDisplayFactor, span)
 
         return WeeklyDigest(
             weekStart = monday, weekEnd = sunday, metrics = summaries,
             daysWithData = daysSeen.size, sleepConsistencySD = restConsistency,
-            balance = balance, focalPoints = focal,
+            balance = balance, focalPoints = focal, focalDetails = focalDetails,
         )
     }
 
@@ -618,6 +650,60 @@ object WeeklyDigestEngine {
         }
 
         return lines.take(2)
+    }
+
+    /** Structured twin of [focalPoints]: the same selection and order, as data. Swift twin: `focalEntries`. */
+    private fun focalEntries(
+        summaries: List<WeeklyMetricSummary>,
+        balance: BalanceRead,
+        consistencySD: Double?,
+        effortDisplayFactor: Double = 1.0,
+        span: Int = 7,
+    ): List<WeeklyFocal> {
+        val movers = summaries
+            .filter { focusEligible(it, span) && abs(it.normalisedMove) >= FOCUS_THRESHOLD }
+            .sortedByDescending { abs(it.normalisedMove) }
+        val lines = mutableListOf<WeeklyFocal>()
+        movers.firstOrNull()?.let { lines.add(moverFocal(it, effortDisplayFactor)) }
+        if (balance == BalanceRead.OVERREACHING || balance == BalanceRead.UNDERLOADED) {
+            lines.add(WeeklyFocal.Balance(balance))
+        } else if (movers.size >= 2) {
+            lines.add(moverFocal(movers[1], effortDisplayFactor))
+        }
+        if (lines.isEmpty()) {
+            val currentDays = summaries.maxOfOrNull { it.weekOverWeek.current.n } ?: 0
+            val prevDays = summaries.maxOfOrNull { it.weekOverWeek.previous.n } ?: 0
+            if (currentDays in 1 until MIN_DAYS_FOR_FOCUS) {
+                lines.add(WeeklyFocal.EarlyWeek(currentDays))
+            } else if (currentDays >= MIN_DAYS_FOR_FOCUS && prevDays in 1 until MIN_DAYS_FOR_FOCUS) {
+                lines.add(WeeklyFocal.SparseLastWeek(prevDays))
+            } else if (consistencySD != null && consistencySD <= 6.0) {
+                lines.add(WeeklyFocal.SteadyRest("${round1(consistencySD)}"))
+            } else {
+                lines.add(WeeklyFocal.Steady)
+            }
+        }
+        return lines.take(2)
+    }
+
+    /** Structured twin of [moverSentence]. Swift twin: `moverFocal`. */
+    private fun moverFocal(s: WeeklyMetricSummary, effortDisplayFactor: Double = 1.0): WeeklyFocal {
+        val spec = s.metric.spec
+        val f = if (s.metric == WeeklyMetric.EFFORT) effortDisplayFactor else 1.0
+        val delta = if (s.wowDelta > 0) 1 else if (s.wowDelta < 0) -1 else 0
+        val pct = s.weekOverWeek.pctChange
+        val magnitude = if (spec.percentChange && pct != null && abs(pct) >= 1) {
+            WeeklyFocal.Magnitude.Percent(roundedInt(abs(pct)))
+        } else if (spec.unit.isEmpty() || spec.unit == "%") {
+            WeeklyFocal.Magnitude.Points("${round1(abs(s.wowDelta) * f)}")
+        } else {
+            WeeklyFocal.Magnitude.Unit("${round1(abs(s.wowDelta) * f)}", spec.unit)
+        }
+        return WeeklyFocal.Mover(
+            s.metric, delta, magnitude, spec.rollup,
+            formatValue(s.thisValue * f, spec.decimals), formatValue(s.lastValue * f, spec.decimals),
+            s.wowGoodness,
+        )
     }
 
     /**

@@ -42,7 +42,7 @@ public struct StrainGauge: View {
         lineWidth: CGFloat = 14,
         showsLabel: Bool = true,
         showsHover: Bool = true,
-        valueFormat: @escaping (Double) -> String = { String(format: "Strain %.1f", $0) }
+        valueFormat: ((Double) -> String)? = nil
     ) {
         self.strain = strain
         self.outOf = outOf
@@ -51,7 +51,7 @@ public struct StrainGauge: View {
         self.lineWidth = lineWidth
         self.showsLabel = showsLabel
         self.showsHover = showsHover
-        self.valueFormat = valueFormat
+        self.valueFormat = valueFormat ?? { String(localized: "Strain \(String(format: "%.1f", $0))", bundle: .module) }
     }
 
     /// Cursor location while hovering, in gauge-local coordinates.

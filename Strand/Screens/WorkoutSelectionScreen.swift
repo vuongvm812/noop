@@ -257,8 +257,8 @@ struct WorkoutSelectionCard: View {
 
     private var accessibilityLabelText: String {
         let labels = meta.map(\.text)
-        if labels.isEmpty { return "\(sport.name) workout" }
-        return "\(sport.name) workout, \(labels.joined(separator: ", "))"
+        if labels.isEmpty { return String(localized: "\(sport.name) workout") }
+        return String(localized: "\(sport.name) workout, \(labels.joined(separator: ", "))")
     }
 }
 
@@ -274,20 +274,20 @@ enum WorkoutActivityMeta {
     static func items(for sport: WorkoutCatalog.Sport) -> [Item] {
         var items: [Item] = []
         if sport.isDistanceSport {
-            items.append(Item(symbol: "location.fill", text: "GPS"))
+            items.append(Item(symbol: "location.fill", text: String(localized: "GPS")))
         }
         if let type = KnownWorkoutType.exact(matching: sport.name) {
             switch type {
             case .treadmillRun, .treadmillWalk, .indoorCycle, .poolSwim, .rowMachine, .elliptical:
-                items.append(Item(symbol: nil, text: "Indoor"))
+                items.append(Item(symbol: nil, text: String(localized: "Indoor")))
             case .running, .walking, .hiking, .cycling, .openWaterSwim, .rowing, .skiing, .snowboarding:
-                items.append(Item(symbol: nil, text: "Outdoor"))
+                items.append(Item(symbol: nil, text: String(localized: "Outdoor")))
             case .strength, .bodybuilding, .weightlifting:
-                items.append(Item(symbol: nil, text: "Strength"))
+                items.append(Item(symbol: nil, text: String(localized: "Strength")))
             case .yoga, .pilates, .stretching:
-                items.append(Item(symbol: nil, text: "Mindfulness"))
+                items.append(Item(symbol: nil, text: String(localized: "Mindfulness")))
             case .hiit:
-                items.append(Item(symbol: nil, text: "Cardio"))
+                items.append(Item(symbol: nil, text: String(localized: "Cardio")))
             default:
                 break
             }

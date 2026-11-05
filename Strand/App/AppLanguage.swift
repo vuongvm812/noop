@@ -17,6 +17,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     case portuguese = "pt-PT"
     case polish = "pl"
     case chinese = "zh"
+    case vietnamese = "vi"
 
     static let storageKey = "noop.appLanguage"
 
@@ -35,6 +36,7 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         case .portuguese: return "Português"
         case .polish:     return "Polski"
         case .chinese:    return "中文"
+        case .vietnamese: return "Tiếng Việt"
         }
     }
 

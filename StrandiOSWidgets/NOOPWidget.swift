@@ -82,7 +82,7 @@ struct NOOPWidgetView: View {
 
     private var inlineText: String {
         var parts: [String] = []
-        if let r = snap.recovery { parts.append("Charge \(r)%") }
+        if let r = snap.recovery { parts.append(String(localized: "Charge \(r)%")) }
         if let b = snap.bpm { parts.append("\(b) bpm") }
         return parts.isEmpty ? "NOOP" : parts.joined(separator: " · ")
     }
@@ -135,7 +135,7 @@ struct NOOPWidgetView: View {
     ///
     /// The `.fullColor` branch is defensive rather than hot: this family renders `.vibrant` on the lock
     /// screen and in StandBy, so the tint realistically only reaches a gallery preview.
-    private func accessoryScore(_ label: String, symbol: String, text: String?, tint: Color) -> some View {
+    private func accessoryScore(_ label: LocalizedStringKey, symbol: String, text: String?, tint: Color) -> some View {
         VStack(spacing: 1) {
             // Glyph over value, the shape the request asked for. A 9pt word under each number was
             // spending scarce height on text nobody needs twice — the icons carry the metric identity.
@@ -154,12 +154,9 @@ struct NOOPWidgetView: View {
         // metric. Collapse the cell to one element that still speaks "Charge, 68 percent".
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
-        // Plain literal, not String(localized:). This extension's sources are StrandiOSWidgets +
-        // StrandiOSShared only — Strand/Resources/Localizable.xcstrings is NOT in the target, and
-        // String(localized:) resolves against Bundle.main, which for an app extension is the extension's
-        // own bundle. It would compile, look localized, and render English in every locale. Every other
-        // string in this file is a bare literal for the same reason: the widget is not localized yet.
-        .accessibilityValue(Text(text ?? "No data"))
+        // Spoken strings go through String(localized:) / LocalizedStringKey and need the shared string
+        // catalog to be a resource of this extension target.
+        .accessibilityValue(Text(text ?? String(localized: "No data")))
     }
 
     private func scoreStyle(hasValue: Bool, tint: Color) -> AnyShapeStyle {
@@ -211,16 +208,16 @@ struct NOOPWidgetView: View {
             HStack(alignment: .top, spacing: 0) {
                 statCell("HRV", value: snap.hrv.map { "\($0)" }, unit: "ms",
                          name: "Heart rate variability",
-                         spoken: snap.hrv.map { "\($0) milliseconds" })
+                         spoken: snap.hrv.map { String(localized: "\($0) milliseconds") })
                 statCell("Rest HR", value: snap.restingHr.map { "\($0)" }, unit: "bpm",
                          name: "Resting heart rate",
-                         spoken: snap.restingHr.map { "\($0) beats per minute" })
+                         spoken: snap.restingHr.map { String(localized: "\($0) beats per minute") })
                 statCell("HR", value: snap.bpm.map { "\($0)" }, unit: "bpm",
                          name: "Heart rate",
-                         spoken: snap.bpm.map { "\($0) beats per minute" })
+                         spoken: snap.bpm.map { String(localized: "\($0) beats per minute") })
                 statCell("Battery", value: snap.batteryPct.map { "\($0)%" },
                          name: "Strap battery",
-                         spoken: snap.batteryPct.map { "\($0) percent" })
+                         spoken: snap.batteryPct.map { String(localized: "\($0) percent") })
             }
             Spacer(minLength: 0)
         }
@@ -296,15 +293,15 @@ struct NOOPWidgetView: View {
     private func vitalsFooter(compact: Bool) -> some View {
         HStack {
             vital(symbol: "heart.fill", text: snap.bpm.map(String.init),
-                  name: "Heart rate", spoken: snap.bpm.map { "\($0) beats per minute" })
+                  name: "Heart rate", spoken: snap.bpm.map { String(localized: "\($0) beats per minute") })
             Spacer()
             if !compact, let hrv = snap.hrv {
                 vital(symbol: "waveform.path.ecg", text: "\(hrv)",
-                      name: "Heart rate variability", spoken: "\(hrv) milliseconds")
+                      name: "Heart rate variability", spoken: String(localized: "\(hrv) milliseconds"))
                 Spacer()
             }
             vital(symbol: "battery.50", text: snap.batteryPct.map { "\($0)%" },
-                  name: "Strap battery", spoken: snap.batteryPct.map { "\($0) percent" })
+                  name: "Strap battery", spoken: snap.batteryPct.map { String(localized: "\($0) percent") })
         }
         .font(.caption2)
         .foregroundStyle(StrandPalette.textSecondary)
@@ -316,11 +313,7 @@ struct NOOPWidgetView: View {
     /// unit, which the footer shows for none of them. Without this a reader hears "58", "64", "84 percent"
     /// — three anonymous numbers. Same reasoning as `accessoryScore`, which #1715 fixed for the lock
     /// screen; this footer predates it.
-    ///
-    /// Plain literals rather than `String(localized:)`, for the reason spelled out on `accessoryScore`:
-    /// this extension does not carry the app's string catalog, so `String(localized:)` would look
-    /// localized and render English anyway.
-    private func vital(symbol: String, text: String?, name: String, spoken: String?) -> some View {
+    private func vital(symbol: String, text: String?, name: LocalizedStringKey, spoken: String?) -> some View {
         Label(text ?? "–", systemImage: symbol)
             // Collapse first, like `accessoryScore` and `WidgetScoreRing` already do. A `Label` under
             // `.titleAndIcon` renders an image beside a text, so without this the bare number stays its
@@ -328,7 +321,7 @@ struct NOOPWidgetView: View {
             // something this file decides. Every other labelled graphic here ignores its children.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(name))
-            .accessibilityValue(Text(spoken ?? "No data"))
+            .accessibilityValue(Text(spoken ?? String(localized: "No data")))
     }
 
     /// One labelled stat in the large grid — value over a caption, equal-width so the columns align.
@@ -338,9 +331,9 @@ struct NOOPWidgetView: View {
     /// label, with "ms" and "bpm" spelled out letter by letter. Collapsing to one element lets the cell
     /// speak "Heart rate variability, 64 milliseconds". `spoken` falls back to the rendered value rather
     /// than to "No data", so a caller that omits it degrades to the old reading instead of lying.
-    private func statCell(_ label: String, value: String?, unit: String? = nil,
+    private func statCell(_ label: LocalizedStringKey, value: String?, unit: String? = nil,
                           tint: Color = StrandPalette.textPrimary,
-                          name: String? = nil, spoken: String? = nil) -> some View {
+                          name: LocalizedStringKey? = nil, spoken: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value ?? "–")
@@ -355,7 +348,7 @@ struct NOOPWidgetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(name ?? label))
-        .accessibilityValue(Text(spoken ?? value ?? "No data"))
+        .accessibilityValue(Text(spoken ?? value ?? String(localized: "No data")))
     }
 }
 
@@ -369,7 +362,7 @@ private struct WidgetScoreRing: View {
     let text: String?
     /// Arc fill 0…1; nil draws the empty track only (unscored).
     let fraction: Double?
-    let label: String
+    let label: LocalizedStringKey
     let color: Color
     let diameter: CGFloat
     let lineWidth: CGFloat
@@ -412,7 +405,7 @@ private struct WidgetScoreRing: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(text.map { "\($0) out of \(accessibilityOutOf)" } ?? "unavailable"))
+        .accessibilityValue(Text(text.map { String(localized: "\($0) out of \(accessibilityOutOf)") } ?? String(localized: "unavailable")))
     }
 }
 

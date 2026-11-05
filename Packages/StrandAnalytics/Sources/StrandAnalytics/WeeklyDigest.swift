@@ -254,6 +254,38 @@ public struct WeeklyMetricSummary: Equatable, Sendable {
 
 // MARK: - Digest
 
+/// A focal point as structured data, so a UI layer can render it in the user's language
+/// instead of showing the engine's English sentence. Additive: `WeeklyDigest.focalPoints`
+/// is unchanged; `focalDetails` is the same selection (same order) in structured form.
+/// Numbers are carried pre-formatted exactly as the English sentence prints them.
+/// Kotlin twin: `WeeklyFocal`.
+public enum WeeklyFocal: Equatable, Sendable {
+    /// How big a week-over-week move is.
+    public enum Magnitude: Equatable, Sendable {
+        /// Whole percent ("12" in "12%").
+        case percent(Int)
+        /// A bare points figure ("3.5" in "3.5 pts").
+        case points(String)
+        /// A figure in the metric's own unit ("4.0", "bpm").
+        case unit(String, String)
+    }
+
+    /// One metric's move. `delta` is -1 / 0 / 1 (down / flat / up); `goodness` is
+    /// 1 (good sign) / -1 (worth a look) / 0 (no verdict).
+    case mover(metric: WeeklyMetric, delta: Int, magnitude: Magnitude, rollup: WeeklyRollup,
+               thisValue: String, lastValue: String, goodness: Int)
+    /// The Effort-vs-Charge balance line (overreaching / underloaded).
+    case balance(BalanceRead)
+    /// Fewer than `minDaysForFocus` days into this week.
+    case earlyWeek(days: Int)
+    /// Last week had fewer than `minDaysForFocus` days.
+    case sparseLastWeek(days: Int)
+    /// A steady week with Rest held even; `sd` is the pre-formatted ± figure.
+    case steadyRest(sd: String)
+    /// A steady week, nothing moved.
+    case steady
+}
+
 /// The complete week-in-review.
 public struct WeeklyDigest: Equatable, Sendable {
     /// The Monday that anchors "this week" ("yyyy-MM-dd").
@@ -271,10 +303,13 @@ public struct WeeklyDigest: Equatable, Sendable {
     public let balance: BalanceRead
     /// 1–2 plain-English focal points, most salient first.
     public let focalPoints: [String]
+    /// The same focal points as structured data, for localized rendering.
+    public let focalDetails: [WeeklyFocal]
 
     public init(weekStart: String, weekEnd: String, metrics: [WeeklyMetricSummary],
                 daysWithData: Int, sleepConsistencySD: Double?, balance: BalanceRead,
-                focalPoints: [String]) {
+                focalPoints: [String], focalDetails: [WeeklyFocal] = []) {
+        self.focalDetails = focalDetails
         self.weekStart = weekStart
         self.weekEnd = weekEnd
         self.metrics = metrics
@@ -403,11 +438,14 @@ public enum WeeklyDigestEngine {
         let focal = focalPoints(summaries: summaries, balance: balance,
                                 consistencySD: restConsistency,
                                 effortDisplayFactor: effortDisplayFactor, span: span)
+        let focalDetails = focalEntries(summaries: summaries, balance: balance,
+                                        consistencySD: restConsistency,
+                                        effortDisplayFactor: effortDisplayFactor, span: span)
 
         return WeeklyDigest(
             weekStart: monday, weekEnd: sunday, metrics: summaries,
             daysWithData: (daysSeen ?? []).count, sleepConsistencySD: restConsistency,
-            balance: balance, focalPoints: focal)
+            balance: balance, focalPoints: focal, focalDetails: focalDetails)
     }
 
     // MARK: - Non-mean roll-ups
@@ -581,6 +619,61 @@ public enum WeeklyDigestEngine {
         }
 
         return Array(lines.prefix(2))
+    }
+
+    /// Structured twin of `focalPoints`: the same selection and order, as data.
+    /// Kotlin twin: `WeeklyDigestEngine.focalEntries`.
+    static func focalEntries(summaries: [WeeklyMetricSummary],
+                             balance: BalanceRead,
+                             consistencySD: Double?,
+                             effortDisplayFactor: Double = 1.0,
+                             span: Int = 7) -> [WeeklyFocal] {
+        let movers = summaries
+            .filter { focusEligible($0, span: span) && abs($0.normalisedMove) >= focusThreshold }
+            .sorted { abs($0.normalisedMove) > abs($1.normalisedMove) }
+        var lines: [WeeklyFocal] = []
+        if let top = movers.first {
+            lines.append(moverFocal(top, effortDisplayFactor: effortDisplayFactor))
+        }
+        if balance == .overreaching || balance == .underloaded {
+            lines.append(.balance(balance))
+        } else if movers.count >= 2 {
+            lines.append(moverFocal(movers[1], effortDisplayFactor: effortDisplayFactor))
+        }
+        if lines.isEmpty {
+            let currentDays = summaries.map { $0.weekOverWeek.current.n }.max() ?? 0
+            let prevDays = summaries.map { $0.weekOverWeek.previous.n }.max() ?? 0
+            if currentDays >= 1 && currentDays < minDaysForFocus {
+                lines.append(.earlyWeek(days: currentDays))
+            } else if currentDays >= minDaysForFocus, prevDays >= 1, prevDays < minDaysForFocus {
+                lines.append(.sparseLastWeek(days: prevDays))
+            } else if let sd = consistencySD, sd <= 6.0 {
+                lines.append(.steadyRest(sd: "\(round1(sd))"))
+            } else {
+                lines.append(.steady)
+            }
+        }
+        return Array(lines.prefix(2))
+    }
+
+    /// Structured twin of `moverSentence`. Kotlin twin: `WeeklyDigestEngine.moverFocal`.
+    static func moverFocal(_ s: WeeklyMetricSummary,
+                           effortDisplayFactor: Double = 1.0) -> WeeklyFocal {
+        let spec = s.metric.spec
+        let f = s.metric == .effort ? effortDisplayFactor : 1.0
+        let delta = s.wowDelta > 0 ? 1 : (s.wowDelta < 0 ? -1 : 0)
+        let magnitude: WeeklyFocal.Magnitude
+        if spec.percentChange, let pct = s.weekOverWeek.pctChange, abs(pct) >= 1 {
+            magnitude = .percent(roundedInt(abs(pct)))
+        } else if spec.unit.isEmpty || spec.unit == "%" {
+            magnitude = .points("\(round1(abs(s.wowDelta) * f))")
+        } else {
+            magnitude = .unit("\(round1(abs(s.wowDelta) * f))", spec.unit)
+        }
+        return .mover(metric: s.metric, delta: delta, magnitude: magnitude, rollup: spec.rollup,
+                      thisValue: formatValue(s.thisValue * f, decimals: spec.decimals),
+                      lastValue: formatValue(s.lastValue * f, decimals: spec.decimals),
+                      goodness: s.wowGoodness)
     }
 
     /// Whether a metric has enough behind it to be a focal mover: an average needs

@@ -1,5 +1,12 @@
 package com.noop.ingest
 
+import com.noop.ui.failure
+import com.noop.ui.uiPlural
+
+import com.noop.ui.uiString
+
+import com.noop.R
+
 import android.content.Context
 import android.net.Uri
 import android.util.Xml
@@ -113,14 +120,15 @@ object AppleHealthImporter {
                 } else {
                     parseXml(buffered, agg)
                 }
-            } ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.")
+            } ?: return ImportSummary.failure(SOURCE_LABEL, "Could not open the selected file.") { uiString(R.string.l10n_apple_health_importer_could_not_open_the_selected_file_d412e6e8) }
         } catch (e: MissingExportXml) {
-            return ImportSummary.failure(SOURCE_LABEL, "No export.xml found inside the archive.")
+            return ImportSummary.failure(SOURCE_LABEL, "No export.xml found inside the archive.") { uiString(R.string.l10n_apple_health_importer_no_export_xml_found_inside_the_a8250435) }
         } catch (e: Exception) {
+            val detail = e.message ?: e.javaClass.simpleName
             return ImportSummary.failure(
                 SOURCE_LABEL,
-                "Could not read the Apple Health export: ${e.message ?: e.javaClass.simpleName}",
-            )
+                "Could not read the Apple Health export: $detail",
+            ) { uiString(R.string.l10n_apple_health_importer_could_not_read_the_apple_health_b3dd4a42, detail) }
         }
 
         return persist(agg, repo, deviceId)
@@ -375,6 +383,7 @@ object AppleHealthImporter {
                 source = SOURCE_LABEL,
                 counts = emptyMap(),
                 message = "No supported Apple Health data found in the export.",
+                localized = { uiString(R.string.l10n_apple_health_importer_no_supported_apple_health_data_found_26ba6a33) },
             )
         }
 
@@ -482,6 +491,14 @@ object AppleHealthImporter {
             firstDay = firstDay,
             lastDay = lastDay,
             message = message,
+            localized = {
+                val base = if (workoutRows.isNotEmpty()) {
+                    uiString(R.string.l10n_apple_health_importer_imported_1_s_2_s_from_7cc3ac47, uiPlural(R.plurals.l10n_apple_health_importer_1_d_days_8808cc6b, appleDailyRows.size, appleDailyRows.size), uiPlural(R.plurals.l10n_apple_health_importer_1_d_workouts_acbb4e56, workoutRows.size, workoutRows.size))
+                } else {
+                    uiString(R.string.l10n_apple_health_importer_imported_1_s_from_apple_health_f0aee9be, uiPlural(R.plurals.l10n_apple_health_importer_1_d_days_8808cc6b, appleDailyRows.size, appleDailyRows.size))
+                }
+                if (skipped > 0) uiString(R.string.l10n_apple_health_importer_1_s_skipped_2_s_5ecf3aa3, base, uiPlural(R.plurals.l10n_apple_health_importer_1_d_damaged_spans_6e14f106, skipped, skipped)) else base
+            },
         )
     }
 

@@ -348,7 +348,7 @@ struct WeeklyDigestContent: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if hasFocal {
                         VStack(alignment: .leading, spacing: 8) {
-                            ForEach(Array(digest.focalPoints.enumerated()), id: \.offset) { _, line in
+                            ForEach(Array(WeeklyDigestText.focalLines(digest).enumerated()), id: \.offset) { _, line in
                                 focalRow(line)
                             }
                         }
@@ -496,7 +496,7 @@ struct WeeklyDigestContent: View {
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
-            Text(digest.balance.sentence)
+            Text(WeeklyDigestText.balance(digest.balance))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

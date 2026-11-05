@@ -51,7 +51,7 @@ public struct RecoveryRing: View {
         showsLabel: Bool = true,
         showsWordmark: Bool = true,
         showsHover: Bool = true,
-        valueFormat: @escaping (Double) -> String = { "Recovery \(Int($0.rounded()))" }
+        valueFormat: ((Double) -> String)? = nil
     ) {
         self.score = score
         self.supporting = supporting
@@ -60,7 +60,7 @@ public struct RecoveryRing: View {
         self.showsLabel = showsLabel
         self.showsWordmark = showsWordmark
         self.showsHover = showsHover
-        self.valueFormat = valueFormat
+        self.valueFormat = valueFormat ?? { String(localized: "Recovery \(Int($0.rounded()))", bundle: .module) }
     }
 
     /// Cursor location while hovering, in ring-local coordinates.

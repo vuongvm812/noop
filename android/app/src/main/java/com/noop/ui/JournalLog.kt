@@ -113,13 +113,12 @@ internal fun journalDayKey(daysBack: Long = 0L, today: LocalDate = LocalDate.now
  *  retroactive window and the strip the Today widget shows). */
 internal const val JOURNAL_BACKFILL_DAYS = 6
 
-/** Short chip label for a journal day-picker [offset] (daysBack; -1 = Tomorrow). Hardcoded English to
- *  match the sibling Yesterday/Today/Tomorrow chips. */
+/** Short chip label for a journal day-picker [offset] (daysBack; -1 = Tomorrow). */
 internal fun journalDayChipLabel(offset: Long): String = when (offset) {
-    -1L -> "Tomorrow"
-    0L -> "Today"
-    1L -> "Yesterday"
-    else -> "$offset days ago"
+    -1L -> uiString(R.string.l10n_journal_log_tomorrow_1948bf2d)
+    0L -> uiString(R.string.l10n_journal_log_today_24345a14)
+    1L -> uiString(R.string.l10n_journal_log_yesterday_da24830f)
+    else -> uiPlural(R.plurals.l10n_journal_log_days_ago, offset.toInt(), offset.toInt())
 }
 
 // MARK: - Custom-question persistence
@@ -187,7 +186,7 @@ fun JournalLogCard(
         // Header: title/overline on the left, the Tomorrow/Today/Yesterday toggle (or Edit/Done) on the right.
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                Overline("Log")
+                Overline(uiString(R.string.l10n_journal_log_log_8bf95ea3))
                 Text(
                     uiString(R.string.l10n_journal_log_journal_57d7f743),
                     style = NoopType.title2,
@@ -198,9 +197,9 @@ fun JournalLogCard(
                 )
             }
             if (editing) {
-                JournalChip("Done", selected = true) { editing = false }
+                JournalChip(uiString(R.string.l10n_journal_log_done_e9b450d1), selected = true) { editing = false }
             } else {
-                JournalChip("Edit", selected = false) { editing = true }
+                JournalChip(uiString(R.string.l10n_journal_log_edit_5301648d), selected = false) { editing = true }
             }
         }
         // Day picker (#656): a bounded, scrollable range — Tomorrow back through the last 7 days — so any
@@ -230,17 +229,11 @@ fun JournalLogCard(
                 Text(
                     when {
                         editing ->
-                            "Rename, regroup, or remove an item to tidy your list. Renaming keeps the " +
-                                "original question behind the scenes, so a WHOOP import still lines up. " +
-                                "Custom items are deleted; built-in ones are hidden and can be restored below."
+                            uiString(R.string.l10n_journal_log_rename_regroup_or_remove_an_item_e3ae474b)
                         dayOffset == -1L ->
-                            "Logging ahead for tomorrow: today's activities inform tomorrow's " +
-                                "recovery, just as yesterday's are reflected in today's. Tomorrow's " +
-                                "answers line up with tomorrow's morning."
+                            uiString(R.string.l10n_journal_log_logging_ahead_for_tomorrow_today_s_675651b2)
                         else ->
-                            "Answers are about the night and day leading into this morning, the " +
-                                "same attribution a WHOOP export uses, so logged and imported days " +
-                                "line up."
+                            uiString(R.string.l10n_journal_log_answers_are_about_the_night_and_06d55af5)
                     },
                     style = NoopType.footnote,
                     color = Palette.textTertiary,
@@ -333,7 +326,7 @@ private fun JournalGroupBlock(
                         modifier = Modifier.weight(1f),
                     )
                     when {
-                        item.hidden -> JournalChip("Restore", selected = false) { onRestoreQuestion(item.canonical) }
+                        item.hidden -> JournalChip(uiString(R.string.l10n_journal_log_restore_3cbe6d6b), selected = false) { onRestoreQuestion(item.canonical) }
                         editing -> JournalItemEditControls(
                             item = item,
                             onStartRename = { onStartRename(item) },
@@ -444,7 +437,7 @@ private fun JournalItemEditControls(
                     onClick = { menuOpen = false; groupMenuOpen = true },
                 )
                 androidx.compose.material3.DropdownMenuItem(
-                    text = { Text(if (item.kind.isNumeric) "Change to Yes/No" else "Change to Number") },
+                    text = { Text(if (item.kind.isNumeric) uiString(R.string.l10n_journal_log_change_to_yes_no_fc3128aa) else uiString(R.string.l10n_journal_log_change_to_number_be3326c5)) },
                     onClick = {
                         menuOpen = false
                         onSetKind(if (item.kind.isNumeric) JournalKind.Bool else JournalKind.Numeric(null))
@@ -516,9 +509,9 @@ private fun JournalAddRow(onAddCustom: (String, JournalKind, JournalGroup) -> Un
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(8.dp))
-            JournalChip(if (numeric) "Number" else "Yes/No", selected = numeric) { numeric = !numeric }
+            JournalChip(if (numeric) uiString(R.string.l10n_journal_log_number_b7baa1d4) else uiString(R.string.l10n_journal_log_yes_no_9f628b61), selected = numeric) { numeric = !numeric }
             Spacer(Modifier.width(8.dp))
-            JournalChip("Add", selected = draft.isNotBlank()) {
+            JournalChip(uiString(R.string.l10n_journal_log_add_61cc55aa), selected = draft.isNotBlank()) {
                 val t = draft.trim()
                 if (t.isNotEmpty()) {
                     onAddCustom(t, if (numeric) JournalKind.Numeric(null) else JournalKind.Bool, group)
@@ -576,7 +569,7 @@ internal fun JournalChip(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun JournalRemoveButton(isCustom: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(50)
     Text(
-        if (isCustom) "Delete" else "Hide",
+        if (isCustom) uiString(R.string.l10n_journal_log_delete_f6fdbe48) else uiString(R.string.l10n_journal_log_hide_34d8b60f),
         style = NoopType.caption,
         color = Palette.statusCritical,
         modifier = Modifier

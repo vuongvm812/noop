@@ -131,7 +131,8 @@ object AutomationResultNotifier {
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (mgr.getNotificationChannel(CHANNEL_ID) != null) return
+        // Re-creating an existing channel only refreshes its name and description (importance and the
+        // user\'s own settings are kept), so the channel follows the app language.
         mgr.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID, context.getString(R.string.automation_channel_name), NotificationManager.IMPORTANCE_LOW,

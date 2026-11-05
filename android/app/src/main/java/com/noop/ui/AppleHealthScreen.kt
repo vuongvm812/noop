@@ -1,5 +1,6 @@
 package com.noop.ui
 
+import androidx.annotation.StringRes
 import com.noop.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.Arrangement
@@ -56,13 +57,22 @@ private const val APPLE_DEVICE = "apple-health"
 
 // MARK: - Range control (W / M / 3M / 6M / 1Y / ALL) — the ONE pill control.
 
-private enum class AppleRange(val days: Int?, val label: String, val caption: String, val windowName: String) {
-    Week(7, "W", "7 DAYS", "week"),
-    Month(30, "M", "30 DAYS", "month"),
-    Quarter(90, "3M", "90 DAYS", "3 months"),
-    Half(180, "6M", "180 DAYS", "6 months"),
-    Year(365, "1Y", "365 DAYS", "year"),
-    All(null, "ALL", "ALL TIME", "all history");
+private enum class AppleRange(
+    val days: Int?,
+    @StringRes val labelRes: Int,
+    @StringRes val captionRes: Int,
+    @StringRes val windowNameRes: Int,
+) {
+    Week(7, R.string.l10n_apple_health_screen_w_e2415cb7, R.string.l10n_apple_health_screen_7_days_ba6e98ec, R.string.l10n_apple_health_screen_week_c0ee32d8),
+    Month(30, R.string.l10n_apple_health_screen_m_c63ae6dd, R.string.l10n_apple_health_screen_30_days_f1f09899, R.string.l10n_apple_health_screen_month_021710fa),
+    Quarter(90, R.string.l10n_apple_health_screen_3m_6dce1630, R.string.l10n_apple_health_screen_90_days_52ad3549, R.string.l10n_apple_health_screen_3_months_b9e4e6ff),
+    Half(180, R.string.l10n_apple_health_screen_6m_b78ebb44, R.string.l10n_apple_health_screen_180_days_c0af30e9, R.string.l10n_apple_health_screen_6_months_cd75b86f),
+    Year(365, R.string.l10n_apple_health_screen_1y_28234cf2, R.string.l10n_apple_health_screen_365_days_acb50f1b, R.string.l10n_apple_health_screen_year_4ff0b153),
+    All(null, R.string.l10n_apple_health_screen_all_6b42874e, R.string.l10n_apple_health_screen_all_time_85c78b60, R.string.l10n_apple_health_screen_all_history_eb5df7d2);
+
+    val label: String get() = uiString(labelRes)
+    val caption: String get() = uiString(captionRes)
+    val windowName: String get() = uiString(windowNameRes)
 
     /** This range plus every larger range, ascending — the auto-widen search order. */
     val widening: List<AppleRange>
@@ -185,18 +195,17 @@ fun AppleHealthScreen(vm: AppViewModel) {
 /** Header subtitle reflects the windowed (visible) per-day span of the steps series. */
 private fun spanSubtitle(loaded: Boolean, data: AppleData, range: AppleRange): String {
     if (!loaded) {
-        return "Steps, heart, sleep, body composition and VO₂ max - synced from the desktop app."
+        return uiString(R.string.l10n_apple_health_screen_steps_heart_sleep_body_composition_and_14ca8b09)
     }
     // Use steps as the canonical per-day series for the span readout.
     val rows = resolve(data.raw("steps"), range).rows
     if (rows.isEmpty()) {
-        return "Steps, heart, sleep, body composition and VO₂ max - synced from the desktop app."
+        return uiString(R.string.l10n_apple_health_screen_steps_heart_sleep_body_composition_and_14ca8b09)
     }
     val lo = rows.first().day
     val hi = rows.last().day
     val span = if (lo == hi) lo else "$lo → $hi"
-    val unit = if (rows.size == 1) "day" else "days"
-    return "${rows.size} $unit · $span"
+    return uiPlural(R.plurals.l10n_apple_health_screen_1_d_days_2_s_afb9feba, rows.size, rows.size, span)
 }
 
 @Composable
@@ -206,9 +215,7 @@ private fun RangeControl(data: AppleData, range: AppleRange, onSelect: (AppleRan
     val stepsRows = resolve(data.raw("steps"), range).rows
     val anyWidened = data.series.any { (_, s) -> s.isNotEmpty() && resolve(s, range).fellBack }
     val n = stepsRows.size
-    val unit = if (n == 1) "day" else "days"
-    val base = "$n $unit · ${range.windowName}"
-    val caption = if (anyWidened) "$base · some sparse series widened" else base
+    val caption = if (anyWidened) uiPlural(R.plurals.l10n_apple_health_screen_1_d_days_2_s_some_4525c5c8, n, n, range.windowName) else uiPlural(R.plurals.l10n_apple_health_screen_1_d_days_2_s_afb9feba, n, n, range.windowName)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -249,8 +256,7 @@ private fun LoadingCard() {
 private fun EmptyState() {
     DataPendingNote(
         title = uiString(R.string.l10n_apple_health_screen_nothing_imported_yet_f457cdbe),
-        body = "Nothing imported yet. On an iPhone: Health app, tap your photo, Export " +
-            "All Health Data, then import the .zip here in Data Sources.",
+        body = uiString(R.string.l10n_apple_health_screen_nothing_imported_yet_on_an_iphone_3bb3b8dc),
     )
 }
 
@@ -266,31 +272,31 @@ private fun TileGrid(data: AppleData, range: AppleRange) {
     // Two columns of equal-width fixed-height tiles, mirroring the macOS adaptive grid.
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         TileRow {
-            MetricTile(Modifier.weight(1f), data, range, "steps", "Steps", Palette.metricCyan) { intString(it) }
-            MetricTile(Modifier.weight(1f), data, range, "resting_hr", "Resting HR", Palette.metricRose, "bpm") {
+            MetricTile(Modifier.weight(1f), data, range, "steps", uiString(R.string.l10n_apple_health_screen_steps_cdde4f20), Palette.metricCyan) { intString(it) }
+            MetricTile(Modifier.weight(1f), data, range, "resting_hr", uiString(R.string.l10n_apple_health_screen_resting_hr_26677094), Palette.metricRose, "bpm") {
                 "${it.roundToInt()}"
             }
         }
         TileRow {
             MetricTile(Modifier.weight(1f), data, range, "hrv", "HRV", Palette.metricPurple, "ms") { "${it.roundToInt()}" }
-            MetricTile(Modifier.weight(1f), data, range, "vo2max", "VO₂ Max", Palette.accent, "ml/kg") {
+            MetricTile(Modifier.weight(1f), data, range, "vo2max", uiString(R.string.l10n_apple_health_screen_vo_max_21214fb6), Palette.accent, "ml/kg") {
                 String.format(Locale.US, "%.1f", it)
             }
         }
         TileRow {
-            MetricTile(Modifier.weight(1f), data, range, "weight", "Weight", Palette.accent) {
+            MetricTile(Modifier.weight(1f), data, range, "weight", uiString(R.string.l10n_apple_health_screen_weight_69c0b815), Palette.accent) {
                 UnitFormatter.massFromKilograms(it, unitSystem)
             }
-            MetricTile(Modifier.weight(1f), data, range, "body_fat", "Body Fat", Palette.metricAmber, "%") {
+            MetricTile(Modifier.weight(1f), data, range, "body_fat", uiString(R.string.l10n_apple_health_screen_body_fat_13aeec7b), Palette.metricAmber, "%") {
                 String.format(Locale.US, "%.1f", it)
             }
         }
         TileRow {
-            MetricTile(Modifier.weight(1f), data, range, "lean_mass", "Lean Mass", Palette.accent) {
+            MetricTile(Modifier.weight(1f), data, range, "lean_mass", uiString(R.string.l10n_apple_health_screen_lean_mass_a7494b5d), Palette.accent) {
                 UnitFormatter.massFromKilograms(it, unitSystem)
             }
             MetricTile(
-                Modifier.weight(1f), data, range, "asleep_min", "Asleep avg", Palette.metricPurple,
+                Modifier.weight(1f), data, range, "asleep_min", uiString(R.string.l10n_apple_health_screen_asleep_avg_52d49146), Palette.metricPurple,
                 aggregate = Aggregate.Mean,
             ) { durationString(it) }
         }
@@ -333,12 +339,12 @@ private fun MetricTile(
         aggregate == Aggregate.Latest -> {
             val v = values.last()
             value = withUnit(fmt(v), unit)
-            caption = rows.lastOrNull()?.let { "as of ${it.day}" }
+            caption = rows.lastOrNull()?.let { uiString(R.string.l10n_apple_health_screen_as_of_1_s_a438333e, it.day) }
         }
         else -> {
             val m = values.average()
             value = withUnit(fmt(m), unit)
-            caption = "avg · ${values.size}d"
+            caption = uiString(R.string.l10n_apple_health_screen_avg_1_dd_0dafaf2c, values.size)
         }
     }
 
@@ -355,17 +361,17 @@ private fun MetricTile(
 
 @Composable
 private fun HeartSection(data: AppleData, range: AppleRange) {
-    ChartSection("Heart & Vitals", "Cardiac", range) {
-        MetricChartCard(data, range, "resting_hr", "Resting heart rate", Palette.metricRose) {
+    ChartSection(uiString(R.string.l10n_apple_health_screen_heart_vitals_b789ad36), uiString(R.string.l10n_apple_health_screen_cardiac_a0148244), range) {
+        MetricChartCard(data, range, "resting_hr", uiString(R.string.l10n_apple_health_screen_resting_heart_rate_348928d6), Palette.metricRose) {
             "${it.roundToInt()} bpm"
         }
-        MetricChartCard(data, range, "hrv", "Heart rate variability", Palette.metricPurple) {
+        MetricChartCard(data, range, "hrv", uiString(R.string.l10n_apple_health_screen_heart_rate_variability_5b290995), Palette.metricPurple) {
             "${it.roundToInt()} ms"
         }
-        MetricChartCard(data, range, "spo2", "Blood oxygen", Palette.metricCyan) {
+        MetricChartCard(data, range, "spo2", uiString(R.string.l10n_apple_health_screen_blood_oxygen_8cd84528), Palette.metricCyan) {
             String.format(Locale.US, "%.1f%%", it)
         }
-        MetricChartCard(data, range, "resp_rate", "Respiratory rate", Palette.accent) {
+        MetricChartCard(data, range, "resp_rate", uiString(R.string.l10n_apple_health_screen_respiratory_rate_da7b89aa), Palette.accent) {
             String.format(Locale.US, "%.1f rpm", it)
         }
     }
@@ -373,9 +379,9 @@ private fun HeartSection(data: AppleData, range: AppleRange) {
 
 @Composable
 private fun ActivitySection(data: AppleData, range: AppleRange) {
-    ChartSection("Activity & Energy", "Movement", range) {
-        MetricChartCard(data, range, "steps", "Steps", Palette.metricCyan) { intString(it) }
-        MetricChartCard(data, range, "active_kcal", "Active energy", Palette.metricAmber) {
+    ChartSection(uiString(R.string.l10n_apple_health_screen_activity_energy_1c075b75), uiString(R.string.l10n_apple_health_screen_movement_dc812752), range) {
+        MetricChartCard(data, range, "steps", uiString(R.string.l10n_apple_health_screen_steps_cdde4f20), Palette.metricCyan) { intString(it) }
+        MetricChartCard(data, range, "active_kcal", uiString(R.string.l10n_apple_health_screen_active_energy_63a05d3d), Palette.metricAmber) {
             "${intString(it)} kcal"
         }
     }
@@ -385,17 +391,17 @@ private fun ActivitySection(data: AppleData, range: AppleRange) {
 private fun BodySection(data: AppleData, range: AppleRange) {
     // Weight + lean mass (stored kg) re-label to lb under the imperial preference.
     val unitSystem = UnitPrefs.system(LocalContext.current)
-    ChartSection("Body Composition", "Slow threads", range) {
-        MetricChartCard(data, range, "weight", "Weight", Palette.accent) {
+    ChartSection(uiString(R.string.l10n_apple_health_screen_body_composition_82c09fee), uiString(R.string.l10n_apple_health_screen_slow_threads_388dd4b2), range) {
+        MetricChartCard(data, range, "weight", uiString(R.string.l10n_apple_health_screen_weight_69c0b815), Palette.accent) {
             UnitFormatter.massFromKilograms(it, unitSystem)
         }
-        MetricChartCard(data, range, "body_fat", "Body fat", Palette.metricAmber) {
+        MetricChartCard(data, range, "body_fat", uiString(R.string.l10n_apple_health_screen_body_fat_8ce14357), Palette.metricAmber) {
             String.format(Locale.US, "%.1f%%", it)
         }
-        MetricChartCard(data, range, "lean_mass", "Lean body mass", Palette.accent) {
+        MetricChartCard(data, range, "lean_mass", uiString(R.string.l10n_apple_health_screen_lean_body_mass_df160660), Palette.accent) {
             UnitFormatter.massFromKilograms(it, unitSystem)
         }
-        MetricChartCard(data, range, "bmi", "BMI", Palette.metricPurple) {
+        MetricChartCard(data, range, "bmi", uiString(R.string.l10n_apple_health_screen_bmi_aa26664f), Palette.metricPurple) {
             String.format(Locale.US, "%.1f", it)
         }
     }
@@ -403,8 +409,8 @@ private fun BodySection(data: AppleData, range: AppleRange) {
 
 @Composable
 private fun SleepSection(data: AppleData, range: AppleRange) {
-    ChartSection("Sleep", "Rest", range) {
-        MetricChartCard(data, range, "asleep_min", "Asleep", Palette.metricPurple) { durationString(it) }
+    ChartSection(uiString(R.string.l10n_apple_health_screen_sleep_3cac34e6), uiString(R.string.l10n_apple_health_screen_rest_b79e5f48), range) {
+        MetricChartCard(data, range, "asleep_min", uiString(R.string.l10n_apple_health_screen_asleep_b9692bbe), Palette.metricPurple) { durationString(it) }
     }
 }
 
@@ -444,9 +450,8 @@ private fun MetricChartCard(
     val trailing = mean?.let { fmt(it) } ?: "—"
 
     val subtitle = run {
-        val unit = if (n == 1) "reading" else "readings"
-        if (resolved.fellBack) "$n $unit · sparse - widened to ${resolved.effective.windowName}"
-        else "$n $unit · ${range.windowName}"
+        if (resolved.fellBack) uiPlural(R.plurals.l10n_apple_health_screen_1_d_readings_sparse_widened_to_2ef06550, n, n, resolved.effective.windowName)
+        else uiPlural(R.plurals.l10n_apple_health_screen_1_d_readings_2_s_46d67880, n, n, range.windowName)
     }
 
     NoopCard(tint = accent) {
@@ -477,13 +482,13 @@ private fun MetricChartCard(
             ChartFooterRow(
                 items = if (n > 0) {
                     listOf(
-                        "Avg" to fmt(values.average()),
-                        "Min" to fmt(values.min()),
-                        "Max" to fmt(values.max()),
-                        "Points" to "$n",
+                        uiString(R.string.l10n_apple_health_screen_avg_cdc93143) to fmt(values.average()),
+                        uiString(R.string.l10n_apple_health_screen_min_7eb0cee8) to fmt(values.min()),
+                        uiString(R.string.l10n_apple_health_screen_max_a95e85ae) to fmt(values.max()),
+                        uiString(R.string.l10n_apple_health_screen_points_4b2a6a31) to "$n",
                     )
                 } else {
-                    listOf("Avg" to "—", "Min" to "—", "Max" to "—", "Points" to "0")
+                    listOf(uiString(R.string.l10n_apple_health_screen_avg_cdc93143) to "—", uiString(R.string.l10n_apple_health_screen_min_7eb0cee8) to "—", uiString(R.string.l10n_apple_health_screen_max_a95e85ae) to "—", uiString(R.string.l10n_apple_health_screen_points_4b2a6a31) to "0")
                 },
             )
         }
@@ -498,7 +503,7 @@ private fun SinglePoint(value: Double, accent: Color, fmt: (Double) -> String) {
         contentAlignment = Alignment.CenterStart,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Overline("Latest reading")
+            Overline(uiString(R.string.l10n_apple_health_screen_latest_reading_98b87f72))
             Text(fmt(value), style = NoopType.number(34f), color = accent)
         }
     }

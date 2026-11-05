@@ -148,11 +148,11 @@ public struct MotionTrace: View {
     /// A coarse VoiceOver summary — the share of epochs with above-half-peak movement — since a per-epoch
     /// trace can't be voiced point by point. "Calm" when nothing crosses the threshold.
     static func accessibilitySummary(epochs: [Double], peak: Double) -> String {
-        guard peak > 0, !epochs.isEmpty else { return "no movement data" }
+        guard peak > 0, !epochs.isEmpty else { return String(localized: "no movement data", bundle: .module) }
         let restless = epochs.filter { $0 >= peak * 0.5 }.count
-        if restless == 0 { return "calm throughout" }
+        if restless == 0 { return String(localized: "calm throughout", bundle: .module) }
         let pct = Int((Double(restless) / Double(epochs.count) * 100).rounded())
-        return "\(pct)% of the night had elevated movement"
+        return String(localized: "\(pct)% of the night had elevated movement", bundle: .module)
     }
 }
 
