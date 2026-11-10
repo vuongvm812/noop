@@ -1300,6 +1300,12 @@ interface WhoopDao : DeviceRegistryDao {
     )
     suspend fun workouts(deviceId: String, from: Long, to: Long, limit: Int): List<WorkoutRow>
 
+    /** Every device id that has at least one workout row. The Workouts list reads each one, so a source
+     *  added later (an import, a watch brand) cannot be stored where the list never looks.
+     *  Swift twin: `WhoopStore.workoutDeviceIds`. */
+    @Query("SELECT DISTINCT deviceId FROM workout")
+    suspend fun workoutDeviceIds(): List<String>
+
     /** Scalar COUNT twin of [workouts] (no row limit — a count badge wants the exact total), for
      *  badges that were materializing the row list for `.size`. */
     @Query("SELECT COUNT(*) FROM workout WHERE deviceId = :deviceId AND startTs >= :from AND startTs <= :to")

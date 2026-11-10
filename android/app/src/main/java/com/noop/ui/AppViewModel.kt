@@ -2208,6 +2208,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // HR-fill below like the imported Apple sessions — a GPX with no HR borrows the strap's, while a
             // FIT that already carries HR is untouched (fill only fills nulls).
             val activityFiles = repository.workouts(ActivityFileImporter.SOURCE_ID, 0L, now)
+            // Every other id holding workouts: a Gadgetbridge import ("huawei-import"), a Garmin watch or
+            // Huawei band that is not the active device, an Oura ring. Without this the list showed only
+            // the sources named above. They are device-recorded sessions, so they take the same HR-fill.
+            // Manual rows are left out: edit and delete reach only the strap ids on Swift, so a manual row
+            // shown from here could not be removed there (#2278). Both platforms skip them the same way.
+            val others = repository.otherWorkoutSourceIds(
+                deviceId,
+                listOf("apple-health", "health-connect", LiftingImporter.SOURCE_ID, ActivityFileImporter.SOURCE_ID),
+            ).flatMap { repository.workouts(it, 0L, now) }
+                .filter { WorkoutEditing.classify(it.source) != WorkoutSource.MANUAL }
             val markers = repository.dismissedDetectedUnion(deviceId)
             // Fill imported sessions' missing HR from strap samples (#77), same as before; detected /
             // manual rows already carry their own HR so they pass through unchanged. #961: also backfill a
@@ -2222,7 +2232,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             // have. The fill's own doc promises "display == graph == zones == effort by construction";
             // this is the line that has to pass the same id for that to hold.
             val filled = repository.fillWorkoutHrFromStrap(
-                (whoop + apple + detected + activityFiles),
+                (whoop + apple + detected + activityFiles + others),
                 strapDeviceId = deviceId,
                 strainMaxHR = profileStore.hrMax.toDouble(),
                 strainSex = profileStore.sex,
