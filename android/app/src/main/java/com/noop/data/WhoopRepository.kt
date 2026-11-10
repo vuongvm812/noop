@@ -2015,6 +2015,15 @@ class WhoopRepository(
     suspend fun workouts(deviceId: String, from: Long, to: Long, limit: Int = DEFAULT_LIMIT): List<WorkoutRow> =
         dao.workouts(deviceId, from, to, limit)
 
+    /**
+     * Device ids that hold workouts but are not among [alsoRead] or the [workoutsUnion] ids for
+     * [deviceId]. Covers a Gadgetbridge import ("huawei-import"), a watch that is not the active device,
+     * and any other import namespace, which the Workouts list otherwise never showed.
+     * Swift twin: `Repository.otherWorkoutSourceIds`.
+     */
+    suspend fun otherWorkoutSourceIds(deviceId: String, alsoRead: List<String>): List<String> =
+        extraWorkoutSourceIds(dao.workoutDeviceIds(), rawWhoopSourceIds(deviceId) + alsoRead)
+
     /** Scalar COUNT twin of [workouts] (exact total, no row limit) for count badges. */
     suspend fun workoutsCount(deviceId: String, from: Long, to: Long): Int =
         dao.workoutsCount(deviceId, from, to)
@@ -2823,6 +2832,16 @@ class WhoopRepository(
          *  scores under "<importedDeviceId>-noop"). */
         fun computedSourceIdsFor(activeDeviceId: String): List<String> =
             importedSourceIdsFor(activeDeviceId).map { "$it-noop" }
+
+        /**
+         * The ids in [presentIds] that are not in [alreadyRead], sorted. Computed "-noop" ids are left out:
+         * they hold detected sessions, which are read only for the active device's union, where their
+         * dismissal markers apply. Swift twin: `Repository.extraWorkoutSourceIds(presentIds:alreadyRead:)`.
+         */
+        fun extraWorkoutSourceIds(presentIds: List<String>, alreadyRead: List<String>): List<String> {
+            val read = alreadyRead.toHashSet()
+            return presentIds.filter { it.isNotEmpty() && !it.endsWith("-noop") && it !in read }.distinct().sorted()
+        }
 
         /** Pure ordering contract shared with Swift through Tools/parity_cases/device_raw_sources.json. */
         fun rawWhoopSourceIdsFor(activeDeviceId: String, registeredWhoopIds: List<String>): List<String> =

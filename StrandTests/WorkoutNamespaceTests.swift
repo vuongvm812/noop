@@ -73,4 +73,17 @@ final class WorkoutNamespaceTests: XCTestCase {
         XCTAssertGreaterThan(ids.count, 1, "delete must reach more than the active strap")
         XCTAssertTrue(ids.contains("active"))
     }
+    /// Same cases as the Kotlin `ExtraWorkoutSourceIdsTest`: an inactive watch, an Oura ring and an import
+    /// namespace are read; computed ids stay with the detected union.
+    func testEveryOtherIdHoldingWorkoutsIsRead() {
+        XCTAssertEqual(
+            Repository.extraWorkoutSourceIds(
+                presentIds: ["my-whoop", "oura-ring", "huawei-import", "apple-health", "garmin-123"],
+                alreadyRead: ["strap-a", "my-whoop", "apple-health", "health-connect", "lifting", "activity-file"]),
+            ["garmin-123", "huawei-import", "oura-ring"])
+        XCTAssertEqual(
+            Repository.extraWorkoutSourceIds(presentIds: ["garmin-123-noop", "my-whoop-noop", ""], alreadyRead: ["my-whoop"]),
+            [])
+        XCTAssertEqual(Repository.extraWorkoutSourceIds(presentIds: ["b", "a", "b"], alreadyRead: []), ["a", "b"])
+    }
 }

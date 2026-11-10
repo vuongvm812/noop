@@ -241,6 +241,15 @@ extension WhoopStore {
         }
     }
 
+    /// Every device id that has at least one workout row. The Workouts list reads each one, so a source
+    /// added later (an import, a watch brand) cannot be stored where the list never looks.
+    /// Kotlin twin: `WhoopDao.workoutDeviceIds`.
+    public func workoutDeviceIds() async throws -> [String] {
+        try syncRead { db in
+            try String.fetchAll(db, sql: "SELECT DISTINCT deviceId FROM workout")
+        }
+    }
+
     /// Workouts overlapping [from, to] (by startTs), oldest first.
     public func workouts(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [WorkoutRow] {
         try syncRead { db in

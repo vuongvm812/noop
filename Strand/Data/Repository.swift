@@ -345,6 +345,22 @@ final class Repository: ObservableObject {
             + [WorkoutSource.appleHealthSource, "lifting", "activity-file"]
     }
 
+    /// Device ids that hold workouts but are not among `alsoRead`: a Garmin watch that is not the active
+    /// device, an Oura ring, any import namespace, which the Workouts list otherwise never showed.
+    /// Kotlin twin: `WhoopRepository.otherWorkoutSourceIds`.
+    private func otherWorkoutSourceIds(store: WhoopStore, alsoRead: [String]) async -> [String] {
+        let present = (try? await store.workoutDeviceIds()) ?? []
+        return Self.extraWorkoutSourceIds(presentIds: present, alreadyRead: alsoRead)
+    }
+
+    /// The ids in `presentIds` that are not in `alreadyRead`, sorted. Computed "-noop" ids are left out:
+    /// they hold detected sessions, which are read only for the active device's union, where their
+    /// dismissal markers apply. Kotlin twin: `WhoopRepository.extraWorkoutSourceIds`.
+    nonisolated static func extraWorkoutSourceIds(presentIds: [String], alreadyRead: [String]) -> [String] {
+        let read = Set(alreadyRead)
+        return Array(Set(presentIds.filter { !$0.isEmpty && !$0.hasSuffix("-noop") && !read.contains($0) })).sorted()
+    }
+
     /// The subset of [workoutNamespaces] a DELETE may touch: the strap namespaces only.
     ///
     /// Imported history is read-only, and that is enforced everywhere else: the row menu offers only
@@ -3029,8 +3045,17 @@ final class Repository: ObservableObject {
         // row lives. Covers each raw id, its computed `-noop` sibling, Apple Health, imported lifting
         // sessions (Hevy / Liftosaur) and imported activity FILES (#29: FIT / GPX / TCX, or a successful
         // file import never appears here at all). HR is reconciled from the strap trace at the end.
-        for id in Self.workoutNamespaces(rawIds: rawPhysiologyReadIds(store: store)) {
+        let namespaces = Self.workoutNamespaces(rawIds: rawPhysiologyReadIds(store: store))
+        for id in namespaces {
             rows += (try? await store.workouts(deviceId: id, from: lo, to: hi, limit: 5000)) ?? []
+        }
+        // Plus every other id holding workouts (an inactive watch, an Oura ring, an import namespace; Health
+        // Connect lands here too, as on Android it is read by name). Manual rows are left out: edit and
+        // delete reach only `deletableWorkoutNamespaces`, so a manual row shown from here could not be
+        // removed (#2278). Android skips them the same way.
+        for id in await otherWorkoutSourceIds(store: store, alsoRead: namespaces) {
+            rows += ((try? await store.workouts(deviceId: id, from: lo, to: hi, limit: 5000)) ?? [])
+                .filter { WorkoutSource.classify($0.source) != .manual }
         }
         rows = Self.dedupWorkoutsByNaturalKey(rows)
         let spans = WorkoutSource.parseDismissedSpans(dismissedDetectedSpans)
