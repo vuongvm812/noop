@@ -55,6 +55,7 @@ object GadgetbridgeImporter {
         zone: ZoneId = ZoneId.systemDefault(),
         nowTs: Long = System.currentTimeMillis() / 1000,
         onStored: () -> Unit = {},
+        log: (String) -> Unit = {},
     ): ImportSummary {
         val work = File(context.cacheDir, "gadgetbridge-${System.nanoTime()}").apply { mkdirs() }
         try {
@@ -68,7 +69,7 @@ object GadgetbridgeImporter {
                 SOURCE_LABEL, "No Gadgetbridge database found. Use Gadgetbridge's \"Export database\" file.") { uiString(R.string.l10n_gadgetbridge_importer_no_gadgetbridge_database_found_use_gadgetbridge_d3b98e59) }
             return try {
                 SQLiteDatabase.openDatabase(dbFile.path, null, SQLiteDatabase.OPEN_READONLY).use { src ->
-                    importFrom(src, db, zone, nowTs, onStored)
+                    importFrom(src, db, zone, nowTs, onStored, log)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -137,6 +138,7 @@ object GadgetbridgeImporter {
         zone: ZoneId,
         nowTs: Long,
         onStored: () -> Unit,
+        log: (String) -> Unit = {},
     ): ImportSummary {
         if (!hasTable(src, "DEVICE") || !hasTable(src, "HUAWEI_ACTIVITY_SAMPLE")) {
             return ImportSummary.failure(
@@ -150,7 +152,7 @@ object GadgetbridgeImporter {
 
         val total = HuaweiIngestCounts()
         try {
-            return importDevices(src, db, zone, nowTs, devices, total)
+            return importDevices(src, db, zone, nowTs, devices, total, log)
         } finally {
             // Chunks already stored stay stored even if a later one fails: still run the analysis over them.
             if (total.any) onStored()
@@ -159,6 +161,7 @@ object GadgetbridgeImporter {
 
     private suspend fun importDevices(
         src: SQLiteDatabase, db: WhoopDatabase, zone: ZoneId, nowTs: Long, devices: List<Long>, total: HuaweiIngestCounts,
+        log: (String) -> Unit,
     ): ImportSummary {
         var firstTs = Long.MAX_VALUE
         var lastTs = Long.MIN_VALUE
@@ -168,7 +171,7 @@ object GadgetbridgeImporter {
             lastTs = maxOf(lastTs, maxTs)
             for (chunk in GadgetbridgeMapping.chunks(minTs, maxTs, zone)) {
                 val batch = readChunk(src, device, chunk, nowTs)
-                val c = HuaweiHistoryIngest.store(db, DEVICE_ID, batch)
+                val c = HuaweiHistoryIngest.store(db, DEVICE_ID, batch, log, "Gadgetbridge import")
                 total.hr += c.hr; total.deviceMetric += c.deviceMetric; total.sleeps += c.sleeps
                 total.days += c.days; total.metricPoints += c.metricPoints; total.workouts += c.workouts
             }
@@ -273,11 +276,14 @@ object GadgetbridgeImporter {
                     long(c, 7), long(c, 8), long(c, 9), long(c, 10), if (c.isNull(11)) null else c.getLong(11)))
             }
             if (summaries.isNotEmpty() && hasTable(src, "HUAWEI_WORKOUT_DATA_SAMPLE")) {
+                val dc = columns(src, "HUAWEI_WORKOUT_DATA_SAMPLE")
                 for (w in summaries) src.rawQuery(
-                    "SELECT WORKOUT_ID, TIMESTAMP, HEART_RATE FROM HUAWEI_WORKOUT_DATA_SAMPLE WHERE WORKOUT_ID = ?",
+                    "SELECT WORKOUT_ID, TIMESTAMP, HEART_RATE, ${sel(dc, "STEP_RATE")}, ${sel(dc, "CADENCE")}, " +
+                        "${sel(dc, "ALTITUDE")}, ${sel(dc, "CYCLING_POWER")} FROM HUAWEI_WORKOUT_DATA_SAMPLE WHERE WORKOUT_ID = ?",
                     arrayOf(w.id.toString()),
                 ).use { c: Cursor ->
-                    while (c.moveToNext()) workoutHr.add(GadgetbridgeMapping.WorkoutHrRow(long(c, 0), long(c, 1), long(c, 2)))
+                    while (c.moveToNext()) workoutHr.add(GadgetbridgeMapping.WorkoutHrRow(
+                        long(c, 0), long(c, 1), long(c, 2), long(c, 3), long(c, 4), long(c, 5), long(c, 6)))
                 }
             }
         }

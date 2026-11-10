@@ -253,7 +253,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) runImport {
-            GadgetbridgeImporter.importExport(context, uri, onStored = { vm.ble.requestPostSyncAnalysis() })
+            GadgetbridgeImporter.importExport(context, uri, onStored = { vm.ble.requestPostSyncAnalysis() }, log = { vm.ble.externalLog(it) })
         }
     }
 

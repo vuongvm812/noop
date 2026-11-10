@@ -36,7 +36,7 @@ class GadgetbridgeImporterTest {
     @After
     fun close() { db.close(); dir.deleteRecursively() }
 
-    private fun gbFile(withHuaweiTables: Boolean = true, manufacturer: String = "Huawei"): File {
+    private fun gbFile(withHuaweiTables: Boolean = true, manufacturer: String = "Huawei", sampleColumns: Boolean = true): File {
         val f = File(dir, "Gadgetbridge").also { it.delete() }
         SQLiteDatabase.openOrCreateDatabase(f, null).use { s ->
             s.execSQL("CREATE TABLE DEVICE (_id INTEGER PRIMARY KEY, NAME TEXT, MANUFACTURER TEXT)")
@@ -62,17 +62,50 @@ class GadgetbridgeImporterTest {
                 "END_TIMESTAMP INTEGER, CALORIES INTEGER, DISTANCE INTEGER, STEP_COUNT INTEGER, TOTAL_TIME INTEGER, DURATION INTEGER, TYPE INTEGER, " +
                 "MAX_HEART_RATE_PEAK INTEGER, WORKOUT_LOAD INTEGER, ELEVATION_GAIN INTEGER)")
             s.execSQL("INSERT INTO HUAWEI_WORKOUT_SUMMARY_SAMPLE VALUES (4, 1, ${d0 + 60_000}, ${d0 + 62_000}, 357, 5200, 4100, 2000, 2000, 1, 171, 90, NULL)")
-            s.execSQL("CREATE TABLE HUAWEI_WORKOUT_DATA_SAMPLE (WORKOUT_ID INTEGER, TIMESTAMP INTEGER, HEART_RATE INTEGER)")
-            s.execSQL("INSERT INTO HUAWEI_WORKOUT_DATA_SAMPLE VALUES (4, ${d0 + 60_030}, 130), (4, ${d0 + 60_060}, 140)")
+            if (sampleColumns) {
+                s.execSQL("CREATE TABLE HUAWEI_WORKOUT_DATA_SAMPLE (WORKOUT_ID INTEGER, TIMESTAMP INTEGER, HEART_RATE INTEGER, " +
+                    "STEP_RATE INTEGER, CADENCE INTEGER, ALTITUDE INTEGER, CYCLING_POWER INTEGER)")
+                // Row 1: a step rate of 165 (cadence absent), 123.4 m (raw tenths), 210 W. Row 2: every extra column 0 or NULL.
+                s.execSQL("INSERT INTO HUAWEI_WORKOUT_DATA_SAMPLE VALUES (4, ${d0 + 60_030}, 130, 165, -1, 1234, 210), " +
+                    "(4, ${d0 + 60_060}, 140, 0, 0, NULL, 0), (4, ${d0 + 60_090}, 141, -86, -1, NULL, 0)")
+            } else {
+                s.execSQL("CREATE TABLE HUAWEI_WORKOUT_DATA_SAMPLE (WORKOUT_ID INTEGER, TIMESTAMP INTEGER, HEART_RATE INTEGER)")
+                s.execSQL("INSERT INTO HUAWEI_WORKOUT_DATA_SAMPLE VALUES (4, ${d0 + 60_030}, 130), (4, ${d0 + 60_060}, 140)")
+            }
         }
         return f
     }
 
-    private fun import(uri: Uri, stored: () -> Unit = {}) = runBlocking {
-        GadgetbridgeImporter.importExport(context, uri, db, utc, now, stored)
+    private fun import(uri: Uri, stored: () -> Unit = {}, log: (String) -> Unit = {}) = runBlocking {
+        GadgetbridgeImporter.importExport(context, uri, db, utc, now, stored, log)
     }
 
     private fun count(sql: String): Long = db.openHelper.readableDatabase.query(sql).use { it.moveToFirst(); it.getLong(0) }
+
+    @Test
+    fun workoutCadenceAltitudeAndPowerAreStoredFromTheirColumns() {
+        val lines = ArrayList<String>()
+        import(Uri.fromFile(gbFile()), log = { lines.add(it) })
+        fun rows(kind: String) = count("SELECT COUNT(*) FROM deviceMetricSample WHERE deviceId = 'huawei-import' AND kind = '$kind' AND source = 'gadgetbridge'")
+        assertEquals(2L, rows("cadence"))  // 165, and -86 read as the unsigned byte 170
+        assertEquals(1L, rows("altitude_m"))
+        assertEquals(1L, rows("power_w"))
+        assertEquals("165,170", context.let { db.openHelper.readableDatabase.query("SELECT GROUP_CONCAT(CAST(value AS INTEGER)) FROM (SELECT value FROM deviceMetricSample WHERE kind = 'cadence' ORDER BY ts)").use { c -> c.moveToFirst(); c.getString(0) } })
+        assertEquals(1234L, count("SELECT CAST(value * 10 AS INTEGER) FROM deviceMetricSample WHERE kind = 'altitude_m'"))
+        assertEquals(210L, count("SELECT CAST(value AS INTEGER) FROM deviceMetricSample WHERE kind = 'power_w'"))
+        assertEquals(listOf("Gadgetbridge import: workout ${d0 + 60_000} type=1 usable samples hr=3 cadence=2 altitude=1 power=1"), lines)
+        // Re-importing keeps one row each.
+        import(Uri.fromFile(gbFile()))
+        assertEquals(2L, rows("cadence"))
+    }
+
+    @Test
+    fun anOlderSchemaWithoutTheExtraColumnsStoresNoneOfThem() {
+        val lines = ArrayList<String>()
+        import(Uri.fromFile(gbFile(sampleColumns = false)), log = { lines.add(it) })
+        assertEquals(0L, count("SELECT COUNT(*) FROM deviceMetricSample WHERE kind IN ('cadence', 'altitude_m', 'power_w')"))
+        assertEquals(listOf("Gadgetbridge import: workout ${d0 + 60_000} type=1 usable samples hr=2 cadence=0 altitude=0 power=0"), lines)
+    }
 
     @Test
     fun importsBareDatabaseIntoSharedTables() {
@@ -82,7 +115,7 @@ class GadgetbridgeImporterTest {
         assertEquals(1, called)
         assertEquals("2025-10-31".length, summary.firstDay!!.length)
         // Two HR minutes of device 1 (no other device, no source-13 row), plus the workout's two samples.
-        assertEquals(4L, count("SELECT COUNT(*) FROM hrSample WHERE deviceId = 'huawei-import'"))
+        assertEquals(5L, count("SELECT COUNT(*) FROM hrSample WHERE deviceId = 'huawei-import'"))
         assertEquals(150L, count("SELECT steps FROM dailyMetric WHERE deviceId = 'huawei-import' AND day = '2025-11-01' AND steps IS NOT NULL"))
         assertEquals(1L, count("SELECT COUNT(*) FROM sleepSession WHERE deviceId = 'huawei-import'"))
         assertEquals(1L, count("SELECT COUNT(*) FROM workout WHERE deviceId = 'huawei-import'"))
@@ -92,7 +125,7 @@ class GadgetbridgeImporterTest {
         import(Uri.fromFile(gbFile()))
         assertEquals(1L, count("SELECT COUNT(*) FROM sleepSession WHERE deviceId = 'huawei-import'"))
         assertEquals(1L, count("SELECT COUNT(*) FROM workout WHERE deviceId = 'huawei-import'"))
-        assertEquals(4L, count("SELECT COUNT(*) FROM hrSample WHERE deviceId = 'huawei-import'"))
+        assertEquals(5L, count("SELECT COUNT(*) FROM hrSample WHERE deviceId = 'huawei-import'"))
         // The cache copy is gone.
         assertEquals(emptyList<String>(), context.cacheDir.listFiles { f -> f.name.startsWith("gadgetbridge-") }!!.map { it.name })
     }

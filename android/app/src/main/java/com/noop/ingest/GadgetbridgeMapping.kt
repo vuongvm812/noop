@@ -45,7 +45,15 @@ object GadgetbridgeMapping {
         val load: Long, val elevationGain: Long?,
     )
 
-    data class WorkoutHrRow(val workoutId: Long, val ts: Long, val heartRate: Long)
+    /**
+     * One `HUAWEI_WORKOUT_DATA_SAMPLE` row. The extra columns hold Gadgetbridge's raw packet values (its chart
+     * code reads altitude as tenths of a metre, the step rate as an unsigned byte, cadence and cycling power
+     * as they are); -1 is "not measured", as for every other column here.
+     */
+    data class WorkoutHrRow(
+        val workoutId: Long, val ts: Long, val heartRate: Long,
+        val stepRate: Long = -1, val cadence: Long = -1, val altitude: Long = -1, val cyclingPower: Long = -1,
+    )
 
     private fun positive(v: Long): Int? = if (v > 0 && v <= Int.MAX_VALUE) v.toInt() else null
     private fun nonNegative(v: Long): Int? = if (v >= 0 && v <= Int.MAX_VALUE) v.toInt() else null
@@ -120,7 +128,16 @@ object GadgetbridgeMapping {
                     elevationGainM = w.elevationGain?.takeIf { it > 0 }?.toDouble(),
                 ),
                 samples = byWorkout[w.id].orEmpty().sortedBy { it.ts }
-                    .map { HuaweiWorkoutDecoder.Sample(ts = it.ts, heartRate = positive(it.heartRate)) },
+                    .map {
+                        HuaweiWorkoutDecoder.Sample(
+                            ts = it.ts, heartRate = positive(it.heartRate),
+                            stepRate = if (it.stepRate != -1L) (it.stepRate and 0xFF).toInt() else null,
+                            altitudeM = if (it.altitude != -1L) it.altitude / 10.0 else null,
+                            powerW = positive(it.cyclingPower),
+                            inner = positive(it.cadence)?.let { c -> mapOf(0 to c) } ?: emptyMap(),
+                        )
+                    },
+                sampleSource = HuaweiWatchIngest.SOURCE_WORKOUT_SAMPLES_GADGETBRIDGE,
             )
         }
     }

@@ -172,7 +172,10 @@ no Swift twin yet. See [docs/HUAWEI.md](docs/HUAWEI.md).
     rules (`packets/P2P.java`, `p2p/HuaweiBaseP2PService.java`, `HuaweiP2PManager.java`,
     `p2p/HuaweiP2PDataDictionarySyncService.java`); the sync order, its capability gates and the
     expand-capability bits (`HuaweiSupportProvider.java`, `HuaweiState.java`, `packets/DeviceConfig.java`);
-    and the workout type codes mapped to sports (`HuaweiWorkoutGbParser.java`).
+    and the workout type codes mapped to sports (`HuaweiWorkoutGbParser.java`); the per-sample cadence
+    choice (step rate for walking, the inner-block cadence otherwise), the altitude-in-tenths-of-a-metre
+    scale, the `& 0xFF` step rate and the -1 "absent" convention of `HUAWEI_WORKOUT_DATA_SAMPLE`
+    (`HuaweiWorkoutGbParser.buildActivityPoint`).
 - **Vendor constants** taken from those Gadgetbridge files and committed verbatim because every band
   expects them: the digest secrets v1/v2/v3, the bond mixing keys `SECRET_KEY_1/2` (v1 and v2/3), the
   challenge/response message bytes, the HiChain `GROUP_ID`, and the HiChain strings (`com.huawei.health`,
