@@ -76,6 +76,30 @@ enum GarminHistoryIngest {
         }
     }
 
+    /// Once per watch, forget the stored ACTIVITY files (FIT sub-type 4), so the next sync downloads them
+    /// again and stores their per-record power, cadence and altitude for the run detail. Activities synced
+    /// before those were decoded are in the ledger, so they were never fetched again. Re-storing a workout
+    /// replaces its row by natural key, and HR samples by timestamp. Only files the watch still lists, and
+    /// that fall inside the sync lookback, come back. Nothing on the watch changes. Kotlin twin:
+    /// `GarminHistoryIngest.refetchActivityFilesOnce`.
+    static func refetchActivityFilesOnce(store: WhoopStore, deviceId: String, defaults: UserDefaults = .standard,
+                                         log: (String) -> Void) async {
+        let key = "noop.garmin.activityRefetch.v1.\(deviceId)"
+        guard !defaults.bool(forKey: key) else { return }
+        do {
+            // Both listing flows: FileAccess items (the Forerunner 165) and the legacy GFDI directory.
+            var forgotten = 0
+            for dataType in [GarminSyncFileKey.fileAccessDataType, GarminFitFileType.fitDataType] {
+                forgotten += try await store.forgetGarminSyncedFiles(deviceId: deviceId, dataType: Int(dataType),
+                                                                     subType: Int(GarminFitFileType.activity.rawValue))
+            }
+            defaults.set(true, forKey: key)
+            log("Garmin: \(forgotten) activity files forgotten; those the watch still lists within the sync lookback download again for power, cadence and altitude")
+        } catch {
+            log("Garmin: activity re-download postponed: \(error.localizedDescription)")
+        }
+    }
+
     /// Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
     /// stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
     /// use the phone's current UTC offset, as the fold does for a file without one. Kotlin twin:

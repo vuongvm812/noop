@@ -553,6 +553,7 @@ class SourceCoordinator(
             loadSynced = {
                 GarminHistoryIngest.refetchSleepFilesOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.refetchMetricsFilesOnce(syncStore, id, prefs, straplog)
+                GarminHistoryIngest.refetchActivityFilesOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.rederiveNightVitalsOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.syncedKeys(syncStore, id)
             },
