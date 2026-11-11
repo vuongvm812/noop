@@ -23,6 +23,11 @@ enum WorkoutSource: Equatable {
     static let appleHealthSource = "apple-health"
     private static let legacyAppleHealthSource = "apple_health"
 
+    /// The Garmin Connect export import's namespace. Its workouts are the watch's own FIT activities, stored
+    /// with their heart rate, power, cadence, altitude and route under this id, so they are Garmin rows and
+    /// the detail reads them from here, as for a synced watch.
+    static let garminImportSource = "garmin-import"
+
     static func classify(_ source: String) -> WorkoutSource {
         let s = source.lowercased()
         if s.hasSuffix("-noop") { return .detected }   // BEFORE whoop: "my-whoop-noop" contains "whoop"
@@ -30,6 +35,7 @@ enum WorkoutSource: Equatable {
         if s == "lifting" { return .lifting }          // imported Hevy / Liftosaur strength session
         if s == "activity-file" { return .activityFile } // imported GPX / TCX / FIT activity file
         if isAppleHealth(s) { return .apple }          // both spellings → Apple Health
+        if s == garminImportSource { return .garmin }   // Garmin export import: the watch's own FIT activities
         if GarminWorkoutEffort.isWatchSource(s) { return .garmin } // Garmin history sync (#50)
         if s.contains("whoop") { return .whoop }
         return .apple

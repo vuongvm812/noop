@@ -156,7 +156,14 @@ class WorkoutHrDeviceKeyTest {
         )
         assertEquals(
             com.noop.ui.WorkoutSource.GARMIN, com.noop.ui.WorkoutEditing.classify("garmin-1234"))
-        assertEquals(
-            com.noop.ui.WorkoutSource.APPLE, com.noop.ui.WorkoutEditing.classify("garmin-import"))
+    }
+
+    /** A watch export import stores each session's own trace under its id: a Garmin / Huawei row read from there. */
+    @Test fun `garmin export row reads its own trace`() {
+        assertEquals(com.noop.ui.WorkoutSource.GARMIN, com.noop.ui.WorkoutEditing.classify("garmin-import"))
+        assertEquals(com.noop.ui.WorkoutSource.HUAWEI, com.noop.ui.WorkoutEditing.classify("huawei-import"))
+        for (id in listOf("garmin-import", "huawei-import")) {
+            assertEquals(listOf(id), WhoopRepository.workoutHrDeviceIds(id, id, "whoop-aabbcc"))
+        }
     }
 }

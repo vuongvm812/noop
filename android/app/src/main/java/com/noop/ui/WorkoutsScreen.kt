@@ -1671,7 +1671,8 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
         powerCurve = vm.workoutMetricBuckets(DeviceMetricKind.POWER_W, row.startTs, row.endTs, row.source, row.deviceId)
         cadenceCurve = vm.workoutMetricBuckets(DeviceMetricKind.CADENCE, row.startTs, row.endTs, row.source, row.deviceId)
         elevationCurve = vm.workoutMetricBuckets(DeviceMetricKind.ALTITUDE_M, row.startTs, row.endTs, row.source, row.deviceId)
-        steps = if (WorkoutSport.isOnFoot(row.sport)) vm.workoutSteps(row.startTs, row.endTs) else null
+        // The recording watch's own count first (a Garmin activity, an imported session), then the strap's.
+        steps = if (WorkoutSport.isOnFoot(row.sport)) row.steps?.takeIf { it > 0 } ?: vm.workoutSteps(row.startTs, row.endTs) else null
         val imported = parseZonePercents(row.zonesJSON)
         if (imported != null) {
             val durMin = (row.durationS ?: (row.endTs - row.startTs).toDouble()) / 60.0

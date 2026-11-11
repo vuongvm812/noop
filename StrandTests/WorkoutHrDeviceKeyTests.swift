@@ -78,6 +78,15 @@ final class WorkoutHrDeviceKeyTests: XCTestCase {
                                           importedIds: ["whoop-aabbcc", "my-whoop"]),
             ["garmin-1234"])
         XCTAssertEqual(WorkoutSource.classify("garmin-1234"), .garmin)
-        XCTAssertEqual(WorkoutSource.classify("garmin-import"), .apple)
+    }
+
+    /// The Garmin export import stores each FIT activity's own trace under "garmin-import": a Garmin row,
+    /// read from there rather than from the worn strap. Kotlin twin: `garmin export row reads its own trace`.
+    func testGarminExportRowReadsItsOwnTrace() {
+        XCTAssertEqual(WorkoutSource.classify("garmin-import"), .garmin)
+        XCTAssertEqual(
+            Repository.workoutHrDeviceIds(source: "garmin-import", activeStrapId: "whoop-aabbcc",
+                                          importedIds: ["whoop-aabbcc", "my-whoop"]),
+            ["garmin-import"])
     }
 }
