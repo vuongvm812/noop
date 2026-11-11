@@ -2743,6 +2743,9 @@ class WhoopRepository(
                 // #50: a Garmin row's source IS the watch's device id, and the sync stored the activity's
                 // own trace under it. Reading the worn strap instead charted and zoned another device's HR.
                 com.noop.analytics.GarminWorkoutEffort.isWatchSource(source) -> listOf(source)
+                // A watch export import stores the session's own trace under its id, as the sync does.
+                source.lowercase() == com.noop.ingest.GarminExportFit.DEVICE_ID ||
+                    source.lowercase() == com.noop.ingest.GadgetbridgeImporter.DEVICE_ID -> listOf(source)
                 else -> importedSourceIdsFor(activeStrapId)
             }
 

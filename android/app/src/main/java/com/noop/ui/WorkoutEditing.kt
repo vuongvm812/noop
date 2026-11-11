@@ -32,6 +32,11 @@ object WorkoutEditing {
             s == "manual" -> WorkoutSource.MANUAL
             s == "lifting" -> WorkoutSource.LIFTING       // imported Hevy / Liftosaur strength session
             s == "activity-file" -> WorkoutSource.ACTIVITY_FILE // imported GPX / TCX / FIT activity file
+            // A watch's history from an export: the Garmin Connect export's FIT activities and a Gadgetbridge
+            // Huawei database, stored with their own heart rate and track under these ids (Swift twin covers
+            // Garmin; Gadgetbridge import is Android-only).
+            s == com.noop.ingest.GarminExportFit.DEVICE_ID -> WorkoutSource.GARMIN
+            s == com.noop.ingest.GadgetbridgeImporter.DEVICE_ID -> WorkoutSource.HUAWEI
             // A watch's history sync (#50): the watch's registry id "garmin-<uuid>" / "huawei-<uuid>". Before
             // the "whoop" catch, as on Swift.
             com.noop.analytics.GarminWorkoutEffort.isWatchSource(s) ->

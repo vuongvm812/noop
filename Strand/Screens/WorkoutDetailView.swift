@@ -68,7 +68,11 @@ struct WorkoutDetailView: View {
     /// Steps over the session window for an on-foot sport (#398): the count plus whether it came from the
     /// strap's own counter (MG/5.0) or the phone pedometer (fallback for WHOOP 4.0 / not-yet-synced / CSV
     /// import). nil = not an on-foot sport, or no step source had data for the window.
-    private struct StepReadout { let count: Int; let fromStrap: Bool }
+    private struct StepReadout {
+        enum Origin { case watch, strap, phone }
+        let count: Int
+        let origin: Origin
+    }
     @State private var steps: StepReadout?
 
     /// What the recording watch reported about this session (Training Effect, training load, intensity
@@ -163,14 +167,16 @@ struct WorkoutDetailView: View {
         // window stays "–" rather than a fabricated 0.
         var stepReadout: StepReadout? = nil
         if WorkoutCatalog.isOnFoot(row.sport) {
-            if let ticks = await repo.strapStepTicks(from: row.startTs, to: row.endTs) {
+            // The recording watch's own count (a Garmin activity, an imported session) comes first.
+            if let own = row.steps, own > 0 { stepReadout = StepReadout(count: own, origin: .watch) }
+            if stepReadout == nil, let ticks = await repo.strapStepTicks(from: row.startTs, to: row.endTs) {
                 // Same per-user ticks-per-step calibration the daily total applies (#139), floor 0.5.
                 let scaled = Int((Double(ticks) / max(profile.stepTicksPerStep, 0.5)).rounded())
-                if scaled > 0 { stepReadout = StepReadout(count: scaled, fromStrap: true) }
+                if scaled > 0 { stepReadout = StepReadout(count: scaled, origin: .strap) }
             }
             if stepReadout == nil,
                let ped = await WorkoutPedometer.steps(fromSec: row.startTs, toSec: row.endTs), ped > 0 {
-                stepReadout = StepReadout(count: ped, fromStrap: false)
+                stepReadout = StepReadout(count: ped, origin: .phone)
             }
         }
 
@@ -342,8 +348,13 @@ struct WorkoutDetailView: View {
             if WorkoutCatalog.isOnFoot(row.sport) {
                 StatTile(label: "Steps",
                          value: steps.map { grouped(Double($0.count)) } ?? "–",
-                         caption: steps.map { $0.fromStrap ? String(localized: "strap")
-                                                          : String(localized: "phone") },
+                         caption: steps.map {
+                             switch $0.origin {
+                             case .watch: return String(localized: "Watch")
+                             case .strap: return String(localized: "strap")
+                             case .phone: return String(localized: "phone")
+                             }
+                         },
                          accent: steps != nil ? StrandPalette.metricCyan : StrandPalette.textTertiary)
             }
         }
