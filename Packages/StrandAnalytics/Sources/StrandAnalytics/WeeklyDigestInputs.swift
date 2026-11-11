@@ -116,6 +116,20 @@ public enum WeeklyDigestInputs {
         return out
     }
 
+    /// The series of the metrics read from the snapshot stores (body composition, workouts, nutrition, ...):
+    /// each `WeeklyMetric` naming a `snapshotId` takes that item's per-day values from `snapshotValues`
+    /// (`MetricSnapshotItem.id` → day → value). Disjoint from `series`'s metrics, so callers merge the two.
+    /// Kotlin twin: `WeeklyDigestInputs.snapshotSeries`.
+    public static func snapshotSeries(_ snapshotValues: [String: [String: Double]]) -> [WeeklyMetric: [String: Double]] {
+        var out: [WeeklyMetric: [String: Double]] = [:]
+        for m in WeeklyMetric.allCases {
+            guard let id = m.snapshotId, let vals = snapshotValues[id] else { continue }
+            let finite = vals.filter { $0.value.isFinite }
+            if !finite.isEmpty { out[m] = finite }
+        }
+        return out
+    }
+
     /// Efficiency as a percent: a stored 0–1 fraction is scaled, a percent passes through.
     /// Kotlin twin: `WeeklyDigestInputs.efficiencyPercent`.
     public static func efficiencyPercent(_ v: Double) -> Double { v <= 1.0 ? v * 100.0 : v }

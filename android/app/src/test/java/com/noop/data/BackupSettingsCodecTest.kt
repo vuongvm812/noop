@@ -46,6 +46,8 @@ class BackupSettingsCodecTest {
             // #1361: custom journal behaviours, a newline-joined name list — the embedded newline must
             // survive the JSON round-trip (and stay byte-identical to the Apple value).
             "journal.customBehaviors" to "Cold plunge\nMagnesium",
+            // The Coach's per-category sharing switches: enabled ids, comma-joined (same string on Apple).
+            "coach.shareCategories" to "recovery_strain,sleep,body_composition",
         )
         val json = requireNotNull(BackupSettingsCodec.encode(values))
         val back = BackupSettingsCodec.decode(json)
@@ -64,6 +66,7 @@ class BackupSettingsCodecTest {
         assertEquals("sleep_onset", back["dayCycle.mode"])
         assertEquals("[\"sleep.sleepMarks\"]", back["today.hostedCards"])
         assertEquals("Cold plunge\nMagnesium", back["journal.customBehaviors"])
+        assertEquals("recovery_strain,sleep,body_composition", back["coach.shareCategories"])
         assertEquals(values.size, back.size)
     }
 

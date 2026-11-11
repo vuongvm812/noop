@@ -73,6 +73,11 @@ object BackupSettingsCodec {
         // SCOPE: NAMES only — the wire carries no kind/group, so a numeric custom behaviour restores as a
         // plain .bool toggle (identical on both platforms; historical entries keep their DB numericValue).
         "journal.customBehaviors" to Kind.STRING,
+        // The Coach's per-category sharing switches: the enabled metric-category ids, comma-joined in
+        // category order (`CoachMetricContext.encodeCategories`). Only present once the user has touched a
+        // switch, so a restore never overwrites another device's defaults with this one's untouched ones.
+        // Same canonical key + string on Apple (`ai.shareCategories`).
+        "coach.shareCategories" to Kind.STRING,
     )
 
     /**
@@ -179,6 +184,10 @@ object BackupSettingsBridge {
             }.getOrDefault(emptyList())
             if (names.isNotEmpty()) values["journal.customBehaviors"] = names.joinToString("\n")
         }
+        if (noop.contains(NoopPrefs.KEY_COACH_SHARE_CATEGORIES)) {
+            noop.getString(NoopPrefs.KEY_COACH_SHARE_CATEGORIES, null)
+                ?.let { values["coach.shareCategories"] = it }
+        }
         return BackupSettingsCodec.encode(values)
     }
 
@@ -217,6 +226,15 @@ object BackupSettingsBridge {
             editor.putString(JOURNAL_LEGACY_CUSTOM_PREF, joined)
             editor.remove(JOURNAL_LEGACY_HIDDEN_PREF)
             editor.remove(JOURNAL_CATALOG_V2_PREF)
+        }
+        // Re-encoded through the codec so a hand-edited payload can only switch known categories.
+        (values["coach.shareCategories"] as? String)?.let {
+            editor.putString(
+                NoopPrefs.KEY_COACH_SHARE_CATEGORIES,
+                com.noop.analytics.CoachMetricContext.encodeCategories(
+                    com.noop.analytics.CoachMetricContext.parseCategories(it),
+                ),
+            )
         }
         editor.apply()
     }

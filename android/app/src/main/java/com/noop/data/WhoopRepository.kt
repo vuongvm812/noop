@@ -2,6 +2,7 @@ package com.noop.data
 
 import android.content.Context
 import androidx.room.withTransaction
+import com.noop.analytics.WeightLog
 import com.noop.protocol.DroppedRtcEvent
 import com.noop.protocol.RrSourceChannel
 import com.noop.protocol.Whoop5Ecg
@@ -2010,6 +2011,27 @@ class WhoopRepository(
             computedSourceIds(activeStrapId).map { dao.latestMetricSeriesRow(it, key) },
         )
 
+    /**
+     * The newest body fat (0-100 %) and lean mass (kg) across Apple Health, Health Connect and the Lab Book
+     * projection (which carries body fat only), each null when no source holds one. The strictly newest day wins; a same-day tie keeps the
+     * earlier source in that order. One LIMIT-1 row per source and key, no series is materialized.
+     * Swift twin: `Repository.latestBodyComposition`.
+     */
+    suspend fun latestBodyComposition(): WeightLog.BodyComposition {
+        val newest: suspend (String, Double?) -> WeightLog.BodyReading? = { key, maxValue ->
+            WeightLog.newestBodyReading(
+                BODY_COMPOSITION_SOURCES.map { src ->
+                    dao.latestMetricSeriesRow(src, key)?.let { WeightLog.BodyReading(it.day, it.value) }
+                },
+                maxValue,
+            )
+        }
+        return WeightLog.BodyComposition(
+            bodyFatPct = newest("body_fat", 100.0),
+            leanMassKg = newest("lean_mass", null),
+        )
+    }
+
     /** Scalar row count for one (deviceId, key) series — the COUNT twin of [metricSeries]. */
     suspend fun metricSeriesKeyCount(deviceId: String, key: String): Int =
         dao.metricSeriesKeyCount(deviceId, key)
@@ -2886,6 +2908,9 @@ class WhoopRepository(
             val ownerComputed = if (sessionOwnerId.endsWith("-noop")) sessionOwnerId else "$sessionOwnerId-noop"
             return (listOf(ownerComputed) + computedSourceIdsFor(activeDeviceId)).distinct()
         }
+
+        /** Sources holding body composition, trusted first: Apple Health, Health Connect, then the Lab Book projection. */
+        private val BODY_COMPOSITION_SOURCES = listOf("apple-health", "health-connect", WhoopDao.LAB_BOOK_SOURCE_ID)
 
         /** Pick the winner among per-source LATEST rows ([computedSourceIdsFor] order, active-strap
          *  first): the strictly newest day wins; a shared newest day keeps the FIRST seen (the active

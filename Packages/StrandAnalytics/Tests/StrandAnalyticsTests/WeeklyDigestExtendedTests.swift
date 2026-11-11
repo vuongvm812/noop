@@ -137,7 +137,7 @@ final class WeeklyDigestExtendedTests: XCTestCase {
 
     func testHeadlineOrderIsUnchanged() {
         XCTAssertEqual(Array(WeeklyMetric.allCases.prefix(5)), Self.headline)
-        XCTAssertEqual(WeeklyMetric.allCases.count, 20)
+        XCTAssertEqual(WeeklyMetric.allCases.count, 54)
     }
 
     func testNeutralMetricHasNoVerdict() throws {
@@ -197,7 +197,7 @@ final class WeeklyDigestExtendedTests: XCTestCase {
         XCTAssertEqual(sections[1].rows.map(\.metric), [.vo2max])
         let full = WeeklyDigestEngine.sections(
             WeeklyDigestEngine.build(byMetric: Self.extendedFixture(), anchorDay: "2026-06-13"))
-        XCTAssertEqual(full.map(\.section), WeeklyDigestSection.allCases)
+        XCTAssertEqual(full.map(\.section), [.activity, .sleep, .overnightVitals, .stressEnergy, .training])
         XCTAssertEqual(full.flatMap(\.rows).count, 15)
     }
 }

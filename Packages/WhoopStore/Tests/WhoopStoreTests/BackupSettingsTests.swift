@@ -28,6 +28,7 @@ final class BackupSettingsTests: XCTestCase {
             // #1361: custom journal behaviours, a newline-joined name list — the embedded newline must
             // survive the JSON round-trip (and stay byte-identical to Android's pref value).
             "journal.customBehaviors": "Cold plunge\nMagnesium",
+            "coach.shareCategories": "recovery_strain,sleep,body_composition",
         ]
         let data = try XCTUnwrap(BackupSettings.encode(values))
         let back = BackupSettings.decode(data)
@@ -46,6 +47,7 @@ final class BackupSettingsTests: XCTestCase {
         XCTAssertEqual(back["dayCycle.mode"] as? String, "sleep_onset")
         XCTAssertEqual(back["today.hostedCards"] as? String, "[\"sleep.sleepMarks\"]")
         XCTAssertEqual(back["journal.customBehaviors"] as? String, "Cold plunge\nMagnesium")
+        XCTAssertEqual(back["coach.shareCategories"] as? String, "recovery_strain,sleep,body_composition")
         XCTAssertEqual(back.count, values.count, "Nothing extra should appear")
     }
 

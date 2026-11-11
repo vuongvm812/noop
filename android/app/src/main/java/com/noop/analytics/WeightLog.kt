@@ -52,6 +52,28 @@ object WeightLog {
         return if (isValid(rounded)) rounded else null
     }
 
+    /** One body-composition reading: [day] is ISO `yyyy-MM-dd`, [value] is body fat in percent or lean mass in kg. */
+    data class BodyReading(val day: String, val value: Double)
+
+    /** The newest body fat and lean mass readings, each null when no source has one. */
+    data class BodyComposition(val bodyFatPct: BodyReading?, val leanMassKg: BodyReading?)
+
+    /**
+     * The newest valid body-composition reading across [perSource] (one latest row per source, trusted source
+     * first). A reading is valid when finite and above zero, and at most [maxValue] when given (body fat is
+     * 0-100 %). The strictly newest day wins; a same-day tie keeps the FIRST source.
+     * Swift twin: `WeightLog.newestBodyReading`.
+     */
+    fun newestBodyReading(perSource: List<BodyReading?>, maxValue: Double? = null): BodyReading? {
+        var best: BodyReading? = null
+        for (r in perSource) {
+            if (r == null || !r.value.isFinite() || r.value <= 0.0) continue
+            if (maxValue != null && r.value > maxValue) continue
+            if (best == null || r.day > best.day) best = r
+        }
+        return best
+    }
+
     /**
      * The most recent valid entry, or null. On a same-day tie the FIRST one wins.
      * Swift twin: `WeightLog.newest`.

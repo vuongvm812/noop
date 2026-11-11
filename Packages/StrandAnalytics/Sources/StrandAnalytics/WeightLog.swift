@@ -64,6 +64,40 @@ public enum WeightLog {
         return isValid(kg: rounded) ? rounded : nil
     }
 
+    /// One body-composition reading: `day` is ISO `yyyy-MM-dd`, `value` is body fat in percent or lean mass in kg.
+    public struct BodyReading: Equatable, Sendable {
+        public let day: String
+        public let value: Double
+        public init(day: String, value: Double) {
+            self.day = day
+            self.value = value
+        }
+    }
+
+    /// The newest body fat and lean mass readings, each nil when no source has one.
+    public struct BodyComposition: Equatable, Sendable {
+        public let bodyFatPct: BodyReading?
+        public let leanMassKg: BodyReading?
+        public init(bodyFatPct: BodyReading?, leanMassKg: BodyReading?) {
+            self.bodyFatPct = bodyFatPct
+            self.leanMassKg = leanMassKg
+        }
+    }
+
+    /// The newest valid body-composition reading across `perSource` (one latest row per source, trusted
+    /// source first). Valid means finite and above zero, and at most `maxValue` when given (body fat is
+    /// 0-100 %). The strictly newest day wins; a same-day tie keeps the FIRST source.
+    /// Kotlin twin: `WeightLog.newestBodyReading`.
+    public static func newestBodyReading(_ perSource: [BodyReading?], maxValue: Double? = nil) -> BodyReading? {
+        var best: BodyReading?
+        for case let r? in perSource {
+            guard r.value.isFinite, r.value > 0 else { continue }
+            if let maxValue, r.value > maxValue { continue }
+            if best == nil || r.day > best!.day { best = r }
+        }
+        return best
+    }
+
     /// The most recent valid entry, or nil. On a same-day tie the FIRST one wins, so callers put the
     /// source they trust first.
     /// Kotlin twin: `WeightLog.newest`.

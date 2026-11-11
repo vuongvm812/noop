@@ -67,6 +67,11 @@ public enum BackupSettings {
         // SCOPE: NAMES only — the wire carries no kind/group, so a numeric custom behaviour restores as a
         // plain .bool toggle (identical on both platforms; historical entries keep their DB numericValue).
         "journal.customBehaviors": .string,
+        // The Coach's per-category sharing switches: the enabled metric-category ids, comma-joined in
+        // category order (`CoachMetricContext.encodeCategories`). Only present once the user has touched a
+        // switch, so a restore never overwrites another device's defaults with this one's untouched ones.
+        // Same canonical key + string on Android (`noop.coachShareCategories`).
+        "coach.shareCategories": .string,
     ]
 
     /// Canonical JSON key → this platform's UserDefaults key. Identity everywhere except
@@ -86,6 +91,7 @@ public enum BackupSettings {
         "effort.scale": "effort.scale",
         "dayCycle.mode": "noop.dayCycleMode",
         "today.hostedCards": "today.hostedCards",
+        "coach.shareCategories": "ai.shareCategories",
     ]
 
     // MARK: - Snapshot / apply (UserDefaults boundary)

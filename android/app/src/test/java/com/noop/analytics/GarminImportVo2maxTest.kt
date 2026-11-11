@@ -20,7 +20,7 @@ import org.robolectric.annotation.Config
 
 /**
  * #71: the VO2max resolver reads the Garmin export's points beside the watch's own, against a real Room
- * database. The watch wins a day both carry; the export fills the days the watch lacks; past weeks are
+ * database. The watch wins a day both carry; the export fills the days the watch lacks; earlier days are
  * written with the `garmin` tag. Swift twin: `GarminImportVo2maxTests` (StrandTests). All data is synthetic.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -71,15 +71,14 @@ class GarminImportVo2maxTest {
     }
 
     @Test
-    fun pastWeeksTakeTheGarminValueAndTag() = runBlocking {
+    fun earlierDaysTakeTheGarminValueAndTag() = runBlocking {
         seed()
         IntelligenceEngine.persistWatchVo2maxHistory(repo, watch, computed, "2026-10-31")
         val rows = repo.metricSeries(computed, "vo2max_est", "0000-01-01", "9999-12-31")
-        assertEquals(
-            listOf("2026-09-19" to 49.0, "2026-09-26" to 49.0, "2026-10-03" to 49.0, "2026-10-10" to 49.0,
-                "2026-10-24" to 52.0),
-            rows.map { it.day to it.value },
-        )
+        // Daily: the export's 49 stands for 28 days from 09-15, then a gap, then the watch's 52 from 10-20.
+        val expected = (15..30).map { "2026-09-$it" to 49.0 } + (1..12).map { "2026-10-%02d".format(it) to 49.0 } +
+            (20..30).map { "2026-10-$it" to 52.0 }
+        assertEquals(expected, rows.map { it.day to it.value })
         val sources = repo.scoreInputSources(computed, "0000-01-01", "9999-12-31", listOf("vo2max_est"))
         assertEquals(rows.map { it.day }, sources.map { it.day })
         assertTrue(sources.all { it.sourceId == "garmin" })

@@ -221,13 +221,31 @@ private fun CrashRecoveryScreen(crash: String, onContinue: () -> Unit) {
 object NotificationRoute {
     const val EXTRA_ROUTE = "noop.openRoute"
     const val TRENDS = "trends"
+    /** The Daily summary page; [EXTRA_DAY] optionally names the day it opens on. */
+    const val DAILY_SUMMARY = "daily_summary"
+    const val EXTRA_DAY = "noop.openDay"
 
     val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
+    /** The "yyyy-MM-dd" day a routed tap asked the Daily summary to open on, or null for today. */
+    val pendingDay = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     fun offer(intent: Intent?) {
+        // The day is set first so the route's collector reads it when it fires.
+        intent?.getStringExtra(EXTRA_DAY)?.let { pendingDay.value = validDayOrNull(it) }
         intent?.getStringExtra(EXTRA_ROUTE)?.let { pending.value = it }
     }
+
+    /** [day] when it is a real ISO date, else null (a stray extra never crashes the Daily summary). */
+    fun validDayOrNull(day: String?): String? =
+        day?.takeIf { runCatching { java.time.LocalDate.parse(it) }.isSuccess }
 }
+
+/** [appLaunchIntent] that opens the Daily summary on [day] (null = today). */
+internal fun appLaunchIntentDailySummary(context: Context, day: String?): Intent =
+    appLaunchIntent(context, NotificationRoute.DAILY_SUMMARY).apply {
+        if (day != null) putExtra(NotificationRoute.EXTRA_DAY, day)
+    }
 
 /** [appLaunchIntent] that also asks the app to open [route] (a [NotificationRoute] key). */
 internal fun appLaunchIntent(context: Context, route: String): Intent =
@@ -1223,6 +1241,20 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_COACH_SIGNALS, enabled).apply()
     }
 
+    /** Which metric categories the Coach may see: the enabled snapshot category ids, comma-joined in category
+     *  order (see `CoachMetricContext`). Absent until a switch is touched, which means the categories the Coach
+     *  has always sent; everything newer defaults OFF. Carried in the `.noopbak` settings as
+     *  `coach.shareCategories`. */
+    const val KEY_COACH_SHARE_CATEGORIES = "noop.coachShareCategories"
+
+    /** The stored string, or null when the user never touched a switch. */
+    fun coachShareCategories(context: Context): String? =
+        of(context).getString(KEY_COACH_SHARE_CATEGORIES, null)
+
+    fun setCoachShareCategories(context: Context, stored: String) {
+        of(context).edit().putString(KEY_COACH_SHARE_CATEGORIES, stored).apply()
+    }
+
     /** K11: Coach multimodal chart image (opt-in, default OFF). When ON and the provider is Gemini,
      *  a chart snapshot is sent as inline_data alongside the text. A THIRD opt-in on top of the
      *  existing data consent. Only Gemini supports multimodal input. */
@@ -1552,6 +1584,17 @@ object NoopPrefs {
 
     fun setSleepWearRescoreDone(context: Context) {
         of(context).edit().putBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, true).apply()
+    }
+
+    /** Set once the one-shot rebuild of Fitness Age / VO₂max / Vitality / Body Age at daily resolution has
+     *  replaced the old Saturday-only history. Marked only after the replacement landed. */
+    const val KEY_FITNESS_VITALITY_DAILY_DONE = "intelligence.fitnessVitalityDaily.v1.done"
+
+    fun fitnessVitalityDailyDone(context: Context): Boolean =
+        of(context).getBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, false)
+
+    fun setFitnessVitalityDailyDone(context: Context) {
+        of(context).edit().putBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, true).apply()
     }
 
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the

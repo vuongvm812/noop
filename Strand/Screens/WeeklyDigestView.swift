@@ -32,12 +32,14 @@ enum WeeklyDigestSource {
                        importedSleep: [String: ImportedSleepFigures] = [:],
                        computedSleep: [String: ImportedSleepFigures] = [:],
                        watch: WeeklyDigestWatchSeries = WeeklyDigestWatchSeries(),
+                       snapshotValues: [String: [String: Double]] = [:],
                        effortDisplayFactor: Double = UnitPrefs.currentEffortDisplayFactor()) -> WeeklyDigest {
         let rows = days.map {
             WeeklyDigestLoader.digestDay($0, importedSleep: importedSleep, computedSleep: computedSleep)
         }
         return WeeklyDigestEngine.build(
-            byMetric: WeeklyDigestInputs.series(days: rows, watch: watch),
+            byMetric: WeeklyDigestInputs.snapshotSeries(snapshotValues)
+                .merging(WeeklyDigestInputs.series(days: rows, watch: watch)) { _, original in original },
             anchorDay: anchorDay,
             effortDisplayFactor: effortDisplayFactor)
     }
@@ -50,11 +52,13 @@ enum WeeklyDigestSource {
 struct WeeklyDigestCard: View {
     @EnvironmentObject var repo: Repository
     @State private var watch = WeeklyDigestWatchSeries()
+    @State private var snapshotValues: [String: [String: Double]] = [:]
 
     var body: some View {
         let anchor = Repository.localDayKey(Date())
         let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: anchor,
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch,
+            snapshotValues: snapshotValues)
         Group {
             if digest.isEmpty {
                 // Zero-size rather than EmptyView, so the `.task` below still runs and a week
@@ -70,6 +74,7 @@ struct WeeklyDigestCard: View {
         // Reload when a pass rewrites the history (the day count moves) or the day rolls.
         .task(id: "\(anchor)|\(repo.days.count)") {
             watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: anchor)
+            snapshotValues = await WeeklyDigestLoader.snapshotValues(repo: repo, anchorDay: anchor)
         }
     }
 }
@@ -80,6 +85,7 @@ struct WeeklyDigestCard: View {
 struct WeeklyDigestView: View {
     @EnvironmentObject var repo: Repository
     @State private var watch = WeeklyDigestWatchSeries()
+    @State private var snapshotValues: [String: [String: Double]] = [:]
 
     var body: some View {
         ScreenScaffold(title: "Week in review",
@@ -96,7 +102,8 @@ struct WeeklyDigestView: View {
                     : "Loading your history…")
             } else {
                 let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: Repository.localDayKey(Date()),
-            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch)
+            importedSleep: repo.importedSleep, computedSleep: repo.computedSleep, watch: watch,
+            snapshotValues: snapshotValues)
                 if digest.isEmpty {
                     DataPendingNote(
                         title: "No readings this week yet",
@@ -110,6 +117,7 @@ struct WeeklyDigestView: View {
         }
         .task(id: "\(Repository.localDayKey(Date()))|\(repo.days.count)") {
             watch = await WeeklyDigestLoader.load(repo: repo, anchorDay: Repository.localDayKey(Date()))
+            snapshotValues = await WeeklyDigestLoader.snapshotValues(repo: repo, anchorDay: Repository.localDayKey(Date()))
         }
     }
 }
@@ -141,6 +149,40 @@ extension WeeklyMetric {
         case .bodyBatteryRecharge: return String(localized: "Body Battery recharge")
         case .trainingLoad: return String(localized: "Training load")
         case .vo2max: return String(localized: "VO₂max")
+        case .lightSleep: return String(localized: "Light sleep")
+        case .sleepNeed: return String(localized: "Sleep need")
+        case .sleepDebt: return String(localized: "Sleep debt")
+        case .sleepConsistency: return String(localized: "Sleep consistency")
+        case .disturbances: return String(localized: "Disturbances")
+        case .avgHr: return String(localized: "Average heart rate")
+        case .maxHr: return String(localized: "Max heart rate")
+        case .sdnn: return String(localized: "HRV (SDNN)")
+        case .totalKcal: return String(localized: "Total calories")
+        case .basalKcal: return String(localized: "Basal calories")
+        case .distance: return String(localized: "Distance")
+        case .workoutCount: return String(localized: "Workouts")
+        case .workoutMinutes: return String(localized: "Workout time")
+        case .workoutKcal: return String(localized: "Workout calories")
+        case .workoutMaxHr: return String(localized: "Workout max heart rate")
+        case .workoutPower: return String(localized: "Average power")
+        case .workoutCadence: return String(localized: "Average cadence")
+        case .workoutElevation: return String(localized: "Elevation gain")
+        case .aerobicTe: return String(localized: "Aerobic training effect")
+        case .anaerobicTe: return String(localized: "Anaerobic training effect")
+        case .weight: return String(localized: "Weight")
+        case .bodyFat: return String(localized: "Body fat")
+        case .leanMass: return String(localized: "Lean mass")
+        case .bmi: return String(localized: "BMI")
+        case .fitnessAge: return String(localized: "Fitness Age")
+        case .vitality: return String(localized: "Vitality")
+        case .bodyAge: return String(localized: "Body Age")
+        case .vo2maxEst: return String(localized: "VO₂ max (estimated)")
+        case .caloriesIn: return String(localized: "Calories in")
+        case .protein: return String(localized: "Protein")
+        case .carbs: return String(localized: "Carbs")
+        case .fat: return String(localized: "Fat")
+        case .water: return String(localized: "Water")
+        case .mood: return String(localized: "Mood")
         }
     }
 }
@@ -154,16 +196,23 @@ extension WeeklyDigestSection {
         case .overnightVitals: return String(localized: "Overnight vitals")
         case .stressEnergy:    return String(localized: "Stress & energy")
         case .training:        return String(localized: "Training")
+        case .heart:           return String(localized: "Heart")
+        case .workouts:        return String(localized: "Workouts")
+        case .bodyComposition: return String(localized: "Body composition")
+        case .fitnessScores:   return String(localized: "Fitness scores")
+        case .nutrition:       return String(localized: "Nutrition")
+        case .mind:            return String(localized: "Mood & journal")
         }
     }
 
     /// The colour world the section's rows sit in.
     var domain: DomainTheme {
         switch self {
-        case .activity, .training: return .effort
-        case .sleep:               return .rest
-        case .overnightVitals:     return .charge
-        case .stressEnergy:        return .stress
+        case .activity, .training, .workouts: return .effort
+        case .sleep:                          return .rest
+        case .overnightVitals, .heart, .bodyComposition, .fitnessScores: return .charge
+        case .stressEnergy, .mind:            return .stress
+        case .nutrition:                      return .effort
         }
     }
 }
@@ -532,6 +581,9 @@ struct WeeklyDigestContent: View {
         // truncated number rather than a change.
         // A metric already in % or a ±deviation reads its change in its own units (#90).
         if !s.metric.spec.percentChange {
+            if s.metric.spec.unit == "kg" {
+                return UnitFormatter.massFromKilograms(abs(s.wowDelta), system: WeeklyDigestValueText.unitSystem)
+            }
             return WeeklyDigestValueText.number(abs(s.wowDelta), decimals: 1)
         }
         if let pct = s.weekOverWeek.pctChange {
@@ -587,13 +639,21 @@ struct WeeklyDigestContent: View {
 /// The this-week figure for a non-headline metric: the mean, total or latest reading per
 /// its roll-up, with its unit. Units that read the same in every language stay verbatim.
 enum WeeklyDigestValueText {
+    /// The body-measurement system from the user's unit preference (kg or lb).
+    static var unitSystem: UnitSystem {
+        UnitSystem(rawValue: UserDefaults.standard.string(forKey: UnitPrefs.systemKey) ?? "") ?? .metric
+    }
+
     static func value(_ s: WeeklyMetricSummary) -> String {
         guard s.hasData else { return "—" }
         let spec = s.metric.spec
         let n = number(s.thisValue, decimals: spec.decimals)
         switch s.metric {
         case .sleepDuration: return String(localized: "\(n) h")
-        case .intensityMinutes, .deepSleep, .remSleep: return String(localized: "\(Int(s.thisValue.rounded())) min")
+        case .intensityMinutes, .deepSleep, .remSleep, .lightSleep, .sleepNeed, .sleepDebt, .workoutMinutes:
+            return String(localized: "\(Int(s.thisValue.rounded())) min")
+        case .weight, .leanMass: return UnitFormatter.massFromKilograms(s.thisValue, system: unitSystem)
+        case .fitnessAge, .bodyAge: return String(localized: "\(n) yrs")
         case .skinTempDeviation: return "\(s.thisValue > 0 ? "+" : "")\(n) °C"
         default: return spec.unit.isEmpty || spec.unit == "steps" ? n : "\(n) \(spec.unit)"
         }

@@ -22,6 +22,9 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     /// is a safe no-op (the tap is simply not routed) rather than a crash if this ever fires before the
     /// root has wired it.
     var onCoachBriefTapped: (() -> Void)?
+    /// Tapping the morning recap or the Coach brief opens the Daily summary for the notification's day
+    /// ("yyyy-MM-dd", nil = today). Set by each app shell to its NavRouter.
+    var onDailySummaryTapped: ((String?) -> Void)?
     /// #91: tapping the weekly summary opens Trends (set by each app shell to its NavRouter).
     var onWeeklySummaryTapped: (() -> Void)?
 
@@ -42,11 +45,24 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let category = response.notification.request.content.categoryIdentifier
-        if category == CoachBriefScheduler.notificationCategoryId {
-            onCoachBriefTapped?()
+        let day = response.notification.request.content.userInfo[DailySummaryNotification.dayKey] as? String
+        if category == DailySummaryNotification.categoryId {
+            onDailySummaryTapped?(day)
+        } else if category == CoachBriefScheduler.notificationCategoryId {
+            // A brief carries its day and opens the Daily summary it was built from. The "unavailable, tap
+            // to retry" notification carries none, and without that route wired it also falls back to Coach.
+            if let day, let open = onDailySummaryTapped { open(day) } else { onCoachBriefTapped?() }
         } else if category == WeeklySummaryNotifier.categoryId {
             onWeeklySummaryTapped?()
         }
         completionHandler()
     }
+}
+
+/// Shared identifiers for notifications that open the Daily summary. The Android equivalent is `NotificationRoute`.
+enum DailySummaryNotification {
+    /// The category of the one-line morning recap.
+    static let categoryId = "daily-summary"
+    /// The `userInfo` key carrying the "yyyy-MM-dd" day to open.
+    static let dayKey = "day"
 }

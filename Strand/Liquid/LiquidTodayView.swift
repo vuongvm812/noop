@@ -1431,6 +1431,10 @@ struct LiquidTodayView: View {
                 LiquidFullWidthNavigationAction("Show all metrics")
             }
             .buttonStyle(LiquidPressStyle())
+            NavigationLink(value: TabRoute.dailySummary) {
+                LiquidFullWidthNavigationAction("Daily summary")
+            }
+            .buttonStyle(LiquidPressStyle())
         }
     }
 

@@ -1,6 +1,6 @@
 # Fitness Age
 
-**Status:** shipped. A weekly number you can read at a glance.
+**Status:** shipped. A daily number you can read at a glance.
 
 ## What it is
 
@@ -10,7 +10,7 @@ Fitness Age is below your real age, your estimated fitness is better than averag
 if it's above, it's worse. That's the whole claim — it is **not** a measure of how old your body, cells,
 or organs are, and it carries no medical meaning.
 
-It is computed **on-device**, weekly, from data NOOP already has. Nothing is sent anywhere.
+It is computed **on-device**, daily, from data NOOP already has. Nothing is sent anywhere.
 
 ## Where the number comes from
 
@@ -56,16 +56,21 @@ groups them under *"Unlocks your VO₂max"*, never under the age itself.
 
 ## Cadence and gating
 
-- **Weekly, on Saturday.** The engine recomputes once a week and stamps the value on that week's
-  Saturday, so the number updates on a steady, predictable rhythm rather than jumping day to day.
-- **Rolling 7-day medians.** RHR and the activity signal are taken as 7-day medians, so one bad night or
-  one rest day doesn't swing the result.
-- **≥4-of-7-nights coverage gate.** A week needs resting-HR data from at least 4 of its 7 nights before a
+- **Daily.** Every sync pass recomputes each day of its 21-day window and stamps the value on the day
+  it describes, so the history has one point per day. Because each day reads a 7-day window, the number
+  still moves slowly rather than jumping day to day.
+- **Rolling 7-day medians.** For day D, RHR and the activity signal are taken as medians over the merged
+  daily rows of D-6…D, so one bad night or one rest day doesn't swing the result. Vitality and Body Age
+  (`vitality`, `body_age`) use the same window and the same merged rows.
+- **One-time history rebuild.** The first launch after the upgrade recomputes the whole history at daily
+  resolution and replaces the old Saturday-only points (`fitness_age`, `vo2max_est`, `vitality`,
+  `body_age`) in one transaction. Days whose window is too sparse to compute simply have no point.
+- **≥4-of-7-nights coverage gate.** A window needs resting-HR data from at least 4 of its 7 nights before a
   number is produced. Below that, the engine reports *not ready* / *estimate only* rather than guessing.
 - **±5-year presentation band.** The number is shown inside a **±5-year band** (`bandYears = 5.0`), not as
   a false-precision point value — honest about the model's error.
 
-The weekly results are stored in `metricSeries` under two keys, written to the computed `-noop` source:
+The daily results are stored in `metricSeries` under two keys, written to the computed `-noop` source:
 
 | Key            | Unit       | Meaning                                              |
 |----------------|------------|-----------------------------------------------------|
@@ -80,7 +85,7 @@ The UI reads the **latest** `fitness_age` value.
   diagnosis. It says nothing about disease, longevity, or how old your body "really" is.
 - The underlying VO₂max model has a **large mean absolute error** (SEE ≈ 5 ml/kg/min). Treat the number
   as a **direction of travel over weeks**, not a precise readout — which is exactly why it's shown in a
-  ±5-year band and only updates weekly.
+  ±5-year band and moves slowly.
 - It is a **non-exercise estimate**. A real graded exercise test on a treadmill or bike is the gold
   standard; this is a convenient proxy, nothing more.
 

@@ -207,13 +207,14 @@ public enum GarminScoringInputs {
         return merged.sorted { $0.day.utf16.lexicographicallyPrecedes($1.day.utf16) }
     }
 
-    /// Every Saturday week key strictly before `beforeWeekKey` that `watchVo2max` gives a value from
-    /// `points`, with that value, oldest first (#71). The recompute pass writes these past weeks so the
-    /// VO2max history shows the watch's numbers, not only for the current week. Empty when
-    /// `beforeWeekKey` does not parse. Kotlin twin: `GarminScoringInputs.watchVo2maxWeeks`.
-    public static func watchVo2maxWeeks(
-        _ points: [(day: String, value: Double)], beforeWeekKey: String
-    ) -> [(week: String, value: Double)] {
+    /// Every calendar day strictly before `beforeDayKey` that `watchVo2max` gives a value for from
+    /// `points`, with that value, oldest first (#71). The recompute pass writes these earlier days so the
+    /// VO2max history shows the watch's numbers, not only for the days inside the pass window. The scan
+    /// starts at the oldest usable point. Empty when `beforeDayKey` does not parse.
+    /// Kotlin twin: `GarminScoringInputs.watchVo2maxDays`.
+    public static func watchVo2maxDays(
+        _ points: [(day: String, value: Double)], beforeDayKey: String
+    ) -> [(day: String, value: Double)] {
         var utc = Calendar(identifier: .gregorian)
         utc.timeZone = TimeZone(identifier: "UTC")!
         let f = DateFormatter()
@@ -221,19 +222,16 @@ public enum GarminScoringInputs {
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = utc.timeZone
         f.dateFormat = "yyyy-MM-dd"
-        guard f.date(from: beforeWeekKey) != nil,
+        guard f.date(from: beforeDayKey) != nil,
               let first = points.filter({ $0.value > 0 && $0.value.isFinite }).map(\.day).min(),
-              let firstDate = f.date(from: first) else { return [] }
-        // Sunday = 1 … Saturday = 7: step forward to the first Saturday on or after the oldest point.
-        let toSaturday = (7 - utc.component(.weekday, from: firstDate)) % 7
-        guard var week = utc.date(byAdding: .day, value: toSaturday, to: firstDate) else { return [] }
-        var out: [(week: String, value: Double)] = []
+              var day = f.date(from: first) else { return [] }
+        var out: [(day: String, value: Double)] = []
         while true {
-            let key = f.string(from: week)
-            guard key < beforeWeekKey else { break }
-            if let v = watchVo2max(points, weekKey: key) { out.append((week: key, value: v)) }
-            guard let next = utc.date(byAdding: .day, value: 7, to: week) else { break }
-            week = next
+            let key = f.string(from: day)
+            guard key < beforeDayKey else { break }
+            if let v = watchVo2max(points, weekKey: key) { out.append((day: key, value: v)) }
+            guard let next = utc.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
         }
         return out
     }

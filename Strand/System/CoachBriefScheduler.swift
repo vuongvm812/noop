@@ -313,6 +313,9 @@ enum CoachBriefScheduler {
         content.body = body
         content.sound = .default
         content.categoryIdentifier = notificationCategoryId
+        // A generated brief opens the Daily summary for this day (every metric it was built from); the
+        // retry notification carries no day, so a tap keeps opening Coach to try again.
+        if !isRetry { content.userInfo = [DailySummaryNotification.dayKey: dayKey(Date())] }
         // Immediate delivery (trigger nil) — this fires the moment generation completes, it is not a
         // pre-scheduled fixed-content trigger like `WindDownNudge`'s. One id per day, so a retry
         // replaces rather than stacks the earlier attempt's notification.

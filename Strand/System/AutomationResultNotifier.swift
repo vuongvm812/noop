@@ -32,7 +32,10 @@ enum AutomationResultNotifier {
                 nowMinuteOfDay: (c.hour ?? 0) * 60 + (c.minute ?? 0)),
               let copy = ScheduledReportPolicy.morningCopy(chargePct: chargePct, restPct: restPct)
         else { return }
-        post(id: "report-morning", title: copy.title, body: copy.body) {
+        // The one-line recap opens the Daily summary for the banked night's day when tapped.
+        post(id: "report-morning", title: copy.title, body: copy.body,
+             category: DailySummaryNotification.categoryId,
+             userInfo: [DailySummaryNotification.dayKey: reportDay]) {
             UserDefaults.standard.set(reportDay, forKey: K.morningDay)
         }
     }
@@ -100,7 +103,8 @@ enum AutomationResultNotifier {
     }
 
     /// Post when authorized; `onPosted` records the gate's state only after the system accepted it.
-    private static func post(id: String, title: String, body: String, onPosted: @escaping @MainActor () -> Void) {
+    private static func post(id: String, title: String, body: String, category: String? = nil,
+                             userInfo: [String: String] = [:], onPosted: @escaping @MainActor () -> Void) {
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized else { return }
@@ -108,6 +112,8 @@ enum AutomationResultNotifier {
             content.title = title
             content.body = body
             content.sound = .default
+            if let category { content.categoryIdentifier = category }
+            if !userInfo.isEmpty { content.userInfo = userInfo }
             center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
                 guard error == nil else { return }
                 Task { @MainActor in onPosted() }

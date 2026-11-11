@@ -35,6 +35,8 @@ enum TabRoute: Hashable {
     case health
     case hydration
     case coupled
+    /// The Daily summary page (every metric for one day), opened from a Today link.
+    case dailySummary
 }
 
 extension View {
@@ -71,6 +73,7 @@ extension View {
             case .health: HealthView()
             case .hydration: HydrationView()
             case .coupled: CoupledView()
+            case .dailySummary: DailySummaryView()
             }
         }
     }

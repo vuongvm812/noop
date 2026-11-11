@@ -130,6 +130,7 @@ object CoachBriefScheduler {
         val aiCoach = AiCoach(
             WhoopRepository(WhoopDatabase.get(ctx)),
             activeStrapId = { (ctx as? com.noop.NoopApplication)?.activeDeviceId ?: WhoopRepository.WHOOP_SOURCE },
+            registry = { (ctx as? com.noop.NoopApplication)?.deviceRegistry },
         )
         return aiCoach.generateBrief(ctx, provider, model, consent, customUrl, customHeader, includeSignals)
     }
@@ -198,7 +199,8 @@ object CoachBriefScheduler {
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setContentIntent(
                     android.app.PendingIntent.getActivity(
-                        context, 5, appLaunchIntent(context),
+                        // Opens the Daily summary on today: the brief is written from the same metrics.
+                        context, 5, appLaunchIntentDailySummary(context, java.time.LocalDate.now().toString()),
                         android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
                     ),
                 )

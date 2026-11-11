@@ -65,11 +65,11 @@ private struct HealthSectionsStack: View {
             // so the ~1Hz HR stream re-renders only this subtree — the static
             // vitals grid below does not re-render on each HR tick.
             HeartRateSection()
-            // Fitness Age (weekly, computed by IntelligenceEngine and read back from the
+            // Fitness Age (daily, computed by IntelligenceEngine and read back from the
             // "fitness_age" metricSeries). Its own view depending only on `repo`/`profile`,
             // so the live HR stream never re-renders it.
             FitnessAgeSection()
-            // Vitality / Body Age (weekly, computed by IntelligenceEngine from the mortality-
+            // Vitality / Body Age (daily, computed by IntelligenceEngine from the mortality-
             // hazard model). Its own view depending only on repo/profile.
             VitalitySection()
             // Screen-5 recovery detail: the CONTRIBUTORS to today's recovery as
@@ -704,9 +704,9 @@ private struct ContributorBar: View {
 
 // MARK: - Fitness Age
 
-/// The "Fitness Age" section: a weekly, on-device fitness comparison (NOT a biological age) computed by
+/// The "Fitness Age" section: a daily, on-device fitness comparison (NOT a biological age) computed by
 /// IntelligenceEngine from the Nes/HUNT model and read back from the "fitness_age" metricSeries under the
-/// strap source. Depends only on `repo` (the weekly value + the recent dailies that drive the readiness
+/// strap source. Depends only on `repo` (the latest value + the recent dailies that drive the readiness
 /// checklist) and `profile` (age/sex/waist), so the ~1Hz live HR stream never re-renders it.
 ///
 /// Two states, both honest about coverage:
@@ -724,7 +724,7 @@ private struct FitnessAgeSection: View {
     /// Drives the not-ready card's "refresh Fitness Age" button (force an immediate recompute).
     @EnvironmentObject var intelligence: IntelligenceEngine
 
-    /// Latest weekly Fitness Age (years) read from the "fitness_age" metricSeries, nil until loaded/computed.
+    /// Latest daily Fitness Age (years) read from the "fitness_age" metricSeries, nil until loaded/computed.
     @State private var fitnessAge: Double?
     /// Latest estimated VO₂max (ml/kg/min) from "vo2max_est" — present even without a waist (the Uth
     /// HR-ratio fallback, #1391); a waist upgrades it to the more accurate Nes waist-based estimate.
@@ -779,7 +779,7 @@ private struct FitnessAgeSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Fitness Age", overline: "Weekly",
+            SectionHeader("Fitness Age", overline: "Daily",
                           trailing: fitnessAge != nil ? String(localized: "vs age \(profile.age)") : nil)
             content
         }
@@ -829,7 +829,7 @@ private struct FitnessAgeSection: View {
                 },
                 refreshing: refreshing)
         } else {
-            // Brief read of the weekly value; honest placeholder rather than an empty gap.
+            // Brief read of the latest value; honest placeholder rather than an empty gap.
             ComingSoon(what: "Reading your Fitness Age…", symbol: "figure.run")
         }
     }
@@ -1007,10 +1007,10 @@ private struct FitnessAgeSection: View {
         .clipShape(RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous))
     }
 
-    /// Load the latest weekly Fitness Age (+ optional VO₂max) from the strap's metricSeries. Uses the
+    /// Load the latest Fitness Age (+ optional VO₂max) from the strap's metricSeries. Uses the
     /// same `exploreSeries(key:source:)` path every other metric on this screen reads, with source
     /// "my-whoop" (the Repository merges the computed "-noop" rows under any real import). Takes the
-    /// freshest point — the weekly value is keyed to the week's Saturday and refines through the week.
+    /// freshest point — the value is keyed to the day it describes.
     private func load() async {
         let faPts = await repo.exploreSeries(key: "fitness_age", source: "my-whoop")
         let vo2Resolution = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
@@ -1072,7 +1072,7 @@ private struct ReadinessChecklistCard: View {
                 HStack(spacing: NoopMetrics.rowSpacing) {
                     confidencePill
                     Spacer(minLength: 0)
-                    // Force-recompute affordance: NOOP scores Fitness Age weekly, so this applies it NOW
+                    // Force-recompute affordance: NOOP scores Fitness Age daily, so this applies it NOW
                     // from stored data. Spinner while it runs.
                     if let onRefresh {
                         if refreshing {
@@ -1193,7 +1193,7 @@ private struct ReadinessChecklistCard: View {
 
 // MARK: - Vitality / Body Age
 
-/// The "Vitality" section: a weekly wellness score (0–100) + a Body Age in years, computed by
+/// The "Vitality" section: a daily wellness score (0–100) + a Body Age in years, computed by
 /// IntelligenceEngine from the published mortality-hazard model and read back from the metricSeries.
 /// A wellness trend from your habits — NOT a clinical biological age. Recomputes the live best/worst
 /// factor the same way the engine does, for the plain-English "why".
@@ -1231,7 +1231,7 @@ private struct VitalitySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Vitality", overline: "Weekly",
+            SectionHeader("Vitality", overline: "Daily",
                           trailing: bodyAge != nil ? String(localized: "Body Age \(Int((bodyAge ?? 0).rounded()))") : nil)
             if let v = vitality, let ba = bodyAge {
                 hero(vitality: v, bodyAge: ba)

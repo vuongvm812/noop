@@ -52,7 +52,8 @@ object WeeklyDigestInputs {
 
     /**
      * The engine's series from the daily rows and the watch series. A day listed twice keeps
-     * its last row. Swift twin: `WeeklyDigestInputs.series`.
+     * its last row. [snapshotValues] is [MetricSnapshotItem.id] → day → value from the snapshot loader.
+     * Swift twin: `WeeklyDigestInputs.series`.
      */
     fun series(days: List<WeeklyDigestDay>, watch: WeeklyDigestWatchSeries): Map<WeeklyMetric, Map<String, Double>> {
         val out = HashMap<WeeklyMetric, HashMap<String, Double>>()
@@ -86,6 +87,22 @@ object WeeklyDigestInputs {
             WeeklyMetric.BODY_BATTERY_RECHARGE to watch.bodyBatteryRecharge,
         )
         for ((m, map) in watchMaps) for ((day, v) in map) put(m, day, v)
+        return out
+    }
+
+    /**
+     * The series of the metrics read from the snapshot stores (body composition, workouts, nutrition, ...):
+     * each [WeeklyMetric] naming a [WeeklyMetric.snapshotId] takes that item's per-day values from
+     * [snapshotValues] ([MetricSnapshotItem.id] → day → value). Disjoint from [series]'s metrics, so callers
+     * merge the two. Swift twin: `WeeklyDigestInputs.snapshotSeries`.
+     */
+    fun snapshotSeries(snapshotValues: Map<String, Map<String, Double>>): Map<WeeklyMetric, Map<String, Double>> {
+        val out = HashMap<WeeklyMetric, Map<String, Double>>()
+        for (m in WeeklyMetric.values()) {
+            val id = m.snapshotId ?: continue
+            val vals = snapshotValues[id]?.filterValues { it.isFinite() } ?: continue
+            if (vals.isNotEmpty()) out[m] = vals
+        }
         return out
     }
 

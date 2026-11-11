@@ -660,7 +660,7 @@ final class Repository: ObservableObject {
     /// Drop workout rows that share a (startTs, endTs, sport, source) key, the same session recorded under
     /// both union device ids, keeping the first (active strap). Distinct sessions are preserved; the
     /// downstream `dedupCrossSource` still collapses strap-vs-Apple twins by time.
-    nonisolated private static func dedupWorkoutsByNaturalKey(_ rows: [WorkoutRow]) -> [WorkoutRow] {
+    nonisolated static func dedupWorkoutsByNaturalKey(_ rows: [WorkoutRow]) -> [WorkoutRow] {
         var seen = Set<String>()
         var out: [WorkoutRow] = []
         for r in rows {

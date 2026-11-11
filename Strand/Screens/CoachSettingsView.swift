@@ -1,4 +1,5 @@
 import SwiftUI
+import StrandAnalytics
 import StrandDesign
 
 /// Coach settings, split out of `CoachView` so the coach screen is the conversation and nothing else
@@ -49,6 +50,7 @@ struct CoachSettingsView: View {
                        }) {
             modelBar
             consentBar
+            shareCategoriesBar
             // v5: a SECOND opt-in, only meaningful once data access is on, folds a summary of the
             // new on-device signals (your strongest patterns + Lab Book) into the coach context.
             if coach.dataConsent { onDeviceSignalsBar }
@@ -120,7 +122,7 @@ struct CoachSettingsView: View {
                     // hard, per session. This toggle is the only place someone is asked to agree to it.
                     // Android says the same sentence (#2033).
                     Text(coach.dataConsent
-                         ? "On: your charge, rest, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate."
+                         ? "On: the categories you switch on below are sent to the provider as summaries (by default charge, rest, HRV, heart, activity and workouts), each workout with its sport, duration, distance and heart rate."
                          : "Off: the coach answers generally and sends none of your metrics.")
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -129,6 +131,39 @@ struct CoachSettingsView: View {
                 Toggle("", isOn: $coach.dataConsent)
                     .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
                     .accessibilityLabel("Let the coach use my data")
+            }
+        }
+    }
+
+    /// One switch per metric category the coach may be sent. Defaults to what the coach has always seen;
+    /// newer categories start off. Applies to the very next message and brief. Kotlin twin: `CoachShareCard`.
+    private var shareCategoriesBar: some View {
+        NoopCard(padding: 14, tint: StrandPalette.chargeColor) {
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Data the coach may see")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                    Text(coach.dataConsent
+                         ? "Switch off any category you do not want sent. Newer categories start off. Summaries only, never raw samples."
+                         : "These switches take effect once the coach may use your data.")
+                        .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(MetricSnapshotCategory.allCases, id: \.self) { category in
+                    HStack(spacing: 10) {
+                        Text(DailySummaryText.title(category))
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: Binding(
+                            get: { coach.shareCategories.contains(category.id) },
+                            set: { on in
+                                if on { coach.shareCategories.insert(category.id) }
+                                else { coach.shareCategories.remove(category.id) }
+                            }))
+                            .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                            .accessibilityLabel(DailySummaryText.title(category))
+                    }
+                }
             }
         }
     }

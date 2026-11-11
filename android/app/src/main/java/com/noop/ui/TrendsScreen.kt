@@ -380,7 +380,7 @@ private fun WeeklyDigestNav(
     val factor = effortDisplayFactor(UnitPrefs.effortScale(context))
     val inputs = rememberWeeklyDigestInputs(days, anchorDay)
     val digest = remember(days, anchorDay, factor, inputs) {
-        buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch)
+        buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch, inputs.snapshotValues)
     }
     // "Share recap" capture: track the card's on-screen bounds, then draw the Compose host view + crop
     // (RecapShare.captureCropped) — the Compose-1.7 GraphicsLayer capture API isn't in this 1.6.8 build.

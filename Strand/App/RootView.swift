@@ -17,6 +17,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
     case workouts = "Workouts"
     case health = "Health"
     case labBook = "Lab Book"
+    case dailySummary = "Daily summary"
     case rhythm = "Rhythm"
     case appleHealth = "Apple Health"
     case xiaomi = "Mi Band"
@@ -53,6 +54,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
         case .workouts: return "Workouts"
         case .health: return "Health"
         case .labBook: return "Lab Book"
+        case .dailySummary: return "Daily summary"
         case .rhythm: return "Rhythm"
         case .appleHealth: return "Apple Health"
         case .xiaomi: return "Mi Band"
@@ -96,6 +98,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
         case .workouts: return String(localized: "Workouts")
         case .health: return String(localized: "Health")
         case .labBook: return String(localized: "Lab Book")
+        case .dailySummary: return String(localized: "Daily summary")
         case .rhythm: return String(localized: "Rhythm")
         case .appleHealth: return String(localized: "Apple Health")
         case .xiaomi: return String(localized: "Mi Band")
@@ -131,6 +134,7 @@ enum NavItem: String, CaseIterable, Identifiable, Hashable {
         case .workouts: return "figure.run"
         case .health: return "heart.text.square.fill"
         case .labBook: return "books.vertical.fill"
+        case .dailySummary: return "list.bullet.rectangle.portrait"
         case .rhythm: return "waveform.path"
         case .appleHealth: return "heart.fill"
         case .xiaomi: return "figure.walk.motion"
@@ -175,7 +179,7 @@ struct NavGroup: Identifiable {
         // all collapse under this single Insights group rather than scattering across the flat list.
         NavGroup(title: "Insights", id: "insights", items: [
             .intelligence, .insightsHub, .coach, .explore, .compare, .insights,
-            .labBook, .rhythm, .trends,
+            .dailySummary, .labBook, .rhythm, .trends,
         ]),
         NavGroup(title: "Data & App", id: "data_app", items: [
             .devices, .noopLimitations, .dataSources, .appleHealth, .xiaomi, .backupSync, .fusedRecord,
@@ -332,6 +336,7 @@ struct RootView: View {
             // stays in exactly one place.
             case .coach: selection = .coach
             case .alarms: selection = .smartAlarm
+            case .dailySummary: selection = .dailySummary
             case nil: break
             }
             if dest != nil { router.requestedDestination = nil }
@@ -444,6 +449,7 @@ struct RootView: View {
         case .workouts: WorkoutsView()
         case .health: HealthView()
         case .labBook: LabBookView()
+        case .dailySummary: DailySummaryView()
         case .rhythm: RhythmHost()
         case .appleHealth: AppleHealthView()
         case .xiaomi: XiaomiBandView()

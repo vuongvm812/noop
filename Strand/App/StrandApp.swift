@@ -26,6 +26,7 @@ struct StrandApp: App {
         let router = NavRouter()
         _router = StateObject(wrappedValue: router)
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
+        NotificationPresenter.shared.onDailySummaryTapped = { [weak router] day in router?.openDailySummary(day: day) }
         // #91: the weekly summary opens Trends, where the week's digest lives.
         NotificationPresenter.shared.onWeeklySummaryTapped = { [weak router] in router?.openTrends() }
     }

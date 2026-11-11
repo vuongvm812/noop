@@ -163,7 +163,7 @@ class Whoop5RRSqliteTest {
                 "dayStreamFingerprint" -> query(DAY_STREAM_FINGERPRINT_SQL,
                     listOf("deviceId", "from", "to").zip(args.take(3)).toMap()) { it.getString(1) }.single()
                 "stepSamples", "ppgHrSamples", "spo2Samples",
-                "skinTempSamples", "respSamples", "sleepStateSamples", "events" -> emptyList<Any>()
+                "skinTempSamples", "respSamples", "sleepStateSamples", "events", "metricSeries" -> emptyList<Any>()
                 else -> error("Unimplemented DAO call: ${method.name}")
             }
         } as WhoopDao

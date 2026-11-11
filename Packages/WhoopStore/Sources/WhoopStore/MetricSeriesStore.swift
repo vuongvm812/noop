@@ -65,6 +65,20 @@ extension WhoopStore {
         }
     }
 
+    /// The newest point for one `key`, or nil when the key has none. A LIMIT-1 read served index-only by
+    /// idx_metricSeries_device_key_day. Kotlin twin: `WhoopDao.latestMetricSeriesRow`.
+    public func latestMetricPoint(deviceId: String, key: String) async throws -> MetricPoint? {
+        try syncRead { db in
+            try Row.fetchOne(db, sql: """
+                SELECT day, key, value FROM metricSeries
+                WHERE deviceId = ? AND key = ?
+                ORDER BY day DESC
+                LIMIT 1
+                """, arguments: [deviceId, key])
+                .map { MetricPoint(day: $0["day"], key: $0["key"], value: $0["value"]) }
+        }
+    }
+
     /// Distinct metric keys present for a device, sorted ascending.
     public func metricKeys(deviceId: String) async throws -> [String] {
         try syncRead { db in

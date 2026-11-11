@@ -174,7 +174,8 @@ object ScheduledReportNotifier {
         runCatching {
             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
             ensureChannel(context)
-            post(context, MORNING_NOTIF_ID, copy.first, copy.second)
+            // The tap opens the Daily summary on the recap's day (every metric for it); the text stays one line.
+            post(context, MORNING_NOTIF_ID, copy.first, copy.second, route = NotificationRoute.DAILY_SUMMARY, day = reportDay)
             // Mark fired only after a successful post, so a notifications-disabled night still notifies
             // once they're re-enabled while the same night's row is showing.
             NoopPrefs.setReportMorningDay(context, reportDay)
@@ -271,12 +272,18 @@ object ScheduledReportNotifier {
     }
 
     @SuppressLint("MissingPermission")
-    private fun post(context: Context, id: Int, title: String, body: String, route: String? = null) {
+    private fun post(
+        context: Context, id: Int, title: String, body: String, route: String? = null, day: String? = null,
+    ) {
         // A routed tap gets its own request code, so FLAG_UPDATE_CURRENT can't swap its extra onto
         // (or off) the plain open-app intent the other reports share.
         val openApp = PendingIntent.getActivity(
             context, if (route == null) 3 else id,
-            if (route == null) appLaunchIntent(context) else appLaunchIntent(context, route),
+            when {
+                route == null -> appLaunchIntent(context)
+                day != null -> appLaunchIntent(context, route).putExtra(NotificationRoute.EXTRA_DAY, day)
+                else -> appLaunchIntent(context, route)
+            },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = NotificationCompat.Builder(context, CHANNEL_ID)

@@ -1312,6 +1312,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     NoopPrefs.setTsHealPending(appContext, false)
                 }
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            // One-shot daily Fitness Age / Vitality rebuild: recompute the whole history at daily resolution
+            // from stored data and drop the old Saturday-only points it replaces. Flagged only after the
+            // replacement landed; a failure or empty history retries next launch.
+            runCatching {
+                if (!NoopPrefs.fitnessVitalityDailyDone(appContext) &&
+                    IntelligenceEngine.rebuildDailyFitnessVitalityHistory(repository, currentProfile(), deviceId)
+                ) NoopPrefs.setFitnessVitalityDailyDone(appContext)
+            }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
             // One-shot shared Effort and sleep-wear repair: recompute strain from source across the FULL
             // history and replay pre-fix sleep once. Either pending flag triggers one pass; both flags
             // are set only after persistence returns. Cached-only days are preserved, changing Effort's

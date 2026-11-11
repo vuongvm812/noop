@@ -88,8 +88,11 @@ fun buildWeeklyDigest(
     restByDay: Map<String, Double> = emptyMap(),
     // #89: the paired watch's series (stress, Body Battery, training load…); empty for a strap-only user.
     watch: WeeklyDigestWatchSeries = WeeklyDigestWatchSeries.EMPTY,
+    // The metrics beyond the original set (body composition, workouts, nutrition…), by snapshot item id.
+    snapshotValues: Map<String, Map<String, Double>> = emptyMap(),
 ): WeeklyDigest = WeeklyDigestEngine.build(
-    byMetric = WeeklyDigestInputs.series(days.map { WeeklyDigestLoader.digestDay(it, restByDay) }, watch),
+    byMetric = WeeklyDigestInputs.snapshotSeries(snapshotValues) +
+        WeeklyDigestInputs.series(days.map { WeeklyDigestLoader.digestDay(it, restByDay) }, watch),
     anchorDay = anchorDay,
     effortDisplayFactor = effortDisplayFactor,
 )
@@ -120,7 +123,7 @@ fun WeeklyDigestCard(vm: AppViewModel, modifier: Modifier = Modifier) {
     val factor = effortDisplayFactor(UnitPrefs.effortScale(LocalContext.current))
     val anchorDay = logicalDayKeyNow()
     val inputs = rememberWeeklyDigestInputs(days, anchorDay)
-    val digest = buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch)
+    val digest = buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch, inputs.snapshotValues)
     if (digest.isEmpty) return
     NoopCard(modifier = modifier) {
         WeeklyDigestContent(digest = digest, compact = true)
@@ -137,7 +140,7 @@ fun WeeklyDigestScreen(vm: AppViewModel) {
     val anchorDay = logicalDayKeyNow()
     val inputs = rememberWeeklyDigestInputs(days, anchorDay)
     ScreenScaffold(title = uiString(R.string.l10n_weekly_digest_card_week_in_review_66d95a07), subtitle = uiString(R.string.l10n_weekly_digest_card_your_monday_to_sunday_read_in_c475888a)) {
-        val digest = buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch)
+        val digest = buildWeeklyDigest(days, anchorDay, factor, inputs.restByDay, inputs.watch, inputs.snapshotValues)
         if (digest.isEmpty) {
             DataPendingNote(
                 title = uiString(R.string.l10n_weekly_digest_card_no_readings_this_week_yet_0745a2df),
@@ -251,10 +254,11 @@ private fun FocalRow(line: String) {
 
 @Composable
 private fun MetricRow(s: WeeklyMetricSummary, effortScale: EffortScale) {
+    val system = UnitPrefs.system(LocalContext.current)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) { contentDescription = rowAccessibility(s, effortScale) },
+            .semantics(mergeDescendants = true) { contentDescription = rowAccessibility(s, effortScale, system) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -265,7 +269,7 @@ private fun MetricRow(s: WeeklyMetricSummary, effortScale: EffortScale) {
             modifier = Modifier.width(92.dp),
         )
         Text(
-            meanText(s, effortScale),
+            meanText(s, effortScale, system),
             style = NoopType.bodyNumber,
             color = Palette.textPrimary,
             // 84 (was 64) so the Effort scale read-out ("21.6 / 100") fits on one line.
@@ -338,7 +342,7 @@ private fun DeltaChip(s: WeeklyMetricSummary) {
             .clearAndSetSemantics { },
     ) {
         Icon(arrow, contentDescription = null, tint = tone, modifier = Modifier.size(10.dp))
-        Text(deltaText(s), style = NoopType.captionNumber, color = tone)
+        Text(deltaText(s, UnitPrefs.system(LocalContext.current)), style = NoopType.captionNumber, color = tone)
     }
 }
 
@@ -354,7 +358,7 @@ private fun shortDate(ymd: String): String {
     return "$name ${p[2]}"
 }
 
-internal fun meanText(s: WeeklyMetricSummary, effortScale: EffortScale): String {
+internal fun meanText(s: WeeklyMetricSummary, effortScale: EffortScale, system: UnitSystem = UnitSystem.METRIC): String {
     if (s.thisWeek.n == 0) return "—"
     // #463: Effort is STORED 0-100; render it on the user's chosen display scale WITH the denominator
     // ("4.6 / 21", "21.6 / 100") so the card can't read as a different number than the Trends chart.
@@ -362,7 +366,7 @@ internal fun meanText(s: WeeklyMetricSummary, effortScale: EffortScale): String 
         return "${UnitFormatter.effortDisplay(s.thisWeek.mean, effortScale)} / " +
             UnitFormatter.effortScaleMax(effortScale)
     }
-    if (s.metric !in HEADLINE_METRICS) return valueText(s)
+    if (s.metric !in HEADLINE_METRICS) return valueText(s, system)
     val v = s.thisWeek.mean.roundToInt()
     return if (s.metric.unit.isEmpty()) "$v" else "$v ${s.metric.unit}"
 }
@@ -375,13 +379,16 @@ private val HEADLINE_METRICS = WeeklyMetric.values().take(5).toSet()
  * roll-up, with its unit (#90). Units that read the same in every language stay verbatim.
  * Mirrors Swift `WeeklyDigestValueText.value`.
  */
-internal fun valueText(s: WeeklyMetricSummary): String {
+internal fun valueText(s: WeeklyMetricSummary, system: UnitSystem = UnitSystem.METRIC): String {
     if (!s.hasData) return "—"
     val spec = s.metric.spec
     val n = digestNumber(s.thisValue, spec.decimals)
     return when (s.metric) {
         WeeklyMetric.SLEEP_DURATION -> uiString(R.string.weekly_digest_value_hours, n)
-        WeeklyMetric.INTENSITY_MINUTES, WeeklyMetric.DEEP_SLEEP, WeeklyMetric.REM_SLEEP ->
+        // Body mass is stored in kg and shown on the user's unit system.
+        WeeklyMetric.WEIGHT, WeeklyMetric.LEAN_MASS -> UnitFormatter.massFromKilograms(s.thisValue, system)
+        WeeklyMetric.INTENSITY_MINUTES, WeeklyMetric.DEEP_SLEEP, WeeklyMetric.REM_SLEEP,
+        WeeklyMetric.LIGHT_SLEEP, WeeklyMetric.SLEEP_NEED, WeeklyMetric.SLEEP_DEBT, WeeklyMetric.WORKOUT_MINUTES ->
             uiString(R.string.weekly_digest_value_minutes, s.thisValue.roundToInt())
         WeeklyMetric.SKIN_TEMP_DEVIATION -> "${if (s.thisValue > 0) "+" else ""}$n °C"
         else -> if (spec.unit.isEmpty() || spec.unit == "steps") n else "$n ${spec.unit}"
@@ -392,10 +399,15 @@ internal fun valueText(s: WeeklyMetricSummary): String {
 internal fun digestNumber(x: Double, decimals: Int): String =
     if (decimals == 0) "${x.roundToInt()}" else String.format(java.util.Locale.ROOT, "%.1f", x)
 
-internal fun deltaText(s: WeeklyMetricSummary): String {
+internal fun deltaText(s: WeeklyMetricSummary, system: UnitSystem = UnitSystem.METRIC): String {
     if (s.weekOverWeek.current.n == 0 || s.weekOverWeek.previous.n == 0) return "new"
     // A metric already in % or a ±deviation reads its change in its own units (#90).
-    if (!s.metric.spec.percentChange) return digestNumber(abs(s.wowDelta), 1)
+    if (!s.metric.spec.percentChange) {
+        // A mass change converts by the plain factor (no offset), like the weight tile's delta.
+        val mass = s.metric == WeeklyMetric.WEIGHT || s.metric == WeeklyMetric.LEAN_MASS
+        val d = if (mass && system == UnitSystem.IMPERIAL) UnitFormatter.kgToPounds(abs(s.wowDelta)) else abs(s.wowDelta)
+        return digestNumber(d, 1)
+    }
     val pct = s.weekOverWeek.pctChange
     // Sub-1% (or unpercentable) moves read "<1%", matching Swift. The old fallback printed the raw
     // points delta: a bare "0.1", and for Effort a stored 0-100 figure the scale toggle never saw.
@@ -438,6 +450,8 @@ internal fun WeeklyMetric.labelRes(): Int = when (this) {
     WeeklyMetric.BODY_BATTERY_RECHARGE -> R.string.weekly_digest_metric_body_battery_recharge
     WeeklyMetric.TRAINING_LOAD -> R.string.weekly_digest_metric_training_load
     WeeklyMetric.VO2MAX -> R.string.weekly_digest_metric_vo2max
+    // Every other metric reads the same label as its Daily summary row.
+    else -> snapshotItemLabelRes(snapshotId ?: "")
 }
 
 /** The localized heading for a card section. */
@@ -448,10 +462,16 @@ private fun WeeklyDigestSection.titleRes(): Int = when (this) {
     WeeklyDigestSection.OVERNIGHT_VITALS -> R.string.weekly_digest_section_overnight_vitals
     WeeklyDigestSection.STRESS_ENERGY -> R.string.weekly_digest_section_stress_energy
     WeeklyDigestSection.TRAINING -> R.string.weekly_digest_section_training
+    WeeklyDigestSection.HEART -> R.string.weekly_digest_section_heart
+    WeeklyDigestSection.WORKOUTS -> R.string.weekly_digest_section_workouts
+    WeeklyDigestSection.BODY_COMPOSITION -> R.string.weekly_digest_section_body_composition
+    WeeklyDigestSection.FITNESS_SCORES -> R.string.weekly_digest_section_fitness_scores
+    WeeklyDigestSection.NUTRITION -> R.string.weekly_digest_section_nutrition
+    WeeklyDigestSection.MIND -> R.string.weekly_digest_section_mind
 }
 
-private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale): String {
-    val mean = meanText(s, effortScale)
+private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale, system: UnitSystem): String {
+    val mean = meanText(s, effortScale, system)
     if (s.weekOverWeek.current.n == 0 || s.weekOverWeek.previous.n == 0) {
         return "${s.metric.label}: $mean this week, no comparison."
     }
@@ -463,7 +483,7 @@ private fun rowAccessibility(s: WeeklyMetricSummary, effortScale: EffortScale): 
         s.wowGoodness == -1 -> ", worth a look"
         else -> ""
     }
-    return "${s.metric.label}: $mean this week, $dir ${deltaText(s)} week over week$frame."
+    return "${s.metric.label}: $mean this week, $dir ${deltaText(s, system)} week over week$frame."
 }
 
 private fun fmt1(x: Double): String = ((x * 10).roundToInt() / 10.0).toString()

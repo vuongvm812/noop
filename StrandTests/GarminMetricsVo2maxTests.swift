@@ -80,7 +80,7 @@ final class GarminMetricsVo2maxTests: XCTestCase {
         let points = try await store.metricSeries(deviceId: watch, key: "vo2max", from: day, to: day)
         lines.append("stored vo2max " + points.map { String($0.value) }.joined(separator: ","))
 
-        // The weekly recompute, from an engine on the canonical id as the app builds it.
+        // Today's recompute, from an engine on the canonical id as the app builds it.
         let repo = Repository(deviceId: "my-whoop")
         repo.setStoreForTesting(store)
         let engine = IntelligenceEngine(repo: repo, profile: ProfileStore(), deviceId: "my-whoop")
@@ -91,7 +91,7 @@ final class GarminMetricsVo2maxTests: XCTestCase {
         let resolution = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
         let card = try XCTUnwrap(resolution.points.last)
         XCTAssertEqual(tile?.value, card.value, "the tile and the card read one value")
-        XCTAssertEqual(card.day, IntelligenceEngine.saturdayKey(onOrBefore: Repository.localDayKey(Date())))
+        XCTAssertEqual(card.day, Repository.localDayKey(Date()))
         let tag = await repo.scoreProvenanceTag(resolvedSource: card.source, day: card.day, metricKey: "vo2max_est")
         lines.append("vo2max_est \(card.value) \(tag ?? "nil")")
 
