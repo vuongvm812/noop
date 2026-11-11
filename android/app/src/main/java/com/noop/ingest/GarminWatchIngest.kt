@@ -28,6 +28,8 @@ object GarminWatchIngest {
     const val SOURCE_SLEEP_SCORE = "fit346"
     const val SOURCE_INTENSITY = "fit55"
     const val SOURCE_SESSION = "fit18"
+    /** `source` of the per-record power, cadence and altitude rows (FIT record message). */
+    const val SOURCE_RECORD = "fit-record"
 
     /**
      * The watch's own reference values for one decoded activity (Training Effect and training load from the
@@ -42,6 +44,21 @@ object GarminWatchIngest {
         ).mapNotNull { (kind, value) ->
             value?.takeIf { it.isFinite() }?.let { DeviceMetricRow(a.startTs, kind, it, SOURCE_SESSION) }
         }
+
+    /**
+     * The per-record power, cadence and altitude of one decoded activity as `deviceMetricSample` rows under the
+     * sample's own timestamp. Values the watch did not provide are absent, so a missing series stays empty and
+     * the workout detail hides it. Swift twin: `GarminWatchIngest.activityTrackMetrics`.
+     */
+    fun activityTrackMetrics(a: ActivityFileImporter.Activity): List<DeviceMetricRow> {
+        val rows = ArrayList<DeviceMetricRow>(a.trackMetrics.size * 2)
+        for (m in a.trackMetrics) {
+            m.cadence?.takeIf { it.isFinite() }?.let { rows.add(DeviceMetricRow(m.ts, DeviceMetricKind.CADENCE, it, SOURCE_RECORD)) }
+            m.powerW?.let { rows.add(DeviceMetricRow(m.ts, DeviceMetricKind.POWER_W, it.toDouble(), SOURCE_RECORD)) }
+            m.altitudeM?.takeIf { it.isFinite() }?.let { rows.add(DeviceMetricRow(m.ts, DeviceMetricKind.ALTITUDE_M, it, SOURCE_RECORD)) }
+        }
+        return rows
+    }
 
     /** Heart rates outside this range are sensor sentinels (0, 255), not beats. */
     private val HR_RANGE = 25..240

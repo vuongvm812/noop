@@ -362,6 +362,15 @@ interface WhoopDao : DeviceRegistryDao {
     @Upsert
     suspend fun upsertDeviceMetric(rows: List<DeviceMetricSampleEntity>)
 
+    /** The mean of one watch-computed series per [bucketSeconds] bucket, oldest first (workout detail graphs).
+     *  Swift twin: `WhoopStore.deviceMetricBuckets`. */
+    @Query(
+        "SELECT (ts / :bucketSeconds) * :bucketSeconds AS bucket, AVG(value) AS value FROM deviceMetricSample " +
+            "WHERE deviceId = :deviceId AND kind = :kind AND ts >= :from AND ts <= :to " +
+            "GROUP BY ts / :bucketSeconds ORDER BY bucket ASC",
+    )
+    suspend fun deviceMetricBuckets(deviceId: String, kind: String, from: Long, to: Long, bucketSeconds: Long): List<MetricBucket>
+
     /**
      * One watch-computed series for a device over [from, to] (inclusive, unix seconds), oldest first. The
      * analytics pass reads them through [WhoopRepository.deviceMetricSamples] (Garmin child 9).

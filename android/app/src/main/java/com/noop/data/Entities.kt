@@ -92,6 +92,13 @@ data class HrBucket(
     val maxBpm: Double,
 )
 
+/** One downsampled point of a `deviceMetricSample` series: the bucket's start (unix seconds) and the mean
+ *  value over it. Query result of [WhoopDao.deviceMetricBuckets], not a table. The Swift counterpart is `MetricBucket` in Reads.swift. */
+data class MetricBucket(
+    val bucket: Long,
+    val value: Double,
+)
+
 /** The per-day gravity witness the steps-calibration motion cache keys on: [c] rows in the window and
  *  [m] the newest timestamp among them. Query result of [WhoopDao.gravityWitnessInWindow], not a table.
  *  Both columns come from ONE aggregate so the pair always describes a state the day was actually in;

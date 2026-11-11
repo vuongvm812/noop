@@ -31,6 +31,8 @@ public enum GarminWatchIngest {
     static let sourceSleepScore = "fit346"
     static let sourceIntensity = "fit55"
     static let sourceSession = "fit18"
+    /// `source` of the per-record power, cadence and altitude rows (FIT record message).
+    static let sourceRecord = "fit-record"
 
     /// Heart rates outside this range are sensor sentinels (0, 255), not beats.
     static let hrRange = 25...240
@@ -173,6 +175,20 @@ public enum GarminWatchIngest {
             guard let value, value.isFinite else { return nil }
             return DeviceMetricSample(ts: ts, kind: kind, value: value, source: sourceSession)
         }
+    }
+
+    /// The per-record power, cadence and altitude of one decoded activity as `deviceMetricSample` rows under the
+    /// sample's own timestamp. Values the watch did not provide are absent, so a missing series stays empty and
+    /// the workout detail hides it. Kotlin twin: `GarminWatchIngest.activityTrackMetrics`.
+    public static func activityTrackMetrics(_ a: ActivityFile) -> [DeviceMetricSample] {
+        var rows: [DeviceMetricSample] = []
+        rows.reserveCapacity(a.trackMetrics.count * 2)
+        for m in a.trackMetrics {
+            if let c = m.cadence, c.isFinite { rows.append(.init(ts: m.ts, kind: .cadence, value: c, source: sourceRecord)) }
+            if let p = m.powerW { rows.append(.init(ts: m.ts, kind: .powerW, value: Double(p), source: sourceRecord)) }
+            if let a = m.altitudeM, a.isFinite { rows.append(.init(ts: m.ts, kind: .altitudeM, value: a, source: sourceRecord)) }
+        }
+        return rows
     }
 
     /// Asleep share of the time in bed (asleep + awake) as a 0-1 FRACTION, the unit every other writer of

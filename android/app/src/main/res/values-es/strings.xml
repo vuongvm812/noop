@@ -4890,4 +4890,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s en la cama · %2$s de eficiencia · fases del reloj %3$s</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s en la cama · %2$s de eficiencia · fases aproximadas (en el dispositivo)</string>
     <string name="l10n_insights_screen_no_816c52fd">Ninguna</string>
+    <string name="workout_detail_avg_power">Potencia media</string>
+    <string name="workout_detail_avg_cadence">Cadencia media</string>
+    <string name="workout_detail_power">Potencia</string>
+    <string name="workout_detail_cadence">Cadencia</string>
+    <string name="workout_detail_elevation">Elevación</string>
+    <string name="workout_detail_gain">Desnivel positivo</string>
+    <string name="workout_detail_high">Alto</string>
 </resources>

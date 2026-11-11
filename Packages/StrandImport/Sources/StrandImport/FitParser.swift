@@ -96,6 +96,8 @@ private struct FitDecoder {
     private var sessionAerobicTE: Double?
     private var sessionAnaerobicTE: Double?
     private var sessionTrainingLoad: Double?
+    private var sessionAvgPower: Int?
+    private var sessionAvgCadence: Double?
 
     private var lapDistanceSum = 0.0
     private var lapCalorieSum = 0.0
@@ -138,6 +140,10 @@ private struct FitDecoder {
         var ele: Double?
         var hr: Int?
         var time: Date?
+        var enhancedEle: Double?
+        var cadence: UInt64?
+        var fraction = 0.0
+        var power: Int?
 
         for f in def.fields {
             switch f.num {
@@ -154,8 +160,24 @@ private struct FitDecoder {
                     lon = semicircles(v)
                 }
             case 2:   // altitude (u16, scale 5, offset 500 → metres = v/5 - 500)
-                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), v != 0xFFFF {
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size) {
                     ele = Double(v) / 5.0 - 500.0
+                }
+            case 78:  // enhanced_altitude (u32, same scale): modern watches write only this; it wins over field 2
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size) {
+                    enhancedEle = Double(v) / 5.0 - 500.0
+                }
+            case 4:   // cadence (u8 cycles/min; strides/min when running)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size) {
+                    cadence = v
+                }
+            case 53:  // fractional_cadence (u8, scale 128)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size) {
+                    fraction = Double(v) / 128.0
+                }
+            case 7:   // power (u16 watts)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size) {
+                    power = Int(v)
                 }
             case 3:   // heart_rate (u8 bpm)
                 if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
@@ -175,7 +197,8 @@ private struct FitDecoder {
         if samples.count >= ActivityFileImporter.maxPoints { return }
         if point != nil { gpsPointCount += 1 }
         if hr != nil { hrSampleCount += 1 }
-        samples.append(.init(time: time, point: point, elevationM: ele, hr: hr))
+        samples.append(.init(time: time, point: point, elevationM: enhancedEle ?? ele, hr: hr,
+                             cadenceCycles: cadence.map { Double($0) + fraction }, powerW: power))
     }
 
     /// lap (19): fold per-lap summary totals.
@@ -249,6 +272,14 @@ private struct FitDecoder {
                 if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
                     sessionMaxHr = ActivityFileImporter.validHr(Double(v))
                 }
+            case 18: // avg_cadence (u8 cycles/min; strides/min when running)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size), v > 0 {
+                    sessionAvgCadence = Double(v)
+                }
+            case 20: // avg_power (u16 watts)
+                if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian), !Self.isInvalid(v, size: f.size), v > 0 {
+                    sessionAvgPower = Int(v)
+                }
             case 24: // total_training_effect (u8, scale 10)
                 if let v = uintField(at: offset, size: f.size, bigEndian: def.bigEndian) {
                     sessionAerobicTE = Self.trainingEffect(v, size: f.size)
@@ -266,6 +297,12 @@ private struct FitDecoder {
             }
             offset += f.size
         }
+    }
+
+    /// True when `v` is the all-ones "invalid" sentinel for an unsigned field of `size` bytes.
+    /// Kotlin twin: `FitDecoder.isInvalid`.
+    private static func isInvalid(_ v: UInt64, size: Int) -> Bool {
+        (1...4).contains(size) && v == (UInt64(1) << UInt64(size * 8)) - 1
     }
 
     // MARK: - Field readers (bounds-checked)
@@ -362,6 +399,8 @@ private struct FitDecoder {
         let ascent = sessionAscent
             ?? (lapAscentSum > 0 ? lapAscentSum : ActivityFileImporter.ascentM(from: samples))
 
+        let cadenceFactor = Self.isFootSport(sessionSport) ? 2.0 : 1.0
+
         let sampledHrs = samples.compactMap { $0.hr }
         let avgHr = sessionAvgHr
             ?? (sampledHrs.isEmpty ? nil : Int((Double(sampledHrs.reduce(0, +)) / Double(sampledHrs.count)).rounded()))
@@ -396,7 +435,10 @@ private struct FitDecoder {
             hrSamples: ActivityFileImporter.hrSamples(from: samples),
             aerobicTrainingEffect: sessionAerobicTE,
             anaerobicTrainingEffect: sessionAnaerobicTE,
-            trainingLoad: sessionTrainingLoad
+            trainingLoad: sessionTrainingLoad,
+            avgPowerW: sessionAvgPower,
+            avgCadence: sessionAvgCadence.map { $0 * cadenceFactor },
+            trackMetrics: ActivityFileImporter.trackMetrics(from: samples, cadenceFactor: cadenceFactor)
         )
         return ActivityFileImportResult(activity: activity, kind: .fit, skipped: skipped)
     }

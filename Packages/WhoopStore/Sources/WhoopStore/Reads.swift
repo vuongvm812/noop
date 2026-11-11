@@ -3,6 +3,14 @@ import Foundation
 import GRDB
 import WhoopProtocol
 
+/// One downsampled point of a `deviceMetricSample` series: the bucket's start and the mean value over it.
+/// The Android counterpart is `MetricBucket` in Entities.kt.
+public struct MetricBucket: Sendable, Equatable {
+    public let ts: Int
+    public let value: Double
+    public init(ts: Int, value: Double) { self.ts = ts; self.value = value }
+}
+
 /// One downsampled heart-rate point: the bucket's start (unix seconds) and the mean bpm over it.
 /// Returned by the `GROUP BY ts/bucket` aggregate so a day chart plots ~N-minute means instead of
 /// loading the raw ~1 Hz rows (a fully-worn 24h is ~86k samples).
@@ -406,6 +414,42 @@ extension WhoopStore {
                 .map { HRBucket(ts: $0["bucket"], bpm: $0["avgBpm"],
                                 minBpm: $0["minBpm"], maxBpm: $0["maxBpm"],
                                 conf: $0["minConf"] ?? 1.0) }
+        }
+    }
+
+    /// The detail graphs' bucket width for a workout of `spanSeconds`: ~120 buckets, floored at 15 s and
+    /// capped at 300 s (the HR curve's rule). Kotlin twin: `WhoopRepository.workoutBucketSeconds`.
+    public static func workoutBucketSeconds(spanSeconds: Int) -> Int { max(15, min(300, spanSeconds / 120)) }
+
+    /// One workout's `kind` series (power, cadence, altitude) averaged per bucket over [startTs, endTs], for
+    /// the detail graphs. `deviceIds` is the order of precedence the HR read resolves for the same row; an
+    /// earlier id wins a bucket start. Empty when no row exists, so the caller hides the section.
+    /// Kotlin twin: `WhoopRepository.workoutMetricBuckets`.
+    public func workoutMetricBuckets(deviceIds: [String], kind: DeviceMetricKind, startTs: Int,
+                                     endTs: Int) async throws -> [MetricBucket] {
+        guard endTs > startTs else { return [] }
+        let bucket = Self.workoutBucketSeconds(spanSeconds: endTs - startTs)
+        var byStart: [Int: MetricBucket] = [:]
+        for id in deviceIds {
+            let rows = try await deviceMetricBuckets(deviceId: id, kind: kind, from: startTs, to: endTs,
+                                                     bucketSeconds: bucket)
+            for b in rows where byStart[b.ts] == nil { byStart[b.ts] = b }
+        }
+        return byStart.values.sorted { $0.ts < $1.ts }
+    }
+
+    /// The mean of one watch-computed series per `bucketSeconds` bucket, oldest first (workout detail graphs).
+    /// Kotlin twin: `WhoopDao.deviceMetricBuckets`.
+    public func deviceMetricBuckets(deviceId: String, kind: DeviceMetricKind, from: Int, to: Int,
+                                    bucketSeconds: Int) async throws -> [MetricBucket] {
+        let bucket = max(1, bucketSeconds)
+        return try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT (ts / ?) * ? AS bucket, AVG(value) AS value FROM deviceMetricSample
+                WHERE deviceId = ? AND kind = ? AND ts >= ? AND ts <= ?
+                GROUP BY ts / ? ORDER BY bucket ASC
+                """, arguments: [bucket, bucket, deviceId, kind.rawValue, from, to, bucket])
+                .map { MetricBucket(ts: $0["bucket"], value: $0["value"]) }
         }
     }
 

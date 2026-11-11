@@ -2,6 +2,9 @@ package com.noop.ui
 
 import com.noop.R
 import com.noop.data.HrBucket
+import com.noop.data.DeviceMetricKind
+import com.noop.data.MetricBucket
+import com.noop.analytics.WorkoutMetricStats
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -1600,6 +1603,46 @@ private fun SessionRow(
     }
 }
 
+/** One watch-recorded series (power, cadence, elevation) charted like the HR curve, with its stat footer. */
+@Composable
+private fun WorkoutMetricChart(
+    title: String,
+    unit: String,
+    buckets: List<MetricBucket>,
+    color: Color,
+    footer: List<Pair<String, String>>,
+) {
+    val values = remember(buckets) { buckets.map { it.value } }
+    val times = remember(buckets) { buckets.map { it.bucket } }
+    CardDivider()
+    Overline(title)
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            modifier = Modifier.width(Metrics.chartAxisLabelWidth).height(Metrics.compactChartHeight),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.End,
+        ) {
+            Text(values.max().roundToInt().toString(), style = NoopType.footnote, color = Palette.textTertiary)
+            Text(unit, style = NoopType.footnote, color = Palette.textSecondary)
+            Text(values.min().roundToInt().toString(), style = NoopType.footnote, color = Palette.textTertiary)
+        }
+        Spacer(Modifier.width(Metrics.space6))
+        LineChart(
+            values = values,
+            modifier = Modifier.weight(1f).height(Metrics.compactChartHeight),
+            color = color,
+            fill = true,
+            selectionEnabled = true,
+            selectionLabelTextSize = NoopType.body.fontSize,
+            timestamps = times,
+            formatValue = { "${it.roundToInt()} $unit" },
+        )
+    }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Metrics.space12)) {
+        footer.forEach { (label, value) -> MiniStat(label, value, Modifier.weight(1f)) }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: () -> Unit) {
@@ -1619,8 +1662,15 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
     // Steps for an on-foot sport (#398): the strap's own counter over the window, computed at display time
     // so it "fills in after sync". null for non-foot sports or when no strap counter covers the window.
     var steps by remember(row.startTs) { mutableStateOf<Int?>(null) }
+    // Power / cadence / elevation the watch recorded per sample; empty (so the section stays hidden) when it gave none.
+    var powerCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
+    var cadenceCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
+    var elevationCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
     LaunchedEffect(row.startTs, row.endTs) {
         hrCurve = vm.workoutHrBuckets(row.startTs, row.endTs, row.source, row.deviceId)
+        powerCurve = vm.workoutMetricBuckets(DeviceMetricKind.POWER_W, row.startTs, row.endTs, row.source, row.deviceId)
+        cadenceCurve = vm.workoutMetricBuckets(DeviceMetricKind.CADENCE, row.startTs, row.endTs, row.source, row.deviceId)
+        elevationCurve = vm.workoutMetricBuckets(DeviceMetricKind.ALTITUDE_M, row.startTs, row.endTs, row.source, row.deviceId)
         steps = if (WorkoutSport.isOnFoot(row.sport)) vm.workoutSteps(row.startTs, row.endTs) else null
         val imported = parseZonePercents(row.zonesJSON)
         if (imported != null) {
@@ -1677,6 +1727,13 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
                 DetailRow(uiString(R.string.l10n_live_screen_distance_42320809), UnitFormatter.distanceFromKilometers(row.distanceM / 1000.0, unitSystem))
             }
             steps?.let { DetailRow(uiString(R.string.l10n_health_screen_steps_cdde4f20), uiString(R.string.l10n_workouts_screen_1_s_steps_e38738c4, grouped(it.toDouble()))) }  // #398, on-foot sports
+            val cadenceUnit = if (WorkoutSport.isOnFoot(row.sport)) "spm" else "rpm"
+            WorkoutMetricStats.averagePositive(powerCurve.map { it.value })?.let {
+                DetailRow(uiString(R.string.workout_detail_avg_power), "${it.roundToInt()} W")
+            }
+            WorkoutMetricStats.averagePositive(cadenceCurve.map { it.value })?.let {
+                DetailRow(uiString(R.string.workout_detail_avg_cadence), "${it.roundToInt()} $cadenceUnit")
+            }
             if (!row.notes.isNullOrBlank()) DetailRow(uiString(R.string.l10n_workouts_screen_notes_70440046), row.notes)
 
             // #796 - per-session Effort contribution. The session's captured strain re-homed from a plain
@@ -1769,6 +1826,44 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
                         color = Palette.textTertiary,
                     )
                 }
+            }
+
+            // Power, cadence and elevation under the HR curve; each only when the watch recorded the series.
+            if (powerCurve.size > 1) {
+                val values = remember(powerCurve) { powerCurve.map { it.value } }
+                val avg = WorkoutMetricStats.averagePositive(values)
+                WorkoutMetricChart(
+                    title = uiString(R.string.workout_detail_power), unit = "W", buckets = powerCurve,
+                    color = Palette.metricAmber,
+                    footer = listOf(
+                        uiString(R.string.trends_avg) to (avg?.let { "${it.roundToInt()} W" } ?: "–"),
+                        uiString(R.string.trends_max) to "${values.max().roundToInt()} W",
+                    ),
+                )
+            }
+            if (cadenceCurve.size > 1) {
+                val values = remember(cadenceCurve) { cadenceCurve.map { it.value } }
+                val avg = WorkoutMetricStats.averagePositive(values)
+                WorkoutMetricChart(
+                    title = uiString(R.string.workout_detail_cadence), unit = cadenceUnit, buckets = cadenceCurve,
+                    color = Palette.metricPurple,
+                    footer = listOf(
+                        uiString(R.string.trends_avg) to (avg?.let { "${it.roundToInt()} $cadenceUnit" } ?: "–"),
+                        uiString(R.string.trends_max) to "${values.max().roundToInt()} $cadenceUnit",
+                    ),
+                )
+            }
+            if (elevationCurve.size > 1) {
+                val values = remember(elevationCurve) { elevationCurve.map { it.value } }
+                WorkoutMetricChart(
+                    title = uiString(R.string.workout_detail_elevation), unit = "m", buckets = elevationCurve,
+                    color = Palette.metricCyan,
+                    footer = listOf(
+                        uiString(R.string.trends_low) to "${values.min().roundToInt()} m",
+                        uiString(R.string.workout_detail_high) to "${values.max().roundToInt()} m",
+                        uiString(R.string.workout_detail_gain) to "${WorkoutMetricStats.elevationGain(values).roundToInt()} m",
+                    ),
+                )
             }
 
             // HR-zone split — imported percentages when present, else derived from strap HR (#410).

@@ -128,6 +128,7 @@ final class GarminMetricStorageTests: XCTestCase {
             "stress", "body_battery", "respiration_bpm", "spo2_pct",
             "intensity_moderate_min", "intensity_vigorous_min", "active_kcal", "hrv_ms", "sleep_score",
             "aerobic_training_effect", "anaerobic_training_effect", "training_load",
+            "cadence", "power_w", "altitude_m",
         ])
     }
 

@@ -3,6 +3,7 @@ import StrandDesign
 import StrandAnalytics
 import StrandImport
 import WhoopStore
+import WhoopProtocol
 import Foundation
 #if canImport(MapKit)
 import MapKit
@@ -74,6 +75,12 @@ struct WorkoutDetailView: View {
     /// minutes). nil = the row's source stored none, which is every non-Garmin workout.
     @State private var watchReference: WorkoutWatchReference?
 
+    /// Power / cadence / elevation the watch recorded per sample, as bucket means. Empty (so the section
+    /// stays hidden) when the watch gave none.
+    @State private var powerBuckets: [MetricBucket] = []
+    @State private var cadenceBuckets: [MetricBucket] = []
+    @State private var elevationBuckets: [MetricBucket] = []
+
     var body: some View {
         ScreenScaffold(title: "\(WorkoutSource.displaySport(row.sport))",
                        subtitle: "\(dateLabel(row.startTs))",
@@ -91,6 +98,11 @@ struct WorkoutDetailView: View {
             statStrip
             routeCard
             hrCurveCard
+            metricCard(kind: .powerW, title: "POWER", unit: "W", buckets: powerBuckets, tint: StrandPalette.metricAmber)
+            metricCard(kind: .cadence, title: "CADENCE", unit: cadenceUnit, buckets: cadenceBuckets,
+                       tint: StrandPalette.metricPurple)
+            metricCard(kind: .altitudeM, title: "ELEVATION", unit: "m", buckets: elevationBuckets,
+                       tint: StrandPalette.metricCyan)
             zonesCard
             heartRateRecoveryCard
             watchReferenceCard
@@ -163,8 +175,14 @@ struct WorkoutDetailView: View {
         }
 
         let reference = await repo.workoutWatchReference(from: row.startTs, to: row.endTs, source: row.source)
+        let power = await repo.workoutMetricBuckets(kind: .powerW, from: row.startTs, to: row.endTs, source: row.source)
+        let cadence = await repo.workoutMetricBuckets(kind: .cadence, from: row.startTs, to: row.endTs, source: row.source)
+        let elevation = await repo.workoutMetricBuckets(kind: .altitudeM, from: row.startTs, to: row.endTs, source: row.source)
 
         await MainActor.run {
+            self.powerBuckets = power
+            self.cadenceBuckets = cadence
+            self.elevationBuckets = elevation
             self.watchReference = reference
             self.route = routePoints
             self.hrPoints = points
@@ -311,6 +329,14 @@ struct WorkoutDetailView: View {
                          caption: String(localized: "covered"),
                          accent: StrandPalette.metricCyan)
             }
+            if let avg = WorkoutMetricStats.averagePositive(powerBuckets.map(\.value)) {
+                StatTile(label: "Avg Power", value: "\(Int(avg.rounded()))", caption: "W",
+                         accent: StrandPalette.metricAmber)
+            }
+            if let avg = WorkoutMetricStats.averagePositive(cadenceBuckets.map(\.value)) {
+                StatTile(label: "Avg Cadence", value: "\(Int(avg.rounded()))", caption: cadenceUnit,
+                         accent: StrandPalette.metricPurple)
+            }
             // Steps for an on-foot sport (#398). Shown for the on-foot set even before the value lands, so
             // the tile doesn't pop in; "–" until a source has data. Caption is honest about the source.
             if WorkoutCatalog.isOnFoot(row.sport) {
@@ -445,6 +471,49 @@ struct WorkoutDetailView: View {
             return String(localized: "This stays on your device. It is never uploaded, never synced, never shared.")
         case .detected, .manual:
             return String(localized: "Your GPS route for this session, recorded and stored on your device. Nothing leaves your phone.")
+        }
+    }
+
+    // MARK: - Power / cadence / elevation
+
+    /// Cadence is steps per minute for on-foot sports and revolutions per minute otherwise.
+    private var cadenceUnit: String { WorkoutCatalog.isOnFoot(row.sport) ? "spm" : "rpm" }
+
+    /// One watch-recorded series charted like the HR curve, with its stat footer; absent when the series
+    /// has fewer than two points. Elevation shows Low / High / Gain, power and cadence Avg / Max.
+    @ViewBuilder private func metricCard(kind: DeviceMetricKind, title: LocalizedStringKey, unit: String,
+                                         buckets: [MetricBucket], tint: Color) -> some View {
+        if buckets.count > 1 {
+            let values = buckets.map(\.value)
+            let lo = values.min() ?? 0
+            let hi = values.max() ?? 0
+            let pad = max((hi - lo) * 0.08, 1)
+            let points = buckets.map { TrendPoint(date: Date(timeIntervalSince1970: TimeInterval($0.ts)), value: $0.value) }
+            ChartCard(title: title, tint: tint) {
+                TrendChart(
+                    points: points,
+                    gradient: Gradient(colors: [tint.opacity(0.7), tint]),
+                    valueRange: (lo - pad)...(hi + pad),
+                    showsArea: true,
+                    valueFormat: { "\(Int($0.rounded())) \(unit)" },
+                    dateFormat: { Self.tooltipTime.string(from: $0) },
+                    accessibilityLabel: unit + ", " + WorkoutSource.displaySport(row.sport),
+                    workoutTimeAxis: Date(timeIntervalSince1970: TimeInterval(row.startTs))...Date(timeIntervalSince1970: TimeInterval(row.endTs))
+                )
+            } footer: {
+                if kind == .altitudeM {
+                    ChartFooter([
+                        ("Low", "\(Int(lo.rounded())) \(unit)"),
+                        ("High", "\(Int(hi.rounded())) \(unit)"),
+                        ("Gain", "\(Int(WorkoutMetricStats.elevationGain(values).rounded())) \(unit)"),
+                    ])
+                } else {
+                    ChartFooter([
+                        ("Avg", WorkoutMetricStats.averagePositive(values).map { "\(Int($0.rounded())) \(unit)" } ?? "–"),
+                        ("Max", "\(Int(hi.rounded())) \(unit)"),
+                    ])
+                }
+            }
         }
     }
 
