@@ -59,10 +59,6 @@ struct WorkoutsView: View {
     @State private var allRows: [WorkoutRow]
     @State private var loaded: Bool
     @State private var seededInitialRange = false
-    /// Current (the most recent sessions) or Archived (everything older). A view split only: archived rows
-    /// stay in the database and are one tap away.
-    @State private var scope: Scope = .current
-
     @State private var range: Range = .all
     /// #797: how many trailing days of workouts are currently LOADED into `allRows`. First paint loads
     /// `Self.firstPaintWindowDays`; picking "All" (or a range wider than this) pages the full history in on
@@ -171,14 +167,14 @@ struct WorkoutsView: View {
     }
 
     var body: some View {
-        // Compute the windowed (unscoped) rows ONCE per body evaluation and thread them into both the
+        // Compute the windowed rows ONCE per body evaluation and thread them into both the
         // session list below AND the HR-recovery trend `.task(id:)` further down this modifier chain.
         // SwiftUI re-runs `body` on hover/animation/1Hz HR ticks; `sessions(for:)` was independently
         // re-derived by `windowRows` here AND by `recoveryTrendRows` (via `recoveryTrendInputKey`, read on
         // every body pass as the `.task(id:)` argument) — the same unscoped filter run twice per pass.
         let resolved = effectiveRange
-        let unscopedRows = sessions(for: resolved)
-        let trendRows = recoveryTrendRows(from: unscopedRows)
+        let windowRows = sessions(for: resolved)
+        let trendRows = recoveryTrendRows(from: windowRows)
         return ScreenScaffold(title: "Workouts", subtitle: "Every session, threaded together.",
                        onRefresh: { await repo.refresh() },
                        // PERF: the column ends in the full "All Sessions" log (the breakdown grid, the
@@ -200,17 +196,12 @@ struct WorkoutsView: View {
                 }
             } else {
                 // Compute the per-sport groups ONCE per body evaluation, then thread them into every
-                // section — same idea as `unscopedRows` above, applied to the rest of the fan-out
+                // section — same idea as `windowRows` above, applied to the rest of the fan-out
                 // (rows → sportGroups → …) that used to rebuild several times per render.
-                // Current / Archived applies to what the LIST and its summaries show. `unscopedRows`
-                // itself stays unscoped so the HR-recovery trend and the auto-widen probe keep seeing the
-                // whole window.
-                let windowRows = Self.scopedRows(unscopedRows, scope: scope)
                 let groups = sportGroups(from: windowRows)
                 let zonesSummary = WorkoutZones.summary(from: windowRows)
 
                 workoutActionRow
-                scopeBar
                 rangeBar(rows: windowRows, effectiveRange: resolved)
                 if let postLogNote { postLogBanner(postLogNote) }
                 effortHero(rows: windowRows, effectiveRange: resolved, groups: groups)
@@ -319,16 +310,16 @@ struct WorkoutsView: View {
 
     // MARK: - Heart-rate recovery trend (#516)
 
-    /// Apply the screen's 90-day cap to the already-`sessions(for:)`-filtered `unscopedRows` `body`
+    /// Apply the screen's 90-day cap to the already-`sessions(for:)`-filtered `windowRows` `body`
     /// computes once. PERF: this used to re-derive `sessions(for: effectiveRange)` from scratch (the SAME
     /// unscoped filter `body`'s `windowRows` already ran), so a body pass — routinely once per second on
     /// a ~1 Hz HR tick before the `WorkoutStartControl` isolation above — filtered `allRows` twice.
     /// Reusing the caller's rows removes the second pass; taking them as a parameter (rather than a
     /// computed property reading `effectiveRange` again) is what makes the reuse possible.
-    private func recoveryTrendRows(from unscopedRows: [WorkoutRow]) -> [WorkoutRow] {
+    private func recoveryTrendRows(from windowRows: [WorkoutRow]) -> [WorkoutRow] {
         guard let last = latestTs else { return [] }
         let cutoff = last - 90 * 86_400
-        return unscopedRows.filter { $0.startTs >= cutoff }.sorted { $0.startTs < $1.startTs }
+        return windowRows.filter { $0.startTs >= cutoff }.sorted { $0.startTs < $1.startTs }
     }
 
     /// Stable task identity: changing the range/filter/rows or HRmax cancels and rebuilds the trend.
@@ -478,20 +469,6 @@ struct WorkoutsView: View {
                                         "CrossFit", "Hiking", "Tennis"]
 
     // MARK: - Range control
-
-    /// Current / Archived. Sits above the range bar because it is the coarser cut: it decides WHICH rows
-    /// the range then narrows.
-    ///
-    /// Always shown, including when everything still fits in Current. A segment that appeared only once a
-    /// wearer crossed ten sessions would shift the whole screen down the first time it did, and an empty
-    /// Archived tab answers "where did my older workouts go" plainly: nothing is hidden yet.
-    private var scopeBar: some View {
-        Picker("Scope", selection: $scope) {
-            ForEach(Scope.allCases) { s in Text(s.label).tag(s) }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 2)
-    }
 
     private func rangeBar(rows: [WorkoutRow], effectiveRange: Range) -> some View {
         let fellBack = effectiveRange != range
@@ -644,48 +621,6 @@ struct WorkoutsView: View {
     /// Sessions inside a given range, RELATIVE TO THE LATEST session, then passed through the active
     /// filter. `.all` = all. The window anchor (`latestTs`) is the newest of ALL loaded rows so the
     /// window doesn't shift when a filter narrows the set.
-    /// Which slice of the history the list is showing.
-    ///
-    /// A VIEW split, never a delete. Archived rows stay in the database untouched and are one tap away,
-    /// which is the whole reason the request for "keep the last 10 and auto-delete the rest" is answered
-    /// this way instead: NOOP has no server and no cloud copy, so pruning real training history would be
-    /// irreversible, and hiding it costs nothing.
-    enum Scope: String, CaseIterable, Identifiable {
-        case current, archived
-        var id: String { rawValue }
-        /// `LocalizedStringKey` rather than `String`, because this is only ever handed to `Text`, so the
-        /// resolution belongs to the view environment.
-        ///
-        /// The sibling enums on other screens return `String(localized:)` instead, which is equally correct
-        /// for a value that has to be a String. What is NOT correct, and is what this property shipped as
-        /// first, is a BARE literal returned as a String: it renders in English forever, and the i18n gate
-        /// does not catch it, because a literal in that position is not somewhere the scanner looks. The
-        /// gate flagged the Picker's "Scope" key and said nothing about these two, which are the words
-        /// actually printed on the tabs.
-        var label: LocalizedStringKey { self == .current ? "Current" : "Archived" }
-    }
-
-    /// How many of the most recent sessions "Current" holds.
-    static let currentScopeCount = 10
-
-    /// Split rows into the most recent `currentCount` and everything older.
-    ///
-    /// Pure and order-preserving: membership is decided by ranking on `startTs`, but the rows come back in
-    /// the order they arrived, so the caller's sort still decides what the screen shows. Ranking rather
-    /// than comparing against a cutoff timestamp is what makes ties safe: two sessions that start in the
-    /// same second cannot both sneak past a threshold and hand "Current" an eleventh row.
-    ///
-    /// Applied AFTER the range and sport filters, so each tab means "the 10 most recent of what you are
-    /// currently looking at" rather than silently showing an empty Current when a filter excludes the
-    /// newest sessions.
-    nonisolated static func scopedRows(_ rows: [WorkoutRow], scope: Scope,
-                                       currentCount: Int = currentScopeCount) -> [WorkoutRow] {
-        guard rows.count > currentCount else { return scope == .current ? rows : [] }
-        let key: (WorkoutRow) -> String = { "\($0.startTs)|\($0.sport)" }
-        let newest = Set(rows.sorted { $0.startTs > $1.startTs }.prefix(currentCount).map(key))
-        return rows.filter { scope == .current ? newest.contains(key($0)) : !newest.contains(key($0)) }
-    }
-
     private func sessions(for r: Range) -> [WorkoutRow] {
         let windowed: [WorkoutRow]
         if let days = r.days {
@@ -695,9 +630,6 @@ struct WorkoutsView: View {
         } else {
             windowed = allRows
         }
-        // Deliberately NOT scoped. This feeds the HR-recovery trend (a 90-day analysis) and the
-        // auto-widen probe as well as the list, and cutting those to the ten most recent sessions would
-        // quietly change what they measure. The Current/Archived split is applied to the LIST rows only.
         return filter.apply(windowed)
     }
 
