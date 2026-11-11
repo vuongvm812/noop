@@ -95,6 +95,9 @@ public enum GarminExportJson {
         public let restingHr: Int?
         public let ftpW: Int?
         public let zoneFloors: [Int]
+        public init(maxHr: Int?, restingHr: Int?, ftpW: Int?, zoneFloors: [Int]) {
+            self.maxHr = maxHr; self.restingHr = restingHr; self.ftpW = ftpW; self.zoneFloors = zoneFloors
+        }
         public var isEmpty: Bool { maxHr == nil && restingHr == nil && ftpW == nil }
     }
 

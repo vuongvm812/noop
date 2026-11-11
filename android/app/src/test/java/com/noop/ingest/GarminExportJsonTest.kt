@@ -120,4 +120,13 @@ class GarminExportJsonTest {
         assertEquals(-0.4, r.points.first { it.key == "skin_temp_dev_c" }.value, 0.0)
         assertTrue(r.settings.zoneFloors.isEmpty())
     }
+
+    @Test
+    fun aGenericFitActivityMatchesASummaryOfAnySport() {
+        fun row(sport: String, s: Long, e: Long) = com.noop.data.WorkoutRow(deviceId = "garmin-import", startTs = s, endTs = e, sport = sport, source = "garmin-import")
+        assertTrue(WearableExportImporter.sameWorkout(row("Activity", 1000, 2000), row("Breathwork", 1010, 1990)))
+        assertTrue(WearableExportImporter.sameWorkout(row("Running", 1000, 2000), row("Running", 1010, 2010)))
+        assertFalse(WearableExportImporter.sameWorkout(row("Running", 1000, 2000), row("Cycling", 1010, 2010)))
+        assertFalse(WearableExportImporter.sameWorkout(row("Activity", 1000, 2000), row("Breathwork", 3000, 4000)))
+    }
 }

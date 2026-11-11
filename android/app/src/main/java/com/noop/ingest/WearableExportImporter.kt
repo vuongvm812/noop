@@ -929,6 +929,19 @@ object WearableExportImporter {
     }
 
     /**
+     * The same activity: the shared cross-source rule, or a FIT row whose sport is the generic "Activity" (a FIT
+     * file with no sport) overlapping the summary by more than half of the shorter session.
+     * Swift twin: `WearableImporter.sameWorkout`.
+     */
+    internal fun sameWorkout(a: WorkoutRow, b: WorkoutRow): Boolean {
+        if (com.noop.ui.WorkoutEditing.sameActivity(a, b)) return true
+        if (!a.sport.equals("activity", true) && !b.sport.equals("activity", true)) return false
+        val overlap = minOf(a.endTs, b.endTs) - maxOf(a.startTs, b.startTs)
+        if (overlap <= 0) return false
+        return overlap.toDouble() > 0.5 * maxOf(1L, minOf(a.endTs - a.startTs, b.endTs - b.startTs)).toDouble()
+    }
+
+    /**
      * Store the export's activity summaries as workouts under [deviceId]. An activity that overlaps (same sport,
      * more than half of the shorter session) a workout already stored under that id (a FIT-derived row) is NOT
      * duplicated: that row is enriched with the summary's zones, energy, heart rate and notes instead. Returns the
@@ -946,8 +959,8 @@ object WearableExportImporter {
                 distanceM = a.distanceM, zonesJSON = a.zonesJson, notes = listOf("Imported Garmin Connect activity", a.noteExtras).filter { it.isNotEmpty() }.joinToString(" · "), steps = a.steps,
             )
             // An overlapping summary earlier in this same export counts as a stored row too.
-            val match = existing.firstOrNull { com.noop.ui.WorkoutEditing.sameActivity(it, fresh) }
-            if (match == null && rows.any { com.noop.ui.WorkoutEditing.sameActivity(it, fresh) }) continue
+            val match = existing.firstOrNull { sameWorkout(it, fresh) }
+            if (match == null && rows.any { sameWorkout(it, fresh) }) continue
             // Training Effect is a reference value the workout detail reads back over the workout window.
             a.aerobicTe?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.AEROBIC_TRAINING_EFFECT, it, GarminExportJson.SOURCE_SUMMARY)) }
             a.anaerobicTe?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.ANAEROBIC_TRAINING_EFFECT, it, GarminExportJson.SOURCE_SUMMARY)) }

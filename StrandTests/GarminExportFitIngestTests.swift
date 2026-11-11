@@ -162,4 +162,17 @@ final class GarminExportFitIngestTests: XCTestCase {
             XCTAssertEqual(kept.first?.source, device)
         }
     }
+
+    /// A FIT file with no sport lands as the generic "Activity"; a summary of any sport must still match it. Kotlin
+    /// twin: `GarminExportJsonTest.aGenericFitActivityMatchesASummaryOfAnySport`.
+    func testAGenericFitActivityMatchesASummaryOfAnySport() {
+        func row(_ sport: String, _ s: Int, _ e: Int) -> WorkoutRow {
+            WorkoutRow(startTs: s, endTs: e, sport: sport, source: "garmin-import", durationS: nil, energyKcal: nil,
+                       avgHr: nil, maxHr: nil, strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil)
+        }
+        XCTAssertTrue(WearableImporter.sameWorkout(row("Activity", 1000, 2000), row("Breathwork", 1010, 1990)))
+        XCTAssertTrue(WearableImporter.sameWorkout(row("Running", 1000, 2000), row("Running", 1010, 2010)))
+        XCTAssertFalse(WearableImporter.sameWorkout(row("Running", 1000, 2000), row("Cycling", 1010, 2010)))
+        XCTAssertFalse(WearableImporter.sameWorkout(row("Activity", 1000, 2000), row("Breathwork", 3000, 4000)))
+    }
 }

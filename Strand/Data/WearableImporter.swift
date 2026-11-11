@@ -149,6 +149,17 @@ enum WearableImporter {
         return result
     }
 
+    /// The same activity: the shared cross-source rule, or a FIT row whose sport is the generic "Activity" (a FIT
+    /// file with no sport) overlapping the summary by more than half of the shorter session. Kotlin twin:
+    /// `WearableExportImporter.sameWorkout`.
+    static func sameWorkout(_ a: WorkoutRow, _ b: WorkoutRow) -> Bool {
+        if WorkoutSource.sameActivity(a, b) { return true }
+        guard a.sport.lowercased() == "activity" || b.sport.lowercased() == "activity" else { return false }
+        let overlap = min(a.endTs, b.endTs) - max(a.startTs, b.startTs)
+        guard overlap > 0 else { return false }
+        return Double(overlap) > 0.5 * Double(max(1, min(a.endTs - a.startTs, b.endTs - b.startTs)))
+    }
+
     /// Store the export's activity summaries as workouts under `deviceId`. An activity that overlaps (same sport,
     /// more than half of the shorter session) a workout already stored under that id (a FIT-derived row) is NOT
     /// duplicated: that row is enriched with the summary's zones, energy, heart rate and notes instead. Returns the
@@ -167,8 +178,8 @@ enum WearableImporter {
                 zonesJSON: a.zonesJson, notes: ["Imported Garmin Connect activity", a.noteExtras].filter { !$0.isEmpty }.joined(separator: " · "),
                 steps: a.steps)
             // An overlapping summary earlier in this same export counts as a stored row too.
-            let match = existing.first(where: { WorkoutSource.sameActivity($0, fresh) })
-            if match == nil, rows.contains(where: { WorkoutSource.sameActivity($0, fresh) }) { continue }
+            let match = existing.first(where: { Self.sameWorkout($0, fresh) })
+            if match == nil, rows.contains(where: { Self.sameWorkout($0, fresh) }) { continue }
             // Training Effect is a reference value the workout detail reads back over the workout window.
             func add(_ kind: DeviceMetricKind, _ v: Double?) {
                 if let v { metrics.append(DeviceMetricSample(ts: a.startTs, kind: kind, value: v, source: GarminExportJson.sourceSummary)) }
