@@ -1,0 +1,80 @@
+[
+ {
+  "averageRespiration": 14.2,
+  "avgSleepStress": 18.5,
+  "awakeCount": 3,
+  "awakeSleepSeconds": 1800,
+  "calendarDate": "2026-01-01",
+  "deepSleepSeconds": 5400,
+  "highestRespiration": 19,
+  "lightSleepSeconds": 16200,
+  "lowestRespiration": 10,
+  "remSleepSeconds": 5400,
+  "restlessMomentCount": 40,
+  "sleepEndTimestampGMT": "2026-01-01T06:30:00.0",
+  "sleepScores": {
+   "deepScore": 65,
+   "durationScore": 80,
+   "feedback": "POSITIVE",
+   "overallScore": 82,
+   "qualityScore": 70,
+   "recoveryScore": 75,
+   "remScore": 72,
+   "restfulnessScore": 60
+  },
+  "sleepStartTimestampGMT": "2025-12-31T22:30:00.0",
+  "unmeasurableSeconds": 0
+ },
+ {
+  "averageRespiration": 14.2,
+  "avgSleepStress": 18.5,
+  "awakeCount": 3,
+  "awakeSleepSeconds": 0,
+  "calendarDate": "2026-01-01",
+  "deepSleepSeconds": 0,
+  "highestRespiration": 19,
+  "lightSleepSeconds": 2400,
+  "lowestRespiration": 10,
+  "remSleepSeconds": 0,
+  "restlessMomentCount": 40,
+  "sleepEndTimestampGMT": "2026-01-01T13:40:00.0",
+  "sleepScores": {
+   "deepScore": 65,
+   "durationScore": 80,
+   "feedback": "POSITIVE",
+   "overallScore": 50,
+   "qualityScore": 70,
+   "recoveryScore": 75,
+   "remScore": 72,
+   "restfulnessScore": 60
+  },
+  "sleepStartTimestampGMT": "2026-01-01T13:00:00.0",
+  "unmeasurableSeconds": 0
+ },
+ {
+  "averageRespiration": 14.2,
+  "avgSleepStress": 18.5,
+  "awakeCount": 3,
+  "awakeSleepSeconds": 1200,
+  "calendarDate": "2026-01-02",
+  "deepSleepSeconds": 4800,
+  "highestRespiration": 19,
+  "lightSleepSeconds": 15000,
+  "lowestRespiration": 10,
+  "remSleepSeconds": 4200,
+  "restlessMomentCount": 40,
+  "sleepEndTimestampGMT": "2026-01-02T06:00:00.0",
+  "sleepScores": {
+   "deepScore": 65,
+   "durationScore": 80,
+   "feedback": "POSITIVE",
+   "overallScore": 74,
+   "qualityScore": 70,
+   "recoveryScore": 75,
+   "remScore": 72,
+   "restfulnessScore": 60
+  },
+  "sleepStartTimestampGMT": "2026-01-01T23:00:00.0",
+  "unmeasurableSeconds": 0
+ }
+]

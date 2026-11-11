@@ -284,6 +284,10 @@ object ActivityFileImporter {
         // detail can show them.
         val reference = GarminWatchIngest.activityReference(activity)
         if (reference.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = reference), deviceId)
+        // Per-record power / cadence / altitude for the detail graphs, as the watch sync stores them. Absent
+        // for a GPX / TCX file or a FIT with none; re-importing replaces the same (kind, ts) samples.
+        val track = GarminWatchIngest.activityTrackMetrics(activity)
+        if (track.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = track), deviceId)
         // #1058: recompute the day's activity-file step total as the SUM over ALL that day's sessions
         // (each now carries its own steps), so a second file for the same day ADDS to the first instead
         // of clobbering it. Idempotent on re-import: the file's workout row (keyed on startTs+sport) is

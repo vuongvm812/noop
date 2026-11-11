@@ -86,6 +86,39 @@ internal fun snapshotItemLabelRes(id: String): Int = when (id) {
     "hydration_ml" -> R.string.snapshot_item_hydration_ml
     "mood" -> R.string.snapshot_item_mood
     "cycle_day" -> R.string.snapshot_item_cycle_day
+    "sleep_awake_count" -> R.string.snapshot_item_sleep_awake_count
+    "sleep_restless_moments" -> R.string.snapshot_item_sleep_restless_moments
+    "sleep_stress" -> R.string.snapshot_item_sleep_stress
+    "sleep_awake_min" -> R.string.snapshot_item_sleep_awake_min
+    "nap_min" -> R.string.snapshot_item_nap_min
+    "sleep_score_quality" -> R.string.snapshot_item_sleep_score_quality
+    "sleep_score_duration" -> R.string.snapshot_item_sleep_score_duration
+    "sleep_score_recovery" -> R.string.snapshot_item_sleep_score_recovery
+    "sleep_score_deep" -> R.string.snapshot_item_sleep_score_deep
+    "sleep_score_rem" -> R.string.snapshot_item_sleep_score_rem
+    "sleep_score_restfulness" -> R.string.snapshot_item_sleep_score_restfulness
+    "hr_min" -> R.string.snapshot_item_hr_min
+    "hr_overnight" -> R.string.snapshot_item_hr_overnight
+    "resp_overnight" -> R.string.snapshot_item_resp_overnight
+    "spo2_min" -> R.string.snapshot_item_spo2_min
+    "bmr_kcal" -> R.string.snapshot_item_bmr_kcal
+    "floors_ascended_m" -> R.string.snapshot_item_floors_ascended_m
+    "moderate_min" -> R.string.snapshot_item_moderate_min
+    "vigorous_min" -> R.string.snapshot_item_vigorous_min
+    "height_m" -> R.string.snapshot_item_height_m
+    "ftp_w" -> R.string.snapshot_item_ftp_w
+    "lactate_threshold_hr" -> R.string.snapshot_item_lactate_threshold_hr
+    "race_5k_s" -> R.string.snapshot_item_race_5k_s
+    "race_10k_s" -> R.string.snapshot_item_race_10k_s
+    "race_half_s" -> R.string.snapshot_item_race_half_s
+    "race_marathon_s" -> R.string.snapshot_item_race_marathon_s
+    "stress_max" -> R.string.snapshot_item_stress_max
+    "stress_low_min" -> R.string.snapshot_item_stress_low_min
+    "stress_medium_min" -> R.string.snapshot_item_stress_medium_min
+    "stress_high_min" -> R.string.snapshot_item_stress_high_min
+    "body_battery_charged" -> R.string.snapshot_item_body_battery_charged
+    "body_battery_drained" -> R.string.snapshot_item_body_battery_drained
+    "sweat_loss_ml" -> R.string.snapshot_item_sweat_loss_ml
     else -> R.string.nav_daily_summary
 }
 

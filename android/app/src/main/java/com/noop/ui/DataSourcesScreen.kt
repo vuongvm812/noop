@@ -203,6 +203,8 @@ fun DataSourcesScreen(vm: AppViewModel) {
     var busy by remember { mutableStateOf(false) }
     // ah-delete (#616): drives the "Remove Apple Health imported data" confirm dialog.
     var confirmDeleteApple by remember { mutableStateOf(false) }
+    // A Garmin export import's report (imported / left out) and its offer to adopt Garmin's max heart rate.
+    var garminReport by remember { mutableStateOf<com.noop.data.GarminImportReport?>(null) }
 
     // Run an importer off the main thread, refresh the counts, then toast the result.
     fun runImport(block: suspend () -> ImportSummary) {
@@ -232,6 +234,7 @@ fun DataSourcesScreen(vm: AppViewModel) {
             refreshCounts()
             busy = false
             Toast.makeText(context, summary.displayMessage(), Toast.LENGTH_LONG).show()
+            summary.garminReport?.let { garminReport = it }
         }
     }
 
@@ -982,6 +985,15 @@ fun DataSourcesScreen(vm: AppViewModel) {
     // ah-delete (#616): strongly-worded confirm before purging the "apple-health" source. On confirm,
     // deletes every Apple-Health-sourced row (deviceId-keyed tables) in one transaction via the registry,
     // re-counts so the card flips back to "Nothing imported", and toasts the result.
+    garminReport?.let { rep ->
+        GarminImportReportDialog(
+            report = rep,
+            profileMaxHr = ProfileStore.from(context).hrMaxOverride,
+            onUseGarmin = { bpm -> ProfileStore.from(context).hrMaxOverride = bpm; garminReport = null },
+            onDismiss = { garminReport = null },
+        )
+    }
+
     if (confirmDeleteApple) {
         AlertDialog(
             onDismissRequest = { confirmDeleteApple = false },

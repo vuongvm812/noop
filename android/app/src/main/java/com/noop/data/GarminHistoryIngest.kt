@@ -156,11 +156,21 @@ object GarminHistoryIngest {
 
     /** The manual workout-file import's mapping, under the watch's device id (Swift twin: `ingestActivity`). */
     private suspend fun ingestActivity(file: GarminDownloadedFile, deviceId: String, repo: WhoopRepository, log: (String) -> Unit) {
-        val activity = ActivityFileImporter.parse(file.bytes, "garmin-activity.fit").activity
+        storeActivity(file.bytes, deviceId, repo, log, file.key.label)
+    }
+
+    /**
+     * Decode one ACTIVITY FIT file and store its workout row, per-sample HR, Training Effect / load, per-record
+     * power / cadence / altitude and route under [deviceId]. Shared by the watch sync and the Garmin export
+     * import. True when a workout was stored, false when the file held no usable activity.
+     * Swift twin: `GarminHistoryIngest.storeActivity`.
+     */
+    internal suspend fun storeActivity(bytes: ByteArray, deviceId: String, repo: WhoopRepository, log: (String) -> Unit, label: String): Boolean {
+        val activity = ActivityFileImporter.parse(bytes, "garmin-activity.fit").activity
         val duration = activity?.durationS
         if (activity == null || duration == null || duration <= 0) {
-            log("Garmin: activity ${file.key.label} has no usable workout; recorded as synced")
-            return
+            log("Garmin: activity $label has no usable workout; recorded as synced")
+            return false
         }
         val row = workoutRow(activity, deviceId)
         repo.upsertWorkouts(listOf(row))
@@ -174,7 +184,8 @@ object GarminHistoryIngest {
         val track = GarminWatchIngest.activityTrackMetrics(activity)
         if (track.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = track), deviceId)
         log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} " +
-            "route=${if (row.routePolyline == null) 0 else activity.route.size} from ${file.key.label}")
+            "route=${if (row.routePolyline == null) 0 else activity.route.size} from $label")
+        return true
     }
 
     /**

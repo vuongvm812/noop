@@ -34,6 +34,8 @@ struct DataSourcesView: View {
     @State private var wearableImporting = false
     @State private var wearableSummary: String?
     @State private var wearableFailed = false
+    // A Garmin export import's report (imported / left out) and its offer to adopt Garmin's max heart rate.
+    @State private var garminResult: WearableImportResult?
     #if OURA_CLOUD_IMPORT
     // Oura history import (compiled in ONLY with OURA_CLOUD_IMPORT): a one-time, user-initiated,
     // foreground OAuth + backfill of the user's own history over the Oura API, as an alternative to
@@ -127,6 +129,14 @@ struct DataSourcesView: View {
             handleImportResult(result, for: importTarget)
         }
         // ah-delete (#616): strongly-worded confirm before purging the Apple Health source.
+        .sheet(isPresented: Binding(get: { garminResult != nil }, set: { if !$0 { garminResult = nil } })) {
+            if let result = garminResult {
+                GarminImportReportView(
+                    report: result.garmin, fit: result.fitReport, profileMaxHr: model.profile.hrMaxOverride,
+                    onUseGarmin: { bpm in model.profile.hrMaxOverride = min(230, max(0, bpm)); garminResult = nil },
+                    onClose: { garminResult = nil })
+            }
+        }
         .alert("Remove Apple Health imported data?", isPresented: $confirmDeleteAppleHealth) {
             Button("Cancel", role: .cancel) { }
             Button("Remove", role: .destructive) { deleteAppleHealthData() }
@@ -578,7 +588,8 @@ struct DataSourcesView: View {
                 // The watch's own Training Effect / training load (a FIT session's reference values) ride in
                 // the same insert, so the workout detail can show them.
                 let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
-                                      deviceMetric: GarminWatchIngest.activityReference(activity))
+                                      deviceMetric: GarminWatchIngest.activityReference(activity)
+                                          + GarminWatchIngest.activityTrackMetrics(activity))
                 if !streams.isEmpty {
                     _ = try? await store.insert(streams, deviceId: ActivityFileImporter.sourceId)
                 }
@@ -696,6 +707,7 @@ struct DataSourcesView: View {
                 await repo.refresh()
                 wearableSummary = WearableExportImporter.summaryText(result)
                 wearableFailed = false
+                garminResult = (result.garmin != nil || result.fitReport != nil) ? result : nil
                 logImport("\(result.brand.displayName) export: \(result.days.count) days, \(result.sleeps.count) sleeps, \(result.summary.skippedSpans) rejected")
             } catch {
                 wearableSummary = String(localized: "Import failed: \(error.localizedDescription)")

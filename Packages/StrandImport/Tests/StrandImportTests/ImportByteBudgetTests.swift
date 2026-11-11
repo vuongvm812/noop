@@ -74,12 +74,12 @@ final class ImportByteBudgetTests: XCTestCase {
             ("sleep_c.json", blob),
         ])
 
-        let full = try WearableExportImporter().collectFiles(from: zip)
+        let full = try WearableExportImporter().collectFiles(from: zip).files
         XCTAssertEqual(full.count, 3)
 
         // Cap = 1.5 blobs: admits the first, trips before the second.
         let cap = 600
-        let capped = try WearableExportImporter(maxTotalBytes: cap).collectFiles(from: zip)
+        let capped = try WearableExportImporter(maxTotalBytes: cap).collectFiles(from: zip).files
         XCTAssertEqual(capped.count, 1)
         XCTAssertLessThanOrEqual(capped.values.reduce(0) { $0 + $1.count }, cap)
     }

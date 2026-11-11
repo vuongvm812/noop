@@ -69,7 +69,9 @@ enum MetricSnapshotLoader {
 
         // Hydration: hand-logged plus imported, per day.
         let manual = await seriesByDay(store, HydrationStore.sourceId, HydrationStore.key, from, to)
-        let imported = await seriesByDay(store, HydrationStore.sourceId, HydrationStore.importedKey, from, to)
+        var imported = await seriesByDay(store, HydrationStore.sourceId, HydrationStore.importedKey, from, to)
+        // A Garmin export's logged water joins the day's total (its activity sweat loss is a separate item).
+        for (day, v) in await seriesByDay(store, garminImport, "hydration_ml", from, to) { imported[day, default: 0] += v }
         let water = hydrationDays(manual: manual, imported: imported)
         if !water.isEmpty { out["hydration_ml"] = water }
 
@@ -93,6 +95,14 @@ enum MetricSnapshotLoader {
                                                  calendar: calendar) where !byDay.isEmpty {
                 // The watch fills days the stored series left open (VO2 max); its own ids are new.
                 for (day, v) in byDay where out[id]?[day] == nil { out[id, default: [:]][day] = v }
+            }
+        }
+
+        // Body Battery low / high from a Garmin export, for the days no paired watch holds them. Kotlin twin:
+        // `MetricSnapshotLoader.dayValues`.
+        for (id, key) in [("body_battery_min", "body_battery_low"), ("body_battery_max", "body_battery_high")] {
+            for (day, v) in await seriesByDay(store, garminImport, key, from, to) where out[id]?[day] == nil {
+                out[id, default: [:]][day] = v
             }
         }
         return out
@@ -273,6 +283,9 @@ enum MetricSnapshotLoader {
     }
 
     // MARK: - Helpers
+
+    /// The Garmin export import's source id (`WearableExportImporter.Brand.garmin.sourceId`).
+    private static let garminImport = "garmin-import"
 
     private static func seriesByDay(_ store: WhoopStore, _ deviceId: String, _ key: String,
                                     _ from: String, _ to: String) async -> [String: Double] {

@@ -70,6 +70,9 @@ object MetricSnapshotLoader {
         val anaerobicTe: Double? = null,
     )
 
+    /** The Garmin export import's source id (`WearableExportImporter.Brand.GARMIN.sourceId`). */
+    private const val GARMIN_IMPORT = "garmin-import"
+
     /** A cycle start further back than this is not "the current cycle" (no cycle day is reported). */
     const val MAX_CYCLE_DAYS = 90
 
@@ -122,6 +125,9 @@ object MetricSnapshotLoader {
             safeRead(emptyList()) { repo.metricSeries(HydrationStore.SOURCE_ID, key, from, to) }
                 .forEach { water.merge(it.day, it.value, Double::plus) }
         }
+        // A Garmin export's logged water joins the day's total (its activity sweat loss is a separate item).
+        safeRead(emptyList()) { repo.metricSeries(GARMIN_IMPORT, "hydration_ml", from, to) }
+            .forEach { water.merge(it.day, it.value, Double::plus) }
         hydrationDays(water).forEach { (d, v) -> put("hydration_ml", d, v) }
 
         // Distance: the strap's series first, then the watch's fills only the days still missing (metres to km).
@@ -156,6 +162,12 @@ object MetricSnapshotLoader {
             for ((id, days) in watchValues(repo, watch, from, to, fromTs, toTs, zone)) {
                 for ((d, v) in days) putMissing(id, d, v)
             }
+        }
+
+        // Body Battery low / high from a Garmin export, for the days the paired watch holds none. Swift twin:
+        // `MetricSnapshotLoader.dayValues`.
+        for ((id, key) in listOf("body_battery_min" to "body_battery_low", "body_battery_max" to "body_battery_high")) {
+            for (r in safeRead(emptyList()) { repo.metricSeries(GARMIN_IMPORT, key, from, to) }) putMissing(id, r.day, r.value)
         }
         return out
     }

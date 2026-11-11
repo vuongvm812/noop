@@ -138,7 +138,7 @@ data class CompareMetric(
             "carbs_g" -> uiString(R.string.l10n_compare_screen_carbs_d1b71194)
             "fat_g" -> uiString(R.string.l10n_compare_screen_fat_7b71bd0c)
             "mood" -> uiString(R.string.l10n_compare_screen_mood_c16981e6)
-            else -> titleEn
+            else -> if (source == "garmin-import") uiString(snapshotItemLabelRes(key)) else titleEn
         }
 
     /** Localized honesty note shown in the metric picker, or null. */
@@ -254,6 +254,40 @@ private object CompareCatalog {
         CompareMetric("fat_g", "Fat", "Nutrition", "g", NutritionCsvImporter.SOURCE_ID, 0),
         // Mind (daily mood check-in, 1–5; non-clinical self-tracking).
         CompareMetric("mood", "Mood", "Mind", "/5", MoodStore.MOOD_DEVICE_ID, 0),
+        // Garmin Connect export (garmin-import): the series its JSON files add beyond the daily rollups.
+        CompareMetric("sleep_awake_count", "Awakenings", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_restless_moments", "Restless moments", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_stress", "Sleep stress", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_awake_min", "Awake during sleep", "Rest", "min", "garmin-import", 0),
+        CompareMetric("nap_min", "Naps", "Rest", "min", "garmin-import", 0),
+        CompareMetric("sleep_score_quality", "Sleep quality score", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_score_duration", "Sleep duration score", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_score_recovery", "Sleep recovery score", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_score_deep", "Deep sleep score", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_score_rem", "REM sleep score", "Rest", "", "garmin-import", 0),
+        CompareMetric("sleep_score_restfulness", "Sleep restfulness score", "Rest", "", "garmin-import", 0),
+        CompareMetric("hr_min", "Min heart rate", "Heart", "bpm", "garmin-import", 0),
+        CompareMetric("hr_overnight", "Overnight heart rate", "Heart", "bpm", "garmin-import", 0),
+        CompareMetric("resp_overnight", "Overnight respiratory rate", "Heart", "rpm", "garmin-import", 1),
+        CompareMetric("spo2_min", "Lowest blood oxygen", "Heart", "%", "garmin-import", 0),
+        CompareMetric("bmr_kcal", "Resting calories", "Effort", "kcal", "garmin-import", 0),
+        CompareMetric("floors_ascended_m", "Floors climbed", "Effort", "m", "garmin-import", 0),
+        CompareMetric("moderate_min", "Moderate intensity", "Effort", "min", "garmin-import", 0),
+        CompareMetric("vigorous_min", "Vigorous intensity", "Effort", "min", "garmin-import", 0),
+        CompareMetric("height_m", "Height", "Health", "m", "garmin-import", 2),
+        CompareMetric("ftp_w", "Functional threshold power", "Heart", "W", "garmin-import", 0),
+        CompareMetric("lactate_threshold_hr", "Lactate threshold heart rate", "Heart", "bpm", "garmin-import", 0),
+        CompareMetric("race_5k_s", "5K race prediction", "Heart", "s", "garmin-import", 0),
+        CompareMetric("race_10k_s", "10K race prediction", "Heart", "s", "garmin-import", 0),
+        CompareMetric("race_half_s", "Half marathon prediction", "Heart", "s", "garmin-import", 0),
+        CompareMetric("race_marathon_s", "Marathon prediction", "Heart", "s", "garmin-import", 0),
+        CompareMetric("stress_max", "Max stress", "Charge", "", "garmin-import", 0),
+        CompareMetric("stress_low_min", "Low stress time", "Charge", "min", "garmin-import", 0),
+        CompareMetric("stress_medium_min", "Medium stress time", "Charge", "min", "garmin-import", 0),
+        CompareMetric("stress_high_min", "High stress time", "Charge", "min", "garmin-import", 0),
+        CompareMetric("body_battery_charged", "Body Battery charged", "Charge", "", "garmin-import", 0),
+        CompareMetric("body_battery_drained", "Body Battery drained", "Charge", "", "garmin-import", 0),
+        CompareMetric("sweat_loss_ml", "Sweat loss", "Effort", "ml", "garmin-import", 0),
     )
 
     fun inCategory(c: String): List<CompareMetric> = all.filter { it.category == c }

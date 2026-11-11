@@ -35,6 +35,14 @@ data class ImportSummary(
      * the UI shows `com.noop.ui.displayMessage`, which falls back to [message] when no localized form was supplied.
      */
     val localized: (() -> String)? = null,
+    /**
+     * Per-category detail for importers that take several kinds of file (the Garmin export): workouts,
+     * FIT files stored by kind (`fit.*`) and files that held nothing storable by reason (`skipped.*`).
+     * Kept apart from [counts] so [totalRows] still sums table rows only. Empty for every other importer.
+     */
+    val categoryCounts: Map<String, Int> = emptyMap(),
+    /** A Garmin export's per-category report and settings offer; null for every other importer. */
+    val garminReport: GarminImportReport? = null,
 ) {
     val totalRows: Int get() = counts.values.sum()
 
@@ -44,3 +52,18 @@ data class ImportSummary(
             ImportSummary(source = source, counts = emptyMap(), message = reason)
     }
 }
+
+/**
+ * What a Garmin export import brought in and left out, plus Garmin's own profile settings, which are only
+ * ever OFFERED to the user, never applied silently. [imported] / [skipped] are category / reason ids from
+ * `com.noop.ingest.GarminExportJson` in display order with their counts. Swift twin: `GarminExportJson.Result` (`WearableImportResult.garmin`).
+ */
+data class GarminImportReport(
+    val imported: List<Pair<String, Int>>,
+    val skipped: List<Pair<String, Int>>,
+    val maxHr: Int?,
+    val restingHr: Int?,
+    val ftpW: Int?,
+    /** The export's FIT files by kind (`workouts`, `fit.*`) and skip reason (`skipped.*`); keys of `GarminExportFit`. */
+    val fit: Map<String, Int> = emptyMap(),
+)
