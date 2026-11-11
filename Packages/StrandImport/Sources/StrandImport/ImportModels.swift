@@ -609,12 +609,20 @@ public struct WearableImportResult: Sendable, Equatable {
     public var days: [WearableDailyRow]
     public var sleeps: [WearableSleepSession]
     public var summary: ImportSummary
+    /// A Garmin export's `.fit` files by lowercased path, for the app layer to store (empty for every other
+    /// export). Never part of the day / sleep rows above.
+    public var fitFiles: [String: Data]
+    /// What storing `fitFiles` kept and skipped; nil until the app layer has stored them.
+    public var fitReport: GarminExportFit.Report?
 
-    public init(brand: WearableBrand, days: [WearableDailyRow], sleeps: [WearableSleepSession], summary: ImportSummary) {
+    public init(brand: WearableBrand, days: [WearableDailyRow], sleeps: [WearableSleepSession], summary: ImportSummary,
+                fitFiles: [String: Data] = [:], fitReport: GarminExportFit.Report? = nil) {
         self.brand = brand
         self.days = days
         self.sleeps = sleeps
         self.summary = summary
+        self.fitFiles = fitFiles
+        self.fitReport = fitReport
     }
 }
 

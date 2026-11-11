@@ -578,7 +578,8 @@ struct DataSourcesView: View {
                 // The watch's own Training Effect / training load (a FIT session's reference values) ride in
                 // the same insert, so the workout detail can show them.
                 let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
-                                      deviceMetric: GarminWatchIngest.activityReference(activity))
+                                      deviceMetric: GarminWatchIngest.activityReference(activity)
+                                          + GarminWatchIngest.activityTrackMetrics(activity))
                 if !streams.isEmpty {
                     _ = try? await store.insert(streams, deviceId: ActivityFileImporter.sourceId)
                 }

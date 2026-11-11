@@ -35,6 +35,12 @@ data class ImportSummary(
      * the UI shows `com.noop.ui.displayMessage`, which falls back to [message] when no localized form was supplied.
      */
     val localized: (() -> String)? = null,
+    /**
+     * Per-category detail for importers that take several kinds of file (the Garmin export): workouts,
+     * FIT files stored by kind (`fit.*`) and files that held nothing storable by reason (`skipped.*`).
+     * Kept apart from [counts] so [totalRows] still sums table rows only. Empty for every other importer.
+     */
+    val categoryCounts: Map<String, Int> = emptyMap(),
 ) {
     val totalRows: Int get() = counts.values.sum()
 

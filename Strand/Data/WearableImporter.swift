@@ -20,7 +20,7 @@ enum WearableImporter {
     @discardableResult
     static func importExport(url: URL, into store: WhoopStore,
                              trace: (@Sendable ([String]) -> Void)? = nil) async throws -> WearableImportResult {
-        let result = try ImportCoordinator().importWearableExport(from: url)
+        var result = try ImportCoordinator().importWearableExport(from: url)
         let deviceId = result.brand.sourceId
 
         // Day rollups → DailyMetric. HRV/recovery/respiration that the export lacks stay nil; NOOP
@@ -101,6 +101,18 @@ enum WearableImporter {
             add(d.day, "ref_sleep_score", d.sleepScore.map(Double.init))
         }
         try await store.upsertMetricSeries(points, deviceId: deviceId)
+
+        // A Garmin export's FIT files (activities, 24/7 monitoring, sleep, HRV, VO2max), stored under the
+        // same device id. Kotlin twin: `WearableExportImporter.importExport`.
+        if !result.fitFiles.isEmpty {
+            result.fitReport = await GarminExportFitIngest.ingest(result.fitFiles, store: store)
+            result.fitFiles = [:]   // the bytes are stored; release them
+        }
+        // Every FIT file skipped is returned with its per-reason report rather than thrown away as "nothing".
+        if result.days.isEmpty, result.sleeps.isEmpty, (result.fitReport?.storedFiles ?? 0) == 0,
+           (result.fitReport?.skippedFiles ?? 0) == 0 {
+            throw ImportError.emptyExport("\(result.brand.displayName) export held no sleep or daily wellness data")
+        }
 
         // Import & Data Ingest test mode: emit the per-stage / reject / day-delta trace iff the mode is on.
         // The numbers are the import's own parsed + persisted counts, so emission changes nothing saved.

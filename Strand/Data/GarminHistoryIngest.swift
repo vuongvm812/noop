@@ -162,9 +162,17 @@ enum GarminHistoryIngest {
     /// the file had fewer than two GPS points); `ingest` keeps the route in `RouteStore`.
     private static func ingestActivity(_ file: GarminDownloadedFile, deviceId: String, store: WhoopStore,
                                        log: (String) -> Void) async throws -> (row: WorkoutRow, route: WorkoutRoute?)? {
-        let result = ActivityFileImporter.parse(data: Data(file.bytes), filename: "garmin-activity.fit")
+        try await storeActivity(Data(file.bytes), deviceId: deviceId, store: store, log: log, label: file.key.label)
+    }
+
+    /// Decodes one ACTIVITY FIT file and stores its workout row, per-sample HR, Training Effect / load and
+    /// per-record power / cadence / altitude under `deviceId`. Shared by the watch sync and the Garmin export
+    /// import; nil when the file held no usable activity. Kotlin twin: `GarminHistoryIngest.storeActivity`.
+    static func storeActivity(_ data: Data, deviceId: String, store: WhoopStore,
+                              log: (String) -> Void, label: String) async throws -> (row: WorkoutRow, route: WorkoutRoute?)? {
+        let result = ActivityFileImporter.parse(data: data, filename: "garmin-activity.fit")
         guard let activity = result.activity, let duration = activity.durationS, duration > 0 else {
-            log("Garmin: activity \(file.key.label) has no usable workout; recorded as synced")
+            log("Garmin: activity \(label) has no usable workout; recorded as synced")
             return nil
         }
         let row = WorkoutRow(
@@ -191,7 +199,7 @@ enum GarminHistoryIngest {
         }
         let route = workoutRoute(from: activity)
         log("Garmin: stored workout \(row.sport) \(row.startTs)-\(row.endTs) hr=\(activity.hrSamples.count) "
-            + "route=\(route == nil ? 0 : activity.route.count) from \(file.key.label)")
+            + "route=\(route == nil ? 0 : activity.route.count) from \(label)")
         return (row, route)
     }
 
