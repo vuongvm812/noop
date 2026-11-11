@@ -1241,6 +1241,20 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_COACH_SIGNALS, enabled).apply()
     }
 
+    /** Which metric categories the Coach may see: the enabled snapshot category ids, comma-joined in category
+     *  order (see `CoachMetricContext`). Absent until a switch is touched, which means the categories the Coach
+     *  has always sent; everything newer defaults OFF. Carried in the `.noopbak` settings as
+     *  `coach.shareCategories`. */
+    const val KEY_COACH_SHARE_CATEGORIES = "noop.coachShareCategories"
+
+    /** The stored string, or null when the user never touched a switch. */
+    fun coachShareCategories(context: Context): String? =
+        of(context).getString(KEY_COACH_SHARE_CATEGORIES, null)
+
+    fun setCoachShareCategories(context: Context, stored: String) {
+        of(context).edit().putString(KEY_COACH_SHARE_CATEGORIES, stored).apply()
+    }
+
     /** K11: Coach multimodal chart image (opt-in, default OFF). When ON and the provider is Gemini,
      *  a chart snapshot is sent as inline_data alongside the text. A THIRD opt-in on top of the
      *  existing data consent. Only Gemini supports multimodal input. */

@@ -130,6 +130,7 @@ object CoachBriefScheduler {
         val aiCoach = AiCoach(
             WhoopRepository(WhoopDatabase.get(ctx)),
             activeStrapId = { (ctx as? com.noop.NoopApplication)?.activeDeviceId ?: WhoopRepository.WHOOP_SOURCE },
+            registry = { (ctx as? com.noop.NoopApplication)?.deviceRegistry },
         )
         return aiCoach.generateBrief(ctx, provider, model, consent, customUrl, customHeader, includeSignals)
     }

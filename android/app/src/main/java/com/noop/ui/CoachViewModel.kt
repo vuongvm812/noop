@@ -48,6 +48,7 @@ class CoachViewModel(app: Application) : AndroidViewModel(app) {
         // off the active strap's data — daysMerged/R-R/Lab markers union active ∪ canonical — instead of a
         // hardcoded "my-whoop" that misses a strap banked under "whoop-<uuid>".
         activeStrapId = { (app as NoopApplication).activeDeviceId },
+        registry = { (app as NoopApplication).deviceRegistry },
     )
 
     // PRD-K2: persisted conversation history (Room `coachMessage` table).

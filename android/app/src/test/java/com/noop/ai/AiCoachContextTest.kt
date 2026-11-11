@@ -1,5 +1,6 @@
 package com.noop.ai
 
+import com.noop.analytics.MetricSnapshotCategory
 import com.noop.data.DailyMetric
 import com.noop.data.WhoopDao
 import com.noop.data.WhoopRepository
@@ -153,5 +154,50 @@ class AiCoachContextTest {
         assertFalse("invented HRV", Regex("HRV \\d").containsMatchIn(ctx))
         // Data exists (sleep), so the no-data sentinel is still wrong here.
         assertFalse("no-data sentinel leaked", ctx.contains("No wearable data is available yet"))
+    }
+
+    private fun fullDay(day: String) = computedRow(day).copy(
+        deepMin = 84.0, remMin = 114.0, lightMin = 252.0, efficiency = 0.94,
+        spo2Pct = 97.0, respRateBpm = 14.5, steps = 9000, exerciseCount = 1,
+    )
+
+    /** Every category on is the long-standing table, byte for byte (the default for existing users). */
+    @Test
+    fun allCategoriesOnIsTheLongStandingContext() {
+        val days = listOf(fullDay(june(1)))
+        assertEquals(coach().buildContext(days), coach().buildContext(days, MetricSnapshotCategory.entries.map { it.id }.toSet()))
+    }
+
+    /** A switched-off category's fields never reach the prompt, field by field. */
+    @Test
+    fun aSwitchedOffCategoryIsNotSent() {
+        val days = listOf(fullDay(june(1)))
+        val ctx = coach().buildContext(days, setOf("recovery_strain"))
+        assertTrue(ctx.contains("charge 67%"))
+        assertTrue(ctx.contains("HRV 65ms"))
+        assertFalse("sleep", ctx.contains("rest ") || ctx.contains("deep ") || ctx.contains("REM "))
+        assertFalse("heart", ctx.contains("SpO") || ctx.contains("respiration"))
+        assertFalse("activity", ctx.contains("steps"))
+        assertFalse("workouts", ctx.contains("Recent workouts"))
+
+        val sleepOnly = coach().buildContext(days, setOf("sleep"))
+        assertTrue(sleepOnly.contains("rest 7.5h, deep 1.4h, REM 1.9h, light 4.2h, eff 94%"))
+        assertFalse(sleepOnly.contains("charge") || sleepOnly.contains("HRV") || sleepOnly.contains("RHR"))
+    }
+
+    /** The composed context appends the blocks in the Swift twin's order and skips blank ones. */
+    @Test
+    fun composeAppendsBlocksInOrder() {
+        val ctx = coach().composeContext(listOf(fullDay(june(1))), setOf("sleep"), "WORKOUTS", " ", "METRICS", "SIGNALS")
+        val w = ctx.indexOf("WORKOUTS"); val m = ctx.indexOf("METRICS"); val s = ctx.indexOf("SIGNALS")
+        assertTrue(w > 0 && m > w && s > m)
+        assertFalse(ctx.contains("Stress"))
+    }
+
+    /** The brief asks for every shared category and forbids talking about unshared ones. */
+    @Test
+    fun briefInstructionCoversSharedCategories() {
+        assertTrue(AiCoach.BRIEF_INSTRUCTION.contains("every category of data shared above"))
+        assertTrue(AiCoach.BRIEF_INSTRUCTION.contains("never mention a category that was not shared"))
     }
 }

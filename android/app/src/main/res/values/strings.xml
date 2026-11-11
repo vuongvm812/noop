@@ -2845,8 +2845,11 @@
     <string name="coach_key_rejected_hint">Paste the corrected key. Your conversation is kept.</string>
     <string name="coach_key_rejected_placeholder">Paste your %1$s key</string>
     <string name="coach_key_rejected_action">Update key</string>
-    <string name="coach_consent_on">On: your charge, rest, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate.</string>
+    <string name="coach_consent_on">On: the categories you switch on below are sent to the provider as summaries (by default charge, rest, HRV, heart, activity and workouts), each workout with its sport, duration, distance and heart rate.</string>
     <string name="coach_consent_off">Off: the coach answers generally and sends none of your metrics.</string>
+    <string name="coach_share_title">Data the coach may see</string>
+    <string name="coach_share_desc">Switch off any category you do not want sent. Newer categories start off. Summaries only, never raw samples.</string>
+    <string name="coach_share_needs_consent">These switches take effect once the coach may use your data.</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">A Today screen you arrange yourself, stress on the home screen, and backups that check themselves</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">Scored through %1$s. Later hours need more heart-rate samples.</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">Scan and connect</string>

@@ -2808,8 +2808,11 @@
     <string name="coach_key_rejected_hint">Cola a chave corrigida. A tua conversa é mantida.</string>
     <string name="coach_key_rejected_placeholder">Cola a tua chave %1$s</string>
     <string name="coach_key_rejected_action">Atualizar chave</string>
-    <string name="coach_consent_on">Ligado: a tua carga, descanso, VFC e treinos são enviados ao fornecedor, cada treino com o desporto, duração, distância e frequência cardíaca.</string>
+    <string name="coach_consent_on">Ligado: as categorias que ligares abaixo são enviadas ao fornecedor como resumos (por predefinição carga, descanso, VFC, coração, atividade e treinos), cada treino com o desporto, duração, distância e frequência cardíaca.</string>
     <string name="coach_consent_off">Desligado: o coach responde de forma geral e não envia nenhuma das tuas métricas.</string>
+    <string name="coach_share_title">Dados que o coach pode ver</string>
+    <string name="coach_share_desc">Desliga as categorias que não queres enviar. As mais recentes começam desligadas. Apenas resumos, nunca dados em bruto.</string>
+    <string name="coach_share_needs_consent">Estes interruptores só têm efeito quando o coach puder usar os teus dados.</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">Um ecrã Hoje que organiza a seu gosto, o stress no ecrã principal e cópias de segurança que se verificam a si próprias</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">Avaliado até às %1$s. As horas seguintes precisam de mais amostras de frequência cardíaca.</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">Procurar e ligar</string>

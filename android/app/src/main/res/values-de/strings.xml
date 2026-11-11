@@ -2829,8 +2829,11 @@
     <string name="coach_key_rejected_hint">Füge den korrigierten Schlüssel ein. Deine Unterhaltung bleibt erhalten.</string>
     <string name="coach_key_rejected_placeholder">%1$s-Schlüssel einfügen</string>
     <string name="coach_key_rejected_action">Schlüssel aktualisieren</string>
-    <string name="coach_consent_on">An: Ladung, Erholung, HRV und Workouts gehen an den Anbieter, jedes Workout mit Sportart, Dauer, Distanz und Herzfrequenz.</string>
+    <string name="coach_consent_on">An: Die Kategorien, die du unten aktivierst, gehen als Zusammenfassung an den Anbieter (standardmäßig Ladung, Erholung, HRV, Herz, Aktivität und Workouts), jedes Workout mit Sportart, Dauer, Distanz und Herzfrequenz.</string>
     <string name="coach_consent_off">Aus: Der Coach antwortet allgemein und sendet keine deiner Werte.</string>
+    <string name="coach_share_title">Daten, die der Coach sehen darf</string>
+    <string name="coach_share_desc">Schalte jede Kategorie aus, die nicht gesendet werden soll. Neuere Kategorien sind zunächst aus. Nur Zusammenfassungen, nie Rohdaten.</string>
+    <string name="coach_share_needs_consent">Diese Schalter wirken, sobald der Coach deine Daten nutzen darf.</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">Ein Heute-Bildschirm, den du selbst zusammenstellst, Stress auf dem Homescreen und Backups, die sich selbst prüfen</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">Bewertet bis %1$s. Spätere Stunden brauchen mehr Herzfrequenz-Messwerte.</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">Suchen und verbinden</string>

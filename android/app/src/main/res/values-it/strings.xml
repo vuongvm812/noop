@@ -2784,8 +2784,11 @@
     <string name="coach_key_rejected_hint">Incolla la chiave corretta. La tua conversazione viene mantenuta.</string>
     <string name="coach_key_rejected_placeholder">Incolla la tua chiave %1$s</string>
     <string name="coach_key_rejected_action">Aggiorna chiave</string>
-    <string name="coach_consent_on">Attivo: carica, riposo, HRV e allenamenti vengono inviati al provider, ogni allenamento con sport, durata, distanza e frequenza cardiaca.</string>
+    <string name="coach_consent_on">Attivo: le categorie che attivi qui sotto vengono inviate al provider come riepiloghi (di default carica, riposo, HRV, cuore, attività e allenamenti), ogni allenamento con sport, durata, distanza e frequenza cardiaca.</string>
     <string name="coach_consent_off">Off, il coach risponde in modo generico e non invia nessuna delle tue metriche.</string>
+    <string name="coach_share_title">Dati che il coach può vedere</string>
+    <string name="coach_share_desc">Disattiva le categorie che non vuoi inviare. Quelle più recenti partono disattivate. Solo riepiloghi, mai dati grezzi.</string>
+    <string name="coach_share_needs_consent">Questi interruttori hanno effetto quando il coach può usare i tuoi dati.</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">Una schermata Oggi che organizzi tu, lo stress nella schermata Home e backup che si verificano da soli</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">Calcolato fino alle %1$s. Le ore successive richiedono più campioni di frequenza cardiaca.</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">Cerca e collega</string>

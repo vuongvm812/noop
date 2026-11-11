@@ -31,6 +31,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.noop.analytics.CoachMetricContext
+import com.noop.analytics.MetricSnapshotCategory
 
 /**
  * Coach settings, split out of [CoachScreen] so the coach tab is the conversation and nothing else
@@ -85,6 +87,7 @@ fun CoachSettingsScreen(vm: CoachViewModel) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             CoachModelCard(vm = vm)
             CoachConsentCard(vm = vm)
+            CoachShareCard(vm = vm)
             CoachInstructions(vm = vm)
             MorningBriefCard(vm = vm)
         }
@@ -163,6 +166,50 @@ private fun CoachConsentCard(vm: CoachViewModel) {
                 checked = consent,
                 onCheckedChange = { vm.setConsent(context, it) },
             )
+        }
+    }
+}
+
+/**
+ * One switch per metric category the coach may be sent. Defaults to what the coach has always seen;
+ * newer categories start off. Stored as the enabled ids (see [CoachMetricContext]) and read fresh on
+ * every send, so a change applies to the very next message and brief. Swift twin: `CoachSettingsView`'s
+ * share-categories card.
+ */
+@Composable
+private fun CoachShareCard(vm: CoachViewModel) {
+    val context = LocalContext.current
+    val consent by vm.consent.collectAsStateWithLifecycle()
+    var enabled by remember {
+        androidx.compose.runtime.mutableStateOf(
+            CoachMetricContext.parseCategories(NoopPrefs.coachShareCategories(context)),
+        )
+    }
+    NoopCard(padding = 14.dp, tint = Palette.chargeColor) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.coach_share_title), style = NoopType.subhead, color = Palette.textPrimary)
+                Text(
+                    stringResource(if (consent) R.string.coach_share_desc else R.string.coach_share_needs_consent),
+                    style = NoopType.footnote, color = Palette.textTertiary,
+                )
+            }
+            for (category in MetricSnapshotCategory.entries) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(category.labelRes()),
+                        style = NoopType.subhead, color = Palette.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.Switch(
+                        checked = category.id in enabled,
+                        onCheckedChange = { on ->
+                            enabled = if (on) enabled + category.id else enabled - category.id
+                            NoopPrefs.setCoachShareCategories(context, CoachMetricContext.encodeCategories(enabled))
+                        },
+                    )
+                }
+            }
         }
     }
 }

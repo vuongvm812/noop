@@ -241,6 +241,17 @@ final class AICoachEngine: ObservableObject {
         didSet { UserDefaults.standard.set(includeOnDeviceSignals, forKey: Self.onDeviceSignalsKey) }
     }
 
+    /// Which metric categories the Coach may see: the enabled snapshot category ids (`CoachMetricContext`).
+    /// Absent until a switch is touched, which means the categories the Coach has always sent; everything
+    /// newer defaults OFF. Read fresh on every send, so a change applies to the very next message and
+    /// brief. Carried in the `.noopbak` settings as `coach.shareCategories` (UserDefaults `ai.shareCategories`).
+    @Published var shareCategories: Set<String> {
+        didSet {
+            UserDefaults.standard.set(CoachMetricContext.encodeCategories(shareCategories),
+                                      forKey: Self.shareCategoriesKey)
+        }
+    }
+
     /// K11: THIRD opt-in — send a chart image alongside the text when using Gemini's multimodal
     /// API. OFF by default and gated behind `dataConsent` too. Only active when the provider is
     /// Gemini (the only provider with multimodal support in the app). When on, the Coach composer
@@ -258,6 +269,7 @@ final class AICoachEngine: ObservableObject {
     private static let customConnectedKey = "ai.customConnected"
     private static let onDeviceSignalsKey = "ai.includeOnDeviceSignals"
     private static let multimodalChartKey = "ai.multimodalChartEnabled"
+    static let shareCategoriesKey = "ai.shareCategories"
     /// UserDefaults key holding the user's EDITED system prompt. Absent (or blank) means "use the
     /// built-in default". Small text key, never a secret, so plain UserDefaults is fine. Read FRESH
     /// per request (see `systemPrompt`) so an edit takes effect on the very next message.
@@ -395,6 +407,8 @@ final class AICoachEngine: ObservableObject {
         self.customAuthHeader = AIProvider.customAuthHeader
         self.customConnected = UserDefaults.standard.bool(forKey: Self.customConnectedKey)
         self.includeOnDeviceSignals = UserDefaults.standard.bool(forKey: Self.onDeviceSignalsKey)
+        self.shareCategories = CoachMetricContext.parseCategories(
+            UserDefaults.standard.string(forKey: Self.shareCategoriesKey))
         self.multimodalChartEnabled = UserDefaults.standard.bool(forKey: Self.multimodalChartKey)
     }
 
@@ -925,11 +939,15 @@ final class AICoachEngine: ObservableObject {
     /// K5: The brief instruction shared by the interactive `startBriefIfNeeded()` (streamed into the
     /// chat) and the headless `generateBrief()` below (used by the scheduled morning-brief notification).
     /// Kept in one place so the two paths never drift.
+    static let briefInstructionText = briefInstruction
     private static let briefInstruction = """
     Based on the data above, give me TODAY'S coaching brief in three short parts: \
     (1) my readiness in one line, citing charge, HRV and rest; \
     (2) exactly what training to do today and what to avoid; \
-    (3) one specific thing to improve my charge. Be punchy and motivating.
+    (3) one specific thing to improve my charge. Cover every category of data shared above \
+    that bears on today (sleep, heart, activity, workouts, body, fitness scores, watch, \
+    nutrition, hydration, mood, cycle, labs) in those parts, and never mention a category \
+    that was not shared. Be punchy and motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -954,18 +972,54 @@ final class AICoachEngine: ObservableObject {
     /// Full data context = the metrics summary + recent workouts (+ an OPT-IN on-device-signals summary
     /// when the second consent is on). Used when the user has granted data access.
     func buildFullContext() async -> String {
-        var ctx = buildContext()
-        ctx += "\n\n" + (await recentWorkoutsBlock())
+        // Re-read from defaults so a restore (which writes UserDefaults directly) and the Settings switches
+        // are both honoured on the very next send.
+        let enabled = CoachMetricContext.parseCategories(
+            UserDefaults.standard.string(forKey: Self.shareCategoriesKey))
+        var ctx = buildContext(enabled: enabled)
+        if enabled.contains(MetricSnapshotCategory.workouts.id) {
+            ctx += "\n\n" + (await recentWorkoutsBlock())
+        }
         // Derived stress: a single Baevsky Stress Index summary line over today's R-R, computed the same
         // way StressView does. Gated here under `dataConsent` (the caller only reaches buildFullContext()
-        // with consent on), so it rides the SAME consent + text-only channel as the HRV/RHR summary, a
-        // derived number, never raw R-R egress. Omitted when there aren't enough clean beats yet.
-        if let line = await stressIndexLine() { ctx += "\n\n" + line }
+        // with consent on) and the Recovery & strain switch, so it rides the SAME consent + text-only
+        // channel as the HRV/RHR summary, a derived number, never raw R-R egress. Omitted when there
+        // aren't enough clean beats yet.
+        if enabled.contains(MetricSnapshotCategory.recoveryStrain.id),
+           let line = await stressIndexLine() { ctx += "\n\n" + line }
+        let metrics = await metricsBlock(enabled: enabled)
+        if !metrics.isEmpty { ctx += "\n\n" + metrics }
         if includeOnDeviceSignals {
-            let block = await onDeviceSignalsBlock()
+            let block = await onDeviceSignalsBlock(
+                includePatterns: enabled.contains(MetricSnapshotCategory.mind.id)
+                    && enabled.contains(MetricSnapshotCategory.recoveryStrain.id),
+                includeLabs: enabled.contains(MetricSnapshotCategory.labs.id))
             if !block.isEmpty { ctx += "\n\n" + block }
         }
         return ctx
+    }
+
+    /// The "all metrics" block: every stored metric of the enabled categories over the last 30 days from the
+    /// shared snapshot (`MetricSnapshotLoader`), printed by `CoachMetricContext.block`. "" when nothing is
+    /// enabled or recorded. Kotlin twin: `AiCoach.metricsBlock`.
+    func metricsBlock(enabled: Set<String>) async -> String {
+        guard !enabled.isEmpty else { return "" }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let fmt = DateFormatter()
+        fmt.calendar = cal
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyy-MM-dd"
+        let days: [String] = (0..<30).reversed().compactMap {
+            cal.date(byAdding: .day, value: -$0, to: today).map { fmt.string(from: $0) }
+        }
+        guard let first = days.first, let last = days.last else { return "" }
+        let values = await MetricSnapshotLoader.dayValues(repo: repo, from: first, to: last)
+        let wantsNotes = enabled.contains(MetricSnapshotCategory.mind.id)
+            || enabled.contains(MetricSnapshotCategory.labs.id)
+        let notes = wantsNotes ? await MetricSnapshotLoader.notes(repo: repo, from: first, to: last) : []
+        return CoachMetricContext.block(days: days, values: values, notes: notes, enabled: enabled,
+                                       maxChars: CoachMetricContext.maxChars)
     }
 
     /// One derived stress line for the coach context: the Baevsky Stress Index over TODAY's R-R, read
@@ -992,11 +1046,11 @@ final class AICoachEngine: ObservableObject {
     /// (lag-aware EffectRanker) and a one-line roll-up of their Lab Book markers. Plain sentences, never
     /// raw readings: this rides the same text channel as the metrics summary, so the no-raw-egress posture
     /// holds. Gated by the caller on the second opt-in; returns "" when there's nothing worth adding.
-    func onDeviceSignalsBlock() async -> String {
+    func onDeviceSignalsBlock(includePatterns: Bool = true, includeLabs: Bool = true) async -> String {
         var lines: [String] = []
 
         // 1. Strongest behaviour→outcome associations (EffectRanker over the journal × Charge).
-        let entries = await repo.journalEntries()
+        let entries = includePatterns ? await repo.journalEntries() : []
         // Yes days and NO days, kept apart. A day with no journal row for the question lands in
         // neither, so an unanswered day is never counted as a No (BehaviorInsights.effect).
         var byBehaviour: [String: Set<String>] = [:]
@@ -1020,7 +1074,7 @@ final class AICoachEngine: ObservableObject {
         }
 
         // 2. Lab Book markers roll-up (count + latest of a few, never the full history).
-        if let store = await repo.storeHandle() {
+        if includeLabs, let store = await repo.storeHandle() {
             var markerSummaries: [String] = []
             for category in LabMarkerCategory.allCases {
                 let rows = (try? await store.labMarkers(deviceId: repo.deviceId, category: category.rawValue)) ?? []
@@ -1189,7 +1243,7 @@ final class AICoachEngine: ObservableObject {
     /// Build a compact plain-text summary of the user's recent data: last ~14 days of
     /// recovery/strain/sleep-hours/HRV/restingHR where present, plus 30-day averages, plus a few
     /// recent workouts. Kept well under ~1500 tokens. If there's no data, it says so.
-    func buildContext() -> String {
+    func buildContext(enabled: Set<String> = Set(MetricSnapshotCategory.allCases.map { $0.id })) -> String {
         let days = repo.days // oldest → newest
         var lines: [String] = ["USER BIOMETRIC SUMMARY (the user's own wearable data):"]
 
@@ -1201,30 +1255,52 @@ final class AICoachEngine: ObservableObject {
             """
         }
 
+        // Per-category sharing: a field is printed only when its snapshot category is switched on. With
+        // every category on (the default) the output is the long-standing table.
+        let recoveryOn = enabled.contains(MetricSnapshotCategory.recoveryStrain.id)
+        let sleepOn = enabled.contains(MetricSnapshotCategory.sleep.id)
+        let heartOn = enabled.contains(MetricSnapshotCategory.heart.id)
+        let activityOn = enabled.contains(MetricSnapshotCategory.activity.id)
+
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
-        lines.append("")
-        lines.append("Recent days (newest first) — charge(0-100), effort(0-100), rest/sleep(h), "
-                     + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
-        for d in recent {
-            lines.append("  " + dayLine(d))
+        let tableOn = recoveryOn || sleepOn
+        if tableOn {
+            lines.append("")
+            lines.append("Recent days (newest first) — charge(0-100), effort(0-100), rest/sleep(h), "
+                         + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
+            for d in recent {
+                lines.append("  " + dayLine(d, enabled: enabled))
+            }
         }
 
         // 30-day averages.
         let last30 = Array(days.suffix(30))
         lines.append("")
         lines.append("30-day averages:")
-        lines.append("  charge: \(avgInt(last30.compactMap { $0.recovery }))"
-                     + ", effort: \(avgOne(last30.compactMap { $0.strain }))"
-                     + ", sleep: \(avgSleepHours(last30))h"
-                     + ", HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms"
-                     + ", RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm")
+        var line1: [String] = []
+        if recoveryOn {
+            line1.append("charge: \(avgInt(last30.compactMap { $0.recovery }))")
+            line1.append("effort: \(avgOne(last30.compactMap { $0.strain }))")
+        }
+        if sleepOn { line1.append("sleep: \(avgSleepHours(last30))h") }
+        if recoveryOn {
+            line1.append("HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms")
+            line1.append("RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm")
+        }
+        if !line1.isEmpty { lines.append("  " + line1.joined(separator: ", ")) }
         // Additional vitals when present (#124, the coach used to see only recovery/strain/sleep/HRV/RHR).
-        lines.append("  SpO2: \(avgInt(last30.compactMap { $0.spo2Pct }))%"
-                     + ", respiration: \(avgOne(last30.compactMap { $0.respRateBpm }))/min"
-                     + ", skin-temp deviation: \(avgOne(last30.compactMap { $0.skinTempDevC }))°C"
-                     + ", steps: \(avgInt(last30.compactMap { $0.steps.map(Double.init) }))/day"
-                     + ", total energy: \(avgInt(last30.compactMap { $0.activeKcalEst }))kcal/day")
+        var line2: [String] = []
+        if heartOn {
+            line2.append("SpO2: \(avgInt(last30.compactMap { $0.spo2Pct }))%")
+            line2.append("respiration: \(avgOne(last30.compactMap { $0.respRateBpm }))/min")
+            line2.append("skin-temp deviation: \(avgOne(last30.compactMap { $0.skinTempDevC }))°C")
+        }
+        if activityOn {
+            line2.append("steps: \(avgInt(last30.compactMap { $0.steps.map(Double.init) }))/day")
+            line2.append("total energy: \(avgInt(last30.compactMap { $0.activeKcalEst }))kcal/day")
+        }
+        if !line2.isEmpty { lines.append("  " + line2.joined(separator: ", ")) }
 
         return lines.joined(separator: "\n")
     }
@@ -1261,27 +1337,36 @@ final class AICoachEngine: ObservableObject {
     /// Swift's `buildContext()` takes no arguments (it reads the repo), unlike the Kotlin twin which is
     /// handed the day list — so without this the formatter has no seam and the Swift half of a change
     /// with fifteen Kotlin tests would ship untested.
-    func dayLine(_ d: DailyMetric) -> String {
+    func dayLine(_ d: DailyMetric,
+                 enabled: Set<String> = Set(MetricSnapshotCategory.allCases.map { $0.id })) -> String {
+        let recoveryOn = enabled.contains(MetricSnapshotCategory.recoveryStrain.id)
+        let sleepOn = enabled.contains(MetricSnapshotCategory.sleep.id)
         var parts: [String] = [d.day + ":"]
-        parts.append("charge " + (d.recovery.map { "\(Int($0.rounded()))" } ?? "—"))
-        parts.append("effort " + (d.strain.map { String(format: "%.1f", $0) } ?? "—"))
-        parts.append("rest " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
-        // The stage breakdown and efficiency, which the coach could not see at all: a user asked why it
-        // said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was every
-        // word it got about a night. These four sit on the SAME DailyMetric the line already reads, so
-        // nothing new is plumbed; they were simply never included. (#124 widened this context once
-        // before, for the same reason.)
-        //
-        // Always emitted, "—" when absent, like every other field here. A night with no staging then
-        // says so rather than going quiet, which matters more than line length: the alternative — only
-        // appending stages when present — gives the model a schema that changes shape between days and
-        // invites it to read a missing field as a zero.
-        parts.append("deep " + hoursOrDash(d.deepMin))
-        parts.append("REM " + hoursOrDash(d.remMin))
-        parts.append("light " + hoursOrDash(d.lightMin))
-        parts.append("eff " + efficiencyPercentOrDash(d.efficiency))
-        parts.append("HRV " + (d.avgHrv.map { "\(Int($0.rounded()))ms" } ?? "—"))
-        parts.append("RHR " + (d.restingHr.map { "\($0)bpm" } ?? "—"))
+        if recoveryOn {
+            parts.append("charge " + (d.recovery.map { "\(Int($0.rounded()))" } ?? "—"))
+            parts.append("effort " + (d.strain.map { String(format: "%.1f", $0) } ?? "—"))
+        }
+        if sleepOn {
+            parts.append("rest " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
+            // The stage breakdown and efficiency, which the coach could not see at all: a user asked why it
+            // said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was every
+            // word it got about a night. These four sit on the SAME DailyMetric the line already reads, so
+            // nothing new is plumbed; they were simply never included. (#124 widened this context once
+            // before, for the same reason.)
+            //
+            // Always emitted, "—" when absent, like every other field here. A night with no staging then
+            // says so rather than going quiet, which matters more than line length: the alternative — only
+            // appending stages when present — gives the model a schema that changes shape between days and
+            // invites it to read a missing field as a zero.
+            parts.append("deep " + hoursOrDash(d.deepMin))
+            parts.append("REM " + hoursOrDash(d.remMin))
+            parts.append("light " + hoursOrDash(d.lightMin))
+            parts.append("eff " + efficiencyPercentOrDash(d.efficiency))
+        }
+        if recoveryOn {
+            parts.append("HRV " + (d.avgHrv.map { "\(Int($0.rounded()))ms" } ?? "—"))
+            parts.append("RHR " + (d.restingHr.map { "\($0)bpm" } ?? "—"))
+        }
         return parts.joined(separator: ", ")
     }
 

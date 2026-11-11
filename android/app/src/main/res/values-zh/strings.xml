@@ -2726,8 +2726,11 @@
     <string name="coach_key_rejected_hint">粘贴更正后的密钥。你的对话会保留。</string>
     <string name="coach_key_rejected_placeholder">粘贴你的 %1$s 密钥</string>
     <string name="coach_key_rejected_action">更新密钥</string>
-    <string name="coach_consent_on">开启：你的充能、休息、HRV 和训练会发送给服务商，每次训练包含运动类型、时长、距离和心率。</string>
+    <string name="coach_consent_on">开启：你在下方开启的类别会以摘要形式发送给服务商（默认为充能、休息、HRV、心脏、活动和训练），每次训练包含运动类型、时长、距离和心率。</string>
     <string name="coach_consent_off">关闭：教练只作一般性回答，不发送你的任何数据。</string>
+    <string name="coach_share_title">教练可以查看的数据</string>
+    <string name="coach_share_desc">关闭你不想发送的类别。较新的类别默认关闭。仅发送摘要，绝不发送原始数据。</string>
+    <string name="coach_share_needs_consent">教练获准使用你的数据后，这些开关才会生效。</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">可自行编排的「今天」页面、主屏幕上的压力曲线，以及会自我校验的备份</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">已评分至 %1$s。较晚的时段需要更多心率采样。</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">扫描并连接</string>

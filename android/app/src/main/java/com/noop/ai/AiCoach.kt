@@ -1,19 +1,23 @@
 package com.noop.ai
 
 import android.content.Context
+import com.noop.analytics.CoachMetricContext
 import com.noop.analytics.CoachSuggestions
 import com.noop.analytics.EffectRanker
 import com.noop.analytics.LabMarkerCategory
 import com.noop.analytics.MarkerCatalog
+import com.noop.analytics.MetricSnapshotCategory
 import com.noop.analytics.SseDeltas
 import com.noop.analytics.SseProvider
 import com.noop.analytics.StressIndex
 import com.noop.data.DailyMetric
+import com.noop.data.DeviceRegistry
 import com.noop.data.JournalEntry
 import com.noop.data.LabMarkerRow
 import com.noop.data.WhoopRepository
 import com.noop.ingest.ActivityFileImporter
 import com.noop.ingest.LiftingImporter
+import com.noop.ui.MetricSnapshotLoader
 import com.noop.ui.NoopPrefs
 import com.noop.data.WorkoutRow
 import com.noop.ui.UnitFormatter
@@ -44,6 +48,8 @@ import kotlin.math.roundToInt
  */
 class AiCoach(
     private val repo: WhoopRepository,
+    /** The paired-device registry the metric snapshot reads the watch series through; null skips watch metrics. Declared before [activeStrapId] so a trailing lambda still binds to the strap id. */
+    private val registry: () -> DeviceRegistry? = { null },
     /** #1304/#512: resolves the ACTIVE strap id. A lambda (not a plain `String`) so it is read at
      *  call time rather than frozen when `AiCoach` is constructed — the app's active id resolves lazily
      *  at startup, and the coach may be built first. The strap-telemetry reads below
@@ -73,6 +79,73 @@ class AiCoach(
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * The whole data context for one send, under consent. Merged read, NOT raw days(): a live-strap user's
+     * scores live under "my-whoop-noop" and a raw read misses them, the coach then claimed it had no
+     * data (#124). Every block is best-effort, so one failing read never fails the send, and every block
+     * is gated by the user's per-category sharing switches ([enabledCategories]). The on-device-signals
+     * summary rides its own second opt-in (`includeSignals`). Summary text only, never raw samples.
+     * Swift twin: `AICoachEngine.buildFullContext`.
+     */
+    internal suspend fun assembleContext(ctx: Context, includeSignals: Boolean): String {
+        val enabled = enabledCategories(ctx)
+        val days = runCatching { repo.daysMerged(activeStrapId()) }.getOrDefault(emptyList())
+        // Derived stress: a single Baevsky Stress Index summary line over TODAY's R-R, a derived number,
+        // never raw R-R egress. Absent when there aren't enough clean beats yet.
+        val stress = if (MetricSnapshotCategory.RECOVERY_STRAIN.id in enabled) {
+            runCatching { stressLineToday() }.getOrNull()
+        } else null
+        val signals = if (includeSignals) runCatching {
+            buildSignalsContext(
+                includePatterns = MetricSnapshotCategory.MIND.id in enabled &&
+                    MetricSnapshotCategory.RECOVERY_STRAIN.id in enabled,
+                includeLabs = MetricSnapshotCategory.LABS.id in enabled,
+            )
+        }.getOrNull() else null
+        // #2033: per-session workout detail, so the coach can tell a run from a lift.
+        val workouts = if (MetricSnapshotCategory.WORKOUTS.id in enabled) {
+            runCatching { recentWorkoutsBlock(ctx) }.getOrNull()
+        } else null
+        val metrics = runCatching { metricsBlock(enabled) }.getOrNull()
+        return composeContext(days, enabled, workouts, stress, metrics, signals)
+    }
+
+    /** Pure assembly of the blocks, in the order the Swift twin appends them. */
+    internal fun composeContext(
+        days: List<DailyMetric>,
+        enabled: Set<String>,
+        workouts: String?,
+        stress: String?,
+        metrics: String?,
+        signals: String?,
+    ): String = buildString {
+        append(buildContext(days, enabled))
+        if (!workouts.isNullOrBlank()) append("\n\n").append(workouts)
+        if (!stress.isNullOrBlank()) append("\n\n").append(stress)
+        if (!metrics.isNullOrBlank()) append("\n\n").append(metrics)
+        if (!signals.isNullOrBlank()) append("\n\n").append(signals)
+    }
+
+    /** The categories the user lets the coach see (defaults until a switch is touched). */
+    internal fun enabledCategories(ctx: Context): Set<String> =
+        CoachMetricContext.parseCategories(NoopPrefs.coachShareCategories(ctx))
+
+    /**
+     * The "all metrics" block: every stored metric of the enabled categories over the last 30 days from the
+     * shared snapshot ([MetricSnapshotLoader]), printed by [CoachMetricContext.block]. Null when nothing is
+     * enabled or recorded.
+     */
+    private suspend fun metricsBlock(enabled: Set<String>): String? {
+        if (enabled.isEmpty()) return null
+        val today = java.time.LocalDate.now()
+        val days = (29 downTo 0).map { today.minusDays(it.toLong()).toString() }
+        val values = MetricSnapshotLoader.dayValues(repo, registry(), activeStrapId(), days.first(), days.last())
+        val notes = if (MetricSnapshotCategory.MIND.id in enabled || MetricSnapshotCategory.LABS.id in enabled) {
+            MetricSnapshotLoader.notes(repo, activeStrapId(), days.first(), days.last())
+        } else emptyList()
+        return CoachMetricContext.block(days, values, notes, enabled, CoachMetricContext.MAX_CHARS).ifBlank { null }
+    }
 
     /**
      * Send the conversation to [provider] using [model] and return the assistant reply text.
@@ -112,29 +185,7 @@ class AiCoach(
 
         // Include the user's data ONLY with explicit consent; otherwise a note, never their numbers.
         val groundedFull = if (consent) {
-            // Merged read, NOT raw days(): a live-strap user's scores live under "my-whoop-noop"
-            // and a raw read misses them, the coach then claimed it had no data. (#124)
-            val days = runCatching { repo.daysMerged(activeStrapId()) }.getOrDefault(emptyList())
-            // Derived stress: a single Baevsky Stress Index summary line over TODAY's R-R, read the
-            // same way StressScreen does (repo.rrIntervals over the local day) and gated UNDER this same
-            // `consent` block as the HRV/RHR summary, a derived number, never raw R-R egress. Absent
-            // when there aren't enough clean beats yet. Best-effort; never blocks the send.
-            val stress = runCatching { stressLineToday() }.getOrNull()
-            // v5: a SECOND opt-in (on top of `consent`) may append a SUMMARY-ONLY line of the user's
-            // strongest on-device patterns + Lab Book markers. Summary text only, no raw rows, no
-            // per-day series, so the anonymity / no-raw-egress posture holds. Best-effort; never blocks.
-            val signals = if (includeSignals) runCatching { buildSignalsContext() }.getOrNull() else null
-            // #2033: per-session workout detail, so the coach can tell a run from a lift. Best-effort
-            // like the blocks around it; a read that throws leaves the day table standing rather than
-            // failing the send. Matches where Swift appends it in `buildFullContext`.
-            val workouts = runCatching { recentWorkoutsBlock(ctx) }.getOrNull()
-            val full = buildString {
-                append(buildContext(days))
-                if (!workouts.isNullOrBlank()) append("\n\n").append(workouts)
-                if (!stress.isNullOrBlank()) append("\n\n").append(stress)
-                if (!signals.isNullOrBlank()) append("\n\n").append(signals)
-            }
-            injectContext(history, full)
+            injectContext(history, assembleContext(ctx, includeSignals))
         } else {
             injectContext(history, NO_CONSENT_NOTE)
         }
@@ -203,20 +254,7 @@ class AiCoach(
         require(history.last().role == "user") { "The last message must be your question." }
 
         val groundedFull = if (consent) {
-            val days = runCatching { repo.daysMerged(activeStrapId()) }.getOrDefault(emptyList())
-            val stress = runCatching { stressLineToday() }.getOrNull()
-            val signals = if (includeSignals) runCatching { buildSignalsContext() }.getOrNull() else null
-            // #2033: per-session workout detail, so the coach can tell a run from a lift. Best-effort
-            // like the blocks around it; a read that throws leaves the day table standing rather than
-            // failing the send. Matches where Swift appends it in `buildFullContext`.
-            val workouts = runCatching { recentWorkoutsBlock(ctx) }.getOrNull()
-            val full = buildString {
-                append(buildContext(days))
-                if (!workouts.isNullOrBlank()) append("\n\n").append(workouts)
-                if (!stress.isNullOrBlank()) append("\n\n").append(stress)
-                if (!signals.isNullOrBlank()) append("\n\n").append(signals)
-            }
-            injectContext(history, full)
+            injectContext(history, assembleContext(ctx, includeSignals))
         } else {
             injectContext(history, NO_CONSENT_NOTE)
         }
@@ -402,12 +440,22 @@ class AiCoach(
      * Kept well under ~1500 tokens. If there is no data at all, says so explicitly so the
      * model doesn't invent numbers.
      */
-    fun buildContext(days: List<DailyMetric>): String {
+    fun buildContext(
+        days: List<DailyMetric>,
+        enabled: Set<String> = MetricSnapshotCategory.entries.map { it.id }.toSet(),
+    ): String {
         if (days.isEmpty()) {
             return "USER DATA: No wearable data is available yet (no synced days). " +
                 "Do not invent specific numbers; give general guidance and encourage the user " +
                 "to sync their strap so future advice can reference their real metrics."
         }
+        // Per-category sharing: a field is printed only when its snapshot category is switched on. With
+        // every category on (the default) the output is byte-identical to the long-standing table.
+        val recoveryOn = MetricSnapshotCategory.RECOVERY_STRAIN.id in enabled
+        val sleepOn = MetricSnapshotCategory.SLEEP.id in enabled
+        val heartOn = MetricSnapshotCategory.HEART.id in enabled
+        val activityOn = MetricSnapshotCategory.ACTIVITY.id in enabled
+        val workoutsOn = MetricSnapshotCategory.WORKOUTS.id in enabled
 
         // daysMerged() returns oldest-first; take the most recent up to 30 for averages, 14 for the table.
         val last30 = days.takeLast(30)
@@ -417,59 +465,77 @@ class AiCoach(
         sb.append("USER DATA (most recent first; figures rounded; a dash means not recorded that day).\n\n")
 
         // --- Recent daily table (newest first for readability) ---
-        sb.append("Last ${last14.size} days:\n")
+        if (recoveryOn || sleepOn) sb.append("Last ${last14.size} days:\n")
         for (d in last14.reversed()) {
-            val recovery = d.recovery?.let { "${it.roundToInt()}%" } ?: "-"
-            val strain = d.strain?.let { fmt1(it) } ?: "-"
-            val sleepH = d.totalSleepMin?.let { fmt1(it / 60.0) + "h" } ?: "-"
-            val hrv = d.avgHrv?.let { "${it.roundToInt()}ms" } ?: "-"
-            val rhr = d.restingHr?.let { "${it}bpm" } ?: "-"
-            // The stage breakdown and efficiency, which the coach could not see at all: a user asked why
-            // it said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was
-            // every word it got about a night. These sit on the SAME DailyMetric this line already reads.
-            // Always emitted, "-" when absent, like every other field: a night with no staging then says
-            // so, rather than the schema changing shape between days and inviting the model to read a
-            // missing field as a zero. Twin of the Swift `AICoach.dayLine`.
-            val deep = d.deepMin?.let { fmt1(it / 60.0) + "h" } ?: "-"
-            val rem = d.remMin?.let { fmt1(it / 60.0) + "h" } ?: "-"
-            val light = d.lightMin?.let { fmt1(it / 60.0) + "h" } ?: "-"
-            val eff = effPctOrDash(d.efficiency)
-            sb.append(
-                "  ${d.day}: charge $recovery, effort $strain, rest $sleepH, " +
-                    "deep $deep, REM $rem, light $light, eff $eff, HRV $hrv, RHR $rhr\n"
-            )
+            val cells = ArrayList<String>()
+            if (recoveryOn) {
+                cells.add("charge " + (d.recovery?.let { "${it.roundToInt()}%" } ?: "-"))
+                cells.add("effort " + (d.strain?.let { fmt1(it) } ?: "-"))
+            }
+            if (sleepOn) {
+                // The stage breakdown and efficiency, which the coach could not see at all: a user asked why
+                // it said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was
+                // every word it got about a night. These sit on the SAME DailyMetric this line already reads.
+                // Always emitted, "-" when absent, like every other field: a night with no staging then says
+                // so, rather than the schema changing shape between days and inviting the model to read a
+                // missing field as a zero. Twin of the Swift `AICoach.dayLine`.
+                cells.add("rest " + (d.totalSleepMin?.let { fmt1(it / 60.0) + "h" } ?: "-"))
+                cells.add("deep " + (d.deepMin?.let { fmt1(it / 60.0) + "h" } ?: "-"))
+                cells.add("REM " + (d.remMin?.let { fmt1(it / 60.0) + "h" } ?: "-"))
+                cells.add("light " + (d.lightMin?.let { fmt1(it / 60.0) + "h" } ?: "-"))
+                cells.add("eff " + effPctOrDash(d.efficiency))
+            }
+            if (recoveryOn) {
+                cells.add("HRV " + (d.avgHrv?.let { "${it.roundToInt()}ms" } ?: "-"))
+                cells.add("RHR " + (d.restingHr?.let { "${it}bpm" } ?: "-"))
+            }
+            if (cells.isNotEmpty()) sb.append("  ${d.day}: ${cells.joinToString(", ")}\n")
         }
 
         // --- 30-day averages ---
         sb.append("\n30-day averages (over ${last30.size} days):\n")
-        sb.append("  charge ${avgInt(last30) { it.recovery }}%, ")
-        sb.append("effort ${avg1(last30) { it.strain }}, ")
-        sb.append("rest ${avg1(last30) { d -> d.totalSleepMin?.div(60.0) }}h, ")
-        sb.append("HRV ${avgInt(last30) { it.avgHrv }}ms, ")
-        sb.append("RHR ${avgInt(last30) { d -> d.restingHr?.toDouble() }}bpm\n")
+        val line1 = ArrayList<String>()
+        if (recoveryOn) {
+            line1.add("charge ${avgInt(last30) { it.recovery }}%")
+            line1.add("effort ${avg1(last30) { it.strain }}")
+        }
+        if (sleepOn) line1.add("rest ${avg1(last30) { d -> d.totalSleepMin?.div(60.0) }}h")
+        if (recoveryOn) {
+            line1.add("HRV ${avgInt(last30) { it.avgHrv }}ms")
+            line1.add("RHR ${avgInt(last30) { d -> d.restingHr?.toDouble() }}bpm")
+        }
+        if (line1.isNotEmpty()) sb.append("  ").append(line1.joinToString(", ")).append("\n")
         // Additional vitals when present (#124, the coach used to see only recovery/strain/sleep/HRV/RHR).
-        sb.append("  SpO₂ ${avgInt(last30) { it.spo2Pct }}%, ")
-        sb.append("respiration ${avg1(last30) { it.respRateBpm }}/min, ")
-        sb.append("skin-temp deviation ${avg1(last30) { it.skinTempDevC }}°C, ")
-        sb.append("steps ${avgInt(last30) { d -> d.steps?.toDouble() }}/day, ")
-        sb.append("total energy ${avgInt(last30) { it.activeKcalEst }}kcal/day\n")
+        val line2 = ArrayList<String>()
+        if (heartOn) {
+            line2.add("SpO₂ ${avgInt(last30) { it.spo2Pct }}%")
+            line2.add("respiration ${avg1(last30) { it.respRateBpm }}/min")
+            line2.add("skin-temp deviation ${avg1(last30) { it.skinTempDevC }}°C")
+        }
+        if (activityOn) {
+            line2.add("steps ${avgInt(last30) { d -> d.steps?.toDouble() }}/day")
+            line2.add("total energy ${avgInt(last30) { it.activeKcalEst }}kcal/day")
+        }
+        if (line2.isNotEmpty()) sb.append("  ").append(line2.joinToString(", ")).append("\n")
 
         // --- Recent workouts (derived from logged exercise counts + day strain) ---
-        val workoutDays = last14.filter { (it.exerciseCount ?: 0) > 0 }
-        sb.append("\nRecent workouts (last ${last14.size} days):\n")
-        if (workoutDays.isEmpty()) {
-            sb.append("  None logged.\n")
-        } else {
-            for (d in workoutDays.reversed()) {
-                val n = d.exerciseCount ?: 0
-                val label = if (n == 1) "1 workout" else "$n workouts"
-                val strain = d.strain?.let { ", effort ${fmt1(it)}" } ?: ""
-                sb.append("  ${d.day}: $label$strain\n")
+        if (workoutsOn) {
+            val workoutDays = last14.filter { (it.exerciseCount ?: 0) > 0 }
+            sb.append("\nRecent workouts (last ${last14.size} days):\n")
+            if (workoutDays.isEmpty()) {
+                sb.append("  None logged.\n")
+            } else {
+                for (d in workoutDays.reversed()) {
+                    val n = d.exerciseCount ?: 0
+                    val label = if (n == 1) "1 workout" else "$n workouts"
+                    val strain = if (recoveryOn) d.strain?.let { ", effort ${fmt1(it)}" } ?: "" else ""
+                    sb.append("  ${d.day}: $label$strain\n")
+                }
             }
         }
 
         // Latest snapshot line, handy single reference for the model.
-        days.lastOrNull()?.let { latest ->
+        if (recoveryOn) days.lastOrNull()?.let { latest ->
             val r = latest.recovery?.let { "${it.roundToInt()}%" } ?: "n/a"
             val s = latest.strain?.let { fmt1(it) } ?: "n/a"
             sb.append("\nMost recent day (${latest.day}): charge $r, effort $s.\n")
@@ -583,11 +649,11 @@ class AiCoach(
      * behind the second opt-in. Deliberately compact + textual, no raw per-day series, no identifiers,      * so nothing beyond a plain English summary leaves the device. Returns null/blank when there's
      * nothing to say (the coach then just uses the standard metrics context).
      */
-    private suspend fun buildSignalsContext(): String? {
+    private suspend fun buildSignalsContext(includePatterns: Boolean = true, includeLabs: Boolean = true): String? {
         val sb = StringBuilder()
 
         // --- Strongest associations on the user's own logged days (recovery as the outcome) ---
-        val (behaviours, controls) = runCatching { journalBehaviours() }
+        val (behaviours, controls) = (if (includePatterns) runCatching { journalBehaviours() } else Result.success(emptyMap<String, Set<String>>() to emptyMap<String, Set<String>>()))
             .getOrDefault(emptyMap<String, Set<String>>() to emptyMap())
         val days = runCatching { repo.daysMerged(activeStrapId()) }.getOrDefault(emptyList())
         if (behaviours.isNotEmpty() && days.isNotEmpty()) {
@@ -605,7 +671,7 @@ class AiCoach(
         }
 
         // --- Lab Book snapshot: the latest reading per marker the user has entered ---
-        val latestByMarker = runCatching { latestLabMarkers() }.getOrDefault(emptyList())
+        val latestByMarker = if (includeLabs) runCatching { latestLabMarkers() }.getOrDefault(emptyList()) else emptyList()
         if (latestByMarker.isNotEmpty()) {
             if (sb.isNotEmpty()) sb.append("\n")
             sb.append("LAB BOOK (numbers the user entered themselves from their own reports; NOOP does not ")
@@ -1402,7 +1468,10 @@ class AiCoach(
             "Based on the data above, give me TODAY'S coaching brief in three short parts: " +
                 "(1) my readiness in one line, citing charge, HRV and rest; " +
                 "(2) exactly what training to do today and what to avoid; " +
-                "(3) one specific thing to improve my charge. Be punchy and motivating."
+                "(3) one specific thing to improve my charge. Cover every category of data shared above " +
+                "that bears on today (sleep, heart, activity, workouts, body, fitness scores, watch, " +
+                "nutrition, hydration, mood, cycle, labs) in those parts, and never mention a category " +
+                "that was not shared. Be punchy and motivating."
 
         /**
          * The system prompt actually sent: the user's edited override from [NoopPrefs] when it is

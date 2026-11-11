@@ -2799,8 +2799,11 @@
     <string name="coach_key_rejected_hint">Dán khóa đã sửa. Cuộc trò chuyện của bạn được giữ nguyên.</string>
     <string name="coach_key_rejected_placeholder">Dán khóa %1$s của bạn</string>
     <string name="coach_key_rejected_action">Cập nhật khóa</string>
-    <string name="coach_consent_on">Bật: năng lượng, nghỉ ngơi, HRV và buổi tập của bạn được gửi đến nhà cung cấp, mỗi buổi tập kèm môn thể thao, thời lượng, quãng đường và nhịp tim.</string>
+    <string name="coach_consent_on">Bật: các nhóm bạn bật bên dưới được gửi đến nhà cung cấp dưới dạng bản tóm tắt (mặc định là năng lượng, nghỉ ngơi, HRV, tim, hoạt động và buổi tập), mỗi buổi tập kèm môn thể thao, thời lượng, quãng đường và nhịp tim.</string>
     <string name="coach_consent_off">Tắt: huấn luyện viên trả lời chung chung và không gửi chỉ số nào của bạn.</string>
+    <string name="coach_share_title">Dữ liệu huấn luyện viên được xem</string>
+    <string name="coach_share_desc">Tắt nhóm nào bạn không muốn gửi. Các nhóm mới hơn mặc định tắt. Chỉ gửi bản tóm tắt, không bao giờ gửi dữ liệu thô.</string>
+    <string name="coach_share_needs_consent">Các công tắc này có hiệu lực khi huấn luyện viên được dùng dữ liệu của bạn.</string>
     <string name="l10n_app_changelog_a_today_screen_you_arrange_yourself_6194ccd0">Màn hình Hôm nay do bạn tự sắp xếp, căng thẳng ngay trên màn hình chính, và bản sao lưu tự kiểm tra</string>
     <string name="l10n_stress_screen_scored_through_1_s_later_hours_fbb7d6c7">Đã chấm điểm đến %1$s. Các giờ sau cần thêm mẫu nhịp tim.</string>
     <string name="l10n_today_screen_scan_and_connect_40157030">Quét và kết nối</string>
