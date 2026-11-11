@@ -1874,6 +1874,23 @@
       "identity_sha256": "5b6d997a78415269c964ea9276704f829d0109f3fef36ad67d25920ad2c85e06",
       "platform": "kotlin",
       "rationale": "Thins the daily vo2max_est series to one record per week for the Health Connect export; Apple has no VO2 max HealthKit writeback, so there is nothing to mirror."
+    },
+    {
+      "identity": "Packages/StrandAnalytics/Sources/StrandAnalytics/GarminScoringInputs.swift::watchVo2maxWeeks/2#1\u0000android/app/src/main/java/com/noop/analytics/GarminScoringInputs.kt::watchVo2maxWeeks/2#1",
+      "identity_sha256": "729bdcc5bc8483738ab738d77aa35dc8364ec0fdbad56c2573e4a43c8d78fd86",
+      "issue": "vuongvm812/noop#121",
+      "kind": "remove-function-pair",
+      "reason": "Fitness Age and VO2max are now resolved for every day instead of every Saturday, so the Saturday-stepping watchVo2maxWeeks helper has no caller on either platform; both twins are deleted and the daily resolver replaces them.",
+      "type": "retired_pair"
+    },
+    {
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/IntelligenceEngine.kt::FITNESS_GATE_DAYS",
+      "identity_sha256": "4160034d2dbc10cbcc8bf13f2c55d979baa58a79fb1c1fbf9b924ae2e54b450d",
+      "kind": "add-unpaired-constant",
+      "platform": "kotlin",
+      "rationale": "The daily Fitness Age / Vitality gate length; its Swift twin IntelligenceEngine.fitnessGateDays lives in the excluded Strand app-layer IntelligenceEngine, which the ledger does not scan.",
+      "twin_path": "Strand/Data/IntelligenceEngine.swift",
+      "type": "out_of_scope_twin"
     }
   ]
 }
