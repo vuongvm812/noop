@@ -88,7 +88,81 @@ enum class WeeklyMetric(val key: String) {
     BODY_BATTERY_RECHARGE("bodyBatteryRecharge"), // overnight Body Battery gain
     TRAINING_LOAD("trainingLoad"),
     INTENSITY_MINUTES("intensityMinutes"),    // moderate + 2 × vigorous
-    VO2MAX("vo2max");
+    VO2MAX("vo2max"),
+    LIGHT_SLEEP("lightSleep"),
+    SLEEP_NEED("sleepNeed"),
+    SLEEP_DEBT("sleepDebt"),
+    SLEEP_CONSISTENCY("sleepConsistency"),
+    DISTURBANCES("disturbances"),
+    AVG_HR("avgHr"),
+    MAX_HR("maxHr"),
+    SDNN("sdnn"),
+    TOTAL_KCAL("totalKcal"),
+    BASAL_KCAL("basalKcal"),
+    DISTANCE("distance"),
+    WORKOUT_COUNT("workoutCount"),
+    WORKOUT_MINUTES("workoutMinutes"),
+    WORKOUT_KCAL("workoutKcal"),
+    WORKOUT_MAX_HR("workoutMaxHr"),
+    WORKOUT_POWER("workoutPower"),
+    WORKOUT_CADENCE("workoutCadence"),
+    WORKOUT_ELEVATION("workoutElevation"),
+    AEROBIC_TE("aerobicTe"),
+    ANAEROBIC_TE("anaerobicTe"),
+    WEIGHT("weight"),
+    BODY_FAT("bodyFat"),
+    LEAN_MASS("leanMass"),
+    BMI("bmi"),
+    FITNESS_AGE("fitnessAge"),
+    VITALITY("vitality"),
+    BODY_AGE("bodyAge"),
+    VO2MAX_EST("vo2maxEst"),
+    CALORIES_IN("caloriesIn"),
+    PROTEIN("protein"),
+    CARBS("carbs"),
+    FAT("fat"),
+    WATER("water"),
+    MOOD("mood");
+
+    /** The [MetricSnapshotItem.id] a metric is read from when it comes from the snapshot stores, or null for the original set. */
+    val snapshotId: String?
+        get() = when (this) {
+            LIGHT_SLEEP -> "sleep_light_min"
+            SLEEP_NEED -> "sleep_need_min"
+            SLEEP_DEBT -> "sleep_debt_min"
+            SLEEP_CONSISTENCY -> "sleep_consistency"
+            DISTURBANCES -> "disturbances"
+            AVG_HR -> "avg_hr"
+            MAX_HR -> "max_hr"
+            SDNN -> "sdnn"
+            TOTAL_KCAL -> "energy_kcal"
+            BASAL_KCAL -> "basal_kcal"
+            DISTANCE -> "distance_km"
+            WORKOUT_COUNT -> "workout_count"
+            WORKOUT_MINUTES -> "workout_duration_min"
+            WORKOUT_KCAL -> "workout_energy_kcal"
+            WORKOUT_MAX_HR -> "workout_max_hr"
+            WORKOUT_POWER -> "workout_avg_power_w"
+            WORKOUT_CADENCE -> "workout_avg_cadence"
+            WORKOUT_ELEVATION -> "workout_altitude_gain_m"
+            AEROBIC_TE -> "workout_aerobic_te"
+            ANAEROBIC_TE -> "workout_anaerobic_te"
+            WEIGHT -> "weight"
+            BODY_FAT -> "body_fat"
+            LEAN_MASS -> "lean_mass"
+            BMI -> "bmi"
+            FITNESS_AGE -> "fitness_age"
+            VITALITY -> "vitality"
+            BODY_AGE -> "body_age"
+            VO2MAX_EST -> "vo2max_est"
+            CALORIES_IN -> "calories_in"
+            PROTEIN -> "protein_g"
+            CARBS -> "carbs_g"
+            FAT -> "fat_g"
+            WATER -> "hydration_ml"
+            MOOD -> "mood"
+            else -> null
+        }
 
     val spec: WeeklyMetricSpec
         get() = when (this) {
@@ -139,6 +213,40 @@ enum class WeeklyMetric(val key: String) {
                 "VO2 max", "ml/kg/min", rollup = WeeklyRollup.LATEST,
                 spreadFloor = 1.0, percentChange = false,
             )
+            LIGHT_SLEEP -> WeeklyMetricSpec("Light sleep", "min", direction = WeeklyDirection.NEUTRAL, spreadFloor = 5.0)
+            SLEEP_NEED -> WeeklyMetricSpec("Sleep need", "min", direction = WeeklyDirection.NEUTRAL, spreadFloor = 5.0)
+            SLEEP_DEBT -> WeeklyMetricSpec("Sleep debt", "min", direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 10.0)
+            SLEEP_CONSISTENCY -> WeeklyMetricSpec("Sleep consistency", "%", spreadFloor = 3.0, percentChange = false)
+            DISTURBANCES -> WeeklyMetricSpec("Disturbances", "", direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 1.0)
+            AVG_HR -> WeeklyMetricSpec("Average heart rate", "bpm", direction = WeeklyDirection.NEUTRAL, spreadFloor = 2.0)
+            MAX_HR -> WeeklyMetricSpec("Max heart rate", "bpm", direction = WeeklyDirection.NEUTRAL, spreadFloor = 4.0)
+            SDNN -> WeeklyMetricSpec("HRV (SDNN)", "ms", spreadFloor = 4.0)
+            TOTAL_KCAL -> WeeklyMetricSpec("Total calories", "kcal", direction = WeeklyDirection.NEUTRAL, spreadFloor = 100.0)
+            BASAL_KCAL -> WeeklyMetricSpec("Basal calories", "kcal", direction = WeeklyDirection.NEUTRAL, spreadFloor = 50.0)
+            DISTANCE -> WeeklyMetricSpec("Distance", "km", direction = WeeklyDirection.NEUTRAL, spreadFloor = 0.5, decimals = 1)
+            WORKOUT_COUNT -> WeeklyMetricSpec("Workouts", "", rollup = WeeklyRollup.SUM, direction = WeeklyDirection.NEUTRAL, spreadFloor = 1.0)
+            WORKOUT_MINUTES -> WeeklyMetricSpec("Workout time", "min", rollup = WeeklyRollup.SUM, spreadFloor = 15.0)
+            WORKOUT_KCAL -> WeeklyMetricSpec("Workout calories", "kcal", rollup = WeeklyRollup.SUM, direction = WeeklyDirection.NEUTRAL, spreadFloor = 100.0)
+            WORKOUT_MAX_HR -> WeeklyMetricSpec("Workout max heart rate", "bpm", direction = WeeklyDirection.NEUTRAL, spreadFloor = 4.0)
+            WORKOUT_POWER -> WeeklyMetricSpec("Average power", "W", direction = WeeklyDirection.NEUTRAL, spreadFloor = 10.0)
+            WORKOUT_CADENCE -> WeeklyMetricSpec("Average cadence", "rpm", direction = WeeklyDirection.NEUTRAL, spreadFloor = 3.0)
+            WORKOUT_ELEVATION -> WeeklyMetricSpec("Elevation gain", "m", rollup = WeeklyRollup.SUM, direction = WeeklyDirection.NEUTRAL, spreadFloor = 25.0)
+            AEROBIC_TE -> WeeklyMetricSpec("Aerobic training effect", "", direction = WeeklyDirection.NEUTRAL, spreadFloor = 0.3, decimals = 1, percentChange = false)
+            ANAEROBIC_TE -> WeeklyMetricSpec("Anaerobic training effect", "", direction = WeeklyDirection.NEUTRAL, spreadFloor = 0.3, decimals = 1, percentChange = false)
+            WEIGHT -> WeeklyMetricSpec("Weight", "kg", rollup = WeeklyRollup.LATEST, direction = WeeklyDirection.NEUTRAL, spreadFloor = 0.3, decimals = 1, percentChange = false)
+            BODY_FAT -> WeeklyMetricSpec("Body fat", "%", rollup = WeeklyRollup.LATEST, direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 0.5, decimals = 1, percentChange = false)
+            LEAN_MASS -> WeeklyMetricSpec("Lean mass", "kg", rollup = WeeklyRollup.LATEST, spreadFloor = 0.3, decimals = 1, percentChange = false)
+            BMI -> WeeklyMetricSpec("BMI", "", rollup = WeeklyRollup.LATEST, direction = WeeklyDirection.NEUTRAL, spreadFloor = 0.2, decimals = 1, percentChange = false)
+            FITNESS_AGE -> WeeklyMetricSpec("Fitness Age", "yrs", rollup = WeeklyRollup.LATEST, direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 1.0, percentChange = false)
+            VITALITY -> WeeklyMetricSpec("Vitality", "", rollup = WeeklyRollup.LATEST, spreadFloor = 3.0, percentChange = false)
+            BODY_AGE -> WeeklyMetricSpec("Body Age", "yrs", rollup = WeeklyRollup.LATEST, direction = WeeklyDirection.LOWER_BETTER, spreadFloor = 1.0, percentChange = false)
+            VO2MAX_EST -> WeeklyMetricSpec("VO2 max (estimated)", "ml/kg/min", rollup = WeeklyRollup.LATEST, spreadFloor = 1.0, percentChange = false)
+            CALORIES_IN -> WeeklyMetricSpec("Calories in", "kcal", direction = WeeklyDirection.NEUTRAL, spreadFloor = 150.0)
+            PROTEIN -> WeeklyMetricSpec("Protein", "g", direction = WeeklyDirection.NEUTRAL, spreadFloor = 10.0)
+            CARBS -> WeeklyMetricSpec("Carbs", "g", direction = WeeklyDirection.NEUTRAL, spreadFloor = 15.0)
+            FAT -> WeeklyMetricSpec("Fat", "g", direction = WeeklyDirection.NEUTRAL, spreadFloor = 8.0)
+            WATER -> WeeklyMetricSpec("Water", "ml", direction = WeeklyDirection.NEUTRAL, spreadFloor = 150.0)
+            MOOD -> WeeklyMetricSpec("Mood", "/5", spreadFloor = 0.4, decimals = 1, percentChange = false)
         }
 
     /** Human label (matches the rest of the app's naming). */
@@ -888,19 +996,44 @@ enum class WeeklyDigestSection(val key: String) {
     SLEEP("sleep"),
     OVERNIGHT_VITALS("overnightVitals"),
     STRESS_ENERGY("stressEnergy"),
-    TRAINING("training");
+    TRAINING("training"),
+    HEART("heart"),
+    WORKOUTS("workouts"),
+    BODY_COMPOSITION("bodyComposition"),
+    FITNESS_SCORES("fitnessScores"),
+    NUTRITION("nutrition"),
+    MIND("mind");
 
     /** The section's metrics, in display order. */
     val metrics: List<WeeklyMetric>
         get() = when (this) {
-            ACTIVITY -> listOf(WeeklyMetric.STEPS, WeeklyMetric.ACTIVE_KCAL, WeeklyMetric.INTENSITY_MINUTES)
+            ACTIVITY -> listOf(
+                WeeklyMetric.STEPS, WeeklyMetric.ACTIVE_KCAL, WeeklyMetric.TOTAL_KCAL, WeeklyMetric.BASAL_KCAL,
+                WeeklyMetric.DISTANCE, WeeklyMetric.INTENSITY_MINUTES,
+            )
             SLEEP -> listOf(
                 WeeklyMetric.SLEEP_DURATION, WeeklyMetric.SLEEP_EFFICIENCY, WeeklyMetric.DEEP_SLEEP,
-                WeeklyMetric.REM_SLEEP, WeeklyMetric.SLEEP_SCORE,
+                WeeklyMetric.REM_SLEEP, WeeklyMetric.LIGHT_SLEEP, WeeklyMetric.SLEEP_SCORE,
+                WeeklyMetric.SLEEP_NEED, WeeklyMetric.SLEEP_DEBT, WeeklyMetric.SLEEP_CONSISTENCY,
+                WeeklyMetric.DISTURBANCES,
             )
             OVERNIGHT_VITALS -> listOf(WeeklyMetric.SPO2, WeeklyMetric.RESPIRATION, WeeklyMetric.SKIN_TEMP_DEVIATION)
             STRESS_ENERGY -> listOf(WeeklyMetric.STRESS, WeeklyMetric.BODY_BATTERY_RECHARGE)
             TRAINING -> listOf(WeeklyMetric.TRAINING_LOAD, WeeklyMetric.VO2MAX)
+            HEART -> listOf(WeeklyMetric.AVG_HR, WeeklyMetric.MAX_HR, WeeklyMetric.SDNN)
+            WORKOUTS -> listOf(
+                WeeklyMetric.WORKOUT_COUNT, WeeklyMetric.WORKOUT_MINUTES, WeeklyMetric.WORKOUT_KCAL,
+                WeeklyMetric.WORKOUT_MAX_HR, WeeklyMetric.WORKOUT_POWER, WeeklyMetric.WORKOUT_CADENCE,
+                WeeklyMetric.WORKOUT_ELEVATION, WeeklyMetric.AEROBIC_TE, WeeklyMetric.ANAEROBIC_TE,
+            )
+            BODY_COMPOSITION -> listOf(WeeklyMetric.WEIGHT, WeeklyMetric.BODY_FAT, WeeklyMetric.LEAN_MASS, WeeklyMetric.BMI)
+            FITNESS_SCORES -> listOf(
+                WeeklyMetric.FITNESS_AGE, WeeklyMetric.VITALITY, WeeklyMetric.BODY_AGE, WeeklyMetric.VO2MAX_EST,
+            )
+            NUTRITION -> listOf(
+                WeeklyMetric.CALORIES_IN, WeeklyMetric.PROTEIN, WeeklyMetric.CARBS, WeeklyMetric.FAT, WeeklyMetric.WATER,
+            )
+            MIND -> listOf(WeeklyMetric.MOOD)
         }
 }
 

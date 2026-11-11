@@ -33,14 +33,28 @@ enum WeeklyDigestLoader {
         return await watchSeries(store: store, watchId: watchId, anchorDay: anchorDay, calendar: calendar)
     }
 
+    /// The snapshot values (catalog id → day → value) over the digest's six weeks around `anchorDay`, for the
+    /// metrics read from the snapshot stores (body composition, workouts, nutrition, ...). Same window as
+    /// the watch series. Kotlin twin: `WeeklyDigestLoader.snapshotValues`.
+    @MainActor
+    static func snapshotValues(repo: Repository, anchorDay: String,
+                               calendar: Calendar = .current) async -> [String: [String: Double]] {
+        guard let monday = WeeklyDigestEngine.mondayOfWeek(containing: anchorDay) else { return [:] }
+        return await MetricSnapshotLoader.dayValues(
+            repo: repo, from: WeeklyDigestEngine.addDays(monday, -historyDays),
+            to: WeeklyDigestEngine.addDays(monday, 6), calendar: calendar)
+    }
+
     /// The digest a non-UI caller (the weekly-summary notification) builds from the stores.
     @MainActor
     static func digest(repo: Repository, anchorDay: String,
                        effortDisplayFactor: Double = UnitPrefs.currentEffortDisplayFactor()) async -> WeeklyDigest {
         let watch = await load(repo: repo, anchorDay: anchorDay)
+        let values = await snapshotValues(repo: repo, anchorDay: anchorDay)
         return WeeklyDigestSource.digest(from: repo.days, anchorDay: anchorDay,
                                          importedSleep: repo.importedSleep, computedSleep: repo.computedSleep,
-                                         watch: watch, effortDisplayFactor: effortDisplayFactor)
+                                         watch: watch, snapshotValues: values,
+                                         effortDisplayFactor: effortDisplayFactor)
     }
 
     /// The watch's per-day series over the digest's six weeks: daily rollups from `metricSeries`,
@@ -89,7 +103,7 @@ enum WeeklyDigestLoader {
     /// Each wake day's Body Battery recharge from the watch's main sleep that day (the longest
     /// session ending on it). Kotlin twin: `WeeklyDigestLoader.bodyBatteryRecharge`.
     @MainActor
-    private static func bodyBatteryRecharge(store: WhoopStore, watchId: String, fromTs: Int, toTs: Int,
+    static func bodyBatteryRecharge(store: WhoopStore, watchId: String, fromTs: Int, toTs: Int,
                                             calendar: Calendar) async -> [String: Double] {
         let window = WeeklyDigestInputs.rechargeWindowSeconds
         let sessions = ((try? await store.sleepSessions(deviceId: watchId, from: fromTs - 86_400, to: toTs,
@@ -128,14 +142,14 @@ enum WeeklyDigestLoader {
     }
 
     /// Unix start of the local day "yyyy-MM-dd".
-    private static func dayStart(_ day: String, _ calendar: Calendar) -> Int? {
+    static func dayStart(_ day: String, _ calendar: Calendar) -> Int? {
         guard let (y, m, d) = WeeklyDigestEngine.parseYMD(day),
               let date = calendar.date(from: DateComponents(year: y, month: m, day: d)) else { return nil }
         return Int(calendar.startOfDay(for: date).timeIntervalSince1970)
     }
 
     /// The local "yyyy-MM-dd" a unix timestamp falls on.
-    private static func dayKey(_ ts: Int, _ calendar: Calendar) -> String {
+    static func dayKey(_ ts: Int, _ calendar: Calendar) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: TimeInterval(ts)))
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }

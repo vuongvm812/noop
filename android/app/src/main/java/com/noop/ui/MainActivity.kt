@@ -221,13 +221,31 @@ private fun CrashRecoveryScreen(crash: String, onContinue: () -> Unit) {
 object NotificationRoute {
     const val EXTRA_ROUTE = "noop.openRoute"
     const val TRENDS = "trends"
+    /** The Daily summary page; [EXTRA_DAY] optionally names the day it opens on. */
+    const val DAILY_SUMMARY = "daily_summary"
+    const val EXTRA_DAY = "noop.openDay"
 
     val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
+    /** The "yyyy-MM-dd" day a routed tap asked the Daily summary to open on, or null for today. */
+    val pendingDay = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
     fun offer(intent: Intent?) {
+        // The day is set first so the route's collector reads it when it fires.
+        intent?.getStringExtra(EXTRA_DAY)?.let { pendingDay.value = validDayOrNull(it) }
         intent?.getStringExtra(EXTRA_ROUTE)?.let { pending.value = it }
     }
+
+    /** [day] when it is a real ISO date, else null (a stray extra never crashes the Daily summary). */
+    fun validDayOrNull(day: String?): String? =
+        day?.takeIf { runCatching { java.time.LocalDate.parse(it) }.isSuccess }
 }
+
+/** [appLaunchIntent] that opens the Daily summary on [day] (null = today). */
+internal fun appLaunchIntentDailySummary(context: Context, day: String?): Intent =
+    appLaunchIntent(context, NotificationRoute.DAILY_SUMMARY).apply {
+        if (day != null) putExtra(NotificationRoute.EXTRA_DAY, day)
+    }
 
 /** [appLaunchIntent] that also asks the app to open [route] (a [NotificationRoute] key). */
 internal fun appLaunchIntent(context: Context, route: String): Intent =

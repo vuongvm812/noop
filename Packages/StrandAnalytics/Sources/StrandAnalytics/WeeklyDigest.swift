@@ -110,6 +110,40 @@ public enum WeeklyMetric: String, CaseIterable, Sendable {
     case trainingLoad
     case intensityMinutes   // moderate + 2 × vigorous
     case vo2max
+    case lightSleep
+    case sleepNeed
+    case sleepDebt
+    case sleepConsistency
+    case disturbances
+    case avgHr
+    case maxHr
+    case sdnn
+    case totalKcal
+    case basalKcal
+    case distance
+    case workoutCount
+    case workoutMinutes
+    case workoutKcal
+    case workoutMaxHr
+    case workoutPower
+    case workoutCadence
+    case workoutElevation
+    case aerobicTe
+    case anaerobicTe
+    case weight
+    case bodyFat
+    case leanMass
+    case bmi
+    case fitnessAge
+    case vitality
+    case bodyAge
+    case vo2maxEst
+    case caloriesIn
+    case protein
+    case carbs
+    case fat
+    case water
+    case mood
 
     public var spec: WeeklyMetricSpec {
         switch self {
@@ -144,6 +178,82 @@ public enum WeeklyMetric: String, CaseIterable, Sendable {
                                              spreadFloor: 15, weeklyTarget: 150)
         case .vo2max: return .init(label: "VO2 max", unit: "ml/kg/min", rollup: .latest,
                                    spreadFloor: 1, percentChange: false)
+        case .lightSleep: return .init(label: "Light sleep", unit: "min", direction: .neutral, spreadFloor: 5)
+        case .sleepNeed: return .init(label: "Sleep need", unit: "min", direction: .neutral, spreadFloor: 5)
+        case .sleepDebt: return .init(label: "Sleep debt", unit: "min", direction: .lowerBetter, spreadFloor: 10)
+        case .sleepConsistency: return .init(label: "Sleep consistency", unit: "%", spreadFloor: 3, percentChange: false)
+        case .disturbances: return .init(label: "Disturbances", unit: "", direction: .lowerBetter, spreadFloor: 1)
+        case .avgHr: return .init(label: "Average heart rate", unit: "bpm", direction: .neutral, spreadFloor: 2)
+        case .maxHr: return .init(label: "Max heart rate", unit: "bpm", direction: .neutral, spreadFloor: 4)
+        case .sdnn: return .init(label: "HRV (SDNN)", unit: "ms", spreadFloor: 4)
+        case .totalKcal: return .init(label: "Total calories", unit: "kcal", direction: .neutral, spreadFloor: 100)
+        case .basalKcal: return .init(label: "Basal calories", unit: "kcal", direction: .neutral, spreadFloor: 50)
+        case .distance: return .init(label: "Distance", unit: "km", direction: .neutral, spreadFloor: 0.5, decimals: 1)
+        case .workoutCount: return .init(label: "Workouts", unit: "", rollup: .sum, direction: .neutral, spreadFloor: 1)
+        case .workoutMinutes: return .init(label: "Workout time", unit: "min", rollup: .sum, spreadFloor: 15)
+        case .workoutKcal: return .init(label: "Workout calories", unit: "kcal", rollup: .sum, direction: .neutral, spreadFloor: 100)
+        case .workoutMaxHr: return .init(label: "Workout max heart rate", unit: "bpm", direction: .neutral, spreadFloor: 4)
+        case .workoutPower: return .init(label: "Average power", unit: "W", direction: .neutral, spreadFloor: 10)
+        case .workoutCadence: return .init(label: "Average cadence", unit: "rpm", direction: .neutral, spreadFloor: 3)
+        case .workoutElevation: return .init(label: "Elevation gain", unit: "m", rollup: .sum, direction: .neutral, spreadFloor: 25)
+        case .aerobicTe: return .init(label: "Aerobic training effect", unit: "", direction: .neutral, spreadFloor: 0.3, decimals: 1, percentChange: false)
+        case .anaerobicTe: return .init(label: "Anaerobic training effect", unit: "", direction: .neutral, spreadFloor: 0.3, decimals: 1, percentChange: false)
+        case .weight: return .init(label: "Weight", unit: "kg", rollup: .latest, direction: .neutral, spreadFloor: 0.3, decimals: 1, percentChange: false)
+        case .bodyFat: return .init(label: "Body fat", unit: "%", rollup: .latest, direction: .lowerBetter, spreadFloor: 0.5, decimals: 1, percentChange: false)
+        case .leanMass: return .init(label: "Lean mass", unit: "kg", rollup: .latest, spreadFloor: 0.3, decimals: 1, percentChange: false)
+        case .bmi: return .init(label: "BMI", unit: "", rollup: .latest, direction: .neutral, spreadFloor: 0.2, decimals: 1, percentChange: false)
+        case .fitnessAge: return .init(label: "Fitness Age", unit: "yrs", rollup: .latest, direction: .lowerBetter, spreadFloor: 1, percentChange: false)
+        case .vitality: return .init(label: "Vitality", unit: "", rollup: .latest, spreadFloor: 3, percentChange: false)
+        case .bodyAge: return .init(label: "Body Age", unit: "yrs", rollup: .latest, direction: .lowerBetter, spreadFloor: 1, percentChange: false)
+        case .vo2maxEst: return .init(label: "VO2 max (estimated)", unit: "ml/kg/min", rollup: .latest, spreadFloor: 1, percentChange: false)
+        case .caloriesIn: return .init(label: "Calories in", unit: "kcal", direction: .neutral, spreadFloor: 150)
+        case .protein: return .init(label: "Protein", unit: "g", direction: .neutral, spreadFloor: 10)
+        case .carbs: return .init(label: "Carbs", unit: "g", direction: .neutral, spreadFloor: 15)
+        case .fat: return .init(label: "Fat", unit: "g", direction: .neutral, spreadFloor: 8)
+        case .water: return .init(label: "Water", unit: "ml", direction: .neutral, spreadFloor: 150)
+        case .mood: return .init(label: "Mood", unit: "/5", spreadFloor: 0.4, decimals: 1, percentChange: false)
+        }
+    }
+
+    /// The `MetricSnapshotItem.id` a metric is read from when it comes from the snapshot stores, or nil for
+    /// the original set. Kotlin twin: `WeeklyMetric.snapshotId`.
+    public var snapshotId: String? {
+        switch self {
+        case .lightSleep: return "sleep_light_min"
+        case .sleepNeed: return "sleep_need_min"
+        case .sleepDebt: return "sleep_debt_min"
+        case .sleepConsistency: return "sleep_consistency"
+        case .disturbances: return "disturbances"
+        case .avgHr: return "avg_hr"
+        case .maxHr: return "max_hr"
+        case .sdnn: return "sdnn"
+        case .totalKcal: return "energy_kcal"
+        case .basalKcal: return "basal_kcal"
+        case .distance: return "distance_km"
+        case .workoutCount: return "workout_count"
+        case .workoutMinutes: return "workout_duration_min"
+        case .workoutKcal: return "workout_energy_kcal"
+        case .workoutMaxHr: return "workout_max_hr"
+        case .workoutPower: return "workout_avg_power_w"
+        case .workoutCadence: return "workout_avg_cadence"
+        case .workoutElevation: return "workout_altitude_gain_m"
+        case .aerobicTe: return "workout_aerobic_te"
+        case .anaerobicTe: return "workout_anaerobic_te"
+        case .weight: return "weight"
+        case .bodyFat: return "body_fat"
+        case .leanMass: return "lean_mass"
+        case .bmi: return "bmi"
+        case .fitnessAge: return "fitness_age"
+        case .vitality: return "vitality"
+        case .bodyAge: return "body_age"
+        case .vo2maxEst: return "vo2max_est"
+        case .caloriesIn: return "calories_in"
+        case .protein: return "protein_g"
+        case .carbs: return "carbs_g"
+        case .fat: return "fat_g"
+        case .water: return "hydration_ml"
+        case .mood: return "mood"
+        default: return nil
         }
     }
 
@@ -858,15 +968,29 @@ public enum WeeklyDigestSection: String, CaseIterable, Sendable {
     case overnightVitals
     case stressEnergy
     case training
+    case heart
+    case workouts
+    case bodyComposition
+    case fitnessScores
+    case nutrition
+    case mind
 
     /// The section's metrics, in display order.
     public var metrics: [WeeklyMetric] {
         switch self {
-        case .activity:        return [.steps, .activeKcal, .intensityMinutes]
-        case .sleep:           return [.sleepDuration, .sleepEfficiency, .deepSleep, .remSleep, .sleepScore]
+        case .activity:        return [.steps, .activeKcal, .totalKcal, .basalKcal, .distance, .intensityMinutes]
+        case .sleep:           return [.sleepDuration, .sleepEfficiency, .deepSleep, .remSleep, .lightSleep, .sleepScore,
+                                       .sleepNeed, .sleepDebt, .sleepConsistency, .disturbances]
         case .overnightVitals: return [.spo2, .respiration, .skinTempDeviation]
         case .stressEnergy:    return [.stress, .bodyBatteryRecharge]
         case .training:        return [.trainingLoad, .vo2max]
+        case .heart:           return [.avgHr, .maxHr, .sdnn]
+        case .workouts:        return [.workoutCount, .workoutMinutes, .workoutKcal, .workoutMaxHr, .workoutPower,
+                                       .workoutCadence, .workoutElevation, .aerobicTe, .anaerobicTe]
+        case .bodyComposition: return [.weight, .bodyFat, .leanMass, .bmi]
+        case .fitnessScores:   return [.fitnessAge, .vitality, .bodyAge, .vo2maxEst]
+        case .nutrition:       return [.caloriesIn, .protein, .carbs, .fat, .water]
+        case .mind:            return [.mood]
         }
     }
 }

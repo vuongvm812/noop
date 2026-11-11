@@ -27,6 +27,8 @@ object WeeklyDigestLoader {
     data class Inputs(
         val restByDay: Map<String, Double> = emptyMap(),
         val watch: WeeklyDigestWatchSeries = WeeklyDigestWatchSeries.EMPTY,
+        /** Snapshot item id → day → value over the digest's window, for the metrics beyond the original set. */
+        val snapshotValues: Map<String, Map<String, Double>> = emptyMap(),
     )
 
     /** Weeks of history the engine reads around the anchor: this, last, and the four baseline weeks. */
@@ -68,8 +70,27 @@ object WeeklyDigestLoader {
         zone: ZoneId = ZoneId.systemDefault(),
     ): Inputs {
         val rest = restByDay(repo, activeDeviceId)
-        val watchId = watchId(repo, registry, activeDeviceId, anchorDay) ?: return Inputs(rest)
-        return Inputs(rest, watchSeries(repo, watchId, anchorDay, zone))
+        val snapshot = snapshotValues(repo, registry, activeDeviceId, anchorDay, zone)
+        val watchId = watchId(repo, registry, activeDeviceId, anchorDay) ?: return Inputs(rest, snapshotValues = snapshot)
+        return Inputs(rest, watchSeries(repo, watchId, anchorDay, zone), snapshot)
+    }
+
+    /**
+     * The snapshot values for the digest's six-week window around [anchorDay] (see [MetricSnapshotLoader.dayValues]).
+     * Swift twin: `WeeklyDigestLoader.snapshotValues`.
+     */
+    suspend fun snapshotValues(
+        repo: WhoopRepository,
+        registry: DeviceRegistry?,
+        activeDeviceId: String,
+        anchorDay: String,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): Map<String, Map<String, Double>> {
+        val monday = WeeklyDigestEngine.mondayOfWeek(anchorDay) ?: return emptyMap()
+        val from = WeeklyDigestEngine.addDays(monday, -HISTORY_DAYS)
+        val to = WeeklyDigestEngine.addDays(monday, 6)
+        return runCatching { MetricSnapshotLoader.dayValues(repo, registry, activeDeviceId, from, to, zone) }
+            .getOrDefault(emptyMap())
     }
 
     /** The digest a non-UI caller (the weekly-summary notification) builds from the stores. */
@@ -83,7 +104,7 @@ object WeeklyDigestLoader {
         zone: ZoneId = ZoneId.systemDefault(),
     ): WeeklyDigest {
         val inputs = load(repo, registry, activeDeviceId, anchorDay, zone)
-        return buildWeeklyDigest(days, anchorDay, effortDisplayFactor, inputs.restByDay, inputs.watch)
+        return buildWeeklyDigest(days, anchorDay, effortDisplayFactor, inputs.restByDay, inputs.watch, inputs.snapshotValues)
     }
 
     /**
@@ -143,7 +164,7 @@ object WeeklyDigestLoader {
      * Each wake day's Body Battery recharge from the watch's main sleep that day (the longest
      * session ending on it). Swift twin: `WeeklyDigestLoader.bodyBatteryRecharge`.
      */
-    private suspend fun bodyBatteryRecharge(
+    internal suspend fun bodyBatteryRecharge(
         repo: WhoopRepository,
         watchId: String,
         fromTs: Long,

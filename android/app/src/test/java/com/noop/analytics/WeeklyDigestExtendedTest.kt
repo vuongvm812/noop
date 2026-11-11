@@ -84,7 +84,7 @@ class WeeklyDigestExtendedTest {
 
     @Test fun headlineOrderAndCountMatchSwift() {
         assertEquals(HEADLINE, WeeklyMetric.values().take(5))
-        assertEquals(20, WeeklyMetric.values().size)
+        assertEquals(54, WeeklyMetric.values().size)
     }
 
     @Test fun neutralMetricHasNoVerdict() {
@@ -119,7 +119,13 @@ class WeeklyDigestExtendedTest {
         assertEquals(listOf(WeeklyMetric.STEPS), sections[0].rows.map { it.metric })
         assertEquals(listOf(WeeklyMetric.VO2MAX), sections[1].rows.map { it.metric })
         val full = WeeklyDigestEngine.sections(WeeklyDigestEngine.build(extendedFixture(), "2026-06-13"))
-        assertEquals(WeeklyDigestSection.values().toList(), full.map { it.section })
+        assertEquals(
+            listOf(
+                WeeklyDigestSection.ACTIVITY, WeeklyDigestSection.SLEEP, WeeklyDigestSection.OVERNIGHT_VITALS,
+                WeeklyDigestSection.STRESS_ENERGY, WeeklyDigestSection.TRAINING,
+            ),
+            full.map { it.section },
+        )
         assertEquals(15, full.sumOf { it.rows.size })
     }
 

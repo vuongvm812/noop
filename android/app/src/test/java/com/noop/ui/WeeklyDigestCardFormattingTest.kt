@@ -133,4 +133,35 @@ class WeeklyDigestCardFormattingTest {
         // rough is only about thin-but-present sides.
         assertFalse(summary(WeeklyMetric.CHARGE, 60.0, 5, 0.0, 0).isRoughComparison)
     }
+
+    // ── body composition: kg follows the unit system, the change converts without an offset ──
+
+    @Test fun weightValueFollowsUnitSystem() {
+        val s = summary(WeeklyMetric.WEIGHT, thisMean = 80.0, thisN = 3, prevMean = 79.0, prevN = 3)
+        assertEquals("80.0 kg", valueText(s))
+        assertEquals("176.4 lb", valueText(s, UnitSystem.IMPERIAL))
+        assertEquals("80.0 kg", meanText(s, EffortScale.HUNDRED))
+    }
+
+    @Test fun weightDeltaIsInTheUsersUnit() {
+        val s = summary(WeeklyMetric.LEAN_MASS, thisMean = 60.0, thisN = 3, prevMean = 59.0, prevN = 3)
+        assertEquals("1.0", deltaText(s))
+        assertEquals("2.2", deltaText(s, UnitSystem.IMPERIAL))
+    }
+
+    @Test fun bodyFatChangeReadsInPointsAndPlainValuesKeepTheirUnit() {
+        val fat = summary(WeeklyMetric.BODY_FAT, thisMean = 18.25, thisN = 2, prevMean = 19.0, prevN = 2)
+        assertEquals("0.8", deltaText(fat))
+        assertEquals("18.3 %", valueText(fat))
+        val cal = summary(WeeklyMetric.CALORIES_IN, thisMean = 2100.0, thisN = 5, prevMean = 2000.0, prevN = 5)
+        assertEquals("2100 kcal", valueText(cal))
+        assertEquals("5%", deltaText(cal))
+    }
+
+    @Test fun everyDigestMetricHasALocalizedLabel() {
+        for (m in WeeklyMetric.values()) assertTrue(m.key, m.labelRes() != 0)
+        for (m in WeeklyMetric.values().filter { it.snapshotId != null }) {
+            assertTrue(m.key, m.labelRes() != com.noop.R.string.nav_daily_summary)
+        }
+    }
 }

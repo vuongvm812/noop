@@ -168,6 +168,8 @@ internal enum class Destination(
     // Group: Health
     Health("health", R.string.nav_health, Icons.Filled.MonitorHeart),
     Hydration("hydration", R.string.nav_hydration, Icons.Filled.WaterDrop),
+    // Every metric for one day, by category. Opened from More > Insights and by the morning recap / AI brief taps.
+    DailySummary("daily_summary", R.string.nav_daily_summary, Icons.Filled.Insights),
     VitalSigns("vital_signs", R.string.nav_vital_signs, Icons.Filled.HealthAndSafety),
     VitalSignsDetail("vital_detail/{key}", R.string.nav_vital_signs, Icons.Filled.HealthAndSafety),
     LabBook("lab_book", R.string.nav_lab_book, Icons.Filled.HealthAndSafety),
@@ -239,7 +241,7 @@ internal val drawerGroups: List<DrawerGroup> = listOf(
         // promoted to a top-level tab — no longer listed under More." Leaving it would have put the
         // same destination in two places at once, which is the duplication the note above says this
         // list exists to avoid. (#2218)
-        Destination.InsightsHub, Destination.Intelligence,
+        Destination.InsightsHub, Destination.DailySummary, Destination.Intelligence,
         Destination.Insights, Destination.Explore, Destination.Compare,
     ), defaultExpanded = true),
     DrawerGroup("Body", R.string.more_group_body, listOf(
@@ -529,6 +531,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
     LaunchedEffect(pendingRoute) {
         val route = when (pendingRoute) {
             NotificationRoute.TRENDS -> Destination.Trends.route
+            NotificationRoute.DAILY_SUMMARY -> Destination.DailySummary.route
             else -> null
         }
         if (route != null && route != nav.currentDestination?.route) nav.navigateTopLevel(route)
@@ -749,6 +752,7 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                     )
                 }
                 composable(Destination.Hydration.route) { HydrationScreen(viewModel) }
+                composable(Destination.DailySummary.route) { DailySummaryScreen(viewModel) }
                 composable(Destination.VitalSigns.route) {
                     VitalSignsScreen(
                         vm = viewModel,

@@ -68,6 +68,7 @@ struct TrendsView: View {
     @State private var weekOffset = 0
     /// The paired watch's series for the selected week (#89), loaded by `WeeklyDigestLoader`.
     @State private var digestWatch = WeeklyDigestWatchSeries()
+    @State private var digestSnapshotValues: [String: [String: Double]] = [:]
 
     // Effort display scale (#268) — routes the Effort small-multiple's numbers + unit. Display-only.
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
@@ -315,6 +316,7 @@ struct TrendsView: View {
                         weeklyDigestNav
                             .task(id: "\(weekAnchorDay)|\(repo.days.count)") {
                                 digestWatch = await WeeklyDigestLoader.load(repo: repo, anchorDay: weekAnchorDay)
+                                digestSnapshotValues = await WeeklyDigestLoader.snapshotValues(repo: repo, anchorDay: weekAnchorDay)
                             }
                             .staggeredAppear(index: 0)
                         // The Charge / Effort / Rest trio, presented in NOOP's pip language.
@@ -401,7 +403,8 @@ struct TrendsView: View {
         let digest = WeeklyDigestSource.digest(from: repo.days, anchorDay: weekAnchorDay,
                                                importedSleep: repo.importedSleep,
                                                computedSleep: repo.computedSleep,
-                                               watch: digestWatch)
+                                               watch: digestWatch,
+                                               snapshotValues: digestSnapshotValues)
         // Only hide the navigation entirely when the WHOLE history is empty — an empty PAST week still
         // shows the header + chevrons so the user can step to a week that does hold data.
         if repo.days.isEmpty {
