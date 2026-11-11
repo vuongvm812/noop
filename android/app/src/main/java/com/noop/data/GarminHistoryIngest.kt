@@ -73,6 +73,28 @@ object GarminHistoryIngest {
     }
 
     /**
+     * Once per watch, forget the stored ACTIVITY files (FIT sub-type 4), so the next sync downloads them
+     * again and stores their per-record power, cadence and altitude for the run detail. Activities synced
+     * before those were decoded are in the ledger, so they were never fetched again. Re-storing a workout
+     * replaces its row by natural key, and HR samples by timestamp. Only files the watch still lists, and
+     * that fall inside the sync lookback, come back. Nothing on the watch changes.
+     * Swift twin: `GarminHistoryIngest.refetchActivityFilesOnce`.
+     */
+    suspend fun refetchActivityFilesOnce(store: GarminSyncStore, deviceId: String, prefs: SharedPreferences, log: (String) -> Unit) {
+        val key = "noop.garmin.activityRefetch.v1.$deviceId"
+        if (prefs.getBoolean(key, false)) return
+        try {
+            // Both listing flows: FileAccess items (the Forerunner 165) and the legacy GFDI directory.
+            val forgotten = listOf(GarminSyncFileKey.FILE_ACCESS_DATA_TYPE, GarminFitFileType.FIT_DATA_TYPE)
+                .sumOf { store.forgetFiles(deviceId, it, GarminFitFileType.ACTIVITY.raw) }
+            prefs.edit().putBoolean(key, true).apply()
+            log("Garmin: $forgotten activity files forgotten; those the watch still lists within the sync lookback download again for power, cadence and altitude")
+        } catch (e: Exception) {
+            log("Garmin: activity re-download postponed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    /**
      * Once per watch, re-derive every stored day's SpO2 and respiration as the overnight mean over its
      * stored night (#52). Older ingests stored a midnight-to-midnight mean of every sample. The day spans
      * use the phone's current UTC offset, as the fold does for a file without one.
