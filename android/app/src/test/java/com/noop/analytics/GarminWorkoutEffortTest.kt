@@ -33,6 +33,16 @@ class GarminWorkoutEffortTest {
         assertFalse(GarminWorkoutEffort.isWatchSource("apple-health"))
     }
 
+    /** Same cases as the Swift `testScoresOwnTraceCoversTheWatchExportImports`. */
+    @Test fun scoresOwnTraceCoversTheWatchExportImports() {
+        for (id in listOf("garmin-abc", "garmin-import", "Garmin-Import", "huawei-import")) {
+            assertTrue(id, GarminWorkoutEffort.scoresOwnTrace(id))
+        }
+        for (id in listOf("garmin", "my-whoop", "activity-file", "apple-health", "oura-import")) {
+            assertFalse(id, GarminWorkoutEffort.scoresOwnTrace(id))
+        }
+    }
+
     /** Same literals as the Swift `testFullHistoryReadAndAttemptKey`. */
     @Test fun fullHistoryReadAndAttemptKey() {
         assertEquals(2_147_483_647, GarminWorkoutEffort.ALL_ROWS)

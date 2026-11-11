@@ -502,14 +502,9 @@ final class AppModel: ObservableObject {
             // BEFORE the Effort rescore + analyzeRecent loop so both operate on a cleaned DB. Persisted
             // flag → no-op on every subsequent launch; idempotent on a clean DB.
             await self.intelligence.runTimestampHealIfNeeded()
-            // One-shot daily Fitness Age / Vitality rebuild: recompute the whole history at daily resolution
-            // from stored data and drop the old Saturday-only points it replaces. Flagged only after the
-            // replacement landed.
-            await self.intelligence.runDailyFitnessVitalityRebuildIfNeeded()
-            // One-shot on-upgrade Effort rescore (#313): recompute strain from source across the FULL
-            // history and repair sleep rejected by unmatched WRIST_OFF in one pass. Both persisted flags
-            // describe that shared pass; either pending flag triggers it.
-            await self.intelligence.runEffortRescoreIfNeeded()
+            // The flag-gated full-history passes: the Effort rescore (#313) and sleep-wear repair over every
+            // day from source, then the daily Fitness Age / Vitality rebuild. Each runs once per arming.
+            await self.intelligence.runHistoryPasses()
             while !Task.isCancelled {
                 // #547 RE-POLLUTION: a sync since the last tick may have armed a re-heal (its ingest gate
                 // dropped bad-clock records). `runTimestampHealIfNeeded` honours the pending flag even after
@@ -2823,6 +2818,18 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// After an import adds history, recompute everything derived from it across the whole history, not only
+    /// the trailing 21 days the regular pass covers: re-arm the full-history passes and run them in the
+    /// background. A pass that cannot run now (another pass running, app backgrounded) stays armed for the
+    /// next launch. Kotlin twin: `AppViewModel.recomputeAfterHistoryImport`.
+    func recomputeAfterHistoryImport() {
+        IntelligenceEngine.rearmHistoryPasses()
+        Task {
+            await intelligence.runHistoryPasses()
+            await repo.refresh()
+        }
+    }
+
     /// Marks a source as importing and clears only that source's old status text + failure flag.
     private func beginImport(_ source: DataSourceImportKind) {
         activeImportSource = source
@@ -2853,5 +2860,6 @@ final class AppModel: ObservableObject {
             xiaomiImportFailed = failed
         }
         activeImportSource = nil
+        if !failed { recomputeAfterHistoryImport() }
     }
 }

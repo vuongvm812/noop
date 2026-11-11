@@ -2420,7 +2420,8 @@ object IntelligenceEngine {
     ) {
         rescoreManualWorkouts(repo, profile, importedDeviceId, maxHROverride, nowSeconds,
             restingHR, effortMethod)
-        scoreGarminWorkouts(repo, candidatePriorities.map { it.first }, profile,
+        // Plus the watch-export import ids, which hold watch workouts whether or not they are candidates.
+        scoreGarminWorkouts(repo, candidatePriorities.map { it.first } + GarminWorkoutEffort.watchImportSources(), profile,
             ManualWorkoutRescore.hrMax(maxHROverride, profile.age), nowSeconds, restingHR, effortMethod)
     }
 
@@ -2443,7 +2444,7 @@ object IntelligenceEngine {
         effortMethod: StrainScorer.Method,
     ) {
         for (id in deviceIds.distinct()) {
-            if (!GarminWorkoutEffort.isWatchSource(id)) continue
+            if (!GarminWorkoutEffort.scoresOwnTrace(id)) continue
             val rows = runCatching { repo.workouts(id, 0L, nowSeconds, GarminWorkoutEffort.ALL_ROWS) }
                 .getOrNull() ?: continue
             val updated = ArrayList<WorkoutRow>()

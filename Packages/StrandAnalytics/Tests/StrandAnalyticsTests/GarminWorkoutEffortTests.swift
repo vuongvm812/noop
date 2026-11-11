@@ -28,6 +28,17 @@ final class GarminWorkoutEffortTests: XCTestCase {
         XCTAssertFalse(GarminWorkoutEffort.isWatchSource("apple-health"))
     }
 
+    /// The Effort pass also scores the watch-export imports from their own stored trace. Same cases as the
+    /// Kotlin `scoresOwnTraceCoversTheWatchExportImports`.
+    func testScoresOwnTraceCoversTheWatchExportImports() {
+        for id in ["garmin-abc", "garmin-import", "Garmin-Import", "huawei-import"] {
+            XCTAssertTrue(GarminWorkoutEffort.scoresOwnTrace(id), id)
+        }
+        for id in ["garmin", "my-whoop", "activity-file", "apple-health", "oura-import"] {
+            XCTAssertFalse(GarminWorkoutEffort.scoresOwnTrace(id), id)
+        }
+    }
+
     /// The pass reads the whole history (a capped ascending read never reaches the newest rows), and the
     /// "too thin to score" memory keys on the full row identity. Same literals as the Kotlin test.
     func testFullHistoryReadAndAttemptKey() {
