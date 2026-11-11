@@ -2326,6 +2326,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return runCatching { repository.hrBucketsFor(ids, from, to, bucket) }.getOrDefault(emptyList())
     }
 
+    /** Mean power / cadence / altitude per bucket over ONE workout window, for the detail graphs. Reads the
+     *  ids the HR read resolves for this row (#856). Empty when the watch stored none. */
+    suspend fun workoutMetricBuckets(
+        kind: com.noop.data.DeviceMetricKind,
+        from: Long,
+        to: Long,
+        source: String = "",
+        rowDeviceId: String = deviceId,
+    ): List<com.noop.data.MetricBucket> {
+        if (to <= from) return emptyList()
+        val ids = WhoopRepository.workoutHrDeviceIds(source, rowDeviceId, deviceId)
+        return runCatching { repository.workoutMetricBuckets(ids, kind, from, to) }.getOrDefault(emptyList())
+    }
+
     /** Per-zone MINUTES for a workout window, binning the strap's raw HR samples into the age-derived
      *  (Tanaka) %HRmax zones — the same display zone model the Workouts screen uses for imported zone
      *  percentages, but from the strap's own samples so a session WITHOUT imported zones still gets a

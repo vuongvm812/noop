@@ -3622,6 +3622,15 @@ final class Repository: ObservableObject {
         return await hrBuckets(deviceIds: ids, from: from, to: to, bucketSeconds: bucket)
     }
 
+    /// Mean power / cadence / altitude per bucket over ONE workout window, for the detail graphs. Reads the
+    /// ids the HR read resolves for this row (#856). Empty when the watch stored none.
+    /// Kotlin twin: `AppViewModel.workoutMetricBuckets`.
+    func workoutMetricBuckets(kind: DeviceMetricKind, from: Int, to: Int, source: String = "") async -> [MetricBucket] {
+        guard to > from, let store = await ensureStore() else { return [] }
+        let ids = Self.workoutHrDeviceIds(source: source, activeStrapId: deviceId, importedIds: importedReadIds)
+        return (try? await store.workoutMetricBuckets(deviceIds: ids, kind: kind, startTs: from, endTs: to)) ?? []
+    }
+
     /// Raw HR samples binned into per-zone MINUTES for a workout window, using the age-derived
     /// (Tanaka) %HRmax zones , the same display zone model `WorkoutsView` already uses for imported
     /// zone percentages, but computed here from the strap's own samples so a session WITHOUT imported

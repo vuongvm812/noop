@@ -4765,4 +4765,11 @@
     <string name="settings_day_cycle_midnight">00:00</string>
     <string name="ground_truth_marker_now_button" translatable="false">0</string>
     <string name="l10n_insights_screen_no_816c52fd">Không có</string>
+    <string name="workout_detail_avg_power">Công suất TB</string>
+    <string name="workout_detail_avg_cadence">Nhịp chân TB</string>
+    <string name="workout_detail_power">Công suất</string>
+    <string name="workout_detail_cadence">Nhịp chân</string>
+    <string name="workout_detail_elevation">Độ cao</string>
+    <string name="workout_detail_gain">Độ cao tăng</string>
+    <string name="workout_detail_high">Cao</string>
 </resources>

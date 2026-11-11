@@ -35,6 +35,15 @@ object HuaweiWatchIngest {
     const val SOURCE_SLEEP = "huawei_sleep"
     const val SOURCE_WORKOUT = "huawei_workout"
 
+    /** `deviceMetricSample.source` of per-sample workout cadence / altitude / power read from the band's 17/0A data pages. */
+    const val SOURCE_WORKOUT_SAMPLES = "huawei-17-0a"
+
+    /** The same series read from a Gadgetbridge export's `HUAWEI_WORKOUT_DATA_SAMPLE` rows. */
+    const val SOURCE_WORKOUT_SAMPLES_GADGETBRIDGE = "gadgetbridge"
+
+    /** Band workout type codes of walking (Gadgetbridge `HuaweiWorkoutGbParser`): there the step rate is the cadence. */
+    private val WALKING_TYPES = setOf(2, 13)
+
     /**
      * The `deviceMetricSample.kind` wire string of wrist skin temperature. The enum entry lands with T2;
      * until then these rows travel as [PendingMetric] and wave 2 maps them onto the entry.
@@ -70,7 +79,15 @@ object HuaweiWatchIngest {
         val samples: List<HuaweiWorkoutDecoder.Sample> = emptyList(),
         val gps: List<HuaweiWorkoutDecoder.GpsPoint> = emptyList(),
         val pace: List<HuaweiWorkoutDecoder.PaceBlock> = emptyList(),
+        /** `deviceMetricSample.source` for this workout's per-sample cadence / altitude / power rows. */
+        val sampleSource: String = SOURCE_WORKOUT_SAMPLES,
     )
+
+    /**
+     * How many usable per-sample values of each series a workout's data carried: present, not a sentinel,
+     * not 0, and inside the workout. Zero means the band sent none of it, or sent nothing usable.
+     */
+    data class SampleCounts(val hr: Int, val cadence: Int, val altitude: Int, val power: Int)
 
     /** A metric whose kind enum entry has not landed yet (see [SKIN_TEMP_WIRE]). */
     data class PendingMetric(val ts: Long, val kindWire: String, val value: Double, val source: String)
@@ -89,6 +106,7 @@ object HuaweiWatchIngest {
         val ascentM: Double?,
         val hrSamples: List<ActivityFileImporter.HrPoint>,
         val route: List<ActivityFileImporter.RoutePoint>,
+        val sampleCounts: SampleCounts = SampleCounts(0, 0, 0, 0),
     )
 
     /** What one batch contributes, in the Garmin fold's row shapes. */
@@ -165,7 +183,9 @@ object HuaweiWatchIngest {
             t.aerobicEffect?.let { add(t.startTs, DeviceMetricKind.AEROBIC_TRAINING_EFFECT, it, SOURCE_WORKOUT) }
             t.anaerobicEffect?.let { add(t.startTs, DeviceMetricKind.ANAEROBIC_TRAINING_EFFECT, it, SOURCE_WORKOUT) }
             t.load?.let { add(t.startTs, DeviceMetricKind.TRAINING_LOAD, it.toDouble(), SOURCE_WORKOUT) }
-            drafts.add(draft(w))
+            val series = workoutSeries(w)
+            for (r in series.rows) add(r.ts, r.kind, r.value, w.sampleSource)
+            drafts.add(draft(w, series.counts))
         }
         val deviceMetric = metrics.values.sortedWith(compareBy<DeviceMetricRow>({ it.ts }, { it.kind.wire }))
 
@@ -295,7 +315,40 @@ object HuaweiWatchIngest {
         return out
     }
 
-    private fun draft(w: Workout): WorkoutDraft {
+    /** One workout's cadence / altitude / power rows plus the counts of each series, HR included. */
+    internal data class WorkoutSeries(val rows: List<DeviceMetricRow>, val counts: SampleCounts)
+
+    /**
+     * Per-sample cadence, altitude and power of one workout, as Gadgetbridge's own reader takes them: speed is
+     * not stored here. A value that is absent, a sentinel (`0xFF` step rate, `0xFFFF` cadence / power, raw
+     * `-1` altitude) or 0 is skipped, as is a sample outside the workout. Cadence is steps per minute: for
+     * walking the step rate (field 2), otherwise the inner block's cadence (inner bit 0), each falling back to
+     * the other, because Gadgetbridge's chart code reads them in that order (`buildActivityPoint`).
+     * The rows' source is left empty; [fold] stamps [Workout.sampleSource].
+     */
+    internal fun workoutSeries(w: Workout): WorkoutSeries {
+        val t = w.totals
+        val walking = t.type in WALKING_TYPES
+        val rows = ArrayList<DeviceMetricRow>()
+        var hr = 0; var cadence = 0; var altitude = 0; var power = 0
+        val seen = HashSet<Long>()
+        for (s in w.samples.sortedBy { it.ts }) {
+            if (s.ts !in t.startTs..t.endTs || !seen.add(s.ts)) continue
+            if (s.heartRate?.let { it in HR_RANGE } == true) hr++
+            val stepRate = s.stepRate?.takeIf { it in 1..254 }
+            val inner = s.inner[0]?.takeIf { it in 1..0xFFFE }
+            val c = if (walking) stepRate ?: inner else inner ?: stepRate
+            if (c != null) { rows.add(DeviceMetricRow(s.ts, DeviceMetricKind.CADENCE, c.toDouble(), "")); cadence++ }
+            // 0.0 m is skipped with the other zeros, as the brief asks, although sea level is a real altitude.
+            val alt = s.altitudeM?.takeIf { Math.round(it * 10) != -1L && it != 0.0 }
+            if (alt != null) { rows.add(DeviceMetricRow(s.ts, DeviceMetricKind.ALTITUDE_M, alt, "")); altitude++ }
+            val p = s.powerW?.takeIf { it in 1..0xFFFE }
+            if (p != null) { rows.add(DeviceMetricRow(s.ts, DeviceMetricKind.POWER_W, p.toDouble(), "")); power++ }
+        }
+        return WorkoutSeries(rows, SampleCounts(hr, cadence, altitude, power))
+    }
+
+    private fun draft(w: Workout, counts: SampleCounts): WorkoutDraft {
         val t = w.totals
         val hr = w.samples.mapNotNull { s ->
             s.heartRate?.takeIf { it in HR_RANGE && s.ts in t.startTs..t.endTs }?.let { ActivityFileImporter.HrPoint(s.ts, it) }
@@ -308,6 +361,7 @@ object HuaweiWatchIngest {
             steps = t.steps?.takeIf { it in 1..Int.MAX_VALUE }?.toInt(),
             avgHr = if (hr.isEmpty()) null else Math.round(hr.sumOf { it.bpm }.toDouble() / hr.size).toInt(),
             maxHr = maxHr, ascentM = t.elevationGainM?.takeIf { it > 0 }, hrSamples = hr, route = route,
+            sampleCounts = counts.copy(hr = hr.size),
         )
     }
 

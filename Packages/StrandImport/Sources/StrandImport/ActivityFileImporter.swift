@@ -89,6 +89,12 @@ public struct ActivityFile: Sendable, Equatable {
     public var anaerobicTrainingEffect: Double?
     /// The watch's own EPOC-based training load for the activity (FIT session), a reference value.
     public var trainingLoad: Double?
+    /// Watch session average power in watts (FIT session field 20); nil when absent or invalid.
+    public var avgPowerW: Int?
+    /// Watch session average cadence (FIT session field 18): steps/min for on-foot sports, rpm otherwise.
+    public var avgCadence: Double?
+    /// Per-record power / cadence / altitude the file carried (FIT only), for the workout detail graphs.
+    public var trackMetrics: [ActivityTrackMetric]
 
     public init(
         kind: Kind,
@@ -107,7 +113,10 @@ public struct ActivityFile: Sendable, Equatable {
         hrSamples: [ActivityHRSample] = [],
         aerobicTrainingEffect: Double? = nil,
         anaerobicTrainingEffect: Double? = nil,
-        trainingLoad: Double? = nil
+        trainingLoad: Double? = nil,
+        avgPowerW: Int? = nil,
+        avgCadence: Double? = nil,
+        trackMetrics: [ActivityTrackMetric] = []
     ) {
         self.kind = kind
         self.start = start
@@ -126,6 +135,9 @@ public struct ActivityFile: Sendable, Equatable {
         self.aerobicTrainingEffect = aerobicTrainingEffect
         self.anaerobicTrainingEffect = anaerobicTrainingEffect
         self.trainingLoad = trainingLoad
+        self.avgPowerW = avgPowerW
+        self.avgCadence = avgCadence
+        self.trackMetrics = trackMetrics
     }
 
     /// Duration in seconds, or nil when start == end (no real interval to claim).
@@ -155,6 +167,18 @@ public struct RoutePoint: Sendable, Equatable {
     public init(lat: Double, lon: Double) {
         self.lat = lat
         self.lon = lon
+    }
+}
+
+/// One timestamped power / cadence / altitude reading; each value nil when the watch gave none.
+/// Kotlin twin: `ActivityFileImporter.TrackMetric`.
+public struct ActivityTrackMetric: Sendable, Equatable {
+    public let ts: Int
+    public let cadence: Double?
+    public let powerW: Int?
+    public let altitudeM: Double?
+    public init(ts: Int, cadence: Double?, powerW: Int?, altitudeM: Double?) {
+        self.ts = ts; self.cadence = cadence; self.powerW = powerW; self.altitudeM = altitudeM
     }
 }
 
@@ -348,12 +372,33 @@ public enum ActivityFileImporter {
         return ActivityFileImportResult(activity: a, kind: kind, skipped: skipped)
     }
 
-    /// One parsed track sample. Any field may be nil — only what the point carried.
+    /// One parsed track sample. Any field may be nil — only what the point carried. `cadenceCycles` is the
+    /// FIT cycles/min as written (strides/min for running); the sport is unknown while records are read,
+    /// so `trackMetrics(from:cadenceFactor:)` converts. Kotlin twin: `ActivityFileImporter.Sample`.
     struct TrackSample: Equatable {
         var time: Date?
         var point: RoutePoint?
         var elevationM: Double?
         var hr: Int?
+        var cadenceCycles: Double? = nil
+        var powerW: Int? = nil
+    }
+
+    /// Fold the parsed samples into the persisted power / cadence / altitude series. `cadenceFactor` is 2 for
+    /// on-foot sports (FIT strides to steps) and 1 otherwise. A sample needs a valid timestamp (same ceiling as
+    /// `hrSamples(from:)`); a value that is absent, or 0 for power and cadence, is left nil.
+    /// Kotlin twin: `ActivityFileImporter.trackMetrics`.
+    static func trackMetrics(from samples: [TrackSample], cadenceFactor: Double) -> [ActivityTrackMetric] {
+        samples.compactMap { s in
+            guard let time = s.time else { return nil }
+            let secs = time.timeIntervalSince1970
+            guard secs.isFinite, secs > 0, secs < 4_102_444_800 else { return nil }
+            let cadence = s.cadenceCycles.flatMap { $0 > 0 ? $0 * cadenceFactor : nil }
+            let power = s.powerW.flatMap { $0 > 0 ? $0 : nil }
+            let altitude = s.elevationM.flatMap { $0.isFinite ? $0 : nil }
+            if cadence == nil && power == nil && altitude == nil { return nil }
+            return ActivityTrackMetric(ts: Int(secs), cadence: cadence, powerW: power, altitudeM: altitude)
+        }
     }
 
     /// #137: fold the parsed track samples into the persisted HR series. SHARED by every format path

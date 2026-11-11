@@ -322,6 +322,75 @@ class ActivityFileImporterTest {
         assertEquals(5.0, session(0, 50, 0)!!.anaerobicTrainingEffect)
     }
 
+    /** Power, cadence and altitude from FIT records + session averages. Swift twin:
+     *  `ActivityFileImporterTests.testFitPowerCadenceAltitude`, same bytes and literals. */
+    @Test
+    fun fitPowerCadenceAltitude() {
+        fun decode(sport: Int, avgCadence: Int, avgPower: Int): ActivityFileImporter.Activity {
+            val fit = FitFixture()
+            fit.definition(0, 18, listOf(
+                Triple(2, 4, 0x86), Triple(5, 1, 0x00), Triple(7, 4, 0x86), Triple(18, 1, 0x02), Triple(20, 2, 0x84),
+            ))
+            fit.dataHeader(0)
+            fit.u32(100_000L); fit.u8(sport); fit.u32(30_000L); fit.u8(avgCadence); fit.u16(avgPower)
+            fit.definition(1, 20, listOf(
+                Triple(253, 4, 0x86), Triple(3, 1, 0x02), Triple(2, 2, 0x84), Triple(78, 4, 0x86),
+                Triple(4, 1, 0x02), Triple(53, 1, 0x02), Triple(7, 2, 0x84),
+            ))
+            // (altitude, enhanced_altitude, cadence, fractional_cadence, power) per record, 10 s apart.
+            val recs = listOf(
+                listOf(2600L, 0xFFFFFFFFL, 80L, 64L, 200L),   // legacy altitude only, 80.5 cycles/min, 200 W
+                listOf(0xFFFFL, 3000L, 0L, 0xFFL, 0xFFFFL),   // enhanced altitude; cadence 0 and power sentinel
+                listOf(0xFFFFL, 0xFFFFFFFFL, 0xFFL, 0xFFL, 250L), // no altitude, cadence sentinel, 250 W
+                listOf(2605L, 0xFFFFFFFFL, 82L, 0xFFL, 0L),   // fraction sentinel ignored, power 0
+                listOf(2600L, 3000L, 0xFFL, 0xFFL, 0xFFFFL),  // both altitudes: enhanced wins (100 m); nothing else
+            )
+            recs.forEachIndexed { i, r ->
+                fit.dataHeader(1)
+                fit.u32(100_000L + i * 10L); fit.u8(140)
+                fit.u16(r[0].toInt()); fit.u32(r[1]); fit.u8(r[2].toInt()); fit.u8(r[3].toInt()); fit.u16(r[4].toInt())
+            }
+            return ActivityFileImporter.parse(fit.finish(), "x.fit").activity!!
+        }
+        fun lines(a: ActivityFileImporter.Activity) =
+            GarminWatchIngest.activityTrackMetrics(a).map { "${it.kind.wire} ${it.ts} ${it.value} ${it.source}" }
+
+        // Running: cadence is strides/min, so steps/min = (cadence + fraction / 128) * 2.
+        val run = decode(sport = 1, avgCadence = 78, avgPower = 210)
+        assertEquals(
+            listOf(
+                "cadence 631165600 161.0 fit-record",
+                "power_w 631165600 200.0 fit-record",
+                "altitude_m 631165600 20.0 fit-record",
+                "altitude_m 631165610 100.0 fit-record",
+                "power_w 631165620 250.0 fit-record",
+                "cadence 631165630 164.0 fit-record",
+                "altitude_m 631165630 21.0 fit-record",
+                "altitude_m 631165640 100.0 fit-record",
+            ),
+            lines(run),
+        )
+        assertEquals(210, run.avgPowerW)
+        assertEquals(156.0, run.avgCadence!!, 0.0)
+
+        // Cycling: cadence is rpm as written.
+        val ride = decode(sport = 2, avgCadence = 78, avgPower = 0xFFFF)
+        assertEquals(
+            listOf("cadence 631165600 80.5", "cadence 631165630 82.0"),
+            lines(ride).filter { it.startsWith("cadence") }.map { it.substringBeforeLast(' ') },
+        )
+        assertNull(ride.avgPowerW)
+        assertEquals(78.0, ride.avgCadence!!, 0.0)
+
+        // A file with no such fields yields nothing, so the detail hides the sections.
+        assertEquals(emptyList<Any>(), GarminWatchIngest.activityTrackMetrics(
+            ActivityFileImporter.parse(FitFixture().apply {
+                definition(1, 20, listOf(Triple(253, 4, 0x86), Triple(3, 1, 0x02)))
+                dataHeader(1); u32(100_000L); u8(140)
+            }.finish(), "x.fit").activity!!,
+        ))
+    }
+
     @Test
     fun fitDetectionFromMagicBytes() {
         val fit = FitFixture()

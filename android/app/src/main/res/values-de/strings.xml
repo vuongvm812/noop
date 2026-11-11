@@ -4903,4 +4903,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s im Bett · %2$s Effizienz · Phasen der %3$s-Uhr</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s im Bett · %2$s Effizienz · ungefähre Phasen (auf dem Gerät)</string>
     <string name="l10n_insights_screen_no_816c52fd">Kein</string>
+    <string name="workout_detail_avg_power">Ø Leistung</string>
+    <string name="workout_detail_avg_cadence">Ø Kadenz</string>
+    <string name="workout_detail_power">Leistung</string>
+    <string name="workout_detail_cadence">Kadenz</string>
+    <string name="workout_detail_elevation">Höhe</string>
+    <string name="workout_detail_gain">Anstieg</string>
+    <string name="workout_detail_high">Hoch</string>
 </resources>

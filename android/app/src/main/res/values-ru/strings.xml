@@ -5039,4 +5039,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s в постели · эффективность %2$s · фазы с часов %3$s</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s в постели · эффективность %2$s · приблизительные фазы (на устройстве)</string>
     <string name="l10n_insights_screen_no_816c52fd">Нет</string>
+    <string name="workout_detail_avg_power">Ср. мощность</string>
+    <string name="workout_detail_avg_cadence">Ср. каденс</string>
+    <string name="workout_detail_power">Мощность</string>
+    <string name="workout_detail_cadence">Каденс</string>
+    <string name="workout_detail_elevation">Высота</string>
+    <string name="workout_detail_gain">Набор</string>
+    <string name="workout_detail_high">Макс.</string>
 </resources>

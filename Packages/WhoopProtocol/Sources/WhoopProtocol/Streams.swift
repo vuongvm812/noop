@@ -482,6 +482,12 @@ public enum DeviceMetricKind: String, CaseIterable, Codable, Sendable {
     case anaerobicTrainingEffect = "anaerobic_training_effect"
     /// The watch's EPOC-based training load for one activity (unitless), stamped at the workout start.
     case trainingLoad = "training_load"
+    /// Workout cadence: steps per minute for on-foot sports, revolutions per minute otherwise.
+    case cadence = "cadence"
+    /// Workout power in watts.
+    case powerW = "power_w"
+    /// Workout altitude in metres.
+    case altitudeM = "altitude_m"
 }
 
 /// One time-stamped value of a watch-computed series, persisted to `deviceMetricSample` keyed by

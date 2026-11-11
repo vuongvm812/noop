@@ -160,7 +160,8 @@ enum GarminHistoryIngest {
         try await store.upsertWorkouts([row], deviceId: deviceId)
         // The per-sample HR, plus the watch's Training Effect and training load for the workout detail.
         let streams = Streams(hr: activity.hrSamples.map { HRSample(ts: $0.ts, bpm: $0.bpm) },
-                              deviceMetric: GarminWatchIngest.activityReference(activity))
+                              deviceMetric: GarminWatchIngest.activityReference(activity)
+                                  + GarminWatchIngest.activityTrackMetrics(activity))
         if !streams.isEmpty {
             _ = try await store.insert(streams, deviceId: deviceId)
         }

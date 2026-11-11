@@ -401,6 +401,12 @@ enum class DeviceMetricKind(val wire: String) {
     /** Skin temperature in degrees Celsius, as the wearable measured it (Huawei Band 10). Kotlin-only (fork):
      *  no Swift twin yet, so no Apple build writes or reads it. */
     SKIN_TEMP_C("skin_temp_c"),
+    /** Workout cadence: steps per minute for on-foot sports, revolutions per minute otherwise. */
+    CADENCE("cadence"),
+    /** Workout power in watts. */
+    POWER_W("power_w"),
+    /** Workout altitude in metres. */
+    ALTITUDE_M("altitude_m"),
 }
 
 /**
@@ -2443,6 +2449,27 @@ class WhoopRepository(
         limit: Int = 50_000,
     ): List<DeviceMetricSampleEntity> = dao.deviceMetricSamples(deviceId, kind.wire, from, to, limit)
 
+    /**
+     * One workout's [kind] series (power, cadence, altitude) averaged per bucket over [startTs, endTs], for the
+     * detail graphs. Same bucket rule as the HR curve ([workoutBucketSeconds]). [deviceIds] is the order of
+     * precedence the HR read resolves for the same row; an earlier id wins a bucket start. Empty when no row
+     * exists, so the caller hides the section. Swift twin: `WhoopStore.workoutMetricBuckets`.
+     */
+    suspend fun workoutMetricBuckets(
+        deviceIds: List<String>,
+        kind: DeviceMetricKind,
+        startTs: Long,
+        endTs: Long,
+    ): List<MetricBucket> {
+        if (endTs <= startTs) return emptyList()
+        val bucket = workoutBucketSeconds(endTs - startTs)
+        val byStart = LinkedHashMap<Long, MetricBucket>()
+        for (id in deviceIds) {
+            for (b in dao.deviceMetricBuckets(id, kind.wire, startTs, endTs, bucket)) byStart.putIfAbsent(b.bucket, b)
+        }
+        return byStart.values.sortedBy { it.bucket }
+    }
+
     /** Cached daily metrics for the inclusive day range [from, to] (YYYY-MM-DD), oldest first. */
     suspend fun dailyMetrics(deviceId: String, from: String, to: String): List<DailyMetric> =
         dao.dailyMetricsRange(deviceId, from, to)
@@ -2660,6 +2687,10 @@ class WhoopRepository(
          *  — the "my-whoop" placeholder from the Workouts screen, or the active strap id from the auto-workout
          *  nudge — so manual rows read the union instead (see [workoutHrDeviceIds]). */
         fun isDetectedWorkout(source: String): Boolean = source.lowercase().endsWith("-noop")
+
+        /** The detail graphs' bucket width for a workout of [spanSeconds]: ~120 buckets, floored at 15 s and
+         *  capped at 300 s (the HR curve's rule). Swift twin: `WhoopStore.workoutBucketSeconds`. */
+        fun workoutBucketSeconds(spanSeconds: Long): Long = (spanSeconds / 120).coerceIn(15L, 300L)
 
         /** #510/#836: the device id(s) whose `hrSample` rows back a workout's Avg HR / calories / Effort
          *  recompute. A DETECTED row was charted from its OWN strap's trace, so read HR under that strap —

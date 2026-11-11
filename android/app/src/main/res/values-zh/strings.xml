@@ -4792,4 +4792,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">卧床 %1$s · 效率 %2$s · %3$s 手表睡眠阶段</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">卧床 %1$s · 效率 %2$s · 估算睡眠阶段（设备端）</string>
     <string name="l10n_insights_screen_no_816c52fd">无</string>
+    <string name="workout_detail_avg_power">平均功率</string>
+    <string name="workout_detail_avg_cadence">平均步频</string>
+    <string name="workout_detail_power">功率</string>
+    <string name="workout_detail_cadence">步频</string>
+    <string name="workout_detail_elevation">海拔</string>
+    <string name="workout_detail_gain">爬升</string>
+    <string name="workout_detail_high">最高</string>
 </resources>

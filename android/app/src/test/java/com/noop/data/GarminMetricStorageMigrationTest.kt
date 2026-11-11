@@ -67,16 +67,18 @@ class GarminMetricStorageMigrationTest {
                 "stress", "body_battery", "respiration_bpm", "spo2_pct",
                 "intensity_moderate_min", "intensity_vigorous_min", "active_kcal", "hrv_ms", "sleep_score",
                 "aerobic_training_effect", "anaerobic_training_effect", "training_load",
+                "cadence", "power_w", "altitude_m",
             ),
             DeviceMetricKind.entries.filterNot { it in KOTLIN_ONLY_KINDS }.map { it.wire },
         )
     }
 
-    /** Kinds with no Swift twin yet (fork, Android-first), so outside the Swift-pinned list above. */
+    /** Kinds with no Swift twin yet (fork, Android-first), so outside the Swift-pinned list above (the Swift list
+     *  skips them, so order among the shared kinds is what must agree). */
     @Test
     fun kotlinOnlyKindsAreAppendedAfterTheSwiftList() {
         assertEquals(listOf("skin_temp_c"), KOTLIN_ONLY_KINDS.map { it.wire })
-        assertEquals(KOTLIN_ONLY_KINDS, DeviceMetricKind.entries.takeLast(KOTLIN_ONLY_KINDS.size))
+        assertEquals(KOTLIN_ONLY_KINDS, DeviceMetricKind.entries.filter { it in KOTLIN_ONLY_KINDS })
     }
 
     private companion object {

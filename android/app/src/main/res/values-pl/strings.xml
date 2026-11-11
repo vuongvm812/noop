@@ -5042,4 +5042,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s w łóżku · wydajność %2$s · fazy z zegarka %3$s</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s w łóżku · wydajność %2$s · przybliżone fazy (na urządzeniu)</string>
     <string name="l10n_insights_screen_no_816c52fd">Brak</string>
+    <string name="workout_detail_avg_power">Śr. moc</string>
+    <string name="workout_detail_avg_cadence">Śr. kadencja</string>
+    <string name="workout_detail_power">Moc</string>
+    <string name="workout_detail_cadence">Kadencja</string>
+    <string name="workout_detail_elevation">Wysokość</string>
+    <string name="workout_detail_gain">Przewyższenie</string>
+    <string name="workout_detail_high">Wysoki</string>
 </resources>

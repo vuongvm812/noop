@@ -4919,4 +4919,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s in bed · %2$s efficiency · %3$s watch stages</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s in bed · %2$s efficiency · approx. stages (on-device)</string>
     <string name="l10n_insights_screen_no_816c52fd">No</string>
+    <string name="workout_detail_avg_power">Avg Power</string>
+    <string name="workout_detail_avg_cadence">Avg Cadence</string>
+    <string name="workout_detail_power">Power</string>
+    <string name="workout_detail_cadence">Cadence</string>
+    <string name="workout_detail_elevation">Elevation</string>
+    <string name="workout_detail_gain">Gain</string>
+    <string name="workout_detail_high">High</string>
 </resources>

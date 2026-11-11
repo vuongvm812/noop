@@ -313,6 +313,69 @@ final class ActivityFileImporterTests: XCTestCase {
         XCTAssertEqual(GarminWatchIngest.activityReference(gpx), [])
     }
 
+    /// Power, cadence and altitude from FIT records + session averages. Kotlin twin:
+    /// `ActivityFileImporterTest.fitPowerCadenceAltitude`, same bytes and literals.
+    func testFitPowerCadenceAltitude() {
+        func decode(sport: UInt8, avgCadence: UInt8, avgPower: UInt16) -> ActivityFile {
+            var fit = FitFixture()
+            fit.definition(local: 0, global: 18, fields: [
+                (2, 4, 0x86), (5, 1, 0x00), (7, 4, 0x86), (18, 1, 0x02), (20, 2, 0x84),
+            ])
+            fit.dataHeader(local: 0)
+            fit.u32(100_000); fit.u8(sport); fit.u32(30_000); fit.u8(avgCadence); fit.u16(avgPower)
+            fit.definition(local: 1, global: 20, fields: [
+                (253, 4, 0x86), (3, 1, 0x02), (2, 2, 0x84), (78, 4, 0x86),
+                (4, 1, 0x02), (53, 1, 0x02), (7, 2, 0x84),
+            ])
+            // (altitude, enhanced_altitude, cadence, fractional_cadence, power) per record, 10 s apart.
+            let recs: [(UInt16, UInt32, UInt8, UInt8, UInt16)] = [
+                (2600, 0xFFFF_FFFF, 80, 64, 200),       // legacy altitude only, 80.5 cycles/min, 200 W
+                (0xFFFF, 3000, 0, 0xFF, 0xFFFF),         // enhanced altitude; cadence 0 and power sentinel
+                (0xFFFF, 0xFFFF_FFFF, 0xFF, 0xFF, 250),  // no altitude, cadence sentinel, 250 W
+                (2605, 0xFFFF_FFFF, 82, 0xFF, 0),        // fraction sentinel ignored, power 0
+                (2600, 3000, 0xFF, 0xFF, 0xFFFF),        // both altitudes: enhanced wins (100 m); nothing else
+            ]
+            for (i, r) in recs.enumerated() {
+                fit.dataHeader(local: 1)
+                fit.u32(100_000 + UInt32(i) * 10); fit.u8(140)
+                fit.u16(r.0); fit.u32(r.1); fit.u8(r.2); fit.u8(r.3); fit.u16(r.4)
+            }
+            return try! XCTUnwrap(ActivityFileImporter.parse(data: fit.finish(), filename: "x.fit").activity)
+        }
+        func lines(_ a: ActivityFile) -> [String] {
+            GarminWatchIngest.activityTrackMetrics(a).map { "\($0.kind.rawValue) \($0.ts) \($0.value) \($0.source)" }
+        }
+
+        // Running: cadence is strides/min, so steps/min = (cadence + fraction / 128) * 2.
+        let run = decode(sport: 1, avgCadence: 78, avgPower: 210)
+        XCTAssertEqual(lines(run), [
+            "cadence 631165600 161.0 fit-record",
+            "power_w 631165600 200.0 fit-record",
+            "altitude_m 631165600 20.0 fit-record",
+            "altitude_m 631165610 100.0 fit-record",
+            "power_w 631165620 250.0 fit-record",
+            "cadence 631165630 164.0 fit-record",
+            "altitude_m 631165630 21.0 fit-record",
+            "altitude_m 631165640 100.0 fit-record",
+        ])
+        XCTAssertEqual(run.avgPowerW, 210)
+        XCTAssertEqual(run.avgCadence, 156.0)
+
+        // Cycling: cadence is rpm as written.
+        let ride = decode(sport: 2, avgCadence: 78, avgPower: 0xFFFF)
+        XCTAssertEqual(lines(ride).filter { $0.hasPrefix("cadence") }.map { String($0.dropLast(11)) },
+                       ["cadence 631165600 80.5", "cadence 631165630 82.0"])
+        XCTAssertNil(ride.avgPowerW)
+        XCTAssertEqual(ride.avgCadence, 78.0)
+
+        // A file with no such fields yields nothing, so the detail hides the sections.
+        var bare = FitFixture()
+        bare.definition(local: 1, global: 20, fields: [(253, 4, 0x86), (3, 1, 0x02)])
+        bare.dataHeader(local: 1); bare.u32(100_000); bare.u8(140)
+        let none = try! XCTUnwrap(ActivityFileImporter.parse(data: bare.finish(), filename: "x.fit").activity)
+        XCTAssertEqual(GarminWatchIngest.activityTrackMetrics(none), [])
+    }
+
     func testFitDetectionFromMagicBytes() {
         var fit = FitFixture()
         fit.definition(local: 0, global: 20, fields: [(253, 4, 0x86), (3, 1, 0x02)])

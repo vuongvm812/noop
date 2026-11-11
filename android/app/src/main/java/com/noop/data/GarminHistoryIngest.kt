@@ -148,6 +148,9 @@ object GarminHistoryIngest {
         // The watch's Training Effect and training load, read back by the workout detail.
         val reference = GarminWatchIngest.activityReference(activity)
         if (reference.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = reference), deviceId)
+        // Per-record power / cadence / altitude for the detail graphs; absent when the watch gave none.
+        val track = GarminWatchIngest.activityTrackMetrics(activity)
+        if (track.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = track), deviceId)
         log("Garmin: stored workout ${row.sport} ${row.startTs}-${row.endTs} hr=${activity.hrSamples.size} " +
             "route=${if (row.routePolyline == null) 0 else activity.route.size} from ${file.key.label}")
     }

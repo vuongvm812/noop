@@ -4889,4 +4889,11 @@
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_8b47211b">%1$s au lit · %2$s d\'efficacité · phases de la montre %3$s</string>
     <string name="l10n_sleep_screen_1_s_in_bed_2_s_766cafd3">%1$s au lit · %2$s d\'efficacité · phases approximatives (sur l\'appareil)</string>
     <string name="l10n_insights_screen_no_816c52fd">Aucune</string>
+    <string name="workout_detail_avg_power">Puissance moy.</string>
+    <string name="workout_detail_avg_cadence">Cadence moy.</string>
+    <string name="workout_detail_power">Puissance</string>
+    <string name="workout_detail_cadence">Cadence</string>
+    <string name="workout_detail_elevation">Altitude</string>
+    <string name="workout_detail_gain">Dénivelé +</string>
+    <string name="workout_detail_high">Haut</string>
 </resources>

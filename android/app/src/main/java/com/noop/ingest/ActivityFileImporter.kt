@@ -104,6 +104,12 @@ object ActivityFileImporter {
         val anaerobicTrainingEffect: Double? = null,
         /** The watch's own EPOC-based training load for the activity (FIT session), a reference value. */
         val trainingLoad: Double? = null,
+        /** Watch session average power in watts (FIT session field 20); null when absent or invalid. */
+        val avgPowerW: Int? = null,
+        /** Watch session average cadence (FIT session field 18): steps/min for on-foot sports, rpm otherwise. */
+        val avgCadence: Double? = null,
+        /** Per-record power / cadence / altitude the file carried (FIT only), for the workout detail graphs. */
+        val trackMetrics: List<TrackMetric> = emptyList(),
     ) {
         val durationS: Double? get() = (endTs - startTs).takeIf { it > 0 }?.toDouble()
 
@@ -135,13 +141,39 @@ object ActivityFileImporter {
         val hasActivity: Boolean get() = activity != null
     }
 
-    /** One parsed track sample; any field may be null. */
+    /**
+     * One parsed track sample; any field may be null. [cadenceCycles] is the FIT cycles/min as written
+     * (strides/min for running); the sport is unknown while records are read, so [trackMetrics] converts.
+     * Swift twin: `TrackSample`.
+     */
     internal data class Sample(
         val timeS: Long?,
         val point: RoutePoint?,
         val elevationM: Double?,
         val hr: Int?,
+        val cadenceCycles: Double? = null,
+        val powerW: Int? = null,
     )
+
+    /** One timestamped power / cadence / altitude reading; each value null when the watch gave none. */
+    data class TrackMetric(val ts: Long, val cadence: Double?, val powerW: Int?, val altitudeM: Double?)
+
+    /**
+     * Fold the parsed samples into the persisted power / cadence / altitude series. [cadenceFactor] is 2 for
+     * on-foot sports (FIT strides to steps) and 1 otherwise. A sample needs a valid timestamp (same ceiling as
+     * [hrSamples]); a value that is absent, or 0 for power and cadence, is left null. Swift twin:
+     * `ActivityFileImporter.trackMetrics`.
+     */
+    internal fun trackMetrics(samples: List<Sample>, cadenceFactor: Double): List<TrackMetric> =
+        samples.mapNotNull { s ->
+            val ts = s.timeS ?: return@mapNotNull null
+            if (ts <= 0 || ts >= 4_102_444_800L) return@mapNotNull null
+            val cadence = s.cadenceCycles?.takeIf { it > 0 }?.let { it * cadenceFactor }
+            val power = s.powerW?.takeIf { it > 0 }
+            val altitude = s.elevationM?.takeIf { it.isFinite() }
+            if (cadence == null && power == null && altitude == null) null
+            else TrackMetric(ts, cadence, power, altitude)
+        }
 
     /**
      * #137: fold the parsed track samples into the persisted HR series. SHARED by every format path
@@ -640,6 +672,8 @@ internal class FitDecoder(private val raw: ByteArray) {
     private var sessionAerobicTE: Double? = null
     private var sessionAnaerobicTE: Double? = null
     private var sessionTrainingLoad: Double? = null
+    private var sessionAvgPower: Int? = null
+    private var sessionAvgCadence: Double? = null
 
     private var lapDistanceSum = 0.0
     private var lapCalorieSum = 0.0
@@ -672,12 +706,19 @@ internal class FitDecoder(private val raw: ByteArray) {
         var off = start
         var lat: Double? = null; var lon: Double? = null
         var ele: Double? = null; var hr: Int? = null; var time: Long? = null
+        var enhancedEle: Double? = null
+        var cadence: Long? = null; var fraction = 0.0; var power: Int? = null
         for (f in def.fields) {
             when (f.num) {
                 253 -> u(off, f.size, def.bigEndian)?.let { time = fitDate(it) }
                 0 -> s(off, f.size, def.bigEndian)?.let { lat = semicircles(it) }
                 1 -> s(off, f.size, def.bigEndian)?.let { lon = semicircles(it) }
-                2 -> u(off, f.size, def.bigEndian)?.let { if (it != 0xFFFFL) ele = it.toDouble() / 5.0 - 500.0 }
+                2 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size)) ele = it.toDouble() / 5.0 - 500.0 }
+                // enhanced_altitude: modern watches write only this one; it wins over the legacy field.
+                78 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size)) enhancedEle = it.toDouble() / 5.0 - 500.0 }
+                4 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size)) cadence = it }
+                53 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size)) fraction = it.toDouble() / 128.0 }
+                7 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size)) power = it.toInt() }
                 3 -> u(off, f.size, def.bigEndian)?.let { hr = ActivityFileImporter.validHr(it.toDouble()) }
             }
             off += f.size
@@ -687,7 +728,9 @@ internal class FitDecoder(private val raw: ByteArray) {
         if (samples.size >= ActivityFileImporter.MAX_POINTS) return
         if (point != null) gpsPointCount++
         if (hr != null) hrSampleCount++
-        samples.add(ActivityFileImporter.Sample(time, point, ele, hr))
+        val altitude = enhancedEle ?: ele
+        val cycles = cadence?.let { it.toDouble() + fraction }
+        samples.add(ActivityFileImporter.Sample(time, point, altitude, hr, cycles, power))
     }
 
     private fun consumeLap(def: FitRecordStream.Definition, start: Int) {
@@ -717,6 +760,8 @@ internal class FitDecoder(private val raw: ByteArray) {
                 22 -> u(off, f.size, def.bigEndian)?.let { if (it != 0xFFFFL) sessionAscent = it.toDouble() }
                 16 -> u(off, f.size, def.bigEndian)?.let { sessionAvgHr = ActivityFileImporter.validHr(it.toDouble()) }
                 17 -> u(off, f.size, def.bigEndian)?.let { sessionMaxHr = ActivityFileImporter.validHr(it.toDouble()) }
+                18 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size) && it > 0) sessionAvgCadence = it.toDouble() }
+                20 -> u(off, f.size, def.bigEndian)?.let { if (!isInvalid(it, f.size) && it > 0) sessionAvgPower = it.toInt() }
                 // total_training_effect / total_anaerobic_training_effect (u8, scale 10), training_load_peak (s32, scale 65536).
                 24 -> u(off, f.size, def.bigEndian)?.let { sessionAerobicTE = trainingEffect(it, f.size) }
                 137 -> u(off, f.size, def.bigEndian)?.let { sessionAnaerobicTE = trainingEffect(it, f.size) }
@@ -725,6 +770,10 @@ internal class FitDecoder(private val raw: ByteArray) {
             off += f.size
         }
     }
+
+    /** True when [v] is the all-ones "invalid" sentinel for an unsigned field of [size] bytes.
+     *  Swift twin: `FitDecoder.isInvalid`. */
+    private fun isInvalid(v: Long, size: Int): Boolean = size in 1..4 && v == (1L shl (size * 8)) - 1L
 
     private fun u(off: Int, size: Int, bigEndian: Boolean): Long? = stream?.uint(off, size, bigEndian)
 
@@ -788,6 +837,8 @@ internal class FitDecoder(private val raw: ByteArray) {
         }
         val ascent = sessionAscent ?: if (lapAscentSum > 0) lapAscentSum else ActivityFileImporter.ascentM(samples)
 
+        val cadenceFactor = if (isFootSport(sessionSport)) 2.0 else 1.0
+
         val sampledHrs = samples.mapNotNull { it.hr }
         val avgHr = sessionAvgHr ?: if (sampledHrs.isEmpty()) null else (sampledHrs.sum().toDouble() / sampledHrs.size).roundToInt()
         val maxHr = sessionMaxHr ?: lapMaxHr ?: sampledHrs.maxOrNull()
@@ -817,6 +868,9 @@ internal class FitDecoder(private val raw: ByteArray) {
             aerobicTrainingEffect = sessionAerobicTE,
             anaerobicTrainingEffect = sessionAnaerobicTE,
             trainingLoad = sessionTrainingLoad,
+            avgPowerW = sessionAvgPower,
+            avgCadence = sessionAvgCadence?.let { it * cadenceFactor },
+            trackMetrics = ActivityFileImporter.trackMetrics(samples, cadenceFactor),
         )
         return ActivityFileImporter.Result(activity, ActivityFileImporter.Kind.FIT, skipped)
     }

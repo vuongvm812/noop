@@ -46,8 +46,12 @@ object HuaweiHistoryIngest {
         else -> null
     })
 
-    suspend fun store(db: WhoopDatabase, deviceId: String, batch: HuaweiWatchIngest.Batch): HuaweiIngestCounts {
+    suspend fun store(
+        db: WhoopDatabase, deviceId: String, batch: HuaweiWatchIngest.Batch, log: (String) -> Unit = {},
+        logLabel: String = "Huawei",
+    ): HuaweiIngestCounts {
         val fold = HuaweiWatchIngest.fold(batch)
+        for (w in fold.workouts) log(workoutLine(w, logLabel))
         val sql = db.openHelper.writableDatabase
         fun exec(statement: String, vararg args: Any?): Int {
             sql.execSQL(statement, args)
@@ -163,6 +167,17 @@ object HuaweiHistoryIngest {
         }
     }
 
+    /**
+     * The always-on strap-log line for one workout: how many usable samples of each series the data carried
+     * (present, not a sentinel, not 0). It states what was decoded, not what the band supports: a 0 can mean
+     * the band does not record that series or that this sport does not use it.
+     */
+    internal fun workoutLine(w: HuaweiWatchIngest.WorkoutDraft, label: String = "Huawei"): String {
+        val c = w.sampleCounts
+        return "$label: workout ${w.startTs} type=${w.huaweiType} usable samples hr=${c.hr} cadence=${c.cadence} " +
+            "altitude=${c.altitude} power=${c.power}"
+    }
+
     /** The workout row for one band workout; `routePolyline` when the track has two points or more. */
     internal fun workoutRow(w: HuaweiWatchIngest.WorkoutDraft, deviceId: String) = WorkoutRow(
         deviceId = deviceId,
@@ -190,7 +205,7 @@ object HuaweiHistoryIngest {
         HuaweiHistorySync(
             cursor = HuaweiSyncPrefs.of(context),
             store = { deviceId, batch ->
-                val c = store(db, deviceId, batch)
+                val c = store(db, deviceId, batch, log)
                 log("Huawei: stored hr=${c.hr} metrics=${c.deviceMetric} sleeps=${c.sleeps} days=${c.days} " +
                     "points=${c.metricPoints} workouts=${c.workouts}")
                 if (c.any) onStored()
