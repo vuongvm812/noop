@@ -18,6 +18,17 @@ public enum GarminWorkoutEffort {
         return s.hasPrefix("garmin-") && s != "garmin-import"
     }
 
+    /// The watch-export import ids whose workouts carry the watch's own per-second heart rate under the id.
+    /// Kotlin twin: `GarminWorkoutEffort.watchImportSources`.
+    public static func watchImportSources() -> [String] { ["garmin-import", "huawei-import"] }
+
+    /// True for an id whose workouts the Effort pass scores from the trace stored under that same id: a
+    /// watch's history sync, or a watch export import (the Garmin Connect export's FIT activities; the
+    /// Gadgetbridge Huawei import exists on Android only). Kotlin twin: `GarminWorkoutEffort.scoresOwnTrace`.
+    public static func scoresOwnTrace(_ source: String) -> Bool {
+        isWatchSource(source) || watchImportSources().contains(source.lowercased())
+    }
+
     /// Row limit for the Effort pass's workout read: no cap. The read is ascending by start, so any cap
     /// would leave the newest workouts of a long history unscored forever. The 32-bit Int maximum, matching
     /// the Kotlin LIMIT. Kotlin twin: `GarminWorkoutEffort.ALL_ROWS`.

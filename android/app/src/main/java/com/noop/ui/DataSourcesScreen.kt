@@ -232,6 +232,8 @@ fun DataSourcesScreen(vm: AppViewModel) {
             // file name, path, or health value is in any line. Twin of the macOS DataSourcesView handlers.
             emitImportTrace(context, vm, summary)
             refreshCounts()
+            // New history: recompute every derived score across the whole history, in the background.
+            if (summary.totalRows > 0) vm.recomputeAfterHistoryImport()
             busy = false
             Toast.makeText(context, summary.displayMessage(), Toast.LENGTH_LONG).show()
             summary.garminReport?.let { garminReport = it }

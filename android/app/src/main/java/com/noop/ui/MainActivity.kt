@@ -1597,6 +1597,16 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, true).apply()
     }
 
+    /** Re-arm the full-history passes (Effort / sleep-wear repair, daily Fitness Age / Vitality) after an import
+     *  adds history, so they recompute it. Swift twin: `IntelligenceEngine.rearmHistoryPasses`. */
+    fun rearmHistoryPasses(context: Context) {
+        of(context).edit()
+            .putBoolean(KEY_EFFORT_RESCORE_DONE, false)
+            .putBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, false)
+            .putBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, false)
+            .apply()
+    }
+
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the
      *  on-upgrade purge of bad-strap-clock rows (far-past / future-dated) never re-runs. Re-running is
      *  harmless (the deletes are idempotent), but the flag avoids the work on every launch. */

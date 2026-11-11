@@ -428,6 +428,7 @@ struct DataSourcesView: View {
                 let points = result.metricPoints.map { MetricPoint(day: $0.day, key: $0.key, value: $0.value) }
                 try await store.upsertMetricSeries(points, deviceId: NutritionCsvImporter.sourceId)
                 await repo.refresh()
+                model.recomputeAfterHistoryImport()
                 var msg = String(localized: "Imported \(result.importedDays) days (\(points.count) values)")
                 if let a = result.earliestDay, let b = result.latestDay, a != b { msg += " · \(a)-\(b)" }
                 if result.skippedRows > 0 {
@@ -492,6 +493,7 @@ struct DataSourcesView: View {
                 }
                 try await store.upsertWorkouts(rows, deviceId: LiftingImporter.sourceId)
                 await repo.refresh()
+                model.recomputeAfterHistoryImport()
                 let totalVolume = result.sessions.reduce(0.0) { $0 + $1.volumeLoadKg }
                 // Whole-phrase variants per count so translators never see a stitched plural.
                 var msg = result.sessionCount == 1
@@ -649,6 +651,7 @@ struct DataSourcesView: View {
                 )
 
                 await repo.refresh()
+                model.recomputeAfterHistoryImport()
                 activityFileSummary = ActivityFileImporter.summaryText(activity)
                 activityFileFailed = false
                 logImport("Workout file (\(sport)): 1 workout imported")
@@ -705,6 +708,7 @@ struct DataSourcesView: View {
                                 domain: .dataImport)
                 }
                 await repo.refresh()
+                model.recomputeAfterHistoryImport()
                 wearableSummary = WearableExportImporter.summaryText(result)
                 wearableFailed = false
                 garminResult = (result.garmin != nil || result.fitReport != nil) ? result : nil

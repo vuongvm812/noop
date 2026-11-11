@@ -829,6 +829,23 @@ final class IntelligenceEngine: ObservableObject {
         await runHistoryRepairIfNeeded(historyDays: historyDays)
     }
 
+    /// Re-arm the full-history passes (Effort / sleep-wear repair, daily Fitness Age / Vitality) after an
+    /// import adds history, so they recompute it. Kotlin twin: `NoopPrefs.rearmHistoryPasses`.
+    static func rearmHistoryPasses() {
+        for key in [effortRescoreFlagKey, sleepWearRescoreFlagKey, fitnessVitalityDailyFlagKey] {
+            UserDefaults.standard.set(false, forKey: key)
+        }
+    }
+
+    /// The full-history passes: the shared Effort and sleep-wear repair (every day rescored from source, which
+    /// also scores Effort for imported watch workouts), then the daily Fitness Age / Vitality rebuild over the
+    /// result. Each is flag-gated and runs at most once per arming: at launch, and again after an import
+    /// re-arms them. Kotlin twin: `AppViewModel.runHistoryPasses`.
+    func runHistoryPasses() async {
+        await runEffortRescoreIfNeeded()
+        await runDailyFitnessVitalityRebuildIfNeeded()
+    }
+
     /// Upgrade repair for nights rejected by an unmatched WRIST_OFF, including history older than
     /// the normal 21-day window. Reuses the full-history scoring path, including edited/dismissed
     /// sleep protection and dependent daily metrics. Both flags describe this shared pass: either
@@ -3200,9 +3217,10 @@ final class IntelligenceEngine: ObservableObject {
         // today and the tail is the oldest day in the window. Taking the last match would have scored
         // today's workout against a resting HR up to `maxDays` old.
         let measuredResting = out.first(where: { $0.rhr != nil })?.rhr.map(Double.init)
-        // #54: the pass's resolved HRmax (override, else observed evidence, else Tanaka), the same yardstick
-        // every day this pass scored used. Twin of Kotlin's `passResolvedMaxHr`.
-        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id),
+        // The registered devices plus the watch-export import ids, which hold watch workouts but are never
+        // registered devices. #54: the pass's resolved HRmax (override, else observed evidence, else Tanaka),
+        // the same yardstick every day this pass scored used. Twin of Kotlin's `passResolvedMaxHr`.
+        await rescoreWorkouts(store: store, profile: up, deviceIds: regDevices.map(\.id) + GarminWorkoutEffort.watchImportSources(),
                               maxHROverride: StrainScorer.resolveHRmax(override: maxHR, age: up.age,
                                                                        observedEvidence: hrmaxEvidence).value,
                               restingHR: measuredResting, effortMethod: effortMethodGlobal)
@@ -3448,7 +3466,7 @@ final class IntelligenceEngine: ObservableObject {
                                      hrMax: Double, restingHR: Double?,
                                      effortMethod: StrainScorer.Method) async {
         let now = Int(Date().timeIntervalSince1970)
-        for id in deviceIds where GarminWorkoutEffort.isWatchSource(id) {
+        for id in deviceIds where GarminWorkoutEffort.scoresOwnTrace(id) {
             guard let rows = try? await store.workouts(deviceId: id, from: 0, to: now,
                                                        limit: GarminWorkoutEffort.allRows) else { continue }
             var updated: [WorkoutRow] = []

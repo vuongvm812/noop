@@ -1312,40 +1312,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     NoopPrefs.setTsHealPending(appContext, false)
                 }
             }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
-            // One-shot daily Fitness Age / Vitality rebuild: recompute the whole history at daily resolution
-            // from stored data and drop the old Saturday-only points it replaces. Flagged only after the
-            // replacement landed; a failure or empty history retries next launch.
-            runCatching {
-                if (!NoopPrefs.fitnessVitalityDailyDone(appContext) &&
-                    IntelligenceEngine.rebuildDailyFitnessVitalityHistory(repository, currentProfile(), deviceId)
-                ) NoopPrefs.setFitnessVitalityDailyDone(appContext)
-            }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
-            // One-shot shared Effort and sleep-wear repair: recompute strain from source across the FULL
-            // history and replay pre-fix sleep once. Either pending flag triggers one pass; both flags
-            // are set only after persistence returns. Cached-only days are preserved, changing Effort's
-            // old broad-window write behavior. Cancellation/failure retries next launch.
-            runCatching {
-                IntelligenceEngine.runEffortRescoreIfNeeded(
-                    repo = repository,
-                    profile = currentProfile(),
-                    importedDeviceId = deviceId,
-                    maxHROverride = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble(),
-                    flagGet = {
-                        !IntelligencePersistence.historyRepairIsPending(
-                            effortDone = NoopPrefs.effortRescoreDone(appContext),
-                            sleepWearDone = NoopPrefs.sleepWearRescoreDone(appContext),
-                        )
-                    },
-                    flagSet = {
-                        NoopPrefs.setEffortRescoreDone(appContext)
-                        NoopPrefs.setSleepWearRescoreDone(appContext)
-                    },
-                    // #1567: this rewrites the FULL history once, so a missing owner source would bake the
-                    // WHOOP5 skin-temp scale into every day of it.
-                    ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
-                    preserveUnscoredHistory = true,
-                )
-            }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            runHistoryPasses()
             while (isActive) {
                 // #547 RE-POLLUTION: a sync since the last tick may have flagged a re-heal (its ingest gate
                 // dropped bad-clock records). Re-run the purge BEFORE this tick's rescore so the affected days
@@ -2197,6 +2164,63 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         IntelligenceEngine.stepsHasMotionSink = null
         IntelligenceEngine.hrmaxEvidenceSink = null
     }
+
+    /**
+     * The full-history passes: the shared Effort and sleep-wear repair (every day rescored from source, which
+     * also scores Effort for imported watch workouts), then the daily Fitness Age / Vitality rebuild over the
+     * result. Each is flag-gated and runs at most once per arming: at launch, and again after an import
+     * re-arms them ([recomputeAfterHistoryImport]). Swift twin: `IntelligenceEngine.runHistoryPasses`.
+     */
+    private suspend fun runHistoryPasses() {
+        // One-shot shared Effort and sleep-wear repair: recompute strain from source across the FULL
+        // history and replay pre-fix sleep once. Either pending flag triggers one pass; both flags
+        // are set only after persistence returns. Cached-only days are preserved, changing Effort's
+        // old broad-window write behavior. Cancellation/failure retries next launch.
+        runCatching {
+            IntelligenceEngine.runEffortRescoreIfNeeded(
+                repo = repository,
+                profile = currentProfile(),
+                importedDeviceId = deviceId,
+                maxHROverride = profileStore.hrMaxOverride.takeIf { it > 0 }?.toDouble(),
+                flagGet = {
+                    !IntelligencePersistence.historyRepairIsPending(
+                        effortDone = NoopPrefs.effortRescoreDone(appContext),
+                        sleepWearDone = NoopPrefs.sleepWearRescoreDone(appContext),
+                    )
+                },
+                flagSet = {
+                    NoopPrefs.setEffortRescoreDone(appContext)
+                    NoopPrefs.setSleepWearRescoreDone(appContext)
+                },
+                // #1567: this rewrites the FULL history once, so a missing owner source would bake the
+                // WHOOP5 skin-temp scale into every day of it.
+                ownerSource = RegistryDayOwnerSource(noopApp.deviceRegistry),
+                preserveUnscoredHistory = true,
+            )
+        }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+        // One-shot daily Fitness Age / Vitality rebuild: recompute the whole history at daily resolution
+        // from stored data and drop the old Saturday-only points it replaces. Flagged only after the
+        // replacement landed; a failure or empty history retries next launch.
+        runCatching {
+            if (!NoopPrefs.fitnessVitalityDailyDone(appContext) &&
+                IntelligenceEngine.rebuildDailyFitnessVitalityHistory(repository, currentProfile(), deviceId)
+            ) NoopPrefs.setFitnessVitalityDailyDone(appContext)
+        }.onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+    }
+
+    /**
+     * After an import adds history, recompute everything derived from it across the whole history, not only
+     * the trailing 21 days the regular pass covers: re-arm the full-history passes and run them, then reload
+     * the workout list. Swift twin: `AppModel.recomputeAfterHistoryImport`.
+     */
+    fun recomputeAfterHistoryImport() {
+        NoopPrefs.rearmHistoryPasses(appContext)
+        viewModelScope.launch {
+            runHistoryPasses()
+            loadWorkouts()
+        }
+    }
+
     fun loadWorkouts() {
         viewModelScope.launch {
             val now = System.currentTimeMillis() / 1000

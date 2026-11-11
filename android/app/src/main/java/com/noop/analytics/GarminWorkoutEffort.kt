@@ -21,6 +21,18 @@ object GarminWorkoutEffort {
      */
     fun isWatchSource(source: String): Boolean = watchBrand(source) != null
 
+    /** The watch-export import ids whose workouts carry the watch's own per-second heart rate under the id.
+     *  Swift twin: `GarminWorkoutEffort.watchImportSources`. */
+    fun watchImportSources(): List<String> = listOf("garmin-import", "huawei-import")
+
+    /**
+     * True for an id whose workouts the Effort pass scores from the trace stored under that same id: a
+     * watch's history sync, or a watch export import (the Garmin Connect export's FIT activities, a
+     * Gadgetbridge Huawei database). Swift twin: `GarminWorkoutEffort.scoresOwnTrace`.
+     */
+    fun scoresOwnTrace(source: String): Boolean =
+        isWatchSource(source) || source.lowercase() in watchImportSources()
+
     /** The watch brand ([FusionSource.GARMIN_WATCH], [FusionSource.HUAWEI_WATCH]) whose history sync stored
      *  a workout row with this [source], or null. Case-insensitive, like [isWatchSource]. */
     fun watchBrand(source: String): FusionSource? =
