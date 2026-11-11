@@ -1554,6 +1554,17 @@ object NoopPrefs {
         of(context).edit().putBoolean(KEY_SLEEP_WEAR_RESCORE_DONE, true).apply()
     }
 
+    /** Set once the one-shot rebuild of Fitness Age / VO₂max / Vitality / Body Age at daily resolution has
+     *  replaced the old Saturday-only history. Marked only after the replacement landed. */
+    const val KEY_FITNESS_VITALITY_DAILY_DONE = "intelligence.fitnessVitalityDaily.v1.done"
+
+    fun fitnessVitalityDailyDone(context: Context): Boolean =
+        of(context).getBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, false)
+
+    fun setFitnessVitalityDailyDone(context: Context) {
+        of(context).edit().putBoolean(KEY_FITNESS_VITALITY_DAILY_DONE, true).apply()
+    }
+
     /** Whether the one-shot #547 implausible-timestamp heal has run. Set true once it completes so the
      *  on-upgrade purge of bad-strap-clock rows (far-past / future-dated) never re-runs. Re-running is
      *  harmless (the deletes are idempotent), but the flag avoids the work on every launch. */

@@ -2242,7 +2242,7 @@
     <string name="today_card_fitness_age">Фитнес-возраст</string>
     <string name="today_card_fitness_age_subtitle">Обновляется еженедельно</string>
     <string name="today_card_vo2max">VO₂ макс.</string>
-    <string name="today_card_vo2max_subtitle">Оценка, обновляется еженедельно</string>
+    <string name="today_card_vo2max_subtitle">Оценка, обновляется ежедневно</string>
     <string name="today_card_vitality">Жизненная энергия</string>
     <string name="today_card_vitality_subtitle">Оценка благополучия</string>
     <string name="today_card_hydration">Гидратация</string>
@@ -3287,7 +3287,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Ваши анализы крови, давление и показатели тела. Хранятся приватно здесь.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Лучший по источнику показатель для каждой метрики среди ваших браслетов.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">По вашим ночным показаниям</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Еженедельно</string>
+    <string name="l10n_health_screen_daily_728298d3">Ежедневно</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 лет</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Фитнес-возраст обновлён.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Пока недостаточно ношения — оставьте браслет на ночь.</string>

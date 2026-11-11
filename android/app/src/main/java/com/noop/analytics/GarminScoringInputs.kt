@@ -211,23 +211,21 @@ object GarminScoringInputs {
     }
 
     /**
-     * Every Saturday week key strictly before [beforeWeekKey] that [watchVo2max] gives a value from [points],
-     * with that value, oldest first (#71). The recompute pass writes these past weeks so the VO2max history
-     * shows the watch's numbers, not only for the current week. Empty when [beforeWeekKey] does not parse.
-     * Swift twin: `GarminScoringInputs.watchVo2maxWeeks`.
+     * Every calendar day strictly before [beforeDayKey] that [watchVo2max] gives a value for from [points],
+     * with that value, oldest first (#71). The recompute pass writes these earlier days so the VO2max
+     * history shows the watch's numbers, not only for the days inside the pass window. The scan starts at
+     * the oldest usable point. Empty when [beforeDayKey] does not parse.
+     * Swift twin: `GarminScoringInputs.watchVo2maxDays`.
      */
-    fun watchVo2maxWeeks(points: List<Pair<String, Double>>, beforeWeekKey: String): List<Pair<String, Double>> {
-        if (runCatching { java.time.LocalDate.parse(beforeWeekKey) }.isFailure) return emptyList()
+    fun watchVo2maxDays(points: List<Pair<String, Double>>, beforeDayKey: String): List<Pair<String, Double>> {
+        val before = runCatching { java.time.LocalDate.parse(beforeDayKey) }.getOrNull() ?: return emptyList()
         val first = points.filter { it.second > 0.0 && it.second.isFinite() }.minOfOrNull { it.first } ?: return emptyList()
-        val firstDate = runCatching { java.time.LocalDate.parse(first) }.getOrNull() ?: return emptyList()
-        // Monday = 1 … Saturday = 6: step forward to the first Saturday on or after the oldest point.
-        var week = firstDate.plusDays(((6 - firstDate.dayOfWeek.value + 7) % 7).toLong())
+        var day = runCatching { java.time.LocalDate.parse(first) }.getOrNull() ?: return emptyList()
         val out = ArrayList<Pair<String, Double>>()
-        while (true) {
-            val key = week.toString()
-            if (key >= beforeWeekKey) break
+        while (day.isBefore(before)) {
+            val key = day.toString()
             watchVo2max(points, key)?.let { out.add(key to it) }
-            week = week.plusDays(7)
+            day = day.plusDays(1)
         }
         return out
     }

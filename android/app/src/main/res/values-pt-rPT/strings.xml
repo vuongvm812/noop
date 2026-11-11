@@ -2280,7 +2280,7 @@
     <string name="today_card_fitness_age">Idade de fitness</string>
     <string name="today_card_fitness_age_subtitle">Atualização semanal</string>
     <string name="today_card_vo2max">VO₂ máximo</string>
-    <string name="today_card_vo2max_subtitle">Estimado, atualizado semanalmente</string>
+    <string name="today_card_vo2max_subtitle">Estimado, atualizado diariamente</string>
     <string name="today_card_vitality">Vitalidade</string>
     <string name="today_card_vitality_subtitle">Pontuação de bem-estar</string>
     <string name="today_card_hydration">Hidratação</string>
@@ -3260,7 +3260,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">As tuas análises, tensão arterial e números do corpo. Mantidos privados aqui.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">O número com melhor fonte por métrica, entre as tuas braceletes.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">A partir das tuas leituras noturnas</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Semanal</string>
+    <string name="l10n_health_screen_daily_728298d3">Diário</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 anos</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Idade de Fitness atualizada.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Ainda não há uso suficiente — mantém a bracelete durante a noite.</string>

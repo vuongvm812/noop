@@ -36,9 +36,8 @@ class LegacyScorePreservationContractTests(unittest.TestCase):
         self.assertNotIn("dailies[index] = fresh.with(avgHrv:", persistence)
 
         derivations = source[persistence_end:]
-        self.assertIn("let fa7 = dailies.sorted", derivations)
-        self.assertIn("for d in dailies { faGateByDay[d.day] = d }", derivations)
-        self.assertIn("let vHRVs = fa7.compactMap { $0.avgHrv }", derivations)
+        self.assertIn("for d in dailies { faMerged[d.day] = d }", derivations)
+        self.assertIn("let hrvs = gate.compactMap { $0.avgHrv }", source)
         self.assertNotIn("persistedDailies", derivations)
 
     def test_android_also_protects_a_separate_persistence_copy(self) -> None:

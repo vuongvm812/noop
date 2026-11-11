@@ -7,7 +7,7 @@ import kotlin.math.roundToLong
  * `AnalysisPhaseTally`.
  *
  * #1538 added a cost line, but it brackets the day loop and is emitted the moment that loop returns. Every
- * phase after it — the baseline folds, pass 2, the persist, the weekly metrics, the steps calibration, the
+ * phase after it — the baseline folds, pass 2, the persist, the daily Fitness Age and Vitality, the steps calibration, the
  * sleep writes and heals, the workout rescore — was outside the tally, so a pass whose time went somewhere
  * after the loop reported a small `prep`/`score` and no explanation for the rest. The steps calibration
  * alone re-folded sixty days of gravity per pass under that blind spot.

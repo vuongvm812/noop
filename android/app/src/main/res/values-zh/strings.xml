@@ -2208,7 +2208,7 @@
     <string name="today_card_fitness_age">体能年龄</string>
     <string name="today_card_fitness_age_subtitle">每周更新</string>
     <string name="today_card_vo2max">最大摄氧量</string>
-    <string name="today_card_vo2max_subtitle">估算值，每周更新</string>
+    <string name="today_card_vo2max_subtitle">估算值，每天更新</string>
     <string name="today_card_vitality">活力</string>
     <string name="today_card_vitality_subtitle">健康状态评分</string>
     <string name="today_card_hydration">补水</string>
@@ -3237,7 +3237,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">你的血液指标、血压和身体数据。私密保存在这里。</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">跨你所有手环，每项指标取来源最佳的数值。</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">来自你的夜间读数</string>
-    <string name="l10n_health_screen_weekly_158f3da5">每周</string>
+    <string name="l10n_health_screen_daily_728298d3">每天</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 岁</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">体能年龄已更新。</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">佩戴时间尚不足，请整晚佩戴手环。</string>

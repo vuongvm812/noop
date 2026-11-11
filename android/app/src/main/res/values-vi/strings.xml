@@ -2425,7 +2425,7 @@
     <string name="l10n_body_clock_dial_card_last_night_6eaba4dd">Đêm qua</string>
     <string name="today_card_stress_subtitle">Tải tự chủ</string>
     <string name="today_card_fitness_age_subtitle">Cập nhật hằng tuần</string>
-    <string name="today_card_vo2max_subtitle">Ước tính, cập nhật hằng tuần</string>
+    <string name="today_card_vo2max_subtitle">Ước tính, cập nhật hằng ngày</string>
     <string name="today_card_vitality_subtitle">Điểm sức khỏe</string>
     <string name="today_card_hydration_subtitle">Chất lỏng hôm nay</string>
     <string name="today_card_coupled_subtitle">Phục hồi, mức tải và giấc ngủ trong một cái nhìn</string>
@@ -3205,7 +3205,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Xét nghiệm máu, huyết áp và số đo cơ thể của bạn. Được giữ riêng tư tại đây.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Con số có nguồn tốt nhất cho mỗi chỉ số, trên các vòng đeo của bạn.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">Từ các lần đo hằng đêm của bạn</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Hằng tuần</string>
+    <string name="l10n_health_screen_daily_728298d3">Hằng ngày</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 tuổi</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Đã cập nhật Tuổi thể lực.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Chưa đủ thời gian đeo — hãy đeo dây đeo qua đêm.</string>

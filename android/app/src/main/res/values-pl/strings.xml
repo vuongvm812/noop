@@ -2286,7 +2286,7 @@
     <string name="today_card_fitness_age">Wiek sprawnościowy</string>
     <string name="today_card_fitness_age_subtitle">Aktualizacja co tydzień</string>
     <string name="today_card_vo2max">Maksymalne VO₂</string>
-    <string name="today_card_vo2max_subtitle">Wartość szacowana, aktualizowana co tydzień</string>
+    <string name="today_card_vo2max_subtitle">Wartość szacowana, aktualizowana codziennie</string>
     <string name="today_card_vitality">Witalność</string>
     <string name="today_card_vitality_subtitle">Wynik dobrostanu</string>
     <string name="today_card_hydration">Nawodnienie</string>
@@ -3286,7 +3286,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Twoje badania krwi, ciśnienie i pomiary ciała. Prywatnie, tutaj.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Najlepiej pozyskana liczba dla każdej metryki, ze wszystkich Twoich pasm.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">Z Twoich nocnych odczytów</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Tygodniowo</string>
+    <string name="l10n_health_screen_daily_728298d3">Codziennie</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 lat</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Wiek sprawnościowy zaktualizowany.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Za mało noszenia — zostaw opaskę na noc.</string>

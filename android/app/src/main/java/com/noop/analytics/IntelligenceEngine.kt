@@ -1992,7 +1992,10 @@ object IntelligenceEngine {
         // OWN pruning , a recompute only re-scores nights whose raw HR still lives in the store, so reading
         // after the rewrite would see only the freshly scorable subset. Windowed to the recompute range so
         // it stays bounded (daysMerged is full-history) and can't drag in stale nights older than the window.
-        val faPriorDaily = repo.daysMerged(importedDeviceId).filter { it.day in oldestDay..newestDay }
+        // Widened six days back: each day's Fitness Age / Vitality reads the merged [D-6, D] window, so the
+        // oldest day of the pass window still sees its own full week.
+        val faFrom = dayMinus(oldestDay, FITNESS_GATE_DAYS - 1)
+        val faPriorDaily = repo.daysMerged(importedDeviceId).filter { it.day in faFrom..newestDay }
 
         // Persist the computed scores under the dedicated "-noop" source so the WHOLE
         // dashboard (Today / Recovery / Strain / Sleep / Trends) reads them. The repository
@@ -2013,7 +2016,7 @@ object IntelligenceEngine {
             faPriorDaily = faPriorDaily,
             profile = profile,
             computedId = computedId,
-            newestDay = newestDay,
+            window = oldestDay to newestDay,
             diag = diag,
             nowLocalMidnight = nowLocalMidnight,
             tzOffsetSeconds = tzOffsetSeconds,
@@ -2150,7 +2153,7 @@ object IntelligenceEngine {
         faPriorDaily: List<DailyMetric>,
         profile: UserProfile,
         computedId: String,
-        newestDay: String,
+        window: Pair<String, String>,
         diag: (String) -> Unit,
         nowLocalMidnight: Long,
         tzOffsetSeconds: Long,
@@ -2167,57 +2170,34 @@ object IntelligenceEngine {
         // sat outside every number the pass printed. This brackets the two phases inside THIS helper; see
         // AnalysisPhaseMarks for why Android stops here and Swift does not.
         val postLoop = AnalysisPhaseMarks()
-        // ── Fitness Age (Phase 2) , weekly, keyed to the week's Saturday ──
-        val fa7 = dailies.sortedBy { it.day }.takeLast(7)
-        val faRHRs = fa7.mapNotNull { it.restingHr }.map { it.toDouble() }
-        // Gate + compute Fitness Age on the UNION of the pre-rewrite persisted history and THIS pass's
-        // fresh scores (by day, fresh wins) , so an RHR night counts whether it survives in the store OR was
-        // just scored, whether it sits under this id or a re-added strap's sibling id, or came from an
-        // import. Kept SEPARATE from `fa7` so Vitality (below), which already computes, is untouched. The
-        // gate + compute live in [fitnessAgeRows] so the manual "refresh Fitness Age" button applies the
-        // SAME rule (no drift).
-        val faGateByDay = LinkedHashMap<String, DailyMetric>()
-        for (d in faPriorDaily) faGateByDay[d.day] = d
-        for (d in dailies) faGateByDay[d.day] = d
-        val faGate7 = faGateByDay.values.sortedBy { it.day }.takeLast(7)
-        val faSatKey = saturdayKeyOnOrBefore(newestDay)
+        val (oldestDay, newestDay) = window   // the pass window, oldest first
+        // ── Fitness Age + Vitality / Body Age , DAILY, keyed to each day D of the pass window ──
+        // Every day recomputes from the merged daily rows of [D-6, D]: the union of the pre-rewrite persisted
+        // history and THIS pass's fresh scores (by day, fresh wins), so an RHR night counts whether it
+        // survives in the store OR was just scored, whether it sits under this id or a re-added strap's
+        // sibling id, or came from an import. The gate + compute live in [dailyFitnessVitalityRows], shared
+        // with the one-shot history rebuild and (via [fitnessAgeRows]) the manual "refresh" button.
+        val faMerged = LinkedHashMap<String, DailyMetric>()
+        for (d in faPriorDaily) faMerged[d.day] = d
+        for (d in dailies) faMerged[d.day] = d
         val faWatchId = activeGarminWatchId(repo, importedDeviceId)
-        val faWatchVo2 = faWatchId?.let { garminWatchVo2max(repo, it, faSatKey) }
-        val faPts = fitnessAgeRows(faGate7, profile, computedId, faSatKey, faWatchVo2)
-        // Strap-log proof: the RHR-night count the engine sees for the gate , should equal the "N of last 7
-        // nights" the readiness card shows; `computed` says whether the value was (re)written this pass.
-        diag("fitnessAge gate day=$newestDay rhrNights=${faGate7.mapNotNull { it.restingHr }.size} activityDays=${faGate7.mapNotNull { it.strain }.size} computed=${faPts.isNotEmpty()}")
-        if (faPts.isNotEmpty()) {
-            repo.upsertMetricSeriesWithProvenance(
-                rows = faPts,
-                provenance = vo2MaxProvenance(faPts, profile.waistCm, computedId, faWatchVo2, watchEstimatorFor(faWatchId)),
-            )
-        }
-        faWatchId?.let { persistWatchVo2maxHistory(repo, it, computedId, faSatKey) }
+        val faWatchPoints = faWatchId?.let { garminVo2maxPoints(repo, it, newestDay) }
+        val regularityByDay = HashMap<String, Double>()
+        for (r in repo.metricSeries(computedId, "sleep_consistency", oldestDay, newestDay)) regularityByDay[r.day] = r.value / 100.0
+        vitalityRegularity?.let { regularityByDay[newestDay] = it }   // #55: see the caller
+        val faOut = dailyFitnessVitalityRows(
+            merged = faMerged.values.sortedBy { it.day }, days = dayRange(oldestDay, newestDay),
+            profile = profile, computedId = computedId, watchPoints = faWatchPoints,
+            watchEstimator = watchEstimatorFor(faWatchId), regularityByDay = regularityByDay,
+        )
+        // Strap-log proof: the RHR-night count the engine sees for the newest day's gate , should equal the
+        // "N of last 7 nights" the readiness card shows; `computed` says whether a value was (re)written.
+        val faGateNewest = faMerged.values.filter { it.day in dayMinus(newestDay, FITNESS_GATE_DAYS - 1)..newestDay }
+        diag("fitnessAge gate day=$newestDay rhrNights=${faGateNewest.mapNotNull { it.restingHr }.size} activityDays=${faGateNewest.mapNotNull { it.strain }.size} computed=${faOut.rows.any { it.key == "fitness_age" }}")
+        if (faOut.rows.isNotEmpty()) repo.upsertMetricSeriesWithProvenance(rows = faOut.rows, provenance = faOut.provenance)
+        faWatchId?.let { persistWatchVo2maxHistory(repo, it, computedId, oldestDay) }
 
-        // ── Vitality / Body Age (Phase 7) , weekly, keyed to the week's Saturday ──
-        // Roll the last 7 days' wearable signals into the mortality-hazard model; VitalityEngine gates on
-        // ≥3 inputs. VO₂max is omitted (fitness is Fitness Age's headline); Vitality leans on resting HR,
-        // sleep duration + regularity, HRV-vs-age-norm, and steps.
-        val vNights = fa7.mapNotNull { it.totalSleepMin }.map { it / 60.0 }.filter { it > 0 }
-        val vHRVs = fa7.mapNotNull { it.avgHrv }
-        val vSteps = fa7.mapNotNull { it.steps }.map { it.toDouble() }
-        val vInputs = VitalityEngine.Inputs(
-            chronoAge = profile.age,
-            restingHR = if (faRHRs.isEmpty()) null else medianOfDoubles(faRHRs),
-            sleepHours = if (vNights.isEmpty()) null else vNights.average(),
-            sleepConsistency = vitalityRegularity,   // #55: Sleep Regularity Index ÷ 100 (see the caller)
-            rmssd = if (vHRVs.isEmpty()) null else medianOfDoubles(vHRVs),
-            rmssdNorm = VitalityEngine.rmssdNorm(profile.age),
-            steps = if (vSteps.isEmpty()) null else vSteps.average())
-        VitalityEngine.compute(vInputs)?.let { vRes ->
-            val satKey = saturdayKeyOnOrBefore(newestDay)
-            repo.upsertMetricSeries(listOf(
-                MetricSeriesRow(deviceId = computedId, day = satKey, key = "vitality", value = vRes.vitality),
-                MetricSeriesRow(deviceId = computedId, day = satKey, key = "body_age", value = vRes.bodyAge)))
-        }
-
-        postLoop.mark("weekly")
+        postLoop.mark("daily")
         // ── Steps ESTIMATE (WHOOP 4.0) , DAILY, keyed to each strap-only day ──
         // A WHOOP 4.0 sends no step count over BLE, so for days the phone DIDN'T also count steps we
         // estimate them: calibrate the strap's daily MOTION VOLUME against the phone's real step count on
@@ -3184,7 +3164,7 @@ object IntelligenceEngine {
      * to match the imported/demo precision. APPROXIMATE. (PR #85)
      */
     /** Assess Fitness Age readiness from [gateDays] (the merged last-7 the readiness card counts) and,
-     *  when ready, build the fitness_age (+ optional vo2max) rows keyed to [satKey]. Empty when not ready.
+     *  when ready, build the fitness_age (+ optional vo2max) rows keyed to [satKey] (the day it describes). Empty when not ready.
      *  The SINGLE source of the gate + compute , shared by the recompute pass and the manual "refresh
      *  Fitness Age" button so the two can never drift. */
     fun fitnessAgeRows(
@@ -3260,20 +3240,126 @@ object IntelligenceEngine {
         return GarminScoringInputs.vo2maxPoints(watch, imported)
     }
 
-    /** Writes the Garmin VO₂max of every past week (before [beforeWeek]) the 28-day rule covers, tagged
-     *  `garmin` (#71). The current week goes through [fitnessAgeRows]; this pass covers the weeks before it,
-     *  so an export imported after pairing shows Garmin's numbers in the VO₂max history. [watchId] is the
-     *  resolved active watch ([activeGarminWatchId]). Idempotent. Swift twin: `IntelligenceEngine.persistWatchVo2maxHistory`. */
-    suspend fun persistWatchVo2maxHistory(repo: WhoopRepository, watchId: String, computedId: String, beforeWeek: String) {
+    /** Writes the watch's VO₂max of every day before [beforeDay] the 28-day rule covers, tagged with the
+     *  watch's brand (#71). The pass window goes through [dailyFitnessVitalityRows]; this covers the days
+     *  before it, so an export imported after pairing shows the watch's numbers in the VO₂max history.
+     *  [watchId] is the resolved active watch ([activeGarminWatchId]). Idempotent.
+     *  Swift twin: `IntelligenceEngine.persistWatchVo2maxHistory`. */
+    suspend fun persistWatchVo2maxHistory(repo: WhoopRepository, watchId: String, computedId: String, beforeDay: String) {
         val brand = FusionSource.watchBrand(watchId) ?: return
-        val weeks = GarminScoringInputs.watchVo2maxWeeks(garminVo2maxPoints(repo, watchId, beforeWeek), beforeWeek)
-        if (weeks.isEmpty()) return
+        val days = GarminScoringInputs.watchVo2maxDays(garminVo2maxPoints(repo, watchId, beforeDay), beforeDay)
+        if (days.isEmpty()) return
         repo.upsertMetricSeriesWithProvenance(
-            rows = weeks.map { (week, v) -> MetricSeriesRow(deviceId = computedId, day = week, key = "vo2max_est", value = v) },
-            provenance = weeks.map { (week, _) ->
-                ScoreInputProvenanceRow(deviceId = computedId, day = week, key = "vo2max_est", sourceId = Vo2MaxEstimator.forWatch(brand).provenanceId)
+            rows = days.map { (day, v) -> MetricSeriesRow(deviceId = computedId, day = day, key = "vo2max_est", value = v) },
+            provenance = days.map { (day, _) ->
+                ScoreInputProvenanceRow(deviceId = computedId, day = day, key = "vo2max_est", sourceId = Vo2MaxEstimator.forWatch(brand).provenanceId)
             },
         )
+    }
+
+    /** Rows + provenance one Fitness Age / Vitality computation produced. */
+    internal data class FitnessVitalityRows(val rows: List<MetricSeriesRow>, val provenance: List<ScoreInputProvenanceRow>)
+
+    /** Days in a Fitness Age / Vitality gate window: day D reads the merged rows of [D-6, D].
+     *  Swift twin: `IntelligenceEngine.fitnessGateDays`. */
+    internal const val FITNESS_GATE_DAYS = 7
+
+    /** Every Fitness Age (+ VO₂max) and Vitality / Body Age row for each of [days], keyed to the day itself.
+     *  Day D is gated on the [merged] daily rows with a day in [D-6, D]; a day whose window is not ready
+     *  contributes nothing. [watchPoints] are the watch's VO₂max points (null off a watch) and
+     *  [regularityByDay] the Sleep Regularity Index ÷ 100 per day (#55). Pure: shared by the sync pass and
+     *  the one-shot history rebuild. Swift twin: `IntelligenceEngine.dailyFitnessVitalityRows`. */
+    internal fun dailyFitnessVitalityRows(
+        merged: List<DailyMetric>, days: List<String>, profile: UserProfile, computedId: String,
+        watchPoints: List<Pair<String, Double>>?, watchEstimator: Vo2MaxEstimator,
+        regularityByDay: Map<String, Double>,
+    ): FitnessVitalityRows {
+        val byDay = HashMap<String, DailyMetric>(merged.size * 2)
+        for (d in merged) byDay[d.day] = d
+        val rows = ArrayList<MetricSeriesRow>()
+        val provenance = ArrayList<ScoreInputProvenanceRow>()
+        for (day in days) {
+            val gate = (FITNESS_GATE_DAYS - 1 downTo 0).mapNotNull { byDay[dayMinus(day, it)] }
+            val watchVo2 = watchPoints?.let { GarminScoringInputs.watchVo2max(it, day) }
+            val faRows = fitnessAgeRows(gate, profile, computedId, day, watchVo2)
+            rows.addAll(faRows)
+            provenance.addAll(vo2MaxProvenance(faRows, profile.waistCm, computedId, watchVo2, watchEstimator))
+            // Vitality / Body Age: roll the window's wearable signals into the mortality-hazard model;
+            // VitalityEngine gates on ≥3 inputs. VO₂max is omitted (fitness is Fitness Age's headline);
+            // Vitality leans on resting HR, sleep duration + regularity, HRV-vs-age-norm, and steps.
+            val rhrs = gate.mapNotNull { it.restingHr }.map { it.toDouble() }
+            val nights = gate.mapNotNull { it.totalSleepMin }.map { it / 60.0 }.filter { it > 0 }
+            val hrvs = gate.mapNotNull { it.avgHrv }
+            val steps = gate.mapNotNull { it.steps }.map { it.toDouble() }
+            val vInputs = VitalityEngine.Inputs(
+                chronoAge = profile.age,
+                restingHR = if (rhrs.isEmpty()) null else medianOfDoubles(rhrs),
+                sleepHours = if (nights.isEmpty()) null else nights.average(),
+                sleepConsistency = regularityByDay[day],
+                rmssd = if (hrvs.isEmpty()) null else medianOfDoubles(hrvs),
+                rmssdNorm = VitalityEngine.rmssdNorm(profile.age),
+                steps = if (steps.isEmpty()) null else steps.average())
+            VitalityEngine.compute(vInputs)?.let { vRes ->
+                rows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "vitality", value = vRes.vitality))
+                rows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "body_age", value = vRes.bodyAge))
+            }
+        }
+        return FitnessVitalityRows(rows, provenance)
+    }
+
+    /**
+     * One-shot rebuild of the Fitness Age / VO₂max / Vitality / Body Age history at DAILY resolution: every
+     * day from the first merged daily row to today is recomputed from its own [D-6, D] window, and the old
+     * Saturday-only points they supersede are deleted in the same transaction. Runs outside
+     * [analyzeRecentOnCpu] (stored data only, no raw-HR rescoring). Returns true once the rewrite
+     * landed; false (nothing written) when there was no usable history, so the caller may retry later.
+     * Swift twin: `IntelligenceEngine.runDailyFitnessVitalityRebuildIfNeeded`.
+     */
+    suspend fun rebuildDailyFitnessVitalityHistory(
+        repo: WhoopRepository, profile: UserProfile, importedDeviceId: String,
+    ): Boolean {
+        val computedId = importedDeviceId + "-noop"
+        val nowSeconds = System.currentTimeMillis() / 1_000L
+        val tzOffsetSeconds = java.util.TimeZone.getDefault().getOffset(nowSeconds * 1_000L) / 1_000L
+        val newestDay = AnalyticsEngine.dayString(midnightLocal(nowSeconds, tzOffsetSeconds), tzOffsetSeconds)
+        val merged = repo.daysMerged(importedDeviceId).filter { it.day <= newestDay }.sortedBy { it.day }
+        val watchId = activeGarminWatchId(repo, importedDeviceId)
+        val watchPoints = watchId?.let { garminVo2maxPoints(repo, it, newestDay) }
+        val firstDay = merged.firstOrNull()?.day ?: return false
+        val regularityByDay = HashMap<String, Double>()
+        for (r in repo.metricSeries(computedId, "sleep_consistency", firstDay, newestDay)) regularityByDay[r.day] = r.value / 100.0
+        val out = dailyFitnessVitalityRows(
+            merged = merged, days = dayRange(firstDay, newestDay), profile = profile, computedId = computedId,
+            watchPoints = watchPoints, watchEstimator = watchEstimatorFor(watchId), regularityByDay = regularityByDay,
+        )
+        val rows = ArrayList(out.rows)
+        val provenance = ArrayList(out.provenance)
+        val brand = watchId?.let { FusionSource.watchBrand(it) }
+        if (brand != null && watchPoints != null) {
+            for ((day, v) in GarminScoringInputs.watchVo2maxDays(watchPoints, firstDay)) {
+                rows.add(MetricSeriesRow(deviceId = computedId, day = day, key = "vo2max_est", value = v))
+                provenance.add(ScoreInputProvenanceRow(deviceId = computedId, day = day, key = "vo2max_est", sourceId = Vo2MaxEstimator.forWatch(brand).provenanceId))
+            }
+        }
+        if (rows.isEmpty()) return false
+        repo.upsertMetricSeriesWithProvenance(rows = rows, provenance = provenance)
+        return true
+    }
+
+    /** [day] shifted back by [n] days ("yyyy-MM-dd"); [day] itself when it does not parse.
+     *  Swift twin: `IntelligenceEngine.dayMinus`. */
+    internal fun dayMinus(day: String, n: Int): String =
+        runCatching { java.time.LocalDate.parse(day).minusDays(n.toLong()).toString() }.getOrDefault(day)
+
+    /** Every day of [from]..[to] inclusive, oldest first; empty when either does not parse or they are reversed.
+     *  Swift twin: `IntelligenceEngine.dayRange`. */
+    internal fun dayRange(from: String, to: String): List<String> {
+        val a = runCatching { java.time.LocalDate.parse(from) }.getOrNull() ?: return emptyList()
+        val b = runCatching { java.time.LocalDate.parse(to) }.getOrNull() ?: return emptyList()
+        val out = ArrayList<String>()
+        var d = a
+        while (!d.isAfter(b)) { out.add(d.toString()); d = d.plusDays(1) }
+        return out
     }
 
     /** Method metadata for a newly computed VO₂max point. Empty when [rows] contains no VO₂max value.
@@ -3293,25 +3379,24 @@ object IntelligenceEngine {
         )
     }.orEmpty()
 
-    /** Manual "refresh Fitness Age" (the button on the not-ready card): recompute the weekly Fitness Age
+    /** Manual "refresh Fitness Age" (the button on the not-ready card): recompute today's Fitness Age
      *  NOW from the PERSISTED merged daily history , NO raw-HR rescoring , and upsert it. Uses the same gate
      *  ([fitnessAgeRows]) and the same date/window logic as the recompute pass, so it reads exactly what the
      *  readiness card shows. Light + connection-independent (stored data only), so it works even when the
-     *  strap is offline. Returns true if a value was written. */
+     *  strap is offline. Returns true if a value was written. Swift twin: `IntelligenceEngine.recomputeFitnessAgeOnly`. */
     suspend fun recomputeFitnessAgeOnly(
-        repo: WhoopRepository, profile: UserProfile, importedDeviceId: String, maxDays: Int = 21,
+        repo: WhoopRepository, profile: UserProfile, importedDeviceId: String,
     ): Boolean {
         val computedId = importedDeviceId + "-noop"
         val nowSeconds = System.currentTimeMillis() / 1_000L
         val tzOffsetSeconds = java.util.TimeZone.getDefault().getOffset(nowSeconds * 1_000L) / 1_000L
         val nowLocalMidnight = midnightLocal(nowSeconds, tzOffsetSeconds)
         val newestDay = AnalyticsEngine.dayString(nowLocalMidnight, tzOffsetSeconds)
-        val oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * SECONDS_PER_DAY, tzOffsetSeconds)
+        val gateFrom = dayMinus(newestDay, FITNESS_GATE_DAYS - 1)
         val gate7 = repo.daysMerged(importedDeviceId)
-            .filter { it.day in oldestDay..newestDay }.sortedBy { it.day }.takeLast(7)
-        val satKey = saturdayKeyOnOrBefore(newestDay)
-        val watchVo2 = watchVo2max(repo, importedDeviceId, satKey)
-        val rows = fitnessAgeRows(gate7, profile, computedId, satKey, watchVo2)
+            .filter { it.day in gateFrom..newestDay }.sortedBy { it.day }
+        val watchVo2 = watchVo2max(repo, importedDeviceId, newestDay)
+        val rows = fitnessAgeRows(gate7, profile, computedId, newestDay, watchVo2)
         if (rows.isNotEmpty()) {
             val watchEstimator = watchEstimatorFor(activeGarminWatchId(repo, importedDeviceId))
             repo.upsertMetricSeriesWithProvenance(
@@ -3362,12 +3447,6 @@ object IntelligenceEngine {
         val s = xs.sorted(); val n = s.size
         return if (n % 2 == 1) s[n / 2] else (s[n / 2 - 1] + s[n / 2]) / 2.0
     }
-    private fun saturdayKeyOnOrBefore(dayStr: String): String = try {
-        val d = java.time.LocalDate.parse(dayStr)               // yyyy-MM-dd
-        val back = (d.dayOfWeek.value + 1) % 7                  // SAT->0, SUN->1, MON->2 ... FRI->6
-        d.minusDays(back.toLong()).toString()
-    } catch (e: Exception) { dayStr }
-
     /**
      * Resolve the SINGLE device that owns [day] (invariant I2), so the day is scored from exactly one
      * source , never a mix. A locked override (dayOwnership) wins outright and skips the presence checks.

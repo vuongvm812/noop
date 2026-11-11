@@ -67041,6 +67041,70 @@
         }
       }
     },
+    "Daily": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Täglich"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diario"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quotidien"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giornaliero"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codziennie"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diário"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ежедневно"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hằng ngày"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每天"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每日"
+          }
+        }
+      }
+    },
     "Daily 0–3 proxy": {
       "localizations": {
         "de": {
@@ -199233,70 +199297,6 @@
         }
       }
     },
-    "Weekly": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wöchentlich"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Semanal"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hebdomadaire"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settimanale"
-          }
-        },
-        "pt-PT": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Semanalmente"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Еженедельно"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hằng tuần"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每周"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每週"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tygodnik"
-          }
-        }
-      }
-    },
     "Weight": {
       "localizations": {
         "de": {
@@ -243492,7 +243492,7 @@
     "Min-max normalized · sparse series widened past %@ · %@": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Min-Max-normalisiert · spärliche Reihen über %@ hinaus erweitert · %@"}},"es": {"stringUnit": {"state": "translated", "value": "Normalizado mín-máx · series dispersas ampliadas más allá de %@ · %@"}},"fr": {"stringUnit": {"state": "translated", "value": "Normalisé min-max · séries clairsemées élargies au-delà de %@ · %@"}},"it": {"stringUnit": {"state": "translated", "value": "Normalizzato min-max · serie sparse estese oltre %@ · %@"}},"pl": {"stringUnit": {"state": "translated", "value": "Normalizacja min-maks · rzadkie serie rozszerzone poza %@ · %@"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Normalizado min-máx · séries esparsas alargadas além de %@ · %@"}},"ru": {"stringUnit": {"state": "translated", "value": "Нормализовано по мин-макс · разреженные ряды расширены сверх %@ · %@"}},"vi": {"stringUnit": {"state": "translated", "value": "Chuẩn hóa min-max · chuỗi thưa được mở rộng quá %@ · %@"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "最小-最大归一化 · 稀疏序列已扩展至 %@ 以上 · %@"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "最小-最大正規化 · 稀疏序列已擴展超過 %@ · %@"}}}},
     "Each line min-max normalized within %@ · %@": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Jede Linie innerhalb von %@ · %@ min-max-normalisiert"}},"es": {"stringUnit": {"state": "translated", "value": "Cada línea normalizada mín-máx dentro de %@ · %@"}},"fr": {"stringUnit": {"state": "translated", "value": "Chaque ligne normalisée min-max sur %@ · %@"}},"it": {"stringUnit": {"state": "translated", "value": "Ogni linea normalizzata min-max entro %@ · %@"}},"pl": {"stringUnit": {"state": "translated", "value": "Każda linia znormalizowana min-maks w %@ · %@"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Cada linha normalizada mín-máx dentro de %@ · %@"}},"ru": {"stringUnit": {"state": "translated", "value": "Каждая линия min-max-нормализована в пределах %@ · %@"}},"vi": {"stringUnit": {"state": "translated", "value": "Mỗi đường được chuẩn hóa min-max trong %@ · %@"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "每条线在 %@ · %@ 内按最小-最大值归一化"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "每條線在 %@ 內最小-最大正規化 · %@"}}}},
     "vs typical - ": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "ggü. typisch - "}},"es": {"stringUnit": {"state": "translated", "value": "vs típico - "}},"fr": {"stringUnit": {"state": "translated", "value": "vs typique - "}},"it": {"stringUnit": {"state": "translated", "value": "rispetto al tipico - "}},"pl": {"stringUnit": {"state": "translated", "value": "vs typowo - "}},"pt-PT": {"stringUnit": {"state": "translated", "value": "vs típico - "}},"ru": {"stringUnit": {"state": "translated", "value": "против типичного - "}},"vi": {"stringUnit": {"state": "translated", "value": "so với thông thường - "}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "对比典型值 - "}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "對比典型值 - "}}}},
-    "Estimated, updated weekly": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Geschätzt, wöchentlich aktualisiert"}},"es": {"stringUnit": {"state": "translated", "value": "Estimado, actualizado semanalmente"}},"fr": {"stringUnit": {"state": "translated", "value": "Estimé, mis à jour chaque semaine"}},"it": {"stringUnit": {"state": "translated", "value": "Stimato, aggiornato ogni settimana"}},"pl": {"stringUnit": {"state": "translated", "value": "Szacunek, aktualizowany co tydzień"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Estimado, atualizado semanalmente"}},"ru": {"stringUnit": {"state": "translated", "value": "Оценка, обновляется раз в неделю"}},"vi": {"stringUnit": {"state": "translated", "value": "Ước tính, cập nhật hằng tuần"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "估算值，每周更新"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "估計值，每週更新"}}}},
+    "Estimated, updated daily": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Geschätzt, täglich aktualisiert"}},"es": {"stringUnit": {"state": "translated", "value": "Estimado, actualizado a diario"}},"fr": {"stringUnit": {"state": "translated", "value": "Estimé, mis à jour chaque jour"}},"it": {"stringUnit": {"state": "translated", "value": "Stimato, aggiornato ogni giorno"}},"pl": {"stringUnit": {"state": "translated", "value": "Szacunek, aktualizowany codziennie"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Estimado, atualizado diariamente"}},"ru": {"stringUnit": {"state": "translated", "value": "Оценка, обновляется ежедневно"}},"vi": {"stringUnit": {"state": "translated", "value": "Ước tính, cập nhật hằng ngày"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "估算值，每天更新"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "估計值，每日更新"}}}},
     "This strap doesn’t send SpO₂ over Bluetooth. Import a WHOOP export or Health Connect to see it.": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Dieses Band sendet kein SpO₂ über Bluetooth. Importiere einen WHOOP-Export oder Health Connect, um es zu sehen."}},"es": {"stringUnit": {"state": "translated", "value": "Esta correa no envía SpO₂ por Bluetooth. Importa una exportación de WHOOP o Health Connect para verlo."}},"fr": {"stringUnit": {"state": "translated", "value": "Ce bracelet n'envoie pas la SpO₂ par Bluetooth. Importez un export WHOOP ou Health Connect pour la voir."}},"it": {"stringUnit": {"state": "translated", "value": "Questa fascia non invia la SpO₂ via Bluetooth. Importa un'esportazione WHOOP o Health Connect per vederla."}},"pl": {"stringUnit": {"state": "translated", "value": "Ta opaska nie wysyła SpO₂ przez Bluetooth. Zaimportuj eksport WHOOP lub Health Connect, aby je zobaczyć."}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Esta bracelete não envia SpO₂ por Bluetooth. Importa uma exportação WHOOP ou o Health Connect para o ver."}},"ru": {"stringUnit": {"state": "translated", "value": "Этот браслет не передаёт SpO₂ по Bluetooth. Импортируйте экспорт WHOOP или Health Connect, чтобы увидеть его."}},"vi": {"stringUnit": {"state": "translated", "value": "Dây đeo này không gửi SpO₂ qua Bluetooth. Hãy nhập bản xuất WHOOP hoặc Health Connect để xem."}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "此手环不通过蓝牙发送 SpO₂。请导入 WHOOP 导出文件或使用 Health Connect 查看。"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "此手環不會透過藍牙傳送 SpO₂。請匯入 WHOOP 匯出檔或 Health Connect 以查看。"}}}},
     "This strap sends no raw respiration stream. Your estimated respiratory rate appears on the Health screen.": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Dieses Band sendet keinen rohen Atmungs-Stream. Deine geschätzte Atemfrequenz erscheint im Gesundheitsbildschirm."}},"es": {"stringUnit": {"state": "translated", "value": "Esta correa no envía un flujo de respiración en bruto. Tu frecuencia respiratoria estimada aparece en la pantalla Salud."}},"fr": {"stringUnit": {"state": "translated", "value": "Ce bracelet n'envoie pas de flux brut de respiration. Votre fréquence respiratoire estimée apparaît sur l'écran Santé."}},"it": {"stringUnit": {"state": "translated", "value": "Questa fascia non invia un flusso grezzo di respirazione. La tua frequenza respiratoria stimata appare nella schermata Salute."}},"pl": {"stringUnit": {"state": "translated", "value": "Ta opaska nie wysyła surowego strumienia oddechu. Szacowana częstość oddechów pojawia się na ekranie Zdrowie."}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Esta bracelete não envia nenhuma transmissão bruta de respiração. A tua frequência respiratória estimada aparece no ecrã Saúde."}},"ru": {"stringUnit": {"state": "translated", "value": "Этот браслет не передаёт сырой поток дыхания. Расчётная частота дыхания отображается на экране «Здоровье»."}},"vi": {"stringUnit": {"state": "translated", "value": "Dây đeo này không gửi luồng hô hấp thô. Nhịp thở ước tính của bạn hiển thị trên màn hình Sức khỏe."}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "此手环不发送原始呼吸数据流。你的呼吸频率估算值显示在“健康”页面。"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "此手環不會傳送原始呼吸串流。你的估計呼吸率顯示於健康畫面。"}}}},
     "Pinch to zoom · drag to pan · hold to read": {"localizations": {"de": {"stringUnit": {"state": "translated", "value": "Zum Zoomen zusammenziehen · zum Verschieben ziehen · zum Ablesen halten"}},"es": {"stringUnit": {"state": "translated", "value": "Pellizca para ampliar · arrastra para desplazar · mantén para leer"}},"fr": {"stringUnit": {"state": "translated", "value": "Pincez pour zoomer · glissez pour déplacer · maintenez pour lire"}},"it": {"stringUnit": {"state": "translated", "value": "Pizzica per zoomare · trascina per spostare · tieni premuto per leggere"}},"pl": {"stringUnit": {"state": "translated", "value": "Uszczypnij, by powiększyć · przeciągnij, by przesunąć · przytrzymaj, by odczytać"}},"pt-PT": {"stringUnit": {"state": "translated", "value": "Pinça para ampliar · arrasta para deslocar · mantém para ler"}},"ru": {"stringUnit": {"state": "translated", "value": "Щипок — масштаб · перетаскивание — сдвиг · удержание — чтение"}},"vi": {"stringUnit": {"state": "translated", "value": "Chụm để thu phóng · kéo để di chuyển · giữ để đọc"}},"zh-Hans": {"stringUnit": {"state": "translated", "value": "双指缩放 · 拖动平移 · 长按读取"}},"zh-Hant": {"stringUnit": {"state": "translated", "value": "雙指縮放 · 拖曳平移 · 按住查看"}}}},

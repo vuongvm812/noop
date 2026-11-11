@@ -366,8 +366,8 @@ object HealthConnectWriter {
     }
 
     /**
-     * VO2 max writeback (#1525). NOOP computes this weekly and persists it as the `vo2max_est` metric
-     * series, keyed to the week's Saturday — nothing exported it before, so a value the app already had
+     * VO2 max writeback (#1525). NOOP computes this daily and persists it as the `vo2max_est` metric
+     * series (older history is keyed to each week's Saturday) — nothing exported it before, so a value the app already had
      * never reached Health Connect.
      *
      * Read through [WhoopRepository.metricSeriesComputedUnion], which is what that series' own doc says
@@ -391,10 +391,25 @@ object HealthConnectWriter {
         val cutoff = LocalDate.now().minusDays(WINDOW_DAYS).toString()
         val today = LocalDate.now().toString()
         val rows = repo.metricSeriesComputedUnion(deviceId, "vo2max_est", cutoff, today)
-        val records = buildVo2MaxRecords(rows, version, zone)
+        val records = buildVo2MaxRecords(weeklyVo2MaxRows(rows), version, zone)
         if (records.isEmpty()) return 0
         return insertChunked(client, records)
     }
+
+    /**
+     * The daily `vo2max_est` series thinned to one point per week for export: the newest point of each week,
+     * keyed to that week's Saturday, so Health Connect keeps the cadence it always had instead of a record
+     * per day. A Saturday key matches the clientRecordId an earlier weekly export already wrote, so it
+     * upserts in place and the week's record refines as the week goes on.
+     */
+    internal fun weeklyVo2MaxRows(rows: List<MetricSeriesRow>): List<MetricSeriesRow> =
+        rows.mapNotNull { r ->
+            val d = runCatching { LocalDate.parse(r.day) }.getOrNull() ?: return@mapNotNull null
+            val sat = d.minusDays(((d.dayOfWeek.value + 1) % 7).toLong()).toString()
+            sat to r
+        }.groupBy({ it.first }, { it.second })
+            .map { (sat, week) -> week.maxByOrNull { it.day }!!.copy(day = sat) }
+            .sortedBy { it.day }
 
     /**
      * Pure: map `vo2max_est` series rows to records, testable without a client — the same split

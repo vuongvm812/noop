@@ -243,19 +243,18 @@ object DemoSeeder {
             }
         }
 
-        // --- weekly Fitness Age + VO2max estimate (the engine stamps these on each week's
-        // Saturday; mirror that here so the Fitness Age screen renders in the demo build).
+        // --- daily Fitness Age + VO2max estimate (the engine stamps these on every day;
+        // mirror that here so the Fitness Age screen renders in the demo build).
         // Trends from ~42 → ~36 (younger) as the demo "fitness" drift climbs; vo2max ~44 → ~50.
         var fitnessAge = 42.0
         var vo2 = 44.0
-        var vitality = 55.0      // weekly Vitality (0–100) trending up as the demo habits improve
+        var vitality = 55.0      // daily Vitality (0–100) trending up as the demo habits improve
         var bodyAgeDemo = 40.0   // Body Age (years) trending down (younger)
         for (i in 0 until DAYS) {
             val date = startDay.plusDays(i.toLong())
-            if (date.dayOfWeek.value != 6) continue // 6 = Saturday
             val day = date.toString()
             // Seed under the NOOP-COMPUTED source (WHOOP_NOOP), exactly where the IntelligenceEngine writes
-            // these derived weekly scores in the real app — so the Health screen, the Today "Your cards"
+            // these derived daily scores in the real app — so the Health screen, the Today "Your cards"
             // Fitness age / Vitality cards and Trends (all via the computed union) resolve them in the demo instead
             // of showing "No Data". Trends ~42 → ~34 (younger) for Fitness age; vitality climbs ~55 → ~80.
             series.add(MetricSeriesRow(WHOOP_NOOP, day, "fitness_age",
@@ -266,10 +265,10 @@ object DemoSeeder {
                 round1((vitality + gauss(rng, 0.0, 1.0)).coerceIn(40.0, 80.0))))
             series.add(MetricSeriesRow(WHOOP_NOOP, day, "body_age",
                 round1((bodyAgeDemo + gauss(rng, 0.0, 0.3)).coerceIn(30.0, 45.0))))
-            fitnessAge -= 0.75 // ~6 yr younger across the 8 seeded Saturdays
-            vo2 += 0.75
-            vitality += 2.0
-            bodyAgeDemo -= 0.6
+            fitnessAge -= 0.75 / 7.0 // ~6 yr younger across the seeded weeks
+            vo2 += 0.75 / 7.0
+            vitality += 2.0 / 7.0
+            bodyAgeDemo -= 0.6 / 7.0
         }
 
         // --- daily "stress" series (0–3) under my-whoop, EXACTLY as a real WHOOP import derives it

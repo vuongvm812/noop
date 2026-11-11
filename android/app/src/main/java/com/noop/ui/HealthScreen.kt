@@ -206,7 +206,7 @@ fun HealthScreen(
                     captionMode = VitalCaptionMode.AS_OF,
                 )
             }
-            // FITNESS AGE — the weekly Saturday number from the engine (resting HR + activity vs your
+            // FITNESS AGE — the daily number from the engine (resting HR + activity vs your
             // age), with an honest readiness checklist behind a tap. Authoritative value comes from the
             // metricSeries the IntelligenceEngine writes; readiness is derived from what this screen sees.
             item { Spacer(Modifier.height(Metrics.selectorTopUp)) }
@@ -636,7 +636,7 @@ private fun ContributorBar(
 
 // MARK: - Fitness Age
 //
-// The on-device "Fitness Age": a weekly number (the engine keys it to each week's Saturday) that maps
+// The on-device "Fitness Age": a daily number (the engine keys it to the day it describes) that maps
 // resting HR + recent activity against population norms for your age. The AUTHORITATIVE value is the
 // latest "fitness_age" the IntelligenceEngine writes into metricSeries under the computed "-noop"
 // source — this section only READS it; it never recomputes the headline. Honest framing throughout:
@@ -700,7 +700,7 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
 
     // Readiness from what THIS screen can see: the last 7 merged daily rows. RHR coverage drives the
     // age; activity (a scored strain day) is an enrichment signal; height/weight/waist sit under the
-    // VO₂max role. Age/sex come from the profile. Approximate by design — the weekly value is the
+    // VO₂max role. Age/sex come from the profile. Approximate by design — the stored daily value is the
     // authority; this just explains the gaps.
     // rhrDays drives BOTH the readiness verdict AND the not-ready countdown lead. Shared with the Today
     // card's tap-through (VitalDetailScreen) via one helper so a single gate feeds both surfaces.
@@ -709,7 +709,7 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
     var showChecklist by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-        SectionHeader(uiString(R.string.l10n_health_screen_fitness_age_12383b4a), overline = uiString(R.string.l10n_health_screen_weekly_158f3da5), trailing = uiString(R.string.l10n_health_screen_5_yr_71ff0799))
+        SectionHeader(uiString(R.string.l10n_health_screen_fitness_age_12383b4a), overline = uiString(R.string.l10n_health_screen_daily_728298d3), trailing = uiString(R.string.l10n_health_screen_5_yr_71ff0799))
         val value = fitnessAge
         if (value != null) {
             FitnessAgeHero(
@@ -816,7 +816,7 @@ private fun VitalitySection(vm: AppViewModel, days: List<DailyMetric>, profile: 
     val v = vitality; val ba = bodyAge
     if (v != null && ba != null) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
-            SectionHeader(uiString(R.string.l10n_health_screen_vitality_be320b06), overline = uiString(R.string.l10n_health_screen_weekly_158f3da5), trailing = uiString(R.string.l10n_health_screen_body_age_1_d_56cece4d, ba.roundToInt()))
+            SectionHeader(uiString(R.string.l10n_health_screen_vitality_be320b06), overline = uiString(R.string.l10n_health_screen_daily_728298d3), trailing = uiString(R.string.l10n_health_screen_body_age_1_d_56cece4d, ba.roundToInt()))
             VitalityHero(vitality = v, bodyAge = ba, chronoAge = profile.age, contributions = contributions)
         }
     }

@@ -2301,7 +2301,7 @@
     <string name="today_card_fitness_age">Fitnessalter</string>
     <string name="today_card_fitness_age_subtitle">Wöchentliche Aktualisierung</string>
     <string name="today_card_vo2max">VO₂max</string>
-    <string name="today_card_vo2max_subtitle">Geschätzt, wöchentlich aktualisiert</string>
+    <string name="today_card_vo2max_subtitle">Geschätzt, täglich aktualisiert</string>
     <string name="today_card_vitality">Vitalität</string>
     <string name="today_card_vitality_subtitle">Wohlbefinden</string>
     <string name="today_card_hydration">Flüssigkeit</string>
@@ -3281,7 +3281,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Deine Blutwerte, dein Blutdruck und deine Körperwerte. Hier privat gespeichert.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Die am besten belegte Zahl pro Messgröße, über deine Bänder hinweg.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">Aus deinen nächtlichen Messwerten</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Wöchentlich</string>
+    <string name="l10n_health_screen_daily_728298d3">Täglich</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 J.</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Fitnessalter aktualisiert.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Noch nicht genug Tragezeit – trage deinen Strap über Nacht.</string>

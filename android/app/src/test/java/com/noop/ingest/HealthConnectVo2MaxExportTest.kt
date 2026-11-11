@@ -79,4 +79,16 @@ class HealthConnectVo2MaxExportTest {
         assertEquals("noop-vo2max-2026-08-22", r.metadata.clientRecordId)
         assertEquals(version, r.metadata.clientRecordVersion)
     }
+
+    /** The daily series is thinned to one record per week, keyed to the week's Saturday. */
+    @Test
+    fun dailySeriesIsThinnedToOneSaturdayKeyedPointPerWeek() {
+        // 2026-08-01 is a Saturday; the series runs 07-28 (Tue) through 08-09 (Sun).
+        val days = (28..31).map { "2026-07-$it" } + (1..9).map { "2026-08-0$it" }
+        val rows = days.mapIndexed { i, d -> row(d, 40.0 + i) }
+        val kept = HealthConnectWriter.weeklyVo2MaxRows(rows)
+        assertEquals(listOf("2026-07-25", "2026-08-01", "2026-08-08"), kept.map { it.day })
+        assertEquals(listOf(40.0 + 3, 40.0 + 10, 40.0 + 12), kept.map { it.value })
+        assertTrue(HealthConnectWriter.weeklyVo2MaxRows(emptyList()).isEmpty())
+    }
 }

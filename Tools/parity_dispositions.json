@@ -1866,6 +1866,14 @@
       "identity_sha256": "080829b950997c8d12c25aad5e8ea44a2517ca302c86e90d0f42928b517a8f57",
       "platform": "kotlin",
       "rationale": "Gadgetbridge database import for the Huawei Band 10 (Android only). Kotlin-only in this fork (vuongvm812/noop#76): the Huawei Band 10 pairs and syncs on Android only, so the Swift twin is deferred until an Apple Huawei source exists."
+    },
+    {
+      "type": "platform_specific",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/ingest/HealthConnectWriter.kt::weeklyVo2MaxRows/1#1",
+      "identity_sha256": "5b6d997a78415269c964ea9276704f829d0109f3fef36ad67d25920ad2c85e06",
+      "platform": "kotlin",
+      "rationale": "Thins the daily vo2max_est series to one record per week for the Health Connect export; Apple has no VO2 max HealthKit writeback, so there is nothing to mirror."
     }
   ]
 }

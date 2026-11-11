@@ -2288,7 +2288,7 @@
     <string name="today_card_fitness_age">Edad física</string>
     <string name="today_card_fitness_age_subtitle">Actualización semanal</string>
     <string name="today_card_vo2max">VO₂ máximo</string>
-    <string name="today_card_vo2max_subtitle">Estimado, actualización semanal</string>
+    <string name="today_card_vo2max_subtitle">Estimado, actualización diaria</string>
     <string name="today_card_vitality">Vitalidad</string>
     <string name="today_card_vitality_subtitle">Puntuación de bienestar</string>
     <string name="today_card_hydration">Hidratación</string>
@@ -3268,7 +3268,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Tus análisis de sangre, tensión arterial y cifras corporales. Privados aquí.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">El número con mejor fuente por métrica, entre tus bandas.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">De tus lecturas nocturnas</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Semanal</string>
+    <string name="l10n_health_screen_daily_728298d3">Diario</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 años</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Edad física actualizada.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Aún no hay suficiente uso: mantén la pulsera puesta durante la noche.</string>

@@ -299,7 +299,7 @@ class HomeLocalizationTest(unittest.TestCase):
             "today_card_steps": "Steps", "today_card_steps_subtitle": "Today",
             "today_card_stress": "Stress", "today_card_stress_subtitle": "Autonomic load",
             "today_card_fitness_age": "Fitness Age", "today_card_fitness_age_subtitle": "Updated weekly",
-            "today_card_vo2max": "VO₂ Max", "today_card_vo2max_subtitle": "Estimated, updated weekly",
+            "today_card_vo2max": "VO₂ Max", "today_card_vo2max_subtitle": "Estimated, updated daily",
             "today_card_vitality": "Vitality", "today_card_vitality_subtitle": "Wellness score",
             "today_card_blood_oxygen": "Blood Oxygen", "today_card_blood_oxygen_subtitle": "Blood oxygen",
             "today_card_skin_temp": "Skin Temp", "today_card_skin_temp_subtitle": "Skin temperature",

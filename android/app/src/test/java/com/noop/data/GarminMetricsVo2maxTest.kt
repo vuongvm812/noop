@@ -18,11 +18,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
-import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.TemporalAdjusters
 
 /**
  * The watch's own VO2max reaches the VO2max tile and card from a synced METRICS file (#70): the one-shot
@@ -79,7 +77,7 @@ class GarminMetricsVo2maxTest {
         lines += "second run forgotten ${afterRepair - store.syncedFiles(watch).size}"
 
         // The re-downloaded file: a VO2max measured ten days ago at local noon, inside the 28-day window of
-        // this week's Saturday key and on or before it.
+        // today's key and on or before it.
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val noon = today.minusDays(10).atTime(12, 0).atZone(zone).toEpochSecond()
@@ -89,12 +87,12 @@ class GarminMetricsVo2maxTest {
         val day = Instant.ofEpochSecond(noon).atZone(zone).toLocalDate().toString()
         lines += "stored vo2max " + repo.metricSeries(watch, "vo2max", day, day).joinToString(",") { it.value.toString() }
 
-        // The weekly recompute, under the canonical id the post-sync pass runs with.
+        // Today's recompute, under the canonical id the post-sync pass runs with.
         assertTrue(IntelligenceEngine.recomputeFitnessAgeOnly(repo, UserProfile(), "my-whoop"))
         // The Today tile and the VO2max card both read the active strap's computed union, plus the card's tag.
         val latest = repo.latestMetricComputedUnion(watch, "vo2max_est")
         assertNotNull(latest)
-        assertEquals(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.SATURDAY)).toString(), latest!!.day)
+        assertEquals(today.toString(), latest!!.day)
         val tag = repo.scoreInputSource(latest.deviceId, latest.day, latest.key)
         lines += "vo2max_est ${latest.value} $tag"
         assertEquals(Vo2MaxEstimator.GARMIN, Vo2MaxEstimator.fromProvenanceId(tag))

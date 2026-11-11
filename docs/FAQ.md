@@ -82,6 +82,13 @@ formula behind each one.
 NOOP does not invent values it cannot measure. Where a figure needs an input your strap doesn't
 provide, the feature stays locked and says so rather than guessing.
 
+## How often are Fitness Age and Vitality updated?
+
+Daily. Each day's value is computed from the merged daily data of that day and the six before it, and
+stamped on that day, so the history has one point per day (older builds wrote one point per Saturday; the
+first launch after the upgrade rebuilds the history once). A day without enough resting-HR nights in its
+window has no point. See [docs/FITNESS_AGE.md](FITNESS_AGE.md).
+
 ## Why does a score say "Calibrating"?
 
 Baseline-relative scores need history before they mean anything. Charge needs several nights of HRV

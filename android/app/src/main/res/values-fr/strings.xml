@@ -2287,7 +2287,7 @@
     <string name="today_card_fitness_age">Âge fitness</string>
     <string name="today_card_fitness_age_subtitle">Mise à jour hebdomadaire</string>
     <string name="today_card_vo2max">VO₂ maximal</string>
-    <string name="today_card_vo2max_subtitle">Estimation, mise à jour hebdomadaire</string>
+    <string name="today_card_vo2max_subtitle">Estimation, mise à jour quotidienne</string>
     <string name="today_card_vitality">Vitalité</string>
     <string name="today_card_vitality_subtitle">Score de bien-être</string>
     <string name="today_card_hydration">Hydratation</string>
@@ -3267,7 +3267,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">Vos analyses de sang, votre tension et vos mesures corporelles. Gardées privées ici.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Le chiffre le mieux sourcé par mesure, sur l\'ensemble de vos bandes.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">D\'après vos mesures nocturnes</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Hebdo</string>
+    <string name="l10n_health_screen_daily_728298d3">Quotidien</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 ans</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Âge de forme mis à jour.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Pas encore assez de port — gardez votre bracelet toute la nuit.</string>

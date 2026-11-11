@@ -81,7 +81,7 @@ class IntelligenceEngineJacocoBudgetTest {
         val helperRaw = source.substring(bodyOpen, bodyClose + 1)
 
         val orderedOperations = listOf(
-            "fitnessAgeRows" to Regex("""\bfitnessAgeRows\s*\("""),
+            "dailyFitnessVitalityRows" to Regex("""\bdailyFitnessVitalityRows\s*\("""),
             // Discriminating, not a bare `diag(`: the helper now emits three diagnostics, and the point of
             // this list is that each one stays in its place relative to the reads and writes around it. A
             // generic pattern would have to be loosened to "at least one" the moment a second landed, which
@@ -90,10 +90,8 @@ class IntelligenceEngineJacocoBudgetTest {
             // diagnostics are identifiable only because they pass a call rather than a literal.
             "fitness diagnostic" to Regex("""\bdiag\s*\((?!\s*(?:StepsMotionCache|AnalysisPhaseTally)\b)"""),
             "Fitness upsert" to Regex(
-                """\brepo\s*\.\s*upsertMetricSeriesWithProvenance\s*\(\s*rows\s*=\s*faPts\b""",
+                """\brepo\s*\.\s*upsertMetricSeriesWithProvenance\s*\(\s*rows\s*=\s*faOut\.rows\b""",
             ),
-            "Vitality compute" to Regex("""\bVitalityEngine\s*\.\s*compute\s*\("""),
-            "Vitality upsert" to Regex("""\brepo\s*\.\s*upsertMetricSeries\s*\(\s*listOf\s*\("""),
             "Apple Health read" to Regex("""\brepo\s*\.\s*appleDaily\s*\(\s*WhoopRepository\s*\.\s*APPLE_HEALTH_SOURCE\b"""),
             "Health Connect read" to Regex("""\brepo\s*\.\s*appleDaily\s*\(\s*WhoopRepository\s*\.\s*HEALTH_CONNECT_SOURCE\b"""),
             "gravity samples" to Regex("""\brepo\s*\.\s*gravitySamplesForDevice\s*\("""),
@@ -256,6 +254,9 @@ class IntelligenceEngineJacocoBudgetTest {
                     events.add("gravity")
                     emptyList<Any>()
                 }
+                // Stored Sleep Regularity Index per day, read once for the daily Vitality; not part of the
+                // ordered sequence this test pins, so it records nothing.
+                "metricSeries" -> emptyList<Any>()
                 // The motion cache's witness: one aggregate returning both the count and the newest
                 // timestamp, so the sequence below says exactly which reads the helper makes, in order.
                 "gravityWitnessInWindow" -> {
@@ -303,7 +304,7 @@ class IntelligenceEngineJacocoBudgetTest {
             emptyList<DailyMetric>(),
             UserProfile(),
             "strap-noop",
-            "1970-01-01",
+            "1970-01-01" to "1970-01-01",   // window (oldest, newest)
             diag,
             0L,
             0L,

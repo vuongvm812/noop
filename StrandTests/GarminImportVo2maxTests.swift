@@ -53,12 +53,15 @@ final class GarminImportVo2maxTests: XCTestCase {
         XCTAssertNil(gap)
     }
 
-    func testPastWeeksTakeTheGarminValueAndTag() async throws {
+    func testEarlierDaysTakeTheGarminValueAndTag() async throws {
         let store = try await seed()
-        await engine(watch).persistWatchVo2maxHistory(store: store, watchId: watch, computedId: computed, beforeWeek: "2026-10-31")
+        await engine(watch).persistWatchVo2maxHistory(store: store, watchId: watch, computedId: computed, beforeDay: "2026-10-31")
         let rows = try await store.metricSeries(deviceId: computed, key: "vo2max_est", from: "0000-01-01", to: "9999-12-31")
-        XCTAssertEqual(rows.map(\.day), ["2026-09-19", "2026-09-26", "2026-10-03", "2026-10-10", "2026-10-24"])
-        XCTAssertEqual(rows.map(\.value), [49.0, 49.0, 49.0, 49.0, 52.0])
+        // Daily: the export's 49 stands for 28 days from 09-15, then a gap, then the watch's 52 from 10-20.
+        let days = (15...30).map { "2026-09-\($0)" } + (1...12).map { String(format: "2026-10-%02d", $0) }
+            + (20...30).map { "2026-10-\($0)" }
+        XCTAssertEqual(rows.map(\.day), days)
+        XCTAssertEqual(rows.map(\.value), days.map { $0 < "2026-10-20" ? 49.0 : 52.0 })
         let sources = try await store.scoreInputSources(deviceId: computed, from: "0000-01-01", to: "9999-12-31",
                                                         keys: ["vo2max_est"])
         XCTAssertEqual(sources.map(\.day), rows.map(\.day))
@@ -67,7 +70,7 @@ final class GarminImportVo2maxTests: XCTestCase {
 
     func testAnotherActiveDeviceWritesNothing() async throws {
         let store = try await seed()
-        await engine("my-whoop").persistWatchVo2maxHistory(store: store, watchId: "my-whoop", computedId: "my-whoop-noop", beforeWeek: "2026-10-31")
+        await engine("my-whoop").persistWatchVo2maxHistory(store: store, watchId: "my-whoop", computedId: "my-whoop-noop", beforeDay: "2026-10-31")
         let rows = try await store.metricSeries(deviceId: "my-whoop-noop", key: "vo2max_est", from: "0000-01-01", to: "9999-12-31")
         XCTAssertTrue(rows.isEmpty)
     }

@@ -2353,7 +2353,7 @@
     <string name="today_card_fitness_age">Età fitness</string>
     <string name="today_card_fitness_age_subtitle">Aggiornato settimanalmente</string>
     <string name="today_card_vo2max">VO₂ Max</string>
-    <string name="today_card_vo2max_subtitle">Stimato, aggiornato settimanalmente</string>
+    <string name="today_card_vo2max_subtitle">Stimato, aggiornato ogni giorno</string>
     <string name="today_card_vitality">Vitalità</string>
     <string name="today_card_vitality_subtitle">Punteggio di benessere</string>
     <string name="today_card_hydration">Idratazione</string>
@@ -3236,7 +3236,7 @@
     <string name="l10n_health_screen_your_bloods_bp_and_body_numbers_dda6133b">I tuoi esami del sangue, la pressione e i valori corporei. Privati qui.</string>
     <string name="l10n_health_screen_the_best_sourced_number_per_metric_93b61cdc">Il numero con la fonte migliore per ogni metrica, tra le tue fasce.</string>
     <string name="l10n_health_screen_from_your_nightly_readings_6ff610e6">Dalle tue letture notturne</string>
-    <string name="l10n_health_screen_weekly_158f3da5">Settimanale</string>
+    <string name="l10n_health_screen_daily_728298d3">Giornaliero</string>
     <string name="l10n_health_screen_5_yr_71ff0799">± 5 anni</string>
     <string name="l10n_health_screen_fitness_age_updated_102de2f3">Età fitness aggiornata.</string>
     <string name="l10n_health_screen_not_enough_wear_yet_keep_your_b8642022">Utilizzo ancora insufficiente — tieni la fascia addosso di notte.</string>
