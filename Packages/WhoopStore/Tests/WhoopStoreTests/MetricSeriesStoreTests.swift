@@ -209,4 +209,19 @@ final class MetricSeriesStoreTests: XCTestCase {
         let span = try await store.metricDays(deviceId: "devA", key: "missing")
         XCTAssertNil(span)
     }
+
+    func testLatestMetricPointReturnsNewestDayOrNil() async throws {
+        let store = try await WhoopStore.inMemory()
+        let none = try await store.latestMetricPoint(deviceId: "apple-health", key: "body_fat")
+        XCTAssertNil(none)
+        try await store.upsertMetricSeries([
+            MetricPoint(day: "2026-10-01", key: "body_fat", value: 18.2),
+            MetricPoint(day: "2026-10-05", key: "body_fat", value: 17.9),
+            MetricPoint(day: "2026-10-09", key: "lean_mass", value: 60.0),
+        ], deviceId: "apple-health")
+        let p = try await store.latestMetricPoint(deviceId: "apple-health", key: "body_fat")
+        XCTAssertEqual(p, MetricPoint(day: "2026-10-05", key: "body_fat", value: 17.9))
+        let other = try await store.latestMetricPoint(deviceId: "health-connect", key: "body_fat")
+        XCTAssertNil(other)
+    }
 }

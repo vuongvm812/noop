@@ -21,6 +21,7 @@ struct WeightLogSheet: View {
     @State private var day = Date()
     @State private var text = ""
     @State private var showInvalid = false
+    @State private var bodyComposition: WeightLog.BodyComposition?
 
     private var imperial: Bool { unitSystem == .imperial }
     private var dayKey: String { Repository.localDayKey(day) }
@@ -32,6 +33,7 @@ struct WeightLogSheet: View {
             Divider().overlay(StrandPalette.hairline)
             ScrollView {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
+                    compositionRow
                     chartCard
                     entryCard
                     historyCard
@@ -80,6 +82,44 @@ struct WeightLogSheet: View {
             .accessibilityLabel("Close")
         }
         .padding(20)
+    }
+
+    // MARK: Composition
+
+    /// Newest weight / body fat / lean mass, each with its reading's date; "-" when a value is missing.
+    private var compositionRow: some View {
+        let latestWeight = WeightLog.dailySeries(logged: logged, health: health).last
+        return HStack(spacing: NoopMetrics.space2) {
+            compositionBox(label: "Weight",
+                           value: latestWeight.map { formatted(displayValue($0.kg)) },
+                           day: latestWeight?.day)
+            compositionBox(label: "Body Fat",
+                           value: bodyComposition?.bodyFatPct.map {
+                               String(format: "%.1f", locale: AppLanguage.activeLocale, $0.value) + " %"
+                           },
+                           day: bodyComposition?.bodyFatPct?.day)
+            compositionBox(label: "Lean Mass",
+                           value: bodyComposition?.leanMassKg.map { formatted(displayValue($0.value)) },
+                           day: bodyComposition?.leanMassKg?.day)
+        }
+    }
+
+    private func compositionBox(label: LocalizedStringKey, value: String?, day: String?) -> some View {
+        NoopCard(padding: NoopMetrics.space3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).strandOverline()
+                Text(verbatim: value ?? "-")
+                    .font(StrandFont.number(18))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(verbatim: day.map { dayLabel($0) } ?? " ")
+                    .font(StrandFont.footnote)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     // MARK: Chart
@@ -205,6 +245,7 @@ struct WeightLogSheet: View {
         logged = await repo.weightLogEntries()
         health = await repo.series(key: "weight", source: "apple-health", fullHistory: true)
             .map { WeightLog.Entry(day: $0.day, kg: $0.value) }
+        bodyComposition = await repo.latestBodyComposition()
         prefill()
     }
 

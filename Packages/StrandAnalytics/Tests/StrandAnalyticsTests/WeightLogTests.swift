@@ -76,4 +76,32 @@ final class WeightLogTests: XCTestCase {
         XCTAssertEqual(WeightLog.sourceId, "weight-log")
         XCTAssertEqual(WeightLog.key, "weight_kg")
     }
+
+    /// Pinned against the Kotlin `WeightLogTest.bodyReadingMatchesTheSwiftOracle` literal.
+    func testBodyReadingMatchesTheParityTable() {
+        typealias B = WeightLog.BodyReading
+        func b(_ d: String, _ v: Double) -> B? { B(day: d, value: v) }
+        func show(_ r: B?) -> String { r.map { "\($0.day):\($0.value)" } ?? "nil" }
+        let cases: [(String, [B?], Double?)] = [
+            ("empty", [], nil),
+            ("allNil", [nil, nil, nil], nil),
+            ("newestWins", [b("2026-10-01", 18.2), b("2026-10-05", 17.9), b("2026-10-03", 19.0)], 100),
+            ("tieFirst", [b("2026-10-05", 18.0), b("2026-10-05", 17.0)], 100),
+            ("skipNil", [nil, b("2026-09-30", 61.4)], nil),
+            ("invalidDropped", [b("2026-10-09", 0), b("2026-10-08", .nan), b("2026-10-07", -3), b("2026-10-01", 61.0)], nil),
+            ("overMax", [b("2026-10-09", 140), b("2026-10-02", 22.5)], 100),
+            ("atMax", [b("2026-10-09", 100)], 100),
+        ]
+        let actual = cases.map { "body|\($0.0)|" + show(WeightLog.newestBodyReading($0.1, maxValue: $0.2)) }
+        XCTAssertEqual(actual, [
+            "body|empty|nil",
+            "body|allNil|nil",
+            "body|newestWins|2026-10-05:17.9",
+            "body|tieFirst|2026-10-05:18.0",
+            "body|skipNil|2026-09-30:61.4",
+            "body|invalidDropped|2026-10-01:61.0",
+            "body|overMax|2026-10-02:22.5",
+            "body|atMax|2026-10-09:100.0",
+        ])
+    }
 }

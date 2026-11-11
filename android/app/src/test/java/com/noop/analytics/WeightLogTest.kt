@@ -79,4 +79,36 @@ class WeightLogTest {
         assertEquals("weight-log", WeightLog.SOURCE_ID)
         assertEquals("weight_kg", WeightLog.KEY)
     }
+
+    private fun b(day: String, v: Double) = WeightLog.BodyReading(day, v)
+
+    private fun showBody(r: WeightLog.BodyReading?): String = r?.let { "${it.day}:${it.value}" } ?: "nil"
+
+    /** Expected lines are the stdout of the Swift `WeightLog.newestBodyReading` compiled standalone. */
+    @Test
+    fun bodyReadingMatchesTheSwiftOracle() {
+        val cases = listOf(
+            Triple("empty", emptyList<WeightLog.BodyReading?>(), null as Double?),
+            Triple("allNil", listOf(null, null, null), null),
+            Triple("newestWins", listOf(b("2026-10-01", 18.2), b("2026-10-05", 17.9), b("2026-10-03", 19.0)), 100.0),
+            Triple("tieFirst", listOf(b("2026-10-05", 18.0), b("2026-10-05", 17.0)), 100.0),
+            Triple("skipNil", listOf(null, b("2026-09-30", 61.4)), null),
+            Triple("invalidDropped",
+                listOf(b("2026-10-09", 0.0), b("2026-10-08", Double.NaN), b("2026-10-07", -3.0), b("2026-10-01", 61.0)), null),
+            Triple("overMax", listOf(b("2026-10-09", 140.0), b("2026-10-02", 22.5)), 100.0),
+            Triple("atMax", listOf(b("2026-10-09", 100.0)), 100.0),
+        )
+        val actual = cases.map { (n, c, m) -> "body|$n|" + showBody(WeightLog.newestBodyReading(c, m)) }
+        val expected = listOf(
+            "body|empty|nil",
+            "body|allNil|nil",
+            "body|newestWins|2026-10-05:17.9",
+            "body|tieFirst|2026-10-05:18.0",
+            "body|skipNil|2026-09-30:61.4",
+            "body|invalidDropped|2026-10-01:61.0",
+            "body|overMax|2026-10-02:22.5",
+            "body|atMax|2026-10-09:100.0",
+        )
+        assertEquals(expected, actual)
+    }
 }

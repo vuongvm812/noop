@@ -70,6 +70,7 @@ internal fun WeightLogSheet(viewModel: AppViewModel, unitSystem: UnitSystem, onD
     var day by remember { mutableStateOf(today) }
     var text by remember { mutableStateOf("") }
     var invalid by remember { mutableStateOf(false) }
+    var bodyComposition by remember { mutableStateOf<WeightLog.BodyComposition?>(null) }
     val seq by WeightLogStore.mutationSeq.collectAsStateWithLifecycle()
 
     val healthConnectOnly = remember { ProfileStore.from(context).useHealthConnectWeight }
@@ -81,6 +82,9 @@ internal fun WeightLogSheet(viewModel: AppViewModel, unitSystem: UnitSystem, onD
                 healthConnectOnly = healthConnectOnly,
             )
         }.getOrDefault(emptyList())
+    }
+    LaunchedEffect(Unit) {
+        bodyComposition = runCatching { viewModel.repo.latestBodyComposition() }.getOrNull()
     }
     LaunchedEffect(seq) {
         logged = runCatching { WeightLogStore.entries(viewModel.repo) }.getOrDefault(emptyList())
@@ -123,8 +127,33 @@ internal fun WeightLogSheet(viewModel: AppViewModel, unitSystem: UnitSystem, onD
             Text(uiString(R.string.today_metric_weight), style = NoopType.title2, color = Palette.textPrimary)
             Text(uiString(R.string.weight_log_profile_note), style = NoopType.footnote, color = Palette.textSecondary)
 
-            // Chart: the merged daily series, tap/drag to read a day's value.
+            // The merged daily series feeds both the chart and the Weight box, so they agree.
             val series = remember(logged, health) { WeightLog.dailySeries(logged, health) }
+
+            // Newest weight / body fat / lean mass, each with its reading's date; "-" when a value is missing.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                val latestWeight = series.lastOrNull()
+                CompositionBox(
+                    label = uiString(R.string.today_metric_weight),
+                    value = latestWeight?.let { formatMass(displayValue(it.kg, imperial), imperial) },
+                    day = latestWeight?.day,
+                    modifier = Modifier.weight(1f),
+                )
+                CompositionBox(
+                    label = uiString(R.string.l10n_apple_health_screen_body_fat_13aeec7b),
+                    value = bodyComposition?.bodyFatPct?.let { String.format(Locale.getDefault(), "%.1f", it.value) + " %" },
+                    day = bodyComposition?.bodyFatPct?.day,
+                    modifier = Modifier.weight(1f),
+                )
+                CompositionBox(
+                    label = uiString(R.string.l10n_apple_health_screen_lean_mass_a7494b5d),
+                    value = bodyComposition?.leanMassKg?.let { formatMass(displayValue(it.value, imperial), imperial) },
+                    day = bodyComposition?.leanMassKg?.day,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            // Chart: the merged daily series, tap/drag to read a day's value.
             NoopCard(tint = Palette.accent) {
                 if (series.size >= 2) {
                     LineChart(
@@ -267,6 +296,22 @@ internal fun WeightLogSheet(viewModel: AppViewModel, unitSystem: UnitSystem, onD
                     colors = ButtonDefaults.textButtonColors(contentColor = Palette.accent),
                 ) { Text(uiString(R.string.weight_log_done), style = NoopType.headline) }
             }
+        }
+    }
+}
+
+/** One Weight / Body fat / Lean mass box: the value ("-" when [value] is null) and the reading's date. */
+@Composable
+private fun CompositionBox(label: String, value: String?, day: String?, modifier: Modifier = Modifier) {
+    NoopCard(modifier = modifier, padding = 12.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Overline(label)
+            Text(value ?: "-", style = NoopType.number(18f), color = Palette.textPrimary)
+            Text(
+                day?.let { shortDay(it) } ?: " ",
+                style = NoopType.footnote,
+                color = Palette.textTertiary,
+            )
         }
     }
 }
