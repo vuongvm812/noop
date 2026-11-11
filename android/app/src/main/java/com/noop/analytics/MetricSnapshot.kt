@@ -111,6 +111,8 @@ data class MetricSnapshot(
 object MetricSnapshotCatalog {
     private const val W = "my-whoop"
     private const val A = "apple-health"
+    /** The Garmin export import's source id (`WearableExportImporter.Brand.GARMIN`). */
+    private const val G = "garmin-import"
 
     /** Catalog entry builder. Swift twin: `MetricSnapshotCatalog.m`. */
     private fun m(
@@ -144,13 +146,28 @@ object MetricSnapshotCatalog {
         m("sleep_consistency", C[1], "Sleep consistency", "%", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_consistency", sources = listOf(W)),
         m("hours_vs_needed_pct", C[1], "Hours vs needed", "%", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "hours_vs_needed_pct", sources = listOf(W)),
         m("disturbances", C[1], "Disturbances", "", 0, direction = SnapshotDirection.LOWER_BETTER),
+        m("sleep_awake_count", C[1], "Awakenings", "", 0, direction = SnapshotDirection.LOWER_BETTER, key = "sleep_awake_count", sources = listOf(G)),
+        m("sleep_restless_moments", C[1], "Restless moments", "", 0, direction = SnapshotDirection.LOWER_BETTER, key = "sleep_restless_moments", sources = listOf(G)),
+        m("sleep_stress", C[1], "Sleep stress", "", 0, direction = SnapshotDirection.LOWER_BETTER, key = "sleep_stress", sources = listOf(G)),
+        m("sleep_awake_min", C[1], "Awake during sleep", "min", 0, direction = SnapshotDirection.LOWER_BETTER, key = "sleep_awake_min", sources = listOf(G)),
+        m("nap_min", C[1], "Naps", "min", 0, rollup = SnapshotRollup.SUM, key = "nap_min", sources = listOf(G)),
+        m("sleep_score_quality", C[1], "Sleep quality score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_quality", sources = listOf(G)),
+        m("sleep_score_duration", C[1], "Sleep duration score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_duration", sources = listOf(G)),
+        m("sleep_score_recovery", C[1], "Sleep recovery score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_recovery", sources = listOf(G)),
+        m("sleep_score_deep", C[1], "Deep sleep score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_deep", sources = listOf(G)),
+        m("sleep_score_rem", C[1], "REM sleep score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_rem", sources = listOf(G)),
+        m("sleep_score_restfulness", C[1], "Sleep restfulness score", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "sleep_score_restfulness", sources = listOf(G)),
         // Heart
         m("avg_hr", C[2], "Average heart rate", "bpm", 0, key = "avg_hr", sources = listOf(W)),
-        m("max_hr", C[2], "Max heart rate", "bpm", 0, rollup = SnapshotRollup.MAX, key = "max_hr", sources = listOf(W)),
-        m("resp_rate", C[2], "Respiratory rate", "rpm", 1, key = "resp_rate", sources = listOf(W)),
-        m("spo2", C[2], "Blood oxygen", "%", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "spo2", sources = listOf(W)),
+        m("max_hr", C[2], "Max heart rate", "bpm", 0, rollup = SnapshotRollup.MAX, key = "max_hr", sources = listOf(W, G)),
+        m("resp_rate", C[2], "Respiratory rate", "rpm", 1, key = "resp_rate", sources = listOf(W, G)),
+        m("spo2", C[2], "Blood oxygen", "%", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "spo2", sources = listOf(W, G)),
         m("skin_temp", C[2], "Skin temperature", "°C", 1, key = "skin_temp", sources = listOf(W)),
         m("sdnn", C[2], "HRV (SDNN)", "ms", 0, direction = SnapshotDirection.HIGHER_BETTER),
+        m("hr_min", C[2], "Min heart rate", "bpm", 0, rollup = SnapshotRollup.MIN, key = "hr_min", sources = listOf(G)),
+        m("hr_overnight", C[2], "Overnight heart rate", "bpm", 0, direction = SnapshotDirection.LOWER_BETTER, key = "hr_overnight", sources = listOf(G)),
+        m("resp_overnight", C[2], "Overnight respiratory rate", "rpm", 1, key = "resp_overnight", sources = listOf(G)),
+        m("spo2_min", C[2], "Lowest blood oxygen", "%", 0, rollup = SnapshotRollup.MIN, direction = SnapshotDirection.HIGHER_BETTER, key = "spo2_min", sources = listOf(G)),
         // Activity
         m("steps", C[3], "Steps", "steps", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.HIGHER_BETTER, key = "steps", sources = listOf(W, A)),
         m("steps_est", C[3], "Steps (estimated)", "steps", 0, rollup = SnapshotRollup.SUM, key = "steps_est", sources = listOf(W)),
@@ -162,6 +179,10 @@ object MetricSnapshotCatalog {
         m("hr_zones13_min", C[3], "HR zones 1-3", "min", 0, rollup = SnapshotRollup.SUM, key = "hr_zones13_min", sources = listOf(W)),
         m("hr_zones45_min", C[3], "HR zones 4-5", "min", 0, rollup = SnapshotRollup.SUM, key = "hr_zones45_min", sources = listOf(W)),
         m("hr_zones_all_min", C[3], "HR zones (all)", "min", 0, rollup = SnapshotRollup.SUM, key = "hr_zones_all_min", sources = listOf(W)),
+        m("bmr_kcal", C[3], "Resting calories", "kcal", 0, rollup = SnapshotRollup.SUM, key = "bmr_kcal", sources = listOf(G)),
+        m("floors_ascended_m", C[3], "Floors climbed", "m", 0, rollup = SnapshotRollup.SUM, key = "floors_ascended_m", sources = listOf(G)),
+        m("moderate_min", C[3], "Moderate intensity", "min", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.HIGHER_BETTER, key = "moderate_min", sources = listOf(G)),
+        m("vigorous_min", C[3], "Vigorous intensity", "min", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.HIGHER_BETTER, key = "vigorous_min", sources = listOf(G)),
         // Workouts (derived from the workout rows and their device samples)
         m("workout_count", C[4], "Workouts", "", 0, rollup = SnapshotRollup.SUM),
         m("workout_duration_min", C[4], "Workout time", "min", 0, rollup = SnapshotRollup.SUM),
@@ -182,16 +203,23 @@ object MetricSnapshotCatalog {
         m("workout_aerobic_te", C[4], "Aerobic training effect", "", 1, rollup = SnapshotRollup.MAX),
         m("workout_anaerobic_te", C[4], "Anaerobic training effect", "", 1, rollup = SnapshotRollup.MAX),
         // Body composition
-        m("weight", C[5], "Weight", "kg", 1, rollup = SnapshotRollup.LATEST, key = "weight", sources = listOf(A)),
+        m("weight", C[5], "Weight", "kg", 1, rollup = SnapshotRollup.LATEST, key = "weight", sources = listOf(A, G)),
         m("body_fat", C[5], "Body fat", "%", 1, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "body_fat", sources = listOf(A)),
         m("lean_mass", C[5], "Lean mass", "kg", 1, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "lean_mass", sources = listOf(A)),
-        m("bmi", C[5], "BMI", "", 1, rollup = SnapshotRollup.LATEST, key = "bmi", sources = listOf(A)),
+        m("bmi", C[5], "BMI", "", 1, rollup = SnapshotRollup.LATEST, key = "bmi", sources = listOf(A, G)),
+        m("height_m", C[5], "Height", "m", 2, rollup = SnapshotRollup.LATEST, key = "height_m", sources = listOf(G)),
         // Fitness scores
-        m("fitness_age", C[6], "Fitness Age", "yrs", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "fitness_age", sources = listOf(W)),
+        m("fitness_age", C[6], "Fitness Age", "yrs", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "fitness_age", sources = listOf(W, G)),
         m("vitality", C[6], "Vitality", "", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "vitality", sources = listOf(W)),
         m("body_age", C[6], "Body Age", "yrs", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "body_age", sources = listOf(W)),
-        m("vo2max", C[6], "VO₂ max", "ml/kg/min", 1, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "vo2max", sources = listOf(A, W)),
+        m("vo2max", C[6], "VO₂ max", "ml/kg/min", 1, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "vo2max", sources = listOf(A, W, G)),
         m("vo2max_est", C[6], "VO₂ max (estimated)", "ml/kg/min", 1, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "vo2max_est", sources = listOf(W)),
+        m("ftp_w", C[6], "Functional threshold power", "W", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.HIGHER_BETTER, key = "ftp_w", sources = listOf(G)),
+        m("lactate_threshold_hr", C[6], "Lactate threshold heart rate", "bpm", 0, rollup = SnapshotRollup.LATEST, key = "lactate_threshold_hr", sources = listOf(G)),
+        m("race_5k_s", C[6], "5K race prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_5k_s", sources = listOf(G)),
+        m("race_10k_s", C[6], "10K race prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_10k_s", sources = listOf(G)),
+        m("race_half_s", C[6], "Half marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_half_s", sources = listOf(G)),
+        m("race_marathon_s", C[6], "Marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_marathon_s", sources = listOf(G)),
         // Watch metrics (the paired watch's own series; the data layer reads them under the watch id)
         m("watch_stress", C[7], "Watch stress", "", 0, direction = SnapshotDirection.LOWER_BETTER),
         m("body_battery_min", C[7], "Body Battery low", "", 0, rollup = SnapshotRollup.MIN),
@@ -201,6 +229,12 @@ object MetricSnapshotCatalog {
         m("training_load", C[7], "Training load", "", 0, rollup = SnapshotRollup.SUM),
         m("intensity_min", C[7], "Intensity minutes", "min", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.HIGHER_BETTER),
         m("watch_skin_temp_c", C[7], "Watch skin temperature", "°C", 1),
+        m("stress_max", C[7], "Max stress", "", 0, rollup = SnapshotRollup.MAX, direction = SnapshotDirection.LOWER_BETTER, key = "stress_max", sources = listOf(G)),
+        m("stress_low_min", C[7], "Low stress time", "min", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.HIGHER_BETTER, key = "stress_low_min", sources = listOf(G)),
+        m("stress_medium_min", C[7], "Medium stress time", "min", 0, rollup = SnapshotRollup.SUM, key = "stress_medium_min", sources = listOf(G)),
+        m("stress_high_min", C[7], "High stress time", "min", 0, rollup = SnapshotRollup.SUM, direction = SnapshotDirection.LOWER_BETTER, key = "stress_high_min", sources = listOf(G)),
+        m("body_battery_charged", C[7], "Body Battery charged", "", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "body_battery_charged", sources = listOf(G)),
+        m("body_battery_drained", C[7], "Body Battery drained", "", 0, key = "body_battery_drained", sources = listOf(G)),
         // Nutrition
         m("calories_in", C[8], "Calories in", "kcal", 0, rollup = SnapshotRollup.SUM, key = "calories_in", sources = listOf("nutrition-csv")),
         m("protein_g", C[8], "Protein", "g", 0, rollup = SnapshotRollup.SUM, key = "protein_g", sources = listOf("nutrition-csv")),
@@ -208,6 +242,7 @@ object MetricSnapshotCatalog {
         m("fat_g", C[8], "Fat", "g", 0, rollup = SnapshotRollup.SUM, key = "fat_g", sources = listOf("nutrition-csv")),
         // Hydration
         m("hydration_ml", C[9], "Water", "ml", 0, rollup = SnapshotRollup.SUM),
+        m("sweat_loss_ml", C[9], "Sweat loss", "ml", 0, rollup = SnapshotRollup.SUM, key = "sweat_loss_ml", sources = listOf(G)),
         // Mood & journal
         m("mood", C[10], "Mood", "/5", 0, direction = SnapshotDirection.HIGHER_BETTER, key = "mood", sources = listOf("noop-mood")),
         // Cycle

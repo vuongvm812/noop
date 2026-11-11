@@ -1,0 +1,12 @@
+[
+ {
+  "functionalThresholdPower": 260,
+  "sport": "CYCLING",
+  "zone1Floor": 0
+ },
+ {
+  "functionalThresholdPower": 245,
+  "sport": "DEFAULT",
+  "zone1Floor": 0
+ }
+]

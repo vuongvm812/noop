@@ -2,6 +2,7 @@ import Foundation
 import StrandAnalytics
 import WhoopStore
 import StrandImport
+import WhoopProtocol   // Streams / DeviceMetricSample for the activity summaries
 
 /// Maps a parsed Oura / Fitbit / Garmin own-data export into the on-device WhoopStore tables the UI
 /// reads — `dailyMetric`, `sleepSession`, and the generic `metricSeries` — under a per-brand Data
@@ -100,6 +101,15 @@ enum WearableImporter {
             add(d.day, "ref_readiness_score", d.readinessScore.map(Double.init))
             add(d.day, "ref_sleep_score", d.sleepScore.map(Double.init))
         }
+        // Garmin export extras (UDS / sleep scores / body / fitness / records ...): fill-missing only, so the
+        // daily parser's own value for a (day, key) always wins. Kotlin twin: WearableExportImporter.persist.
+        var workoutsWritten = 0
+        if let g = result.garmin {
+            var have = Set(points.map { "\($0.day)|\($0.key)" })
+            for p in g.points where have.insert("\(p.day)|\(p.key)").inserted {
+                points.append(MetricPoint(day: p.day, key: p.key, value: p.value))
+            }
+        }
         try await store.upsertMetricSeries(points, deviceId: deviceId)
 
         // A Garmin export's FIT files (activities, 24/7 monitoring, sleep, HRV, VO2max), stored under the
@@ -107,6 +117,11 @@ enum WearableImporter {
         if !result.fitFiles.isEmpty {
             result.fitReport = await GarminExportFitIngest.ingest(result.fitFiles, store: store)
             result.fitFiles = [:]   // the bytes are stored; release them
+        }
+        // The activity summaries last: the export's FIT activities are stored by now, so a summary enriches
+        // its FIT workout row instead of adding a second one. Kotlin twin: `WearableExportImporter.importExport`.
+        if let g = result.garmin {
+            workoutsWritten = try await persistGarminActivities(g.activities, deviceId: deviceId, store: store)
         }
         // Every FIT file skipped is returned with its per-reason report rather than thrown away as "nothing".
         if result.days.isEmpty, result.sleeps.isEmpty, (result.fitReport?.storedFiles ?? 0) == 0,
@@ -122,6 +137,7 @@ enum WearableImporter {
                 ImportTrace.parserVersionLine(sourceKind: result.brand.dataSourceKind, importerVersion: importerVersion),
                 ImportTrace.stageLine(category: "days", rowsIn: result.days.count, rowsOut: metricsWritten),
                 ImportTrace.stageLine(category: "sleeps", rowsIn: sessions.count, rowsOut: sessionsWritten),
+                ImportTrace.stageLine(category: "workouts", rowsIn: result.garmin?.activities.count ?? 0, rowsOut: workoutsWritten),
                 // The Oura/Fitbit/Garmin parser drops unusable rows upstream in StrandImport; the app map
                 // keeps every day/sleep, so the reject signal at this seam is the day-delta below.
                 ImportTrace.rejectLine(droppedRows: 0, skippedSpans: result.summary.skippedSpans),
@@ -131,6 +147,50 @@ enum WearableImporter {
         }
 
         return result
+    }
+
+    /// Store the export's activity summaries as workouts under `deviceId`. An activity that overlaps (same sport,
+    /// more than half of the shorter session) a workout already stored under that id (a FIT-derived row) is NOT
+    /// duplicated: that row is enriched with the summary's zones, energy, heart rate and notes instead. Returns the
+    /// rows written (created + enriched). Kotlin twin: `WearableExportImporter.persistGarminActivities`.
+    static func persistGarminActivities(_ acts: [GarminExportJson.Activity], deviceId: String,
+                                        store: WhoopStore) async throws -> Int {
+        guard let first = acts.first, let last = acts.last else { return 0 }
+        let existing = try await store.workouts(deviceId: deviceId, from: first.startTs - 86_400,
+                                                to: (acts.map(\.endTs).max() ?? last.endTs) + 86_400, limit: Int.max / 2)
+        var rows: [WorkoutRow] = []
+        var metrics: [DeviceMetricSample] = []
+        for a in acts {
+            let fresh = WorkoutRow(
+                startTs: a.startTs, endTs: a.endTs, sport: a.sport, source: deviceId, durationS: a.durationS,
+                energyKcal: a.energyKcal, avgHr: a.avgHr, maxHr: a.maxHr, strain: nil, distanceM: a.distanceM,
+                zonesJSON: a.zonesJson, notes: ["Imported Garmin Connect activity", a.noteExtras].filter { !$0.isEmpty }.joined(separator: " · "),
+                steps: a.steps)
+            // An overlapping summary earlier in this same export counts as a stored row too.
+            let match = existing.first(where: { WorkoutSource.sameActivity($0, fresh) })
+            if match == nil, rows.contains(where: { WorkoutSource.sameActivity($0, fresh) }) { continue }
+            // Training Effect is a reference value the workout detail reads back over the workout window.
+            func add(_ kind: DeviceMetricKind, _ v: Double?) {
+                if let v { metrics.append(DeviceMetricSample(ts: a.startTs, kind: kind, value: v, source: GarminExportJson.sourceSummary)) }
+            }
+            add(.aerobicTrainingEffect, a.aerobicTe); add(.anaerobicTrainingEffect, a.anaerobicTe)
+            if let match {
+                rows.append(WorkoutRow(
+                    startTs: match.startTs, endTs: match.endTs, sport: match.sport, source: match.source,
+                    durationS: match.durationS, energyKcal: match.energyKcal ?? fresh.energyKcal,
+                    avgHr: match.avgHr ?? fresh.avgHr, maxHr: match.maxHr ?? fresh.maxHr, strain: match.strain,
+                    distanceM: match.distanceM ?? fresh.distanceM, zonesJSON: match.zonesJSON ?? fresh.zonesJSON,
+                    notes: GarminExportJson.enrichedNotes(match.notes, a.noteExtras),
+                    steps: match.steps ?? fresh.steps))
+            } else {
+                rows.append(fresh)
+                // Power and cadence only where no FIT row already carries the per-record series.
+                add(.powerW, a.avgPowerW); add(.cadence, a.cadenceSpm)
+            }
+        }
+        if !rows.isEmpty { try await store.upsertWorkouts(rows, deviceId: deviceId) }
+        if !metrics.isEmpty { _ = try await store.insert(Streams(deviceMetric: metrics), deviceId: deviceId) }
+        return rows.count
     }
 
     /// Asleep fraction of in-bed time, from the daily stage minutes (when the export gave no efficiency).

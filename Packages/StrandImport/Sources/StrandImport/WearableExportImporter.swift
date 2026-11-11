@@ -86,8 +86,9 @@ public struct WearableExportImporter {
 
         let days = Array(parsed.days.sorted { $0.day < $1.day }.prefix(Self.maxRows))
         let sleeps = Array(parsed.sleeps.sorted { $0.start < $1.start }.prefix(Self.maxRows))
+        let garmin = brand == .garmin ? GarminExportJson.parse(files, skippedPaths: collected.skipped) : nil
 
-        if days.isEmpty && sleeps.isEmpty && fitFiles.isEmpty {
+        if days.isEmpty && sleeps.isEmpty && fitFiles.isEmpty && (garmin == nil || (garmin!.points.isEmpty && garmin!.activities.isEmpty)) {
             // A lone Oura `heartrate.csv` is a raw HR-sample file, not a daily summary, so it carries no
             // recovery/sleep/HRV NOOP can map. Say so plainly and point at the right file (#857) instead of
             // a brand-generic "no usable data".
@@ -101,7 +102,7 @@ public struct WearableExportImporter {
         }
         return WearableImportResult(brand: brand, days: days, sleeps: sleeps,
                                     summary: Self.summarize(brand: brand, days: days, sleeps: sleeps),
-                                    fitFiles: fitFiles)
+                                    fitFiles: fitFiles, garmin: garmin)
     }
 
     /// True when every collected file is a raw heart-rate CSV (no daily-summary CSV/JSON among them): the
@@ -125,7 +126,8 @@ public struct WearableExportImporter {
         let days = parsed.days.sorted { $0.day < $1.day }
         let sleeps = parsed.sleeps.sorted { $0.start < $1.start }
         return WearableImportResult(brand: brand, days: days, sleeps: sleeps,
-                                    summary: summarize(brand: brand, days: days, sleeps: sleeps))
+                                    summary: summarize(brand: brand, days: days, sleeps: sleeps),
+                                    garmin: brand == .garmin ? GarminExportJson.parse(files) : nil)
     }
 
     // MARK: - Brand detection (by content, not trust)
@@ -194,6 +196,8 @@ public struct WearableExportImporter {
     struct Collected {
         var files: [String: Data] = [:]
         var fit: [String: Data] = [:]
+        /// Entries not kept (Garmin import report: skipped, with a reason).
+        var skipped: [String] = []
     }
 
     /// Every JSON/CSV and `.fit` file in the input, by lowercased relative path. A single `.json` is one
@@ -236,7 +240,9 @@ public struct WearableExportImporter {
         for case let u as URL in e {
             if state.count >= Self.maxFiles { break }
             let name = u.lastPathComponent.lowercased()
-            let isZip = name.hasSuffix(".zip") && maxZipDepth >= 1
+            let isPrivateZip = name.hasSuffix(".zip") && GarminExportJson.skipReason(u.path) == GarminExportJson.Skip.privateFile
+            let isZip = name.hasSuffix(".zip") && maxZipDepth >= 1 && !isPrivateZip
+            if isPrivateZip { state.skipped.append(String(u.path.dropFirst(folder.path.count)).lowercased()); continue }   // Garmin-private backup NOOP cannot decode
             guard name.hasSuffix(".json") || name.hasSuffix(".csv") || name.hasSuffix(".fit") || isZip else { continue }
             let size = (try? u.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             if size > Self.maxEntryBytes { continue }
@@ -251,14 +257,16 @@ public struct WearableExportImporter {
                 continue
             }
             guard let data = try? Data(contentsOf: u) else { continue }
-            guard name.hasSuffix(".fit") || Self.isWellnessFile(name, data: data) else { continue }
+            guard name.hasSuffix(".fit") || Self.isWellnessFile(name, data: data) || GarminExportJson.isHealthFile(key) else {
+                state.skipped.append(key); continue   // reported, never silently dropped
+            }
             guard state.files[key] == nil, state.fit[key] == nil else { continue }
             if state.budget + data.count > maxTotalBytes { break }   // aggregate RAM ceiling across retained files
             if name.hasSuffix(".fit") { state.fit[key] = data } else { state.files[key] = data }
             state.budget += data.count
             state.count += 1
         }
-        return Collected(files: state.files, fit: state.fit)
+        return Collected(files: state.files, fit: state.fit, skipped: state.skipped)
     }
 
     /// The running totals of one collection: retained files, bytes held, and whether the budget tripped.
@@ -268,6 +276,8 @@ public struct WearableExportImporter {
         var budget = 0
         var count = 0
         var truncated = false
+        /// Entries not kept (Garmin import report: skipped, with a reason).
+        var skipped: [String] = []
     }
 
     private func loadFromZip(_ zipURL: URL) throws -> Collected {
@@ -276,7 +286,7 @@ public struct WearableExportImporter {
         catch { throw ImportError.notAZipOrFolder(zipURL.path) }
         var state = CollectState()
         walkArchive(archive, prefix: "", depth: 1, state: &state)
-        return Collected(files: state.files, fit: state.fit)
+        return Collected(files: state.files, fit: state.fit, skipped: state.skipped)
     }
 
     /// One archive level; a nested `.zip` entry is expanded in memory while `depth < maxZipDepth`. Kotlin twin:
@@ -289,6 +299,10 @@ public struct WearableExportImporter {
             let base = (entry.path as NSString).lastPathComponent.lowercased()
             let isData = base.hasSuffix(".json") || base.hasSuffix(".csv")
             let isFit = base.hasSuffix(".fit")
+            // A Garmin-private nested backup NOOP cannot decode is reported, not walked; any other nested zip
+            // (the export's UploadedFiles) is walked, never reported as skipped.
+            let isPrivateZip = base.hasSuffix(".zip") && GarminExportJson.skipReason(path) == GarminExportJson.Skip.privateFile
+            if isPrivateZip { state.skipped.append(path); continue }
             let isZip = base.hasSuffix(".zip") && depth < maxZipDepth
             guard isData || isFit || isZip else { continue }   // skip GPX/etc.
             let declared = Int(exactly: entry.uncompressedSize) ?? Int.max
@@ -311,12 +325,14 @@ public struct WearableExportImporter {
                 }
                 if state.truncated { break }
                 state.budget -= buffer.count   // the archive itself is released; its retained entries stay counted
-            } else if isFit || Self.isWellnessFile(base, data: buffer) {
+            } else if isFit || Self.isWellnessFile(base, data: buffer) || GarminExportJson.isHealthFile(path) {
                 guard state.files[path] == nil, state.fit[path] == nil else { continue }
                 if state.budget + buffer.count > maxTotalBytes { state.truncated = true; break }   // aggregate RAM ceiling across retained files
                 if isFit { state.fit[path] = buffer } else { state.files[path] = buffer }
                 state.budget += buffer.count
                 state.count += 1
+            } else {
+                state.skipped.append(path)   // reported, never silently dropped
             }
         }
     }

@@ -1,0 +1,15 @@
+[
+ {
+  "activityId": 9001,
+  "calendarDate": "2026-01-01",
+  "estimatedSweatLossInML": 650.0,
+  "hydrationSource": "GARMIN_ACTIVITY",
+  "valueInML": 0.0
+ },
+ {
+  "calendarDate": "2026-01-02",
+  "estimatedSweatLossInML": 0.0,
+  "hydrationSource": "MANUAL",
+  "valueInML": 500.0
+ }
+]

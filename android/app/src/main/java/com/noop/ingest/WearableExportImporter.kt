@@ -13,7 +13,12 @@ import android.net.Uri
 import com.noop.data.DailyMetric
 import com.noop.data.GarminSyncStore
 import com.noop.data.WhoopDatabase
+import com.noop.data.GarminImportReport
 import com.noop.data.ImportSummary
+import com.noop.data.StreamBatch
+import com.noop.data.WorkoutRow
+import com.noop.data.DeviceMetricKind
+import com.noop.data.DeviceMetricRow
 import com.noop.data.MetricSeriesRow
 import com.noop.data.SleepSession
 import com.noop.data.WhoopRepository
@@ -72,6 +77,10 @@ object WearableExportImporter {
     private const val MAX_ENTRY_BYTES = 256L shl 20  // per-entry uncompressed ceiling (zip-bomb guard)
     private const val MAX_FILES = 200_000
 
+    /** Where [collectZipEntries] records the entries it did not keep (set by [importExport] around one import,
+     *  read by the Garmin import report). Kept off the signature so the Swift twin's shape is unchanged. */
+    @Volatile internal var skipSink: MutableList<String>? = null
+
     /** Aggregate RAM ceiling across ALL retained wellness files from one import. The real backstop here: a
      *  zip can carry up to [MAX_FILES] (200k) entries, and the per-entry cap bounds each one but NOT their
      *  sum — without this a crafted export could accumulate unbounded ByteArray in the map. A whole
@@ -120,6 +129,8 @@ object WearableExportImporter {
     // ------------------------------------------------------------------------
 
     suspend fun importExport(context: Context, uri: Uri, repo: WhoopRepository): ImportSummary {
+        val skippedPaths = ArrayList<String>()
+        skipSink = skippedPaths
         val collected = try {
             collectFiles(context, uri)
         } catch (e: Exception) {
@@ -140,8 +151,12 @@ object WearableExportImporter {
         }
         // JSON days and sleeps first, then the export's FIT files (activities, 24/7 monitoring, sleep, HRV,
         // VO2max, Garmin's own), the same order as the Swift importer: a FIT night replaces an overlapping JSON one.
-        val hasJsonData = parsed.days.isNotEmpty() || parsed.sleeps.isNotEmpty()
-        val persistedJson = if (hasJsonData) persist(repo, brand, parsed) else null
+        skipSink = null
+        val extra = if (brand == Brand.GARMIN) GarminExportJson.parse(files, skippedPaths) else null
+        val hasJsonData = parsed.days.isNotEmpty() || parsed.sleeps.isNotEmpty() ||
+            (extra != null && (extra.points.isNotEmpty() || extra.activities.isNotEmpty()))
+        val withExtra = if (extra != null) Parsed(parsed.days, parsed.sleeps, extra) else parsed
+        val persistedJson = if (hasJsonData) persist(repo, brand, withExtra) else null
         val fitReport = if (brand == Brand.GARMIN && collected.fit.isNotEmpty()) {
             GarminExportFit.ingest(
                 collected.fit, repo, GarminSyncStore(WhoopDatabase.get(context)), {},
@@ -165,10 +180,20 @@ object WearableExportImporter {
             // Every FIT file skipped: still say why, per reason, never a bare "nothing".
             return if (fitReport == null) empty else empty.copy(categoryCounts = fitReport.counts)
         }
-        val persisted = persistedJson ?: persist(repo, brand, parsed)
-        val summary = if (fitReport == null) persisted else persisted.copy(
+        val persisted = persistedJson ?: persist(repo, brand, withExtra)
+        // The activity summaries last: the export's FIT activities are stored by now, so a summary enriches
+        // its FIT workout row instead of adding a second one. Swift twin: `WearableImporter.importExport`.
+        val summaryWorkouts = if (extra != null) persistGarminActivities(repo, Brand.GARMIN.sourceId, extra.activities) else 0
+        val withFit = if (fitReport == null) persisted else persisted.copy(
             categoryCounts = fitReport.counts,
             counts = persisted.counts + fitReport.counts.filterKeys { it == GarminExportFit.KEY_WORKOUTS },
+        )
+        val summary = withFit.copy(
+            counts = if (summaryWorkouts > 0) withFit.counts + ("workout" to ((withFit.counts["workout"] ?: 0) + summaryWorkouts)) else withFit.counts,
+            garminReport = if (brand == Brand.GARMIN) GarminImportReport(
+                extra?.imported.orEmpty(), extra?.skipped.orEmpty(), extra?.settings?.maxHr, extra?.settings?.restingHr,
+                extra?.settings?.ftpW, fitReport?.counts.orEmpty(),
+            ) else null,
         )
         // #70: never silently truncate. If the aggregate RAM budget tripped, the retained file set was
         // partial — surface it plainly rather than reporting a clean import over incomplete data.
@@ -211,7 +236,7 @@ object WearableExportImporter {
         val sleepScore: Int?, val stagesJson: String?,
     )
 
-    internal class Parsed(val days: List<DayAcc>, val sleeps: List<SleepAcc>)
+    internal class Parsed(val days: List<DayAcc>, val sleeps: List<SleepAcc>, val garmin: GarminExportJson.Result? = null)
 
     // ------------------------------------------------------------------------
     // Brand detection (by content)
@@ -834,6 +859,7 @@ object WearableExportImporter {
     // ------------------------------------------------------------------------
 
     private suspend fun persist(repo: WhoopRepository, brand: Brand, parsed: Parsed): ImportSummary {
+        val extra = parsed.garmin
         val deviceId = brand.sourceId
         repo.upsertDevice(deviceId, name = "${brand.label} import")
 
@@ -879,10 +905,16 @@ object WearableExportImporter {
             add(d.day, "ref_readiness_score", d.readinessScore?.toDouble())
             add(d.day, "ref_sleep_score", d.sleepScore?.toDouble())
         }
+        // Garmin export extras (UDS / sleep scores / body / fitness / records ...): fill-missing only, so the
+        // daily parser's own value for a (day, key) always wins. Swift twin: WearableImporter.
+        if (extra != null) {
+            val have = series.mapTo(HashSet()) { it.day + "|" + it.key }
+            for (p in extra.points) if (have.add(p.day + "|" + p.key)) series.add(MetricSeriesRow(deviceId, p.day, p.key, p.value))
+        }
         if (series.isNotEmpty()) repo.upsertMetricSeries(series)
 
-        val first = parsed.days.firstOrNull()?.day
-        val last = parsed.days.lastOrNull()?.day
+        val first = parsed.days.firstOrNull()?.day ?: extra?.points?.firstOrNull()?.day
+        val last = parsed.days.lastOrNull()?.day ?: extra?.points?.lastOrNull()?.day
         val span = if (first != null && last != null && first != last) " · $first-$last" else ""
         return ImportSummary(
             source = brand.label,
@@ -894,6 +926,54 @@ object WearableExportImporter {
                 if (first != null && last != null && first != last) uiString(R.string.l10n_wearable_export_importer_1_s_2_s_3_s_5ece4fe5, head, first, last) else head
             },
         )
+    }
+
+    /**
+     * Store the export's activity summaries as workouts under [deviceId]. An activity that overlaps (same sport,
+     * more than half of the shorter session) a workout already stored under that id (a FIT-derived row) is NOT
+     * duplicated: that row is enriched with the summary's zones, energy, heart rate and notes instead. Returns the
+     * rows written (created + enriched). Swift twin: `WearableImporter.persistGarminActivities`.
+     */
+    internal suspend fun persistGarminActivities(repo: WhoopRepository, deviceId: String, acts: List<GarminExportJson.Activity>): Int {
+        if (acts.isEmpty()) return 0
+        val existing = repo.workouts(deviceId, acts.first().startTs - 86_400, acts.maxOf { it.endTs } + 86_400, Int.MAX_VALUE)
+        val rows = ArrayList<WorkoutRow>()
+        val metrics = ArrayList<DeviceMetricRow>()
+        for (a in acts) {
+            val fresh = WorkoutRow(
+                deviceId = deviceId, startTs = a.startTs, endTs = a.endTs, sport = a.sport, source = deviceId,
+                durationS = a.durationS, energyKcal = a.energyKcal, avgHr = a.avgHr, maxHr = a.maxHr, strain = null,
+                distanceM = a.distanceM, zonesJSON = a.zonesJson, notes = listOf("Imported Garmin Connect activity", a.noteExtras).filter { it.isNotEmpty() }.joinToString(" · "), steps = a.steps,
+            )
+            // An overlapping summary earlier in this same export counts as a stored row too.
+            val match = existing.firstOrNull { com.noop.ui.WorkoutEditing.sameActivity(it, fresh) }
+            if (match == null && rows.any { com.noop.ui.WorkoutEditing.sameActivity(it, fresh) }) continue
+            // Training Effect is a reference value the workout detail reads back over the workout window.
+            a.aerobicTe?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.AEROBIC_TRAINING_EFFECT, it, GarminExportJson.SOURCE_SUMMARY)) }
+            a.anaerobicTe?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.ANAEROBIC_TRAINING_EFFECT, it, GarminExportJson.SOURCE_SUMMARY)) }
+            if (match == null) {
+                rows.add(fresh)
+                // Power and cadence only where no FIT row already carries the per-record series.
+                a.avgPowerW?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.POWER_W, it, GarminExportJson.SOURCE_SUMMARY)) }
+                a.cadenceSpm?.let { metrics.add(DeviceMetricRow(a.startTs, DeviceMetricKind.CADENCE, it, GarminExportJson.SOURCE_SUMMARY)) }
+            } else {
+                rows.add(match.copy(
+                    energyKcal = match.energyKcal ?: fresh.energyKcal, avgHr = match.avgHr ?: fresh.avgHr, maxHr = match.maxHr ?: fresh.maxHr,
+                    distanceM = match.distanceM ?: fresh.distanceM, zonesJSON = match.zonesJSON ?: fresh.zonesJSON,
+                    steps = match.steps ?: fresh.steps,
+                    notes = enrichedNotes(match.notes, a.noteExtras),
+                ))
+            }
+        }
+        if (rows.isNotEmpty()) repo.upsertWorkouts(rows)
+        if (metrics.isNotEmpty()) repo.insert(StreamBatch(deviceMetric = metrics), deviceId)
+        return rows.size
+    }
+
+    /** [existing] plus the summary's [extra] note, unchanged when it is already there (a re-import adds nothing). */
+    internal fun enrichedNotes(existing: String?, extra: String): String? {
+        if (extra.isEmpty() || existing?.contains(extra) == true) return existing
+        return listOfNotNull(existing?.takeIf { it.isNotEmpty() }, extra).joinToString(" · ")
     }
 
     private fun sleepEfficiency(total: Double?, awake: Double?): Double? {
@@ -987,7 +1067,11 @@ object WearableExportImporter {
                 if (!entry.isDirectory) {
                     val isData = base.endsWith(".json") || base.endsWith(".csv")
                     val isFit = base.endsWith(".fit")
-                    val isZip = base.endsWith(".zip") && depth < maxDepth
+                    val isPrivateZip = base.endsWith(".zip") && GarminExportJson.skipReason(path) == GarminExportJson.Skip.PRIVATE_FILE
+                    // A Garmin-private nested backup NOOP cannot decode is reported, not walked; any other nested
+                    // zip (the export's UploadedFiles) is walked, never reported as skipped.
+                    if (isPrivateZip) skipSink?.add(path)
+                    val isZip = base.endsWith(".zip") && depth < maxDepth && !isPrivateZip
                     if (isData || isFit || isZip) {
                         val bytes = runCatching { zin.readCapped(MAX_ENTRY_BYTES, what = "Entry") }.getOrNull()
                         if (bytes != null && bytes.isNotEmpty()) {
@@ -1000,11 +1084,15 @@ object WearableExportImporter {
                                 // First-wins dedup (was last-wins overwrite) so the running `total` matches the retained
                                 // bytes exactly; mirrors the Swift zip loader's `if result[path] == nil` guard.
                                 val target = if (isFit) fit else files
-                                if ((isFit || isWellnessFile(base, bytes)) && !files.containsKey(path) && !fit.containsKey(path)) {
+                                // A Garmin health file is matched by its full path (the basename alone never carries
+                                // the `di_connect` folder), so `GarminExportJson.isHealthFile` keeps the ones the hints miss.
+                                if ((isFit || isWellnessFile(base, bytes) || GarminExportJson.isHealthFile(path)) && !files.containsKey(path) && !fit.containsKey(path)) {
                                     if (budget[0] + bytes.size.toLong() > maxTotalBytes) return true
                                     target[path] = bytes
                                     budget[0] += bytes.size.toLong()
                                     count[0]++
+                                } else if (!isFit) {
+                                    skipSink?.add(path)   // reported to the user (Garmin import report), never silently dropped
                                 }
                             }
                         }
@@ -1033,7 +1121,7 @@ object WearableExportImporter {
             "udsfile", "healthstatus",
             // Garmin's VO2max history (DI-Connect-Metrics/MetricsMaxMetData_*.json).
             "maxmetdata")
-        return hints.any { name.contains(it) }
+        return hints.any { name.contains(it) } || GarminExportJson.isHealthFile(name)
     }
 
 

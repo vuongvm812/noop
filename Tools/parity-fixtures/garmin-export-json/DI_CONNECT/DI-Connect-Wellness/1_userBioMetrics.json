@@ -1,0 +1,18 @@
+[
+ {
+  "functionalThresholdPower": 250,
+  "height": 176.0,
+  "metaData": {
+   "calendarDate": "2026-01-01"
+  },
+  "vo2MaxRunning": 50.0,
+  "weight": 71500.0
+ },
+ {
+  "lactateThresholdHeartRate": 171,
+  "metaData": {
+   "calendarDate": "2026-01-02"
+  },
+  "weight": 71200.0
+ }
+]

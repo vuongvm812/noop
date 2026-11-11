@@ -22,6 +22,7 @@ struct MetricDescriptor: Identifiable, Hashable {
         switch source {
         case "apple-health": return "Apple Health"
         case "xiaomi-band":  return "Mi Band"
+        case "garmin-import": return "Garmin"
         case "nutrition-csv": return String(localized: "Nutrition")
         case "noop-mood":    return String(localized: "Mood")
         default:             return "Whoop"   // "my-whoop" + on-device computed sources
@@ -190,6 +191,41 @@ enum MetricCatalog {
 
         // ── Mind (daily mood check-in, 1–5; non-clinical self-tracking)
         d("mood", String(localized: "Mood"), "Mind", "/5", "noop-mood", "face.smiling", 0, true),
+
+        // ── Garmin Connect export (garmin-import): the series its JSON files add beyond the daily rollups.
+        d("sleep_awake_count", String(localized: "Awakenings"), "Rest", "", "garmin-import", "moon.zzz", 0, false),
+        d("sleep_restless_moments", String(localized: "Restless moments"), "Rest", "", "garmin-import", "moon.zzz", 0, false),
+        d("sleep_stress", String(localized: "Sleep stress"), "Rest", "", "garmin-import", "waveform.path.ecg", 0, false),
+        d("sleep_awake_min", String(localized: "Awake during sleep"), "Rest", "min", "garmin-import", "moon.zzz", 0, false),
+        d("nap_min", String(localized: "Naps"), "Rest", "min", "garmin-import", "powersleep", 0, nil),
+        d("sleep_score_quality", String(localized: "Sleep quality score"), "Rest", "", "garmin-import", "moon.stars", 0, true),
+        d("sleep_score_duration", String(localized: "Sleep duration score"), "Rest", "", "garmin-import", "moon.stars", 0, true),
+        d("sleep_score_recovery", String(localized: "Sleep recovery score"), "Rest", "", "garmin-import", "moon.stars", 0, true),
+        d("sleep_score_deep", String(localized: "Deep sleep score"), "Rest", "", "garmin-import", "moon.fill", 0, true),
+        d("sleep_score_rem", String(localized: "REM sleep score"), "Rest", "", "garmin-import", "moon.haze", 0, true),
+        d("sleep_score_restfulness", String(localized: "Sleep restfulness score"), "Rest", "", "garmin-import", "moon.stars", 0, true),
+        d("hr_min", String(localized: "Min heart rate"), "Heart", "bpm", "garmin-import", "heart", 0, nil),
+        d("hr_overnight", String(localized: "Overnight heart rate"), "Heart", "bpm", "garmin-import", "heart", 0, false),
+        d("resp_overnight", String(localized: "Overnight respiratory rate"), "Heart", "rpm", "garmin-import", "lungs", 1, nil),
+        d("spo2_min", String(localized: "Lowest blood oxygen"), "Heart", "%", "garmin-import", "drop", 0, true),
+        d("bmr_kcal", String(localized: "Resting calories"), "Effort", "kcal", "garmin-import", "flame", 0, nil),
+        d("floors_ascended_m", String(localized: "Floors climbed"), "Effort", "m", "garmin-import", "figure.stairs", 0, nil),
+        d("moderate_min", String(localized: "Moderate intensity"), "Effort", "min", "garmin-import", "figure.walk", 0, true),
+        d("vigorous_min", String(localized: "Vigorous intensity"), "Effort", "min", "garmin-import", "figure.run", 0, true),
+        d("height_m", String(localized: "Height"), "Health", "m", "garmin-import", "ruler", 2, nil),
+        d("ftp_w", String(localized: "Functional threshold power"), "Heart", "W", "garmin-import", "bolt", 0, true),
+        d("lactate_threshold_hr", String(localized: "Lactate threshold heart rate"), "Heart", "bpm", "garmin-import", "heart", 0, nil),
+        d("race_5k_s", String(localized: "5K race prediction"), "Heart", "s", "garmin-import", "stopwatch", 0, false),
+        d("race_10k_s", String(localized: "10K race prediction"), "Heart", "s", "garmin-import", "stopwatch", 0, false),
+        d("race_half_s", String(localized: "Half marathon prediction"), "Heart", "s", "garmin-import", "stopwatch", 0, false),
+        d("race_marathon_s", String(localized: "Marathon prediction"), "Heart", "s", "garmin-import", "stopwatch", 0, false),
+        d("stress_max", String(localized: "Max stress"), "Charge", "", "garmin-import", "waveform.path.ecg", 0, false),
+        d("stress_low_min", String(localized: "Low stress time"), "Charge", "min", "garmin-import", "waveform.path.ecg", 0, true),
+        d("stress_medium_min", String(localized: "Medium stress time"), "Charge", "min", "garmin-import", "waveform.path.ecg", 0, nil),
+        d("stress_high_min", String(localized: "High stress time"), "Charge", "min", "garmin-import", "waveform.path.ecg", 0, false),
+        d("body_battery_charged", String(localized: "Body Battery charged"), "Charge", "", "garmin-import", "battery.100", 0, true),
+        d("body_battery_drained", String(localized: "Body Battery drained"), "Charge", "", "garmin-import", "battery.25", 0, nil),
+        d("sweat_loss_ml", String(localized: "Sweat loss"), "Effort", "ml", "garmin-import", "drop.fill", 0, nil),
 
         // ── Mi Band (imported from Mi Fitness). Same metricSeries mechanism as Apple Health /
         //    Nutrition, so these light up Explore, Compare and the correlation scan. Distinct

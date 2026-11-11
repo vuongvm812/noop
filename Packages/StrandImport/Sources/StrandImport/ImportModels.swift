@@ -614,15 +614,19 @@ public struct WearableImportResult: Sendable, Equatable {
     public var fitFiles: [String: Data]
     /// What storing `fitFiles` kept and skipped; nil until the app layer has stored them.
     public var fitReport: GarminExportFit.Report?
+    /// A Garmin export's extra health JSON (series, activity summaries, settings, report); nil for other brands.
+    public var garmin: GarminExportJson.Result?
 
     public init(brand: WearableBrand, days: [WearableDailyRow], sleeps: [WearableSleepSession], summary: ImportSummary,
-                fitFiles: [String: Data] = [:], fitReport: GarminExportFit.Report? = nil) {
+                fitFiles: [String: Data] = [:], fitReport: GarminExportFit.Report? = nil,
+                garmin: GarminExportJson.Result? = nil) {
         self.brand = brand
         self.days = days
         self.sleeps = sleeps
         self.summary = summary
         self.fitFiles = fitFiles
         self.fitReport = fitReport
+        self.garmin = garmin
     }
 }
 

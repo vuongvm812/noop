@@ -134,6 +134,8 @@ public struct MetricSnapshot: Sendable, Equatable {
 public enum MetricSnapshotCatalog {
     private static let w = "my-whoop"
     private static let a = "apple-health"
+    /// The Garmin export import's source id. Kotlin twin: `MetricSnapshotCatalog.G`.
+    private static let g = "garmin-import"
 
     /// Catalog entry builder. Kotlin twin: `MetricSnapshotCatalog.m`.
     private static func m(
@@ -169,13 +171,28 @@ public enum MetricSnapshotCatalog {
         m("sleep_consistency", .sleep, "Sleep consistency", "%", 0, direction: .higherBetter, key: "sleep_consistency", sources: [w]),
         m("hours_vs_needed_pct", .sleep, "Hours vs needed", "%", 0, direction: .higherBetter, key: "hours_vs_needed_pct", sources: [w]),
         m("disturbances", .sleep, "Disturbances", "", 0, direction: .lowerBetter),
+        m("sleep_awake_count", .sleep, "Awakenings", "", 0, direction: .lowerBetter, key: "sleep_awake_count", sources: [g]),
+        m("sleep_restless_moments", .sleep, "Restless moments", "", 0, direction: .lowerBetter, key: "sleep_restless_moments", sources: [g]),
+        m("sleep_stress", .sleep, "Sleep stress", "", 0, direction: .lowerBetter, key: "sleep_stress", sources: [g]),
+        m("sleep_awake_min", .sleep, "Awake during sleep", "min", 0, direction: .lowerBetter, key: "sleep_awake_min", sources: [g]),
+        m("nap_min", .sleep, "Naps", "min", 0, rollup: .sum, key: "nap_min", sources: [g]),
+        m("sleep_score_quality", .sleep, "Sleep quality score", "", 0, direction: .higherBetter, key: "sleep_score_quality", sources: [g]),
+        m("sleep_score_duration", .sleep, "Sleep duration score", "", 0, direction: .higherBetter, key: "sleep_score_duration", sources: [g]),
+        m("sleep_score_recovery", .sleep, "Sleep recovery score", "", 0, direction: .higherBetter, key: "sleep_score_recovery", sources: [g]),
+        m("sleep_score_deep", .sleep, "Deep sleep score", "", 0, direction: .higherBetter, key: "sleep_score_deep", sources: [g]),
+        m("sleep_score_rem", .sleep, "REM sleep score", "", 0, direction: .higherBetter, key: "sleep_score_rem", sources: [g]),
+        m("sleep_score_restfulness", .sleep, "Sleep restfulness score", "", 0, direction: .higherBetter, key: "sleep_score_restfulness", sources: [g]),
         // Heart
         m("avg_hr", .heart, "Average heart rate", "bpm", 0, key: "avg_hr", sources: [w]),
-        m("max_hr", .heart, "Max heart rate", "bpm", 0, rollup: .max, key: "max_hr", sources: [w]),
-        m("resp_rate", .heart, "Respiratory rate", "rpm", 1, key: "resp_rate", sources: [w]),
-        m("spo2", .heart, "Blood oxygen", "%", 0, direction: .higherBetter, key: "spo2", sources: [w]),
+        m("max_hr", .heart, "Max heart rate", "bpm", 0, rollup: .max, key: "max_hr", sources: [w, g]),
+        m("resp_rate", .heart, "Respiratory rate", "rpm", 1, key: "resp_rate", sources: [w, g]),
+        m("spo2", .heart, "Blood oxygen", "%", 0, direction: .higherBetter, key: "spo2", sources: [w, g]),
         m("skin_temp", .heart, "Skin temperature", "°C", 1, key: "skin_temp", sources: [w]),
         m("sdnn", .heart, "HRV (SDNN)", "ms", 0, direction: .higherBetter),
+        m("hr_min", .heart, "Min heart rate", "bpm", 0, rollup: .min, key: "hr_min", sources: [g]),
+        m("hr_overnight", .heart, "Overnight heart rate", "bpm", 0, direction: .lowerBetter, key: "hr_overnight", sources: [g]),
+        m("resp_overnight", .heart, "Overnight respiratory rate", "rpm", 1, key: "resp_overnight", sources: [g]),
+        m("spo2_min", .heart, "Lowest blood oxygen", "%", 0, rollup: .min, direction: .higherBetter, key: "spo2_min", sources: [g]),
         // Activity
         m("steps", .activity, "Steps", "steps", 0, rollup: .sum, direction: .higherBetter, key: "steps", sources: [w, a]),
         m("steps_est", .activity, "Steps (estimated)", "steps", 0, rollup: .sum, key: "steps_est", sources: [w]),
@@ -187,6 +204,10 @@ public enum MetricSnapshotCatalog {
         m("hr_zones13_min", .activity, "HR zones 1-3", "min", 0, rollup: .sum, key: "hr_zones13_min", sources: [w]),
         m("hr_zones45_min", .activity, "HR zones 4-5", "min", 0, rollup: .sum, key: "hr_zones45_min", sources: [w]),
         m("hr_zones_all_min", .activity, "HR zones (all)", "min", 0, rollup: .sum, key: "hr_zones_all_min", sources: [w]),
+        m("bmr_kcal", .activity, "Resting calories", "kcal", 0, rollup: .sum, key: "bmr_kcal", sources: [g]),
+        m("floors_ascended_m", .activity, "Floors climbed", "m", 0, rollup: .sum, key: "floors_ascended_m", sources: [g]),
+        m("moderate_min", .activity, "Moderate intensity", "min", 0, rollup: .sum, direction: .higherBetter, key: "moderate_min", sources: [g]),
+        m("vigorous_min", .activity, "Vigorous intensity", "min", 0, rollup: .sum, direction: .higherBetter, key: "vigorous_min", sources: [g]),
         // Workouts (derived from the workout rows and their device samples)
         m("workout_count", .workouts, "Workouts", "", 0, rollup: .sum),
         m("workout_duration_min", .workouts, "Workout time", "min", 0, rollup: .sum),
@@ -207,16 +228,23 @@ public enum MetricSnapshotCatalog {
         m("workout_aerobic_te", .workouts, "Aerobic training effect", "", 1, rollup: .max),
         m("workout_anaerobic_te", .workouts, "Anaerobic training effect", "", 1, rollup: .max),
         // Body composition
-        m("weight", .body, "Weight", "kg", 1, rollup: .latest, key: "weight", sources: [a]),
+        m("weight", .body, "Weight", "kg", 1, rollup: .latest, key: "weight", sources: [a, g]),
         m("body_fat", .body, "Body fat", "%", 1, rollup: .latest, direction: .lowerBetter, key: "body_fat", sources: [a]),
         m("lean_mass", .body, "Lean mass", "kg", 1, rollup: .latest, direction: .higherBetter, key: "lean_mass", sources: [a]),
-        m("bmi", .body, "BMI", "", 1, rollup: .latest, key: "bmi", sources: [a]),
+        m("bmi", .body, "BMI", "", 1, rollup: .latest, key: "bmi", sources: [a, g]),
+        m("height_m", .body, "Height", "m", 2, rollup: .latest, key: "height_m", sources: [g]),
         // Fitness scores
-        m("fitness_age", .fitness, "Fitness Age", "yrs", 0, rollup: .latest, direction: .lowerBetter, key: "fitness_age", sources: [w]),
+        m("fitness_age", .fitness, "Fitness Age", "yrs", 0, rollup: .latest, direction: .lowerBetter, key: "fitness_age", sources: [w, g]),
         m("vitality", .fitness, "Vitality", "", 0, rollup: .latest, direction: .higherBetter, key: "vitality", sources: [w]),
         m("body_age", .fitness, "Body Age", "yrs", 0, rollup: .latest, direction: .lowerBetter, key: "body_age", sources: [w]),
-        m("vo2max", .fitness, "VO₂ max", "ml/kg/min", 1, rollup: .latest, direction: .higherBetter, key: "vo2max", sources: [a, w]),
+        m("vo2max", .fitness, "VO₂ max", "ml/kg/min", 1, rollup: .latest, direction: .higherBetter, key: "vo2max", sources: [a, w, g]),
         m("vo2max_est", .fitness, "VO₂ max (estimated)", "ml/kg/min", 1, rollup: .latest, direction: .higherBetter, key: "vo2max_est", sources: [w]),
+        m("ftp_w", .fitness, "Functional threshold power", "W", 0, rollup: .latest, direction: .higherBetter, key: "ftp_w", sources: [g]),
+        m("lactate_threshold_hr", .fitness, "Lactate threshold heart rate", "bpm", 0, rollup: .latest, key: "lactate_threshold_hr", sources: [g]),
+        m("race_5k_s", .fitness, "5K race prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_5k_s", sources: [g]),
+        m("race_10k_s", .fitness, "10K race prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_10k_s", sources: [g]),
+        m("race_half_s", .fitness, "Half marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_half_s", sources: [g]),
+        m("race_marathon_s", .fitness, "Marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_marathon_s", sources: [g]),
         // Watch metrics (the paired watch's own series; the data layer reads them under the watch id)
         m("watch_stress", .watch, "Watch stress", "", 0, direction: .lowerBetter),
         m("body_battery_min", .watch, "Body Battery low", "", 0, rollup: .min),
@@ -226,6 +254,12 @@ public enum MetricSnapshotCatalog {
         m("training_load", .watch, "Training load", "", 0, rollup: .sum),
         m("intensity_min", .watch, "Intensity minutes", "min", 0, rollup: .sum, direction: .higherBetter),
         m("watch_skin_temp_c", .watch, "Watch skin temperature", "°C", 1),
+        m("stress_max", .watch, "Max stress", "", 0, rollup: .max, direction: .lowerBetter, key: "stress_max", sources: [g]),
+        m("stress_low_min", .watch, "Low stress time", "min", 0, rollup: .sum, direction: .higherBetter, key: "stress_low_min", sources: [g]),
+        m("stress_medium_min", .watch, "Medium stress time", "min", 0, rollup: .sum, key: "stress_medium_min", sources: [g]),
+        m("stress_high_min", .watch, "High stress time", "min", 0, rollup: .sum, direction: .lowerBetter, key: "stress_high_min", sources: [g]),
+        m("body_battery_charged", .watch, "Body Battery charged", "", 0, direction: .higherBetter, key: "body_battery_charged", sources: [g]),
+        m("body_battery_drained", .watch, "Body Battery drained", "", 0, key: "body_battery_drained", sources: [g]),
         // Nutrition
         m("calories_in", .nutrition, "Calories in", "kcal", 0, rollup: .sum, key: "calories_in", sources: ["nutrition-csv"]),
         m("protein_g", .nutrition, "Protein", "g", 0, rollup: .sum, key: "protein_g", sources: ["nutrition-csv"]),
@@ -233,6 +267,7 @@ public enum MetricSnapshotCatalog {
         m("fat_g", .nutrition, "Fat", "g", 0, rollup: .sum, key: "fat_g", sources: ["nutrition-csv"]),
         // Hydration
         m("hydration_ml", .hydration, "Water", "ml", 0, rollup: .sum),
+        m("sweat_loss_ml", .hydration, "Sweat loss", "ml", 0, rollup: .sum, key: "sweat_loss_ml", sources: [g]),
         // Mood & journal
         m("mood", .mind, "Mood", "/5", 0, direction: .higherBetter, key: "mood", sources: ["noop-mood"]),
         // Cycle

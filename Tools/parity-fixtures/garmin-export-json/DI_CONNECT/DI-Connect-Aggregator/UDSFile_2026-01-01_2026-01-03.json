@@ -1,0 +1,122 @@
+[
+ {
+  "activeKilocalories": 600,
+  "allDayStress": {
+   "aggregatorList": [
+    {
+     "averageStressLevel": 31,
+     "highDuration": 600,
+     "lowDuration": 7200,
+     "maxStressLevel": 90,
+     "mediumDuration": 3600,
+     "type": "TOTAL"
+    },
+    {
+     "averageStressLevel": 35,
+     "type": "AWAKE"
+    }
+   ],
+   "calendarDate": "2026-01-01"
+  },
+  "bmrKilocalories": 1700,
+  "bodyBattery": {
+   "bodyBatteryStatList": [
+    {
+     "bodyBatteryStatType": "HIGHEST",
+     "statsValue": 88
+    },
+    {
+     "bodyBatteryStatType": "LOWEST",
+     "statsValue": 12
+    },
+    {
+     "bodyBatteryStatType": "ENDOFDAY",
+     "statsValue": 30
+    }
+   ],
+   "bodyBatteryVersion": 2,
+   "chargedValue": 70,
+   "drainedValue": 76
+  },
+  "calendarDate": "2026-01-01",
+  "floorsAscendedInMeters": 30.5,
+  "maxHeartRate": 160,
+  "minHeartRate": 48,
+  "moderateIntensityMinutes": 30,
+  "respiration": {
+   "avgWakingRespirationValue": 15.5,
+   "calendarDate": "2026-01-01",
+   "highestRespirationValue": 24,
+   "lowestRespirationValue": 9
+  },
+  "restingHeartRate": 55,
+  "spo2": {
+   "averageSpO2": 96,
+   "lowestSpO2": 91
+  },
+  "totalDistanceMeters": 7000,
+  "totalKilocalories": 2300,
+  "totalSteps": 9000,
+  "vigorousIntensityMinutes": 12
+ },
+ {
+  "activeKilocalories": 600,
+  "allDayStress": {
+   "aggregatorList": [
+    {
+     "averageStressLevel": 31,
+     "highDuration": 600,
+     "lowDuration": 7200,
+     "maxStressLevel": 90,
+     "mediumDuration": 3600,
+     "type": "TOTAL"
+    },
+    {
+     "averageStressLevel": 35,
+     "type": "AWAKE"
+    }
+   ],
+   "calendarDate": "2026-01-02"
+  },
+  "bmrKilocalories": 1700,
+  "bodyBattery": {
+   "bodyBatteryStatList": [
+    {
+     "bodyBatteryStatType": "HIGHEST",
+     "statsValue": 70
+    },
+    {
+     "bodyBatteryStatType": "LOWEST",
+     "statsValue": 20
+    },
+    {
+     "bodyBatteryStatType": "ENDOFDAY",
+     "statsValue": 30
+    }
+   ],
+   "bodyBatteryVersion": 2,
+   "chargedValue": 50,
+   "drainedValue": 60
+  },
+  "calendarDate": "2026-01-02",
+  "floorsAscendedInMeters": 30.5,
+  "maxHeartRate": 160,
+  "minHeartRate": 48,
+  "moderateIntensityMinutes": 0,
+  "respiration": {
+   "avgWakingRespirationValue": 15.5,
+   "calendarDate": "2026-01-02",
+   "highestRespirationValue": 24,
+   "lowestRespirationValue": 9
+  },
+  "restingHeartRate": 57,
+  "spo2": {
+   "averageSpO2": 96,
+   "lowestSpO2": 91
+  },
+  "totalDistanceMeters": 7000,
+  "totalKilocalories": 2300,
+  "totalSteps": 4000,
+  "vigorousIntensityMinutes": 12
+ }
+]

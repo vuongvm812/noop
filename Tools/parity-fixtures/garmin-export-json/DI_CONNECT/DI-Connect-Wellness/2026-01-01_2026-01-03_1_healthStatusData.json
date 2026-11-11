@@ -1,0 +1,32 @@
+[
+ {
+  "calendarDate": "2026-01-01",
+  "metrics": [
+   {
+    "baselineLowerLimit": 44,
+    "baselineUpperLimit": 62,
+    "status": "BALANCED",
+    "type": "HRV",
+    "value": 52
+   },
+   {
+    "baselineLowerLimit": 47,
+    "baselineUpperLimit": 55,
+    "type": "HR",
+    "value": 51
+   },
+   {
+    "type": "RESPIRATION",
+    "value": 14.8
+   },
+   {
+    "status": "NO_DATA",
+    "type": "SPO2"
+   },
+   {
+    "status": "NO_DATA",
+    "type": "SKIN_TEMP_C"
+   }
+  ]
+ }
+]
