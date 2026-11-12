@@ -557,6 +557,7 @@ class SourceCoordinator(
                 GarminHistoryIngest.rederiveNightVitalsOnce(syncStore, id, prefs, straplog)
                 GarminHistoryIngest.syncedKeys(syncStore, id)
             },
+            loadIngestedAt = { GarminHistoryIngest.lastIngestedAt(syncStore, id) },
             ingest = { file ->
                 val repo = repository
                 repo != null && GarminHistoryIngest.ingest(file, id, syncStore, repo, straplog)

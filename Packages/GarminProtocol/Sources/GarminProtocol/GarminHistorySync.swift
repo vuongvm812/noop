@@ -125,6 +125,30 @@ public struct GarminSyncFileKey: Hashable, Comparable, Sendable {
     public var label: String {
         "\(dataType)/\(subType) #\(fileNumber) idx=\(fileIndex) size=\(size) ts=\(garminTimestamp)"
     }
+
+    /// The file this key is one version of: the key without its size and timestamp.
+    public var identity: GarminSyncFileIdentity {
+        GarminSyncFileIdentity(fileIndex: fileIndex, dataType: dataType, subType: subType, fileNumber: fileNumber)
+    }
+}
+
+/// One file on the watch across its rewrites: a `GarminSyncFileKey` without its size and timestamp. The
+/// file the watch keeps appending to (today's monitor, metrics or HRV file) keeps this identity while its
+/// key changes on every append. A FileAccess identity is the item's uid folded into index / number, so it
+/// is stable per item. Kotlin twin: the data class of the same name in
+/// android/app/src/main/java/com/noop/garmin/GarminHistorySync.kt.
+public struct GarminSyncFileIdentity: Hashable, Sendable {
+    public let fileIndex: UInt16
+    public let dataType: UInt8
+    public let subType: UInt8
+    public let fileNumber: UInt16
+
+    public init(fileIndex: UInt16, dataType: UInt8, subType: UInt8, fileNumber: UInt16) {
+        self.fileIndex = fileIndex
+        self.dataType = dataType
+        self.subType = subType
+        self.fileNumber = fileNumber
+    }
 }
 
 /// FIT file sub-types (data type 128) NOOP downloads. Wire facts (Gadgetbridge `FileType`).
@@ -194,10 +218,17 @@ public struct GarminSyncRequest: Equatable, Sendable {
     public var notBeforeUnix: Int64?
     /// Larger files are skipped (diagnosed as such), so one odd file cannot hold the radio for minutes.
     public var maxFileBytes: UInt32
+    /// The latest `ingestedAt` (Unix seconds) the ledger holds for each file identity.
+    public var lastIngestedAt: [GarminSyncFileIdentity: Int64]
+    /// The phone's Unix time when the request was built; the engine keeps no clock of its own.
+    public var nowUnix: Int64
+    /// A grown file whose identity was ingested less than this many seconds ago waits (0 = never waits).
+    public var grownFileFloorSeconds: Int64
 
     public init(flow: GarminSyncFlow = .legacy, synced: Set<GarminSyncFileKey> = [], resume: GarminSyncResume? = nil,
                 requestCompression: Bool = false, watchInitiated: Bool = false, notBeforeUnix: Int64? = nil,
-                maxFileBytes: UInt32 = 16 << 20) {
+                maxFileBytes: UInt32 = 16 << 20, lastIngestedAt: [GarminSyncFileIdentity: Int64] = [:],
+                nowUnix: Int64 = 0, grownFileFloorSeconds: Int64 = 0) {
         self.flow = flow
         self.synced = synced
         self.resume = resume
@@ -205,6 +236,19 @@ public struct GarminSyncRequest: Equatable, Sendable {
         self.watchInitiated = watchInitiated
         self.notBeforeUnix = notBeforeUnix
         self.maxFileBytes = maxFileBytes
+        self.lastIngestedAt = lastIngestedAt
+        self.nowUnix = nowUnix
+        self.grownFileFloorSeconds = grownFileFloorSeconds
+    }
+
+    /// True when `key` is a new version of a file ingested less than `grownFileFloorSeconds` ago, so this
+    /// sync leaves it for a later one instead of downloading the whole file again. The resume target never
+    /// waits, nor does a file whose recorded ingestion lies in the phone's future (a clock set back).
+    /// Kotlin twin: `GarminSyncRequest.defersGrownFile`.
+    public func defersGrownFile(_ key: GarminSyncFileKey) -> Bool {
+        guard grownFileFloorSeconds > 0, resume?.key != key, let at = lastIngestedAt[key.identity] else { return false }
+        let age = nowUnix - at
+        return age >= 0 && age < grownFileFloorSeconds
     }
 }
 
@@ -258,6 +302,8 @@ public struct GarminSyncSummary: Equatable, Sendable {
     public var resumed = 0
     /// File bytes received over the air (after a resume, only the new part).
     public var bytes = 0
+    /// New versions of files ingested inside the grown-file floor, left for a later sync. Not downloads.
+    public var deferredGrown = 0
     /// Every listed file of a wanted FIT type (the entries `wanted` counts), sorted. The Test Centre's
     /// "on the watch vs ingested" list. Not part of `line`.
     public var onWatch: [GarminSyncFileKey] = []
@@ -270,6 +316,7 @@ public struct GarminSyncSummary: Equatable, Sendable {
     public var line: String {
         "sync \(outcome.label): listed=\(listed) wanted=\(wanted) synced=\(alreadySynced) old=\(skippedOld) "
             + "large=\(skippedLarge) downloaded=\(downloaded) failed=\(failed) resumed=\(resumed) bytes=\(bytes)"
+            + (deferredGrown > 0 ? " deferred=\(deferredGrown)" : "")
     }
 }
 
@@ -835,10 +882,11 @@ struct GarminHistorySync {
                 summary.skippedOld += 1; continue
             }
             if entry.fileSize > request.maxFileBytes { summary.skippedLarge += 1; continue }
+            if deferGrown(request, key) { continue }
             wanted.append(key)
         }
         let types = counts.keys.sorted().map { "\($0)x\(counts[$0]!)" }.joined(separator: " ")
-        note(true, "directory: \(entries.count) entries [\(types)]; \(wanted.count) to download")
+        note(true, "directory: \(entries.count) entries [\(types)]; \(wanted.count) to download\(deferredNote)")
         // A held resume goes first, then oldest first so a day's files arrive in order.
         wanted.sort()
         if let resume = request.resume, let i = wanted.firstIndex(of: resume.key) {
@@ -892,7 +940,7 @@ struct GarminHistorySync {
             if session != nil {
                 requestList(nowMs)
             } else {
-                note(true, "item list: \(summary.listed) items; \(queue.count) to download")
+                note(true, "item list: \(summary.listed) items; \(queue.count) to download\(deferredNote)")
                 pullNext(nowMs)
             }
         case let (.pullItemResponse(result, _, handle, _, error), .awaitingPull):
@@ -931,11 +979,25 @@ struct GarminHistorySync {
             if let floor = request.notBeforeUnix, key.garminTimestamp != 0,
                GarminGfdi.unixTime(fromGarmin: key.garminTimestamp) < floor { summary.skippedOld += 1; continue }
             if key.size > request.maxFileBytes { summary.skippedLarge += 1; continue }
+            if deferGrown(request, key) { continue }
             items[key] = item
             itemTypeNames[key] = name
             queue.append(key)
         }
         queue.sort()
+    }
+
+    /// Counts and notes `key` when `GarminSyncRequest.defersGrownFile` holds it back; true means skip it.
+    private mutating func deferGrown(_ request: GarminSyncRequest, _ key: GarminSyncFileKey) -> Bool {
+        guard request.defersGrownFile(key) else { return false }
+        summary.deferredGrown += 1
+        let age = request.nowUnix - (request.lastIngestedAt[key.identity] ?? request.nowUnix)
+        note(false, "deferred growing \(key.label): ingested \(age)s ago, floor \(request.grownFileFloorSeconds)s")
+        return true
+    }
+
+    private var deferredNote: String {
+        summary.deferredGrown > 0 ? "; deferred \(summary.deferredGrown) growing file(s)" : ""
     }
 
     private func typeName(_ item: GarminItemReference) -> String? {

@@ -130,6 +130,15 @@ class GarminRadioPolicyTest {
     }
 
     @Test
+    fun grownFileFloorPerTrigger() {
+        assertEquals(0L, GarminRadioPolicy.grownFileFloorSeconds(GarminSyncTrigger.MANUAL))
+        assertEquals(900L, GarminRadioPolicy.grownFileFloorSeconds(GarminSyncTrigger.FOREGROUND))
+        assertEquals(3_600L, GarminRadioPolicy.grownFileFloorSeconds(GarminSyncTrigger.CONNECT))
+        assertEquals(3_600L, GarminRadioPolicy.grownFileFloorSeconds(GarminSyncTrigger.WATCH))
+        assertEquals(3_600L, GarminRadioPolicy.grownFileFloorSeconds(GarminSyncTrigger.PERIODIC))
+    }
+
+    @Test
     fun connectionRules() {
         assertEquals(GarminConnectionPriority.HIGH, GarminRadioPolicy.connectionPriority(GarminLinkActivity.FILE_TRANSFER))
         assertEquals(GarminConnectionPriority.LOW_POWER, GarminRadioPolicy.connectionPriority(GarminLinkActivity.IDLE))

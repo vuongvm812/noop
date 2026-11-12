@@ -87,6 +87,14 @@ final class GarminRadioPolicyTests: XCTestCase {
         XCTAssertTrue(GarminRadioPolicy.shouldSync(trigger: .manual, now: 1, lastSyncAt: 1, emptyStreak: 50))
     }
 
+    func testGrownFileFloorPerTrigger() {
+        XCTAssertEqual(GarminRadioPolicy.grownFileFloorSeconds(.manual), 0)
+        XCTAssertEqual(GarminRadioPolicy.grownFileFloorSeconds(.foreground), 900)
+        XCTAssertEqual(GarminRadioPolicy.grownFileFloorSeconds(.connect), 3_600)
+        XCTAssertEqual(GarminRadioPolicy.grownFileFloorSeconds(.watch), 3_600)
+        XCTAssertEqual(GarminRadioPolicy.grownFileFloorSeconds(.periodic), 3_600)
+    }
+
     func testConnectionRules() {
         XCTAssertEqual(GarminRadioPolicy.connectionPriority(.fileTransfer), .high)
         XCTAssertEqual(GarminRadioPolicy.connectionPriority(.idle), .lowPower)

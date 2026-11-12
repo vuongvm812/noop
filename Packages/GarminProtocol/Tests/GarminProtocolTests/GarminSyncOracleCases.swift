@@ -369,6 +369,8 @@ func oracleRunSync(_ name: String, _ watch: OracleFakeWatch, _ steps: [OracleSyn
 /// The ts every "recent" fixture file carries (Garmin epoch; 2026-10-31) and the lookback floor.
 let oracleRecentTs: UInt32 = 1_161_900_000
 let oracleNotBefore: Int64 = 1_792_000_000
+/// The phone's Unix time the growing-file traces build their requests at (the oracle clock's start).
+let oracleNowUnix: Int64 = 1_793_546_986
 
 func oracleStandardWatch() -> OracleFakeWatch {
     let w = OracleFakeWatch()
@@ -547,6 +549,46 @@ func garminSyncOracleLines() -> [String] {
         .connect,
         .sync(GarminSyncRequest(synced: synced, notBeforeUnix: oracleNotBefore)),
     ]).0
+
+    // J: growing files. MONITOR #1 and SLEEP #2 were ingested before at other sizes, 986 s and 6986 s
+    // before `oracleNowUnix`. Inside the floor a new version waits; past it, on MANUAL (floor 0), as the
+    // resume target, or under an identity never ingested it downloads. A sync that only deferred is empty.
+    let grown: [GarminSyncFileIdentity: Int64] = [
+        GarminSyncFileKey(oracleEntry(1, 32, number: 1, size: 100, ts: oracleRecentTs - 600)).identity: oracleNowUnix - 986,
+        GarminSyncFileKey(oracleEntry(2, 49, number: 2, size: 50, ts: oracleRecentTs)).identity: oracleNowUnix - 6_986,
+    ]
+    func grownRequest(_ floor: Int64, ingested: [GarminSyncFileIdentity: Int64] = grown,
+                      resume: GarminSyncResume? = nil) -> GarminSyncRequest {
+        GarminSyncRequest(synced: synced, resume: resume, notBeforeUnix: oracleNotBefore, lastIngestedAt: ingested,
+                          nowUnix: oracleNowUnix, grownFileFloorSeconds: floor)
+    }
+    out += oracleRunSync("grown-deferred", oracleStandardWatch(), [.connect, .sync(grownRequest(3_600))]).0
+    out += oracleRunSync("grown-manual", oracleStandardWatch(), [.connect, .sync(grownRequest(0))]).0
+    out += oracleRunSync("grown-only-deferred", oracleStandardWatch(), [.connect, .sync(grownRequest(86_400))]).0
+    let other = GarminSyncFileKey(oracleEntry(1, 32, number: 99, size: 150, ts: oracleRecentTs)).identity
+    out += oracleRunSync("grown-new-identity", oracleStandardWatch(), [
+        .connect, .sync(grownRequest(3_600, ingested: [other: oracleNowUnix - 10])),
+    ]).0
+    let n = oracleStandardWatch()
+    let partialN = GarminSyncResume(key: GarminSyncFileKey(n.directory[0]), data: Array(oracleFileBody(1, 150)[0..<64]),
+                                    runningCrc: GarminCRC.crc16(Array(oracleFileBody(1, 150)[0..<64])))
+    out += oracleRunSync("grown-resume", n, [.connect, .sync(grownRequest(86_400, resume: partialN))]).0
+    func itemWatch() -> OracleFakeWatch {
+        let w = oracleStandardWatch()
+        w.itemPages = [[monitor]]
+        w.pullHandles = [0xA1: 0x0043]
+        w.pipeFiles = [0x0043: oracleZlibStream()]
+        return w
+    }
+    let monitorIdentity = GarminSyncFileKey.fileAccess(monitor, typeName: "FIT_TYPE_32")!.identity
+    for (name, age) in [("grown-file-access", Int64(60)), ("grown-file-access-due", Int64(900))] {
+        out += oracleRunSync(name, itemWatch(), [
+            .connect,
+            .sync(GarminSyncRequest(flow: .fileAccess(legacyFlush: false), notBeforeUnix: oracleNotBefore,
+                                    lastIngestedAt: [monitorIdentity: oracleNowUnix - age], nowUnix: oracleNowUnix,
+                                    grownFileFloorSeconds: 900)),
+        ]).0
+    }
 
     // H: a sync before the handshake is refused.
     let j = oracleStandardWatch()

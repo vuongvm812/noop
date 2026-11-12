@@ -176,6 +176,19 @@ object GarminRadioPolicy {
         }
     }
 
+    /**
+     * Seconds a file the watch keeps appending to (today's monitor, metrics or HRV file) waits after its last
+     * ingestion before a sync downloads it whole again ([com.noop.garmin.GarminSyncRequest.grownFileFloorSeconds]).
+     * MANUAL never waits; FOREGROUND waits 15 min, so an opened app is never more than that behind; CONNECT,
+     * WATCH and PERIODIC wait 1 h, so the watch's every-few-minutes announcements stop re-sending the same day.
+     * Swift twin: `GarminRadioPolicy.grownFileFloorSeconds`.
+     */
+    fun grownFileFloorSeconds(trigger: GarminSyncTrigger): Long = when (trigger) {
+        GarminSyncTrigger.MANUAL -> 0L
+        GarminSyncTrigger.FOREGROUND -> 15L * 60
+        GarminSyncTrigger.CONNECT, GarminSyncTrigger.WATCH, GarminSyncTrigger.PERIODIC -> 60L * 60
+    }
+
     /** Connection priority: HIGH only while a file transfer runs. */
     fun connectionPriority(activity: GarminLinkActivity): GarminConnectionPriority = when (activity) {
         GarminLinkActivity.IDLE -> GarminConnectionPriority.LOW_POWER

@@ -161,6 +161,19 @@ enum GarminRadioPolicy {
         }
     }
 
+    /// Seconds a file the watch keeps appending to (today's monitor, metrics or HRV file) waits after its
+    /// last ingestion before a sync downloads it whole again (`GarminSyncRequest.grownFileFloorSeconds`).
+    /// `.manual` never waits; `.foreground` waits 15 min, so an opened app is never more than that behind;
+    /// `.connect`, `.watch` and `.periodic` wait 1 h, so the watch's every-few-minutes announcements stop
+    /// re-sending the same day. Kotlin twin: `GarminRadioPolicy.grownFileFloorSeconds`.
+    static func grownFileFloorSeconds(_ trigger: GarminSyncTrigger) -> Int64 {
+        switch trigger {
+        case .manual:                        return 0
+        case .foreground:                    return 15 * 60
+        case .connect, .watch, .periodic:    return 60 * 60
+        }
+    }
+
     /// Android connection priority: HIGH only while a file transfer runs.
     static func connectionPriority(_ activity: GarminLinkActivity) -> GarminConnectionPriority {
         switch activity {

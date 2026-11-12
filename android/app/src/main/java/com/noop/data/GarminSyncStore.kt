@@ -30,6 +30,15 @@ data class GarminSyncedFileRow(
     val size: Long,
 )
 
+/** When a watch file identity (a ledger key without ts and size) was last ingested, Unix seconds. Swift twin: `GarminLedgerIngestion`. */
+data class GarminLedgerIngestion(
+    val fileIndex: Int,
+    val dataType: Int,
+    val subType: Int,
+    val fileNumber: Int,
+    val ingestedAt: Long,
+)
+
 /**
  * One activity type's largest cumulative MONITORING counters on one local day, as one file saw them.
  * [activityType] is the FIT activity_type, or -1 when the record carried none. [steps] is set only for
@@ -112,6 +121,26 @@ class GarminSyncStore(private val db: WhoopDatabase) {
             buildList {
                 while (c.moveToNext()) {
                     add(GarminSyncedFileRow(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getLong(4), c.getLong(5)))
+                }
+            }
+        }
+    }
+
+    /**
+     * The latest `ingestedAt` of each file identity (the ledger key without ts and size) of this device. A file the
+     * watch keeps appending to has one ledger row per version; this is when its newest version was stored.
+     * Swift twin: `WhoopStore.garminLastIngested`.
+     */
+    suspend fun lastIngested(deviceId: String): List<GarminLedgerIngestion> = db.withTransaction {
+        sql.query(
+            "SELECT fileIndex, dataType, subType, fileNumber, MAX(ingestedAt) AS ingestedAt FROM garminSyncedFile " +
+                "WHERE deviceId = ? GROUP BY fileIndex, dataType, subType, fileNumber " +
+                "ORDER BY fileIndex, dataType, subType, fileNumber",
+            arrayOf<Any?>(deviceId),
+        ).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    add(GarminLedgerIngestion(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getLong(4)))
                 }
             }
         }

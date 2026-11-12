@@ -27,6 +27,21 @@ enum GarminHistoryIngest {
         })
     }
 
+    /// When each file identity was last ingested, for the grown-file floor. Kotlin twin:
+    /// `GarminHistoryIngest.lastIngestedAt`.
+    static func lastIngestedAt(store: WhoopStore, deviceId: String) async -> [GarminSyncFileIdentity: Int64] {
+        let rows = (try? await store.garminLastIngested(deviceId: deviceId)) ?? []
+        var out: [GarminSyncFileIdentity: Int64] = [:]
+        for row in rows {
+            let identity = GarminSyncFileIdentity(fileIndex: UInt16(truncatingIfNeeded: row.fileIndex),
+                                                  dataType: UInt8(truncatingIfNeeded: row.dataType),
+                                                  subType: UInt8(truncatingIfNeeded: row.subType),
+                                                  fileNumber: UInt16(truncatingIfNeeded: row.fileNumber))
+            out[identity] = Int64(row.ingestedAt)
+        }
+        return out
+    }
+
     /// Once per watch, repair the nights an older fold stored. Two faults are corrected:
     ///  - #47: a night split at every single-stage stretch over an hour and started at its first stage
     ///    change. The stored SLEEP files are forgotten, so the next sync downloads them again and re-folds
