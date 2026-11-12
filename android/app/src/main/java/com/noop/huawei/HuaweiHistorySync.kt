@@ -12,6 +12,8 @@ import com.noop.huawei.protocol.HuaweiProtocolException
 import com.noop.huawei.protocol.HuaweiPush
 import com.noop.huawei.protocol.HuaweiRequest
 import com.noop.huawei.protocol.HuaweiTlv
+import com.noop.ingest.GarminWatchIngest
+import com.noop.ingest.GarminWellnessParser
 import com.noop.ingest.HuaweiWatchIngest
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.TimeoutCancellationException
@@ -40,8 +42,14 @@ data class HuaweiSyncSummary(
     val counts: Map<String, Int>,
     /** Streams that stopped early; their watermarks did not move. */
     val failures: List<String>,
+    /**
+     * Of [counts], the items past the previous watermarks: minutes at or after the steps watermark, sleep
+     * records, nights and frames ending after the stored night end. Data read again only for overlap counts 0.
+     */
+    val newCounts: Map<String, Int> = counts,
 ) {
-    val empty: Boolean get() = counts.values.all { it == 0 }
+    /** Nothing new arrived, so the radio policy's empty-sync back-off may engage. */
+    val empty: Boolean get() = newCounts.values.all { it == 0 }
 }
 
 /** A reply carrying a result code other than OK; [code] is the band's, unmodified. */
@@ -85,11 +93,13 @@ class HuaweiHistorySync(
         progress(HuaweiSyncStage.WORKOUTS)
         session.syncWorkouts()
 
+        val carry = session.stepRead?.carry
         val batch = HuaweiWatchIngest.Batch(
             minutes = session.minutes, sleepSpans = session.sleepSpans, nights = session.nights,
             sleepFrames = session.sleepFrames,
             stress = session.stress, dictionary = session.dictionary, workouts = session.workouts,
             utcOffsetS = utcOffset(now), nowTs = now,
+            countFrom = carry?.cutoffTs, dayBase = carry?.let { mapOf(it.day to it.base) } ?: emptyMap(),
         )
         val counts = linkedMapOf(
             "minutes" to batch.minutes.size, "sleep_records" to batch.sleepSpans.size, "nights" to batch.nights.size,
@@ -97,6 +107,7 @@ class HuaweiHistorySync(
             "stress" to batch.stress.size, "dictionary" to batch.dictionary.size, "workouts" to batch.workouts.size,
             "pace_blocks" to batch.workouts.sumOf { it.pace.size },
         )
+        val newCounts = LinkedHashMap(counts).apply { putAll(session.newCounts()) }
         progress(HuaweiSyncStage.STORING)
         val stored = try {
             store(deviceId, batch)
@@ -104,13 +115,19 @@ class HuaweiHistorySync(
             log("Huawei: storing the sync failed: ${e.javaClass.simpleName}: ${e.message}")
             false
         }
-        if (stored) session.commitWatermarks()
-        cursor.recordSyncOutcome(deviceId, now, empty = counts.values.all { it == 0 })
-        val summary = HuaweiSyncSummary(stored, counts, session.failures)
-        log("Huawei: sync ${if (stored) "stored" else "not stored"} $counts" +
-            if (session.failures.isEmpty()) "" else " failures=${session.failures}")
+        if (stored) session.commitWatermarks(batch)
+        val summary = HuaweiSyncSummary(stored, counts, session.failures, newCounts)
+        cursor.recordSyncOutcome(deviceId, now, empty = summary.empty)
+        // Read / new per stream: "minutes=120/15" read 120 minutes, 15 of them past the last sync.
+        val perStream = counts.entries.joinToString(" ") { (k, v) -> "$k=$v/${newCounts[k]}" }
+        log("Huawei: sync ${if (stored) "stored" else "not stored"} (read/new) $perStream" +
+            (if (summary.empty) " nothing new" else "") +
+            (if (session.failures.isEmpty()) "" else " failures=${session.failures}"))
         return summary
     }
+
+    /** Where this sync's steps read started, and the carry it folds onto (null when it read from local midnight). */
+    private class StepRead(val start: Long, val carry: HuaweiStepCarry?)
 
     private inner class Session(val link: HuaweiLink, val caps: HuaweiCapabilities, val deviceId: String, val now: Long) {
         val minutes = ArrayList<HuaweiFitnessDecoder.MinuteSample>()
@@ -128,6 +145,16 @@ class HuaweiHistorySync(
         private var workoutEnd: Long? = null
         private var workoutDropped = false
         private var p2pSequence = 0
+
+        /** The steps read this sync made, or null when the band has no step stream. */
+        var stepRead: StepRead? = null
+            private set
+        /** The steps watermark before this sync: minutes from here on are new. */
+        private val stepsMark: Long? = cursor.lastSync(deviceId, HuaweiDataType.STEPS)
+        /** Each sleep stream's stored night end before this sync: a night ending later is new. */
+        private val nightMarks = SLEEP_STREAMS.associateWith { cursor.lastNightEnd(deviceId, it) }
+        /** Night ends to store with the watermarks, for streams that read cleanly. */
+        private val nightEnds = LinkedHashMap<HuaweiDataType, Long>()
 
         private val files = HuaweiFileDownload(link, replyTimeoutMs)
 
@@ -151,10 +178,63 @@ class HuaweiHistorySync(
         private fun since(type: HuaweiDataType): Long =
             cursor.lastSync(deviceId, type) ?: (now - HuaweiRadioPolicy.FIRST_BACKFILL_SECONDS)
 
-        fun commitWatermarks() {
+        /** Writes every watermark, after [batch] was stored. The step carry moves only with a clean steps read. */
+        fun commitWatermarks(batch: HuaweiWatchIngest.Batch) {
             for ((type, ts) in done) cursor.setLastSync(deviceId, type, ts)
             for ((cls, ms) in dictionaryCursors) cursor.setDictionaryCursorMs(deviceId, cls, ms)
             workoutEnd?.let { cursor.setLastWorkoutEnd(deviceId, it) }
+            for ((type, ts) in nightEnds) if (type in done) cursor.setLastNightEnd(deviceId, type, ts)
+            val read = stepRead
+            if (read != null && HuaweiDataType.STEPS in done) cursor.setStepCarry(deviceId, nextCarry(read, batch))
+        }
+
+        /**
+         * The carry after a stored batch: the cutoff moves to an hour before now (that last hour is read again,
+         * so a minute the band was still filling is replaced, not half counted) and the base gains the batch's
+         * counters between the old cutoff and the new one. On a new day the base restarts from that day's minutes.
+         */
+        private fun nextCarry(read: StepRead, batch: HuaweiWatchIngest.Batch): HuaweiStepCarry {
+            val cutoff = maxOf(now - STEP_REREAD_SECONDS, read.start)
+            val day = GarminWellnessParser.localDay(cutoff, batch.utcOffsetS)
+            val old = read.carry?.takeIf { it.day == day }
+            val base = HuaweiWatchIngest.dayCounters(batch, day, old?.cutoffTs, cutoff, old?.base ?: HuaweiWatchIngest.DayCounters())
+            return HuaweiStepCarry(day, cutoff, base)
+        }
+
+        /**
+         * The carry the steps read may start from: for the watermark's own local day, with a cutoff between that
+         * day's midnight and the watermark. Anything else (no carry yet, a new day) reads from local midnight.
+         */
+        private fun usableCarry(mark: Long): HuaweiStepCarry? {
+            if (stepsMark == null) return null
+            val c = cursor.stepCarry(deviceId) ?: return null
+            val offset = utcOffset(now)
+            if (c.day != GarminWellnessParser.localDay(mark, offset)) return null
+            return c.takeIf { it.cutoffTs >= GarminWatchIngest.dayStartUnix(c.day, offset) && it.cutoffTs <= mark }
+        }
+
+        /** Per stream, how many of the decoded items are past the previous watermarks (see [HuaweiSyncSummary.newCounts]). */
+        fun newCounts(): Map<String, Int> {
+            fun after(type: HuaweiDataType, end: Long?) = end != null && end > (nightMarks[type] ?: Long.MIN_VALUE)
+            return linkedMapOf(
+                "minutes" to minutes.count { stepsMark == null || it.ts >= stepsMark },
+                "sleep_records" to sleepSpans.count { after(HuaweiDataType.SLEEP, it.endTs) },
+                "nights" to nights.count { after(HuaweiDataType.SLEEP_FILE, HuaweiWatchIngest.nightEnd(it)) },
+                "sleep_frames" to sleepFrames.count { after(HuaweiDataType.SLEEP_STATE, it.endTs) },
+            )
+        }
+
+        /** A sleep stream's read start: its last finished night's end, else a day before its watermark. */
+        private fun sleepStart(type: HuaweiDataType): Long = nightMarks[type] ?: (since(type) - 86_400)
+
+        /**
+         * Records the latest of [ends] that finished at least [SLEEP_FINISHED_AFTER_SECONDS] ago as [type]'s night
+         * end, never moving it back. A night still in progress stays past the stored end and is read whole again.
+         */
+        private fun noteNightEnds(type: HuaweiDataType, ends: List<Long>) {
+            val finished = ends.filter { it >= HuaweiWatchIngest.EARLIEST_TS && it <= now - SLEEP_FINISHED_AFTER_SECONDS }.maxOrNull()
+            val latest = listOfNotNull(finished, nightMarks[type]).maxOrNull() ?: return
+            nightEnds[type] = latest
         }
 
         // MARK: measurement switches
@@ -183,13 +263,17 @@ class HuaweiHistorySync(
         // MARK: per-minute steps / HR / SpO2 / resting HR
 
         /**
-         * 07/0A count over [start, now] then 07/0B per index. The range starts at the local midnight of the
-         * watermark, so every day the batch touches arrives whole and its summed totals are complete.
+         * 07/0A count over [start, now] then 07/0B per index. The range starts at the step carry's cutoff when
+         * the carry is for the watermark's day (the batch then folds onto the carried base), else at the local
+         * midnight of the watermark; either way every day the batch touches gets complete totals.
          */
         suspend fun syncSteps() {
             if (!caps.supports(0x07, 0x0A) || !caps.supports(0x07, 0x0B)) return
             stream("steps") {
-                val start = localMidnight(since(HuaweiDataType.STEPS))
+                val mark = since(HuaweiDataType.STEPS)
+                val carry = usableCarry(mark)
+                val start = carry?.cutoffTs ?: localMidnight(mark)
+                stepRead = StepRead(start, carry)
                 val count = countReply(HuaweiCommand.STEP_DATA_COUNT, start, now)
                 var skipped = 0
                 for (i in 0 until count) {
@@ -221,13 +305,13 @@ class HuaweiHistorySync(
 
         private fun usesSleepFile(): Boolean = caps.supports(0x07, 0x16) && caps.hasExpand(EXPAND_NEW_SLEEP)
 
-        /** Legacy light / deep records, 07/0C count then 07/0D per index. Re-reads a day back for a night in progress. */
+        /** Legacy light / deep records, 07/0C count then 07/0D per index, from the last finished night's end. */
         suspend fun syncLegacySleep() {
             if (!caps.supports(0x07, 0x0C) || !caps.supports(0x07, 0x0D)) return
             // A band with the TruSleep sequence file reads its sleep there; it refuses these (Band 10: 100004).
             if (usesSleepFile()) return
             stream("sleep") {
-                val start = since(HuaweiDataType.SLEEP) - 86_400
+                val start = sleepStart(HuaweiDataType.SLEEP)
                 try {
                     val count = countReply(HuaweiCommand.SLEEP_DATA_COUNT, start, now)
                     for (i in 0 until count) {
@@ -242,6 +326,7 @@ class HuaweiHistorySync(
                     if (e.code != RESULT_NOT_SUPPORTED) throw e
                     return@stream
                 }
+                noteNightEnds(HuaweiDataType.SLEEP, sleepSpans.map { it.endTs })
                 done[HuaweiDataType.SLEEP] = now
             }
         }
@@ -254,7 +339,7 @@ class HuaweiHistorySync(
         suspend fun syncSleepFile() {
             if (!usesSleepFile()) return
             stream("sleep_file") {
-                val start = since(HuaweiDataType.SLEEP_FILE) - 86_400
+                val start = sleepStart(HuaweiDataType.SLEEP_FILE)
                 val request = HuaweiFileRequest("sequence_data", HuaweiFileRequest.TYPE_SEQUENCE_DATA, start, now,
                     dictId = HuaweiFileRequest.DICT_SLEEP)
                 when (val r = files.download(request, newSync = true)) {
@@ -262,6 +347,7 @@ class HuaweiHistorySync(
                     HuaweiFileOutcome.Empty -> Unit
                     is HuaweiFileOutcome.Failed -> { failures.add("sleep_file: ${r.reason}"); return@stream }
                 }
+                noteNightEnds(HuaweiDataType.SLEEP_FILE, nights.mapNotNull { HuaweiWatchIngest.nightEnd(it) })
                 done[HuaweiDataType.SLEEP_FILE] = now
             }
         }
@@ -274,7 +360,7 @@ class HuaweiHistorySync(
         suspend fun syncSleepState() {
             if (!caps.supports(0x07, 0x16) || caps.hasExpand(EXPAND_NEW_SLEEP)) return
             stream("sleep_state") {
-                val start = since(HuaweiDataType.SLEEP_STATE) - 86_400
+                val start = sleepStart(HuaweiDataType.SLEEP_STATE)
                 val request = HuaweiFileRequest("sleep_state.bin", HuaweiFileRequest.TYPE_SLEEP_STATE, start, now,
                     oldSyncType = HuaweiFileRequest.OLD_SLEEP)
                 when (val r = files.download(request, newSync = caps.settings?.truSleepFileSync == true)) {
@@ -282,6 +368,7 @@ class HuaweiHistorySync(
                     HuaweiFileOutcome.Empty -> Unit
                     is HuaweiFileOutcome.Failed -> { failures.add("sleep_state: ${r.reason}"); return@stream }
                 }
+                noteNightEnds(HuaweiDataType.SLEEP_STATE, sleepFrames.filter { it.endTs > it.startTs }.map { it.endTs })
                 done[HuaweiDataType.SLEEP_STATE] = now
             }
         }
@@ -578,6 +665,19 @@ class HuaweiHistorySync(
         const val EXPAND_NEW_SLEEP = 143
         const val EXPAND_BED_TIME = 199
         const val EXPAND_HRV = 235
+
+        /** How far before now the step carry's cutoff sits: the last hour is read again each sync. */
+        const val STEP_REREAD_SECONDS = 3_600L
+
+        /**
+         * A night that ended at least this long before the sync counts as finished, and the next sleep read starts
+         * at its end. Three times the fold's one-hour join gap, so a record the band writes later is not taken
+         * as part of it. An estimate, not a band fact; a device log can tighten it.
+         */
+        const val SLEEP_FINISHED_AFTER_SECONDS = 3 * HuaweiWatchIngest.SLEEP_SPAN_JOIN_GAP_S
+
+        /** The sleep streams that keep a night end. */
+        private val SLEEP_STREAMS = listOf(HuaweiDataType.SLEEP, HuaweiDataType.SLEEP_FILE, HuaweiDataType.SLEEP_STATE)
 
         const val MAX_WORKOUT_SPLITS = 3
         const val MAX_DICTIONARY_PAGES = 64

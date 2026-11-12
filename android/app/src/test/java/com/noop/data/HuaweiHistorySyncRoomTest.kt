@@ -17,6 +17,7 @@ import com.noop.huawei.protocol.HuaweiCommand
 import com.noop.huawei.protocol.HuaweiExpandCapabilities
 import com.noop.huawei.protocol.HuaweiSettingRelated
 import com.noop.huawei.protocol.HuaweiTlv
+import com.noop.ingest.HuaweiWatchIngest
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -48,7 +49,11 @@ class HuaweiHistorySyncRoomTest {
     fun close() {
         db.close()
         prefs.dropDeviceState(band)
+        prefs.dropDeviceState(ref)
     }
+
+    /** A second band id whose every sync reads from the first backfill: the from-midnight reference. */
+    private val ref = "huawei-TEST-REF"
 
     // 2025-11-02 12:00 UTC; every day is UTC.
     private val now = 1_762_084_800L
@@ -164,9 +169,12 @@ class HuaweiHistorySyncRoomTest {
 
     private val logged = ArrayList<String>()
 
-    private fun sync(s: Session, caps: HuaweiCapabilities = caps(), at: Long = now): HuaweiSyncSummary = runBlocking {
-        HuaweiHistorySync(prefs, store = { id, batch -> HuaweiHistoryIngest.store(db, id, batch); true },
-            clock = { at }, utcOffset = { 0 }, log = { logged.add(it) }, replyTimeoutMs = 300).run(s.link, caps, band)
+    /** Every batch a sync handed to the store, in order. */
+    private val batches = ArrayList<HuaweiWatchIngest.Batch>()
+
+    private fun sync(s: Session, caps: HuaweiCapabilities = caps(), at: Long = now, device: String = band): HuaweiSyncSummary = runBlocking {
+        HuaweiHistorySync(prefs, store = { id, batch -> batches.add(batch); HuaweiHistoryIngest.store(db, id, batch); true },
+            clock = { at }, utcOffset = { 0 }, log = { logged.add(it) }, replyTimeoutMs = 300).run(s.link, caps, device)
     }
 
     private fun rows(sql: String, vararg args: Any): List<List<Any?>> =
@@ -266,7 +274,7 @@ class HuaweiHistorySyncRoomTest {
 
         val sent = again.band.received
         val stepCount = sent.first { it.serviceId == 0x07 && it.commandId == 0x0A }.tlv
-        assertEquals("steps re-read from the watermark's local midnight", today, stepCount.u32(0x03))
+        assertEquals("steps resume at the carry's cutoff, an hour before the last sync", now - 3_600, stepCount.u32(0x03))
         val workoutCount = sent.first { it.serviceId == 0x17 && it.commandId == 0x07 }.tlv.tlv(0x81)
         assertEquals("workouts resume after the last stored end", yesterday + 18 * 3_600 + 1_801, workoutCount.u32(0x03))
         val dict = sent.first { it.serviceId == 0x34 && it.tlv.byte(0x01) == 2 }.tlv
@@ -489,6 +497,21 @@ class HuaweiHistorySyncRoomTest {
     }
 
     @Test
+    fun theStepCarryAndNightEndsRoundTripAndFollowAReKey() {
+        val carry = com.noop.huawei.HuaweiStepCarry(todayKey, now - 3_600, HuaweiWatchIngest.DayCounters(1_234, 987.5, null))
+        prefs.setStepCarry(band, carry)
+        prefs.setLastNightEnd(band, HuaweiDataType.SLEEP_FILE, nightEnd)
+        assertEquals(carry, prefs.stepCarry(band))
+        assertNull("a malformed carry reads as none", com.noop.huawei.HuaweiStepCarry.decode("$todayKey|x|1||"))
+        prefs.moveDeviceState(band, "huawei-TEST-0002")
+        assertNull(prefs.stepCarry(band))
+        assertEquals(carry, prefs.stepCarry("huawei-TEST-0002"))
+        assertEquals(nightEnd, prefs.lastNightEnd("huawei-TEST-0002", HuaweiDataType.SLEEP_FILE))
+        prefs.dropDeviceState("huawei-TEST-0002")
+        assertNull(prefs.stepCarry("huawei-TEST-0002"))
+    }
+
+    @Test
     fun oneBadWorkoutSliceKeepsTheOthersAndHoldsTheWatermark() {
         val bad = now - 10 * 86_400L
         val s = session(script(workoutListErrorAt = bad))
@@ -571,5 +594,182 @@ class HuaweiHistorySyncRoomTest {
         sync(session(script()))
         assertNotNull(DeviceMetricKind.entries.firstOrNull { it.wire == com.noop.ingest.HuaweiWatchIngest.SKIN_TEMP_WIRE })
         assertEquals(listOf((nightStart + 3_600) to 34.2), metric(DeviceMetricKind.SKIN_TEMP_C))
+    }
+
+    // MARK: incremental steps and sleep
+
+    /**
+     * The step records a band holds at [upTo]: one every 30 minutes from yesterday 20:00, five minutes each,
+     * the minute still filling at [upTo] with half its steps (the next read sees it whole).
+     */
+    private fun stepRecords(upTo: Long): List<HuaweiHistoryBand.StepRecord> = buildList {
+        var base = yesterday + 20 * 3_600
+        var j = 0
+        while (base <= upTo) {
+            val minutes = (0 until 5).mapNotNull { off ->
+                val ts = base + 60L * off
+                if (ts > upTo) return@mapNotNull null
+                val steps = 10 * (j % 7 + 1) + off
+                off to HuaweiHistoryBand.minute(steps = if (ts + 60 > upTo) steps / 2 else steps, kcal = j % 3 + 1,
+                    distanceM = 7 * off + j % 5, hr = 60 + j % 30)
+            }
+            add(HuaweiHistoryBand.StepRecord(base, minutes))
+            base += 1_800
+            j++
+        }
+    }
+
+    /** A band holding only [stepRecords], answering a step count over its range only. */
+    private fun stepsBand(upTo: Long, stepErrorOn: Set<Int> = emptySet()) = session(HuaweiHistoryBand.Script(
+        steps = stepRecords(upTo), stepsInRange = true, stepErrorOn = stepErrorOn))
+
+    private fun stepsStart(s: Session): Long = s.band.received.first { it.serviceId == 0x07 && it.commandId == 0x0A }.tlv.u32(0x03)
+
+    /** The day's steps, distance and energy as the fold of [b] gives them. */
+    private fun foldDay(b: HuaweiWatchIngest.Batch, day: String): List<Any?> =
+        HuaweiWatchIngest.fold(b).days.single { it.day == day }.let { listOf(it.steps, it.distanceM, it.totalKcal) }
+
+    /** The same day read whole by the reference band at [at]. */
+    private fun referenceDay(at: Long, day: String): List<Any?> {
+        prefs.dropDeviceState(ref)
+        sync(stepsBand(at), at = at, device = ref)
+        return foldDay(batches.last(), day)
+    }
+
+    private fun storedTotals(id: String): List<List<Any?>> =
+        rows("SELECT day, steps, activeKcalEst FROM dailyMetric WHERE deviceId = ? ORDER BY day", id) +
+            rows("SELECT day, `key`, value FROM metricSeries WHERE deviceId = ? AND `key` IN ('steps', 'distance_m', 'total_kcal') " +
+                "ORDER BY day, `key`", id)
+
+    @Test
+    fun threeIncrementalStepSyncsFoldTheSameDayTotalsAsOneReadFromMidnight() {
+        // Off the minute, so each cutoff falls inside a record and the band sends minutes the base already holds.
+        val times = listOf(today + 4 * 3_600 + 120, today + 8 * 3_600 + 200, now)
+        for ((k, t) in times.withIndex()) {
+            val s = stepsBand(t)
+            sync(s, at = t)
+            if (k > 0) assertEquals("sync ${k + 1} starts at the carry's cutoff", times[k - 1] - 3_600, stepsStart(s))
+            val incremental = batches.last()
+            if (k > 0) assertTrue("minutes before the cutoff came too", incremental.minutes.any { it.ts < times[k - 1] - 3_600 })
+            assertEquals("sync ${k + 1}", referenceDay(t, todayKey), foldDay(incremental, todayKey))
+            val carry = prefs.stepCarry(band)!!
+            assertEquals(todayKey, carry.day)
+            assertEquals(t - 3_600, carry.cutoffTs)
+        }
+        assertEquals(storedTotals(ref), storedTotals(band))
+        assertNotNull(series(todayKey, "steps"))
+    }
+
+    @Test
+    fun theStepCarryRestartsOnANewDay() {
+        val tomorrowKey = "2025-11-03"
+        val t1 = today + 23 * 3_600 + 1_830
+        val t2 = today + 86_400 + 5_430
+        val t3 = today + 86_400 + 3 * 3_600 + 30
+        sync(stepsBand(t1), at = t1)
+        assertEquals(todayKey, prefs.stepCarry(band)!!.day)
+
+        val s2 = stepsBand(t2)
+        sync(s2, at = t2)
+        assertEquals("the watermark is still today: the carry holds", t1 - 3_600, stepsStart(s2))
+        val incremental = batches.last()
+        val carry = prefs.stepCarry(band)!!
+        assertEquals(tomorrowKey, carry.day)
+        assertEquals(t2 - 3_600, carry.cutoffTs)
+        assertEquals("the new day's base holds only its own minutes",
+            HuaweiWatchIngest.dayCounters(incremental, tomorrowKey, null, t2 - 3_600), carry.base)
+        assertEquals(referenceDay(t2, todayKey), foldDay(incremental, todayKey))
+        assertEquals(referenceDay(t2, tomorrowKey), foldDay(incremental, tomorrowKey))
+
+        val s3 = stepsBand(t3)
+        sync(s3, at = t3)
+        assertEquals(t2 - 3_600, stepsStart(s3))
+        assertEquals(referenceDay(t3, tomorrowKey), foldDay(batches[batches.size - 2], tomorrowKey))
+        assertEquals(storedTotals(ref), storedTotals(band))
+    }
+
+    @Test
+    fun withoutAUsableCarryTheStepsReadStartsAtLocalMidnight() {
+        // A band synced before the carry existed: a watermark and no carry.
+        prefs.setLastSync(band, HuaweiDataType.STEPS, now - 1_800)
+        val s = stepsBand(now)
+        sync(s)
+        assertEquals(today, stepsStart(s))
+        assertEquals(referenceDay(now, todayKey), foldDay(batches[batches.size - 2], todayKey))
+        assertEquals(todayKey, prefs.stepCarry(band)!!.day)
+
+        // A carry left from another day is not used either.
+        prefs.setStepCarry(band, com.noop.huawei.HuaweiStepCarry(yesterdayKey, yesterday + 3_600, HuaweiWatchIngest.DayCounters(steps = 5)))
+        val next = stepsBand(now + 900)
+        sync(next, at = now + 900)
+        assertEquals(today, stepsStart(next))
+    }
+
+    @Test
+    fun aSkippedStepIndexKeepsTheOldCarry() {
+        val t1 = today + 4 * 3_600 + 120
+        val t2 = today + 6 * 3_600
+        sync(stepsBand(t1), at = t1)
+        val held = prefs.stepCarry(band)
+        sync(stepsBand(t2, stepErrorOn = setOf(0)), at = t2)
+        assertEquals(held, prefs.stepCarry(band))
+        assertEquals(t1, prefs.lastSync(band, HuaweiDataType.STEPS))
+
+        val s3 = stepsBand(now)
+        sync(s3)
+        assertEquals("read again from the held cutoff", held!!.cutoffTs, stepsStart(s3))
+        assertEquals(referenceDay(now, todayKey), foldDay(batches[batches.size - 2], todayKey))
+        assertEquals(storedTotals(ref), storedTotals(band))
+    }
+
+    private fun sleepStart(s: Session): Long = s.band.received.first {
+        it.serviceId == 0x2C && it.commandId == 0x01 && it.tlv.string(0x01) == "sequence_data"
+    }.tlv.u32(0x05)
+
+    @Test
+    fun theSleepReadStartsAtTheLastFinishedNight() {
+        // An hour after waking the night may still grow: it is not finished, and no night end is kept.
+        val early = nightEnd + 3_600
+        val s1 = session(script())
+        sync(s1, at = early)
+        assertEquals("first sync: the backfill window, a day back", early - 14 * 86_400 - 86_400, sleepStart(s1))
+        assertNull(prefs.lastNightEnd(band, HuaweiDataType.SLEEP_FILE))
+
+        val s2 = session(script())
+        sync(s2)
+        assertEquals("no finished night yet: a day before the watermark", early - 86_400, sleepStart(s2))
+        assertEquals(nightEnd, prefs.lastNightEnd(band, HuaweiDataType.SLEEP_FILE))
+
+        val s3 = session(script())
+        sync(s3, at = now + 900)
+        assertEquals(nightEnd, sleepStart(s3))
+        assertEquals(1, rows("SELECT 1 FROM sleepSession WHERE deviceId = ?", band).size)
+    }
+
+    @Test
+    fun aSyncThatOnlyReadsAgainIsEmptyAndTheStreakGrows() {
+        val first = sync(session(script()))
+        assertFalse(first.empty)
+        assertEquals(0, prefs.emptyStreak(band))
+        // The band has nothing past the watermarks: the step records and the night it sends were read before.
+        val reread = script(files = mapOf("sequence_data" to sleepFile()))
+        for (k in 1..2) {
+            val summary = sync(session(reread), at = now + 900L * k)
+            assertTrue(summary.toString(), summary.empty)
+            assertTrue("minutes were read again", summary.counts.getValue("minutes") > 0)
+            assertEquals(1, summary.counts["nights"])
+            assertEquals(0, summary.newCounts["minutes"])
+            assertEquals(k, prefs.emptyStreak(band))
+        }
+        assertTrue(logged.toString(), logged.last { it.startsWith("Huawei: sync") }.contains("nothing new"))
+
+        // One minute past the watermark is new again.
+        val base = reread
+        val withNew = HuaweiHistoryBand.Script(steps = base.steps + HuaweiHistoryBand.StepRecord(now + 2_400,
+            listOf(0 to HuaweiHistoryBand.minute(steps = 12, hr = 80))), files = base.files)
+        val summary = sync(session(withNew), at = now + 3_600)
+        assertFalse(summary.empty)
+        assertEquals(1, summary.newCounts["minutes"])
+        assertEquals(0, prefs.emptyStreak(band))
     }
 }

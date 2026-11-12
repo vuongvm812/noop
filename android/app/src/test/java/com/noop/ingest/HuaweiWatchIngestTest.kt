@@ -178,6 +178,35 @@ class HuaweiWatchIngestTest {
         assertEquals(GarminWatchIngest.dayStartUnix("2026-03-11", 25_200), d.dayStartTs)
     }
 
+    @Test fun aDayFoldedOntoItsCarriedBaseMatchesTheWholeDay() {
+        val day = "2026-03-10"
+        val minutes = (0 until 300).map { i ->
+            MinuteSample(t0 + 240L * i, steps = i % 13, calories = i % 3 + 1, distanceM = if (i % 4 == 0) null else i % 9, heartRate = 60 + i % 40)
+        } + MinuteSample(t0 + 2_400, steps = 3) // a minute in two records adds up
+        val whole = HuaweiWatchIngest.Batch(minutes = minutes, utcOffsetS = 0, nowTs = now)
+        val cutoff = t0 + 9 * 3_600 + 30
+        val base = HuaweiWatchIngest.dayCounters(whole, day, null, cutoff)
+        // The next read starts half an hour before the cutoff: those minutes are in the base already.
+        val tail = HuaweiWatchIngest.Batch(minutes = minutes.filter { it.ts >= cutoff - 1_800 }, utcOffsetS = 0, nowTs = now,
+            countFrom = cutoff, dayBase = mapOf(day to base))
+        val w = HuaweiWatchIngest.fold(whole).days.single()
+        val t = HuaweiWatchIngest.fold(tail).days.single()
+        assertEquals(listOf(w.steps, w.distanceM, w.totalKcal), listOf(t.steps, t.distanceM, t.totalKcal))
+        assertEquals("every minute's heart rate is still stored", HuaweiWatchIngest.fold(whole).hr.filter { it.ts >= cutoff - 1_800 },
+            HuaweiWatchIngest.fold(tail).hr)
+        // Carried in two steps, the base is the same as in one.
+        val mid = t0 + 4 * 3_600
+        val twoSteps = HuaweiWatchIngest.dayCounters(whole, day, mid, cutoff, HuaweiWatchIngest.dayCounters(whole, day, null, mid))
+        assertEquals(base, twoSteps)
+    }
+
+    @Test fun aCarriedBaseWithoutCountersLeavesThemNull() {
+        val b = HuaweiWatchIngest.Batch(minutes = listOf(MinuteSample(t0 + 36_000, heartRate = 70)), utcOffsetS = 0, nowTs = now,
+            countFrom = t0 + 30_000, dayBase = mapOf("2026-03-10" to HuaweiWatchIngest.DayCounters()))
+        val d = HuaweiWatchIngest.fold(b).days.single()
+        assertEquals(listOf<Any?>(null, null, null), listOf(d.steps, d.distanceM, d.totalKcal))
+    }
+
     @Test fun emptyBatchYieldsNothing() {
         val out = HuaweiWatchIngest.fold(HuaweiWatchIngest.Batch(utcOffsetS = 0, nowTs = now))
         assertTrue(out.hr.isEmpty() && out.deviceMetric.isEmpty() && out.days.isEmpty() && out.sleeps.isEmpty() && out.workouts.isEmpty())

@@ -54,6 +54,11 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
         /** A 17/07 range containing this timestamp answers [workoutListError]. */
         val workoutListErrorAt: Long? = null,
         val workoutListError: Long = 0x186A4L,
+        /**
+         * 07/0A counts only the step records with a minute inside its [start, end], and 07/0B indexes those
+         * (each record whole, so minutes before the start come too). Off: every record, whatever the range.
+         */
+        val stepsInRange: Boolean = false,
     )
 
     class Received(val serviceId: Int, val commandId: Int, val tlv: HuaweiTlv, val encrypted: Boolean)
@@ -68,6 +73,8 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
     private val openFiles = HashMap<Int, ByteArray>()
     private var blocksSent = 0
     private var bandSeq = 100
+    /** The step records the last 07/0A counted, which 07/0B indexes. */
+    private var stepView: List<StepRecord> = script.steps
 
     /** The NOOP-side link configuration for this band's session. */
     fun linkConfig() = HuaweiLinkConfig(cipher = HuaweiCipher(key, useGcm = false,
@@ -97,11 +104,17 @@ class HuaweiHistoryBand(val script: Script, sessionCipher: HuaweiCipher? = null)
         val cid = frame.commandId
         return when (sid to cid) {
             0x07 to 0x17, 0x07 to 0x23, 0x07 to 0x24 -> reply(sid, cid, ok())
-            0x07 to 0x0A -> reply(sid, cid, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, script.steps.size)))
+            0x07 to 0x0A -> {
+                val start = t.u32(0x03)
+                val end = t.u32(0x04)
+                stepView = if (!script.stepsInRange) script.steps
+                    else script.steps.filter { r -> r.minutes.any { (off, _) -> r.baseTs + 60L * off in start..end } }
+                reply(sid, cid, HuaweiTlv().put(0x81, HuaweiTlv().putShort(0x02, stepView.size)))
+            }
             0x07 to 0x0B -> {
                 val i = t.tlv(0x81).u16(0x02)
                 if (i in script.stepErrorOn) return reply(sid, cid, HuaweiTlv().putInt(0x7F, 0x186A4))
-                val r = script.steps[i]
+                val r = stepView[i]
                 val c = HuaweiTlv().putShort(0x02, i).putInt(0x03, r.baseTs.toInt())
                 for ((off, data) in r.minutes) c.put(0x84, HuaweiTlv().putByte(0x05, off).put(0x06, data))
                 reply(sid, cid, HuaweiTlv().put(0x81, c))

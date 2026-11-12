@@ -71,7 +71,17 @@ object HuaweiWatchIngest {
         val workouts: List<Workout> = emptyList(),
         val utcOffsetS: Int,
         val nowTs: Long,
+        /**
+         * When set, a minute before this time adds no steps, distance or energy to its day (its heart rate and
+         * SpO2 are still stored): earlier syncs read those counters into [dayBase]. Null counts every minute.
+         */
+        val countFrom: Long? = null,
+        /** Per local day, the counters of that day's minutes before [countFrom], as earlier syncs summed them. */
+        val dayBase: Map<String, DayCounters> = emptyMap(),
     )
+
+    /** One day's summed step counters; a field is null when no minute carried it, as the fold leaves it. */
+    data class DayCounters(val steps: Int? = null, val distanceM: Double? = null, val kcal: Double? = null)
 
     /** One workout's decoded parts; [gps] is its track file, empty when it had none; [pace] its 17/0C blocks. */
     data class Workout(
@@ -139,15 +149,13 @@ object HuaweiWatchIngest {
         val asleepS get() = if (unstaged) end - start else seconds("light", "deep", "rem")
     }
 
-    fun fold(b: Batch): Ingest {
-        val offset = b.utcOffsetS
-        fun placeable(ts: Long) = ts >= EARLIEST_TS && ts <= b.nowTs + 86_400
-        fun dayOf(ts: Long) = GarminWellnessParser.localDay(ts, offset)
+    private fun placeable(b: Batch, ts: Long) = ts >= EARLIEST_TS && ts <= b.nowTs + 86_400
 
-        // One minute can arrive in several records: counters add up, readings keep the last one.
+    /** The batch's placeable minutes by time. One minute can arrive in several records: counters add up, readings keep the last one. */
+    private fun mergedMinutes(b: Batch): java.util.TreeMap<Long, HuaweiFitnessDecoder.MinuteSample> {
         val minutes = java.util.TreeMap<Long, HuaweiFitnessDecoder.MinuteSample>()
         for (m in b.minutes) {
-            if (!placeable(m.ts)) continue
+            if (!placeable(b, m.ts)) continue
             val prev = minutes[m.ts]
             minutes[m.ts] = if (prev == null) m else HuaweiFitnessDecoder.MinuteSample(
                 ts = m.ts,
@@ -157,6 +165,41 @@ object HuaweiWatchIngest {
                 restingHr = m.restingHr ?: prev.restingHr,
             )
         }
+        return minutes
+    }
+
+    /** [c] with one minute's counters added, in the arithmetic [fold] uses for a day's totals. */
+    private fun addMinute(c: DayCounters, m: HuaweiFitnessDecoder.MinuteSample) = DayCounters(
+        steps = sum(c.steps, m.steps),
+        distanceM = m.distanceM?.let { (c.distanceM ?: 0.0) + it } ?: c.distanceM,
+        kcal = m.calories?.let { (c.kcal ?: 0.0) + it } ?: c.kcal,
+    )
+
+    /**
+     * [base] plus the counters of the batch's minutes on local [day] with a time in [from, until) (from the
+     * day's first minute when [from] is null), added minute by minute in time order exactly as [fold] adds
+     * them, so a day folded onto a carried base matches the same day read whole from midnight.
+     */
+    fun dayCounters(b: Batch, day: String, from: Long?, until: Long, base: DayCounters = DayCounters()): DayCounters {
+        var c = base
+        for (m in mergedMinutes(b).values) {
+            if ((from != null && m.ts < from) || m.ts >= until) continue
+            if (GarminWellnessParser.localDay(m.ts, b.utcOffsetS) != day) continue
+            c = addMinute(c, m)
+        }
+        return c
+    }
+
+    /** Where a TruSleep night ends (its last stage, or the wake-up time when later); null without a timeline. */
+    fun nightEnd(n: HuaweiSleepFileDecoder.Night): Long? =
+        if (n.stages.isEmpty()) null else maxOf(n.stages.last().end, n.wakeupTs ?: 0L)
+
+    fun fold(b: Batch): Ingest {
+        val offset = b.utcOffsetS
+        fun placeable(ts: Long) = placeable(b, ts)
+        fun dayOf(ts: Long) = GarminWellnessParser.localDay(ts, offset)
+
+        val minutes = mergedMinutes(b)
         val hr = minutes.values.mapNotNull { m -> m.heartRate?.takeIf { it in HR_RANGE }?.let { HrRow(m.ts, it) } }
 
         val metrics = LinkedHashMap<String, DeviceMetricRow>()
@@ -194,13 +237,16 @@ object HuaweiWatchIngest {
             val start = GarminWatchIngest.dayStartUnix(key, offset)
             GarminDayRollup(day = key, dayStartTs = start, dayEndTs = start + 86_400)
         }
+        // A day the minutes touch starts from its carried base; a minute before countFrom is already in that base.
         for (m in minutes.values) {
             val key = dayOf(m.ts)
-            val d = day(key)
+            val d = days[key] ?: day(key).let { r ->
+                b.dayBase[key]?.let { r.copy(steps = it.steps, distanceM = it.distanceM, totalKcal = it.kcal) } ?: r
+            }
+            val before = DayCounters(d.steps, d.distanceM, d.totalKcal)
+            val c = if (b.countFrom == null || m.ts >= b.countFrom) addMinute(before, m) else before
             days[key] = d.copy(
-                steps = sum(d.steps, m.steps),
-                distanceM = m.distanceM?.let { (d.distanceM ?: 0.0) + it } ?: d.distanceM,
-                totalKcal = m.calories?.let { (d.totalKcal ?: 0.0) + it } ?: d.totalKcal,
+                steps = c.steps, distanceM = c.distanceM, totalKcal = c.kcal,
                 restingHr = m.restingHr?.takeIf { it in HR_RANGE } ?: d.restingHr,
             )
         }
@@ -250,9 +296,8 @@ object HuaweiWatchIngest {
     private fun foldNights(b: Batch, placeable: (Long) -> Boolean): List<FoldNight> {
         val out = ArrayList<FoldNight>()
         for (n in b.nights) {
-            if (n.stages.isEmpty()) continue
+            val end = nightEnd(n) ?: continue
             val start = n.stages.first().start
-            val end = maxOf(n.stages.last().end, n.wakeupTs ?: 0L)
             if (!placeable(start) || !placeable(end)) continue
             out.add(FoldNight(start, end, n.stages, n.sleepScore, n.avgHrvMs?.takeIf { it > 0 }?.toDouble()))
         }

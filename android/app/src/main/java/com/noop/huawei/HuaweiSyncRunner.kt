@@ -3,6 +3,7 @@ package com.noop.huawei
 import com.noop.huawei.protocol.HuaweiExpandCapabilities
 import com.noop.huawei.protocol.HuaweiLink
 import com.noop.huawei.protocol.HuaweiSettingRelated
+import com.noop.ingest.HuaweiWatchIngest
 
 /**
  * What the band said it supports on this connection, gathered by the source before it reports READY.
@@ -97,4 +98,31 @@ interface HuaweiSyncCursor {
     /** Epoch seconds before which the band's P2P data dictionary is not asked again; null when it was served. */
     fun dictUnavailableUntil(deviceId: String): Long?
     fun setDictUnavailableUntil(deviceId: String, ts: Long)
+    /** Where the next steps read may start instead of local midnight; null before the first clean read. */
+    fun stepCarry(deviceId: String): HuaweiStepCarry?
+    fun setStepCarry(deviceId: String, carry: HuaweiStepCarry)
+    /** The end of the last finished night stored from the sleep stream [type]; null before the first. */
+    fun lastNightEnd(deviceId: String, type: HuaweiDataType): Long?
+    fun setLastNightEnd(deviceId: String, type: HuaweiDataType, ts: Long)
+}
+
+/**
+ * A local [day]'s step counters summed over its minutes before [cutoffTs] ([base]), so the next steps read
+ * can start at [cutoffTs] and still fold complete day totals. Kotlin-only; Swift twin deferred (fork).
+ */
+data class HuaweiStepCarry(val day: String, val cutoffTs: Long, val base: HuaweiWatchIngest.DayCounters) {
+    /** One line for the cursor store: `day|cutoff|steps|distanceM|kcal`, an absent counter empty. */
+    fun encode(): String = listOf(day, cutoffTs, base.steps ?: "", base.distanceM ?: "", base.kcal ?: "").joinToString("|")
+
+    companion object {
+        /** The carry [encode] wrote, or null for anything else (the read then starts at local midnight). */
+        fun decode(s: String?): HuaweiStepCarry? {
+            val p = s?.split("|")?.takeIf { it.size == 5 && it[0].isNotEmpty() } ?: return null
+            val cutoff = p[1].toLongOrNull() ?: return null
+            val steps = p[2].ifEmpty { null }?.let { it.toIntOrNull() ?: return null }
+            val distance = p[3].ifEmpty { null }?.let { it.toDoubleOrNull() ?: return null }
+            val kcal = p[4].ifEmpty { null }?.let { it.toDoubleOrNull() ?: return null }
+            return HuaweiStepCarry(p[0], cutoff, HuaweiWatchIngest.DayCounters(steps, distance, kcal))
+        }
+    }
 }
