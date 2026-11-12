@@ -298,6 +298,23 @@ final class GarminSyncStoreTests: XCTestCase {
         XCTAssertEqual(left, [file(1)])
     }
 
+    /// A growing file has one ledger row per version; the read keeps the newest `ingestedAt` per identity.
+    func testLastIngestedIsTheNewestVersionOfEachIdentity() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.recordGarminSyncedFile(file(1, size: 100), deviceId: id, ingestedAt: 1_000)
+        try await store.recordGarminSyncedFile(file(1, size: 300), deviceId: id, ingestedAt: 2_000)
+        try await store.recordGarminSyncedFile(file(1, size: 200), deviceId: id, ingestedAt: 1_500)
+        try await store.recordGarminSyncedFile(file(2), deviceId: id, ingestedAt: 700)
+        try await store.recordGarminSyncedFile(file(1, size: 400), deviceId: "garmin-OTHER", ingestedAt: 9_000)
+        let last = try await store.garminLastIngested(deviceId: id)
+        XCTAssertEqual(last, [
+            GarminLedgerIngestion(fileIndex: 1, dataType: 128, subType: 32, fileNumber: 1, ingestedAt: 2_000),
+            GarminLedgerIngestion(fileIndex: 2, dataType: 128, subType: 32, fileNumber: 2, ingestedAt: 700),
+        ])
+        let ledger = try await store.garminSyncedFiles(deviceId: id)
+        XCTAssertEqual(ledger.count, 4, "every version stays in the ledger")
+    }
+
     func testRecordWithoutDataAndDeleteAllClearsTheLedger() async throws {
         let store = try await WhoopStore.inMemory()
         try await store.recordGarminSyncedFile(file(7), deviceId: id, ingestedAt: 1)

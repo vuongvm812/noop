@@ -368,6 +368,10 @@ final class SourceCoordinator: ObservableObject {
                 await GarminHistoryIngest.rederiveNightVitalsOnce(store: store, deviceId: id, log: straplog)
                 return await GarminHistoryIngest.syncedKeys(store: store, deviceId: id)
             },
+            loadIngestedAt: { [storeHandle] in
+                guard let store = await storeHandle() else { return [:] }
+                return await GarminHistoryIngest.lastIngestedAt(store: store, deviceId: id)
+            },
             ingest: { [storeHandle, straplog] file in
                 guard let store = await storeHandle() else { return false }
                 return await GarminHistoryIngest.ingest(file, deviceId: id, store: store, log: straplog)

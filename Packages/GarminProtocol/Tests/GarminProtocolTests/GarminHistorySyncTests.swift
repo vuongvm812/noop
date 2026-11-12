@@ -107,6 +107,90 @@ final class GarminHistorySyncTests: XCTestCase {
                       "CONTINUE from the held offset, asking for the bytes left")
     }
 
+    // MARK: Growing files
+
+    /// MONITOR #1 last ingested 986 s ago at another size, SLEEP #2 6986 s ago.
+    private var grown: [GarminSyncFileIdentity: Int64] {
+        [GarminSyncFileKey(oracleEntry(1, 32, number: 1, size: 100, ts: oracleRecentTs - 600)).identity: oracleNowUnix - 986,
+         GarminSyncFileKey(oracleEntry(2, 49, number: 2, size: 50, ts: oracleRecentTs)).identity: oracleNowUnix - 6_986]
+    }
+
+    private func grownRequest(_ floor: Int64, ingested: [GarminSyncFileIdentity: Int64]? = nil,
+                              resume: GarminSyncResume? = nil) -> GarminSyncRequest {
+        GarminSyncRequest(synced: synced, resume: resume, notBeforeUnix: oracleNotBefore, lastIngestedAt: ingested ?? grown,
+                          nowUnix: oracleNowUnix, grownFileFloorSeconds: floor)
+    }
+
+    func testGrowingFileIsDeferredInsideTheFloorAndDownloadedAfterIt() throws {
+        let r = drive(oracleStandardWatch(), [.connect, .sync(grownRequest(3_600))])
+        XCTAssertEqual(r.files.map(\.key.fileIndex), [2], "MONITOR was ingested 986 s ago; SLEEP 6986 s ago is due")
+        let summary = try XCTUnwrap(r.summaries.last)
+        XCTAssertEqual(summary.deferredGrown, 1)
+        XCTAssertEqual(summary.downloaded, 1)
+        XCTAssertFalse(summary.isEmpty)
+        XCTAssertTrue(summary.line.hasSuffix(" deferred=1"))
+        XCTAssertEqual(summary.onWatch.count, summary.wanted, "a deferred file stays on the Test Centre list")
+    }
+
+    func testManualSyncDownloadsAGrowingFile() throws {
+        let r = drive(oracleStandardWatch(), [.connect, .sync(grownRequest(0))])
+        XCTAssertEqual(r.files.map(\.key.fileIndex), [1, 2])
+        XCTAssertEqual(try XCTUnwrap(r.summaries.last).deferredGrown, 0)
+        XCTAssertFalse(try XCTUnwrap(r.summaries.last).line.contains("deferred"))
+    }
+
+    func testANewIdentityIsNeverDeferred() {
+        let other = GarminSyncFileKey(oracleEntry(1, 32, number: 99, size: 150, ts: oracleRecentTs)).identity
+        let r = drive(oracleStandardWatch(), [.connect, .sync(grownRequest(86_400, ingested: [other: oracleNowUnix - 10]))])
+        XCTAssertEqual(r.files.map(\.key.fileIndex), [1, 2])
+        XCTAssertEqual(r.summaries.last?.deferredGrown, 0)
+    }
+
+    func testTheResumeTargetIsNeverDeferred() {
+        let watch = oracleStandardWatch()
+        let partial = GarminSyncResume(key: GarminSyncFileKey(watch.directory[0]), data: Array(oracleFileBody(1, 150)[0..<64]),
+                                       runningCrc: GarminCRC.crc16(Array(oracleFileBody(1, 150)[0..<64])))
+        let r = drive(watch, [.connect, .sync(grownRequest(86_400, resume: partial))])
+        XCTAssertEqual(r.files.map(\.key.fileIndex), [1], "the held MONITOR continues; SLEEP waits")
+        XCTAssertEqual(r.files.first?.resumedFrom, 64)
+        XCTAssertEqual(r.summaries.last?.deferredGrown, 1)
+    }
+
+    func testASyncThatOnlyDeferredIsEmpty() throws {
+        let legacy = try XCTUnwrap(drive(oracleStandardWatch(), [.connect, .sync(grownRequest(86_400))]).summaries.last)
+        XCTAssertEqual(legacy.deferredGrown, 2)
+        XCTAssertEqual(legacy.downloaded, 0)
+        XCTAssertTrue(legacy.isEmpty, "the empty-sync back-off counts it")
+
+        let watch = oracleStandardWatch()
+        let monitor = GarminItemReference(uid: GarminUid(mostSignificant: 0x4567_0000_0000_0001, leastSignificant: 0xA1),
+                                          dataType: GarminItemDataType(format: 3, typeName: "FIT_TYPE_32", typeNameKey: 32),
+                                          dataSize: 416, modifiedTime: oracleRecentTs)
+        watch.itemPages = [[monitor]]
+        let identity = try XCTUnwrap(GarminSyncFileKey.fileAccess(monitor, typeName: "FIT_TYPE_32")).identity
+        let fa = drive(watch, [.connect, .sync(GarminSyncRequest(flow: .fileAccess(legacyFlush: false),
+                                                                  lastIngestedAt: [identity: oracleNowUnix - 60],
+                                                                  nowUnix: oracleNowUnix, grownFileFloorSeconds: 900))])
+        XCTAssertTrue(fa.files.isEmpty)
+        XCTAssertEqual(fa.summaries.last?.deferredGrown, 1)
+        XCTAssertEqual(fa.summaries.last?.isEmpty, true)
+        XCTAssertFalse(watch.seen.contains { $0.hasPrefix("rx pull item") }, "a deferred item is never pulled")
+    }
+
+    func testDefersGrownFileBoundaries() {
+        let key = GarminSyncFileKey(oracleEntry(1, 32, number: 1, size: 150, ts: oracleRecentTs))
+        func defers(age: Int64, floor: Int64) -> Bool {
+            GarminSyncRequest(lastIngestedAt: [key.identity: 10_000 - age], nowUnix: 10_000, grownFileFloorSeconds: floor)
+                .defersGrownFile(key)
+        }
+        XCTAssertTrue(defers(age: 0, floor: 900))
+        XCTAssertTrue(defers(age: 899, floor: 900))
+        XCTAssertFalse(defers(age: 900, floor: 900), "due once the floor has passed")
+        XCTAssertFalse(defers(age: 10, floor: 0), "floor 0 never defers")
+        XCTAssertFalse(defers(age: -1, floor: 900), "an ingestion in the phone's future (clock set back) does not hold the file")
+        XCTAssertFalse(GarminSyncRequest(nowUnix: 10_000, grownFileFloorSeconds: 900).defersGrownFile(key), "never ingested")
+    }
+
     func testAWatchThatRestartsOnContinueStillYieldsTheExactFile() {
         let watch = oracleStandardWatch()
         watch.restartOnContinue = true

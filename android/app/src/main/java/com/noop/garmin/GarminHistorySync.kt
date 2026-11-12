@@ -32,6 +32,9 @@ data class GarminSyncFileKey(
     /** Compact diagnostic form: `128/32 #7 idx=12 size=4096 ts=1100000000`. */
     val label: String get() = "$dataType/$subType #$fileNumber idx=$fileIndex size=$size ts=$garminTimestamp"
 
+    /** The file this key is one version of: the key without its size and timestamp. */
+    val identity: GarminSyncFileIdentity get() = GarminSyncFileIdentity(fileIndex, dataType, subType, fileNumber)
+
     companion object {
         /** The `dataType` recorded for a FileAccess item; 255 is not a GFDI FIT data type (128). */
         const val FILE_ACCESS_DATA_TYPE = 255
@@ -76,6 +79,14 @@ data class GarminSyncFileKey(
     }
 }
 
+/**
+ * One file on the watch across its rewrites: a [GarminSyncFileKey] without its size and timestamp. The file the
+ * watch keeps appending to (today's monitor, metrics or HRV file) keeps this identity while its key changes on
+ * every append. A FileAccess identity is the item's uid folded into index / number, so it is stable per item.
+ * Swift twin: `GarminSyncFileIdentity`.
+ */
+data class GarminSyncFileIdentity(val fileIndex: Int, val dataType: Int, val subType: Int, val fileNumber: Int)
+
 /** FIT file sub-types (data type 128) NOOP downloads. */
 enum class GarminFitFileType(val raw: Int, val wireName: String) {
     ACTIVITY(4, "ACTIVITY"),
@@ -118,7 +129,26 @@ data class GarminSyncRequest(
     /** Files dated before this Unix time are skipped. null = no bound. */
     val notBeforeUnix: Long? = null,
     val maxFileBytes: Long = 16L shl 20,
-)
+    /** The latest `ingestedAt` (Unix seconds) the ledger holds for each file identity. */
+    val lastIngestedAt: Map<GarminSyncFileIdentity, Long> = emptyMap(),
+    /** The phone's Unix time when the request was built; the engine keeps no clock of its own. */
+    val nowUnix: Long = 0,
+    /** A grown file whose identity was ingested less than this many seconds ago waits (0 = never waits). */
+    val grownFileFloorSeconds: Long = 0,
+) {
+    /**
+     * True when [key] is a new version of a file ingested less than [grownFileFloorSeconds] ago, so this sync
+     * leaves it for a later one instead of downloading the whole file again. The resume target never waits, nor
+     * does a file whose recorded ingestion lies in the phone's future (a clock set back). Swift twin:
+     * `GarminSyncRequest.defersGrownFile`.
+     */
+    fun defersGrownFile(key: GarminSyncFileKey): Boolean {
+        if (grownFileFloorSeconds <= 0 || resume?.key == key) return false
+        val at = lastIngestedAt[key.identity] ?: return false
+        val age = nowUnix - at
+        return age in 0 until grownFileFloorSeconds
+    }
+}
 
 /** One file fully downloaded and checked, ready to decode. */
 class GarminDownloadedFile(
@@ -144,6 +174,8 @@ data class GarminSyncSummary(
     var failed: Int = 0,
     var resumed: Int = 0,
     var bytes: Int = 0,
+    /** New versions of files ingested inside the grown-file floor, left for a later sync. Not downloads. */
+    var deferredGrown: Int = 0,
     /** Every listed wanted FIT file (the entries [wanted] counts), sorted ascending. Not part of [line]. */
     var onWatch: List<GarminSyncFileKey> = emptyList(),
 ) {
@@ -158,7 +190,8 @@ data class GarminSyncSummary(
 
     val line: String
         get() = "sync ${outcome.label}: listed=$listed wanted=$wanted synced=$alreadySynced old=$skippedOld " +
-            "large=$skippedLarge downloaded=$downloaded failed=$failed resumed=$resumed bytes=$bytes"
+            "large=$skippedLarge downloaded=$downloaded failed=$failed resumed=$resumed bytes=$bytes" +
+            if (deferredGrown > 0) " deferred=$deferredGrown" else ""
 }
 
 /** Which history flow a watch model syncs with (see GarminHistorySync.swift for the evidence). */
@@ -700,10 +733,11 @@ internal class GarminHistorySync {
             val unix = entry.unixTime
             if (floor != null && unix != null && unix < floor && request.resume?.key != key) { summary.skippedOld += 1; continue }
             if (entry.fileSize > request.maxFileBytes) { summary.skippedLarge += 1; continue }
+            if (deferGrown(request, key)) continue
             wanted.add(key)
         }
         val types = counts.keys.sorted().joinToString(" ") { "${it}x${counts[it]}" }
-        note(true, "directory: ${entries.size} entries [$types]; ${wanted.size} to download")
+        note(true, "directory: ${entries.size} entries [$types]; ${wanted.size} to download$deferredNote")
         wanted.sort()
         val resume = request.resume
         val i = if (resume != null) wanted.indexOf(resume.key) else -1
@@ -762,7 +796,7 @@ internal class GarminHistorySync {
             if (message.sessionId != null) {
                 requestList(nowMs)
             } else {
-                note(true, "item list: ${summary.listed} items; ${queue.size} to download")
+                note(true, "item list: ${summary.listed} items; ${queue.size} to download$deferredNote")
                 pullNext(nowMs)
             }
         } else if (message is GarminFileAccessMessage.PullItemResponse && s is Stage.AwaitingPull) {
@@ -806,12 +840,25 @@ internal class GarminHistorySync {
                 summary.skippedOld += 1; continue
             }
             if (key.size > request.maxFileBytes) { summary.skippedLarge += 1; continue }
+            if (deferGrown(request, key)) continue
             items[key] = item
             if (name != null) itemTypeNames[key] = name
             queue.add(key)
         }
         queue.sort()
     }
+
+    /** Counts and notes [key] when [GarminSyncRequest.defersGrownFile] holds it back; true means skip it. */
+    private fun deferGrown(request: GarminSyncRequest, key: GarminSyncFileKey): Boolean {
+        if (!request.defersGrownFile(key)) return false
+        summary.deferredGrown += 1
+        val age = request.nowUnix - (request.lastIngestedAt[key.identity] ?: request.nowUnix)
+        note(false, "deferred growing ${key.label}: ingested ${age}s ago, floor ${request.grownFileFloorSeconds}s")
+        return true
+    }
+
+    private val deferredNote: String
+        get() = if (summary.deferredGrown > 0) "; deferred ${summary.deferredGrown} growing file(s)" else ""
 
     private fun typeName(item: GarminItemReference): String? {
         val name = item.dataType?.typeName

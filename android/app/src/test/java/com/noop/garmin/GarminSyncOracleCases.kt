@@ -331,6 +331,8 @@ internal fun oracleRunSync(
 
 internal const val ORACLE_RECENT_TS = 1_161_900_000L
 internal const val ORACLE_NOT_BEFORE = 1_792_000_000L
+/** The phone's Unix time the growing-file traces build their requests at (the oracle clock's start). */
+internal const val ORACLE_NOW_UNIX = 1_793_546_986L
 
 internal fun oracleStandardWatch(): OracleFakeWatch = OracleFakeWatch().apply {
     directory = listOf(
@@ -500,6 +502,40 @@ internal fun garminSyncOracleLines(): List<String> {
     out += oracleRunSync("yield-after-sync", y, listOf(
         connect, sync(GarminSyncRequest(synced = synced, notBeforeUnix = ORACLE_NOT_BEFORE)),
     )).first
+
+    // J: growing files (see the Swift twin).
+    val grown = mapOf(
+        GarminSyncFileKey(oracleEntry(1, 32, 1, 100, ORACLE_RECENT_TS - 600)).identity to ORACLE_NOW_UNIX - 986,
+        GarminSyncFileKey(oracleEntry(2, 49, 2, 50, ORACLE_RECENT_TS)).identity to ORACLE_NOW_UNIX - 6_986,
+    )
+    fun grownRequest(floor: Long, ingested: Map<GarminSyncFileIdentity, Long> = grown, resume: GarminSyncResume? = null) =
+        GarminSyncRequest(synced = synced, resume = resume, notBeforeUnix = ORACLE_NOT_BEFORE, lastIngestedAt = ingested,
+            nowUnix = ORACLE_NOW_UNIX, grownFileFloorSeconds = floor)
+    out += oracleRunSync("grown-deferred", oracleStandardWatch(), listOf(connect, sync(grownRequest(3_600)))).first
+    out += oracleRunSync("grown-manual", oracleStandardWatch(), listOf(connect, sync(grownRequest(0)))).first
+    out += oracleRunSync("grown-only-deferred", oracleStandardWatch(), listOf(connect, sync(grownRequest(86_400)))).first
+    val other = GarminSyncFileKey(oracleEntry(1, 32, 99, 150, ORACLE_RECENT_TS)).identity
+    out += oracleRunSync("grown-new-identity", oracleStandardWatch(), listOf(
+        connect, sync(grownRequest(3_600, ingested = mapOf(other to ORACLE_NOW_UNIX - 10))),
+    )).first
+    val n = oracleStandardWatch()
+    val partialNData = oracleFileBody(1, 150).copyOfRange(0, 64)
+    val partialN = GarminSyncResume(GarminSyncFileKey(n.directory[0]), partialNData, GarminCrc.crc16(partialNData))
+    out += oracleRunSync("grown-resume", n, listOf(connect, sync(grownRequest(86_400, resume = partialN)))).first
+    fun itemWatch() = oracleStandardWatch().apply {
+        itemPages = listOf(listOf(monitor))
+        pullHandles = hashMapOf(0xA1L to 0x0043)
+        pipeFiles = hashMapOf(0x0043 to oracleZlibStream())
+    }
+    val monitorIdentity = GarminSyncFileKey.fileAccess(monitor, "FIT_TYPE_32")!!.identity
+    for ((name, age) in listOf("grown-file-access" to 60L, "grown-file-access-due" to 900L)) {
+        out += oracleRunSync(name, itemWatch(), listOf(
+            connect,
+            sync(GarminSyncRequest(flow = GarminSyncFlow.FileAccess(legacyFlush = false), notBeforeUnix = ORACLE_NOT_BEFORE,
+                lastIngestedAt = mapOf(monitorIdentity to ORACLE_NOW_UNIX - age), nowUnix = ORACLE_NOW_UNIX,
+                grownFileFloorSeconds = 900)),
+        )).first
+    }
 
     // H
     val j = oracleStandardWatch()

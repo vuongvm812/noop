@@ -29,6 +29,7 @@ import com.noop.garmin.GarminAdvertisement
 import com.noop.garmin.GarminClock
 import com.noop.garmin.GarminDeviceInformation
 import com.noop.garmin.GarminDownloadedFile
+import com.noop.garmin.GarminSyncFileIdentity
 import com.noop.garmin.GarminSyncFileKey
 import com.noop.garmin.GarminSyncFlow
 import com.noop.garmin.GarminSyncModelPolicy
@@ -104,6 +105,8 @@ class GarminSource(
     private val onWatch: (GarminDeviceInformation) -> Unit = {},
     private val onSyncAnnounced: () -> Unit = {},
     private val loadSynced: suspend () -> Set<GarminSyncFileKey> = { emptySet() },
+    /** When each file identity was last ingested (the ledger's `ingestedAt`), for the grown-file floor. */
+    private val loadIngestedAt: suspend () -> Map<GarminSyncFileIdentity, Long> = { emptyMap() },
     private val ingest: suspend (GarminDownloadedFile) -> Boolean = { false },
     private val onSyncFinished: (GarminSyncSummary) -> Unit = {},
     private val syncFlow: (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(it?.productNumber) },
@@ -318,6 +321,7 @@ class GarminSource(
         val flow = syncFlow(watchInfo)
         scope.launch {
             val synced = runCatching { loadSynced() }.getOrDefault(emptySet())
+            val ingestedAt = runCatching { loadIngestedAt() }.getOrDefault(emptyMap())
             syncPreparing = false
             val current = session ?: return@launch
             if (current !== s || current.phase !is GarminSessionPhase.Ready || current.isSyncing) return@launch
@@ -326,8 +330,12 @@ class GarminSource(
                 requestCompression = requestsCompression,
                 watchInitiated = watchInitiated,
                 notBeforeUnix = System.currentTimeMillis() / 1000 - HISTORY_LOOKBACK_SECONDS,
+                lastIngestedAt = ingestedAt,
+                nowUnix = System.currentTimeMillis() / 1000,
+                grownFileFloorSeconds = GarminRadioPolicy.grownFileFloorSeconds(trigger),
             )
-            say(true, "sync ($trigger) starting with ${synced.size} files on record")
+            say(true, "sync ($trigger) starting with ${synced.size} files on record, " +
+                "growing files wait ${request.grownFileFloorSeconds} s")
             heldResume = null
             perform(current.startSync(request, clock()))
         }

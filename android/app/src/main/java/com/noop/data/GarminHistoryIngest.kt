@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.noop.analytics.RouteMath
 import com.noop.garmin.GarminDownloadedFile
 import com.noop.garmin.GarminFitFileType
+import com.noop.garmin.GarminSyncFileIdentity
 import com.noop.garmin.GarminSyncFileKey
 import com.noop.ingest.ActivityFileImporter
 import com.noop.ingest.GarminWatchIngest
@@ -28,6 +29,12 @@ object GarminHistoryIngest {
         store.syncedFiles(deviceId).map {
             GarminSyncFileKey(it.fileIndex, it.dataType, it.subType, it.fileNumber, it.ts, it.size)
         }.toSet()
+
+    /** When each file identity was last ingested, for the grown-file floor. Swift twin: `GarminHistoryIngest.lastIngestedAt`. */
+    suspend fun lastIngestedAt(store: GarminSyncStore, deviceId: String): Map<GarminSyncFileIdentity, Long> =
+        store.lastIngested(deviceId).associate {
+            GarminSyncFileIdentity(it.fileIndex, it.dataType, it.subType, it.fileNumber) to it.ingestedAt
+        }
 
     /**
      * Once per watch, repair the nights an older fold stored: forget the stored SLEEP files so the next

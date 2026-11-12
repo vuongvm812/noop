@@ -134,6 +134,92 @@ class GarminHistorySyncTest {
         assertTrue(watch.seen.any { it.startsWith("rx download idx=1 offset=128 kind=0") && it.contains("size=22") })
     }
 
+    // Growing files
+
+    /** MONITOR #1 last ingested 986 s ago at another size, SLEEP #2 6986 s ago. */
+    private val grown = mapOf(
+        GarminSyncFileKey(oracleEntry(1, 32, 1, 100, ORACLE_RECENT_TS - 600)).identity to ORACLE_NOW_UNIX - 986,
+        GarminSyncFileKey(oracleEntry(2, 49, 2, 50, ORACLE_RECENT_TS)).identity to ORACLE_NOW_UNIX - 6_986,
+    )
+
+    private fun grownRequest(floor: Long, ingested: Map<GarminSyncFileIdentity, Long> = grown, resume: GarminSyncResume? = null) =
+        GarminSyncRequest(synced = synced, resume = resume, notBeforeUnix = ORACLE_NOT_BEFORE, lastIngestedAt = ingested,
+            nowUnix = ORACLE_NOW_UNIX, grownFileFloorSeconds = floor)
+
+    @Test
+    fun growingFileIsDeferredInsideTheFloorAndDownloadedAfterIt() {
+        val r = run(oracleStandardWatch(), listOf(connect, sync(grownRequest(3_600))))
+        assertEquals("MONITOR was ingested 986 s ago; SLEEP 6986 s ago is due", listOf(2), r.files.map { it.key.fileIndex })
+        val summary = r.summaries.last()
+        assertEquals(1, summary.deferredGrown)
+        assertEquals(1, summary.downloaded)
+        assertFalse(summary.isEmpty)
+        assertTrue(summary.line.endsWith(" deferred=1"))
+        assertEquals("a deferred file stays on the Test Centre list", summary.wanted, summary.onWatch.size)
+    }
+
+    @Test
+    fun manualSyncDownloadsAGrowingFile() {
+        val r = run(oracleStandardWatch(), listOf(connect, sync(grownRequest(0))))
+        assertEquals(listOf(1, 2), r.files.map { it.key.fileIndex })
+        assertEquals(0, r.summaries.last().deferredGrown)
+        assertFalse(r.summaries.last().line.contains("deferred"))
+    }
+
+    @Test
+    fun aNewIdentityIsNeverDeferred() {
+        val other = GarminSyncFileKey(oracleEntry(1, 32, 99, 150, ORACLE_RECENT_TS)).identity
+        val r = run(oracleStandardWatch(), listOf(connect, sync(grownRequest(86_400, ingested = mapOf(other to ORACLE_NOW_UNIX - 10)))))
+        assertEquals(listOf(1, 2), r.files.map { it.key.fileIndex })
+        assertEquals(0, r.summaries.last().deferredGrown)
+    }
+
+    @Test
+    fun theResumeTargetIsNeverDeferred() {
+        val watch = oracleStandardWatch()
+        val data = oracleFileBody(1, 150).copyOfRange(0, 64)
+        val partial = GarminSyncResume(GarminSyncFileKey(watch.directory[0]), data, GarminCrc.crc16(data))
+        val r = run(watch, listOf(connect, sync(grownRequest(86_400, resume = partial))))
+        assertEquals("the held MONITOR continues; SLEEP waits", listOf(1), r.files.map { it.key.fileIndex })
+        assertEquals(64L, r.files.first().resumedFrom)
+        assertEquals(1, r.summaries.last().deferredGrown)
+    }
+
+    @Test
+    fun aSyncThatOnlyDeferredIsEmpty() {
+        val legacy = run(oracleStandardWatch(), listOf(connect, sync(grownRequest(86_400)))).summaries.last()
+        assertEquals(2, legacy.deferredGrown)
+        assertEquals(0, legacy.downloaded)
+        assertTrue("the empty-sync back-off counts it", legacy.isEmpty)
+
+        val watch = oracleStandardWatch()
+        val monitor = GarminItemReference(uid = GarminUid(0x4567_0000_0000_0001L, 0xA1),
+            dataType = GarminItemDataType(format = 3, typeName = "FIT_TYPE_32", typeNameKey = 32),
+            dataSize = 416, modifiedTime = ORACLE_RECENT_TS)
+        watch.itemPages = listOf(listOf(monitor))
+        val identity = GarminSyncFileKey.fileAccess(monitor, "FIT_TYPE_32")!!.identity
+        val fa = run(watch, listOf(connect, sync(GarminSyncRequest(flow = GarminSyncFlow.FileAccess(legacyFlush = false),
+            lastIngestedAt = mapOf(identity to ORACLE_NOW_UNIX - 60), nowUnix = ORACLE_NOW_UNIX, grownFileFloorSeconds = 900))))
+        assertTrue(fa.files.isEmpty())
+        assertEquals(1, fa.summaries.last().deferredGrown)
+        assertTrue(fa.summaries.last().isEmpty)
+        assertFalse("a deferred item is never pulled", watch.seen.any { it.startsWith("rx pull item") })
+    }
+
+    @Test
+    fun defersGrownFileBoundaries() {
+        val key = GarminSyncFileKey(oracleEntry(1, 32, 1, 150, ORACLE_RECENT_TS))
+        fun defers(age: Long, floor: Long) =
+            GarminSyncRequest(lastIngestedAt = mapOf(key.identity to 10_000 - age), nowUnix = 10_000, grownFileFloorSeconds = floor)
+                .defersGrownFile(key)
+        assertTrue(defers(0, 900))
+        assertTrue(defers(899, 900))
+        assertFalse("due once the floor has passed", defers(900, 900))
+        assertFalse("floor 0 never defers", defers(10, 0))
+        assertFalse("an ingestion in the phone's future (clock set back) does not hold the file", defers(-1, 900))
+        assertFalse("never ingested", GarminSyncRequest(nowUnix = 10_000, grownFileFloorSeconds = 900).defersGrownFile(key))
+    }
+
     @Test
     fun aWatchThatRestartsOnContinueStillYieldsTheExactFile() {
         val watch = oracleStandardWatch()
@@ -963,6 +1049,294 @@ trace yield-after-sync
 watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | other app refused gfdi | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0 | ml close handle service=1 handle=101
 watch types 5000,5002,5030,5050
 end syncing=false resume=- deadline=120017
+trace grown-deferred
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 1 to download; deferred 1 growing file(s)
+@9 w 5002 0200000000000100000000000000
+@11 w 5000 8c13000040000000
+@12 w 5000 8c13000046000000
+@12 log downloaded SLEEP 128/49 #2 idx=2 size=70 ts=1161900060 (70 bytes)
+@12 file 128/49 #2 idx=2 size=70 ts=1161900060 n=70 fnv=d2a3fcaf resumed=- type=- fit=SLEEP
+@12 w 5030 0000
+@12 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=1 failed=0 resumed=0 bytes=182 deferred=1
+@12 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=1 failed=0 resumed=0 bytes=182 deferred=1 empty=false
+@12 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=-
+trace grown-manual
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 2 to download
+@9 w 5002 0100000000000100000000000000
+@11 w 5000 8c13000040000000
+@12 w 5000 8c13000080000000
+@13 w 5000 8c13000096000000
+@13 log downloaded MONITOR 128/32 #1 idx=1 size=150 ts=1161900000 (150 bytes)
+@13 file 128/32 #1 idx=1 size=150 ts=1161900000 n=150 fnv=e1692bc2 resumed=- type=- fit=MONITOR
+@13 w 5002 0200000000000100000000000000
+@15 w 5000 8c13000040000000
+@16 w 5000 8c13000046000000
+@16 log downloaded SLEEP 128/49 #2 idx=2 size=70 ts=1161900060 (70 bytes)
+@16 file 128/49 #2 idx=2 size=70 ts=1161900060 n=70 fnv=d2a3fcaf resumed=- type=- fit=SLEEP
+@16 w 5030 0000
+@16 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332
+@16 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332 empty=false
+@16 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=-
+trace grown-only-deferred
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 0 to download; deferred 2 growing file(s)
+@9 w 5030 0000
+@9 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=112 deferred=2
+@9 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=0 failed=0 resumed=0 bytes=112 deferred=2 empty=true
+@9 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx system event 0
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=-
+trace grown-new-identity
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 2 to download
+@9 w 5002 0100000000000100000000000000
+@11 w 5000 8c13000040000000
+@12 w 5000 8c13000080000000
+@13 w 5000 8c13000096000000
+@13 log downloaded MONITOR 128/32 #1 idx=1 size=150 ts=1161900000 (150 bytes)
+@13 file 128/32 #1 idx=1 size=150 ts=1161900000 n=150 fnv=e1692bc2 resumed=- type=- fit=MONITOR
+@13 w 5002 0200000000000100000000000000
+@15 w 5000 8c13000040000000
+@16 w 5000 8c13000046000000
+@16 log downloaded SLEEP 128/49 #2 idx=2 size=70 ts=1161900060 (70 bytes)
+@16 file 128/49 #2 idx=2 size=70 ts=1161900060 n=70 fnv=d2a3fcaf resumed=- type=- fit=SLEEP
+@16 w 5030 0000
+@16 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332
+@16 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=2 failed=0 resumed=0 bytes=332 empty=false
+@16 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx download idx=2 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=70 | rx system event 0
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=-
+trace grown-resume
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=legacy synced=1 resume=128/32 #1 idx=1 size=150 ts=1161900000@64 compression=false watchInitiated=false
+@6 transfer true
+@6 w 5002 0000000000000100000000000000
+@8 w 5000 8c13000040000000
+@9 w 5000 8c13000070000000
+@9 log directory: 7 entries [128/3x1 128/32x2 128/44x1 128/49x1 128/68x1 8/255x1]; 1 to download; deferred 1 growing file(s)
+@9 log resuming 128/32 #1 idx=1 size=150 ts=1161900000 from offset 64
+@9 w 5002 010040000000001cf15600000000
+@10 log watch continues 128/32 #1 idx=1 size=150 ts=1161900000 at 64: 86 bytes left
+@11 w 5000 8c13000080000000
+@12 w 5000 8c13000096000000
+@12 log downloaded MONITOR 128/32 #1 idx=1 size=150 ts=1161900000 (150 bytes, resumed at 64)
+@12 file 128/32 #1 idx=1 size=150 ts=1161900000 n=150 fnv=e1692bc2 resumed=64 type=- fit=MONITOR
+@12 w 5030 0000
+@12 log sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=1 failed=0 resumed=1 bytes=198 deferred=1
+@12 finished sync completed: listed=7 wanted=5 synced=2 old=1 large=0 downloaded=1 failed=0 resumed=1 bytes=198 deferred=1 empty=false
+@12 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx download idx=0 offset=0 kind=1 seed=0 size=0 flags=0 | rx chunk reply status=0 next=64 | rx chunk reply status=0 next=112 | rx download idx=1 offset=64 kind=0 seed=61724 size=86 flags=0 | rx chunk reply status=0 next=128 | rx chunk reply status=0 next=150 | rx system event 0
+watch types 5000,5002,5030,5050
+end syncing=false resume=- deadline=-
+trace grown-file-access
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=file-access flush=false synced=0 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5043 0100000000001900000019000000da02164a142a1209a5a500000000000011a5a5000000000000
+@8 w 5000 b413000100000000000000
+@9 w 5000 b4130001001c0000000000
+@9 log item list: 1 items; 0 to download; deferred 1 growing file(s)
+@9 w 5030 0000
+@9 log sync completed: listed=1 wanted=1 synced=0 old=0 large=0 downloaded=0 failed=0 resumed=0 bytes=0 deferred=1
+@9 finished sync completed: listed=1 wanted=1 synced=0 old=0 large=0 downloaded=0 failed=0 resumed=0 bytes=0 deferred=1 empty=true
+@9 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx item list page=0 | rx system event 0
+watch types 5000,5030,5043,5050
+end syncing=false resume=- deadline=-
+trace grown-file-access-due
+@0 log session start transport=V2 multi-link mtu=150 firstPairing=false
+@0 phase closing-all
+@0 log -> ML close all
+@0 w ml 00050200000000000000000000
+@1 log <- ML close-all response
+@1 phase registering
+@1 log -> ML register service=1 reliable=false
+@1 w ml 00000200000000000000010000
+@2 log <- ML register response service=1 status=0 handle=0x65 reliable=false
+@2 log GFDI registered handle=0x65 reliable=false status=0
+@2 phase awaiting-device-information
+@3 log watch Forerunner 165 model=165 product=4432 fw=29.05 protocol=151 maxPacket=512
+@3 w 5000 a01300
+@3 w 5000 a013009600ffffffffffff0100ffff044e4f4f50044e4f4f50066f7261636c6501
+@3 phase handshaking
+@4 log watch capabilities: 10 bits; NOOP advertises 0,3,4,5,55,71,76,90
+@4 w 5000 ba1300
+@4 w 5050 113900000000008000801000040000000000
+@4 w 5030 0800
+@4 phase ready
+@4 log handshake complete in 4 ms
+@6 log sync start flow=file-access flush=false synced=0 resume=none compression=false watchInitiated=false
+@6 transfer true
+@6 w 5043 0100000000001900000019000000da02164a142a1209a5a500000000000011a5a5000000000000
+@8 w 5000 b413000100000000000000
+@9 w 5000 b4130001001c0000000000
+@9 log item list: 1 items; 1 to download
+@9 w 5043 len=77 fnv=69130721
+@11 w 5000 b413000200000000000000
+@11 log -> ML register service=8216 reliable=false
+@11 w ml 00000200000000000000182000
+@12 log <- ML register response service=8216 status=0 handle=0x66 reliable=false
+@12 w raw 66000043000000
+@23 log <- ML close-handle response service=8216 handle=0x66 status=0
+@23 log downloaded FIT_TYPE_32 255/32 #58799 idx=16605 size=416 ts=1161900000 (328 -> 416 bytes)
+@23 file 255/32 #58799 idx=16605 size=416 ts=1161900000 n=416 fnv=be5fb77d resumed=- type=FIT_TYPE_32 fit=MONITOR
+@23 w 5030 0000
+@23 log sync completed: listed=1 wanted=1 synced=0 old=0 large=0 downloaded=1 failed=0 resumed=0 bytes=328
+@23 finished sync completed: listed=1 wanted=1 synced=0 old=0 large=0 downloaded=1 failed=0 resumed=0 bytes=328 empty=false
+@23 transfer false
+watch saw ml close-all | ml register gfdi | rx configuration | rx system event 8 | rx item list page=0 | rx pull item uid=00000000000000a1 -> 67 | ml register service=8216 | pipe start transfer=67 bytes=66000043000000 | rx system event 0
+watch types 5000,5030,5043,5050
+end syncing=false resume=- deadline=-
 trace not-ready
 @0 log sync not started: session is idle
 watch saw 

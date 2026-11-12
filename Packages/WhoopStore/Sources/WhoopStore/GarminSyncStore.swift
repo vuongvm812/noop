@@ -52,6 +52,24 @@ public struct GarminSyncedFileRow: Equatable, Hashable, Sendable {
     }
 }
 
+/// When a watch file identity (a ledger key without ts and size) was last ingested, Unix seconds.
+/// Kotlin twin: the data class of the same name in android/app/src/main/java/com/noop/data/GarminSyncStore.kt.
+public struct GarminLedgerIngestion: Equatable, Hashable, Sendable {
+    public let fileIndex: Int
+    public let dataType: Int
+    public let subType: Int
+    public let fileNumber: Int
+    public let ingestedAt: Int
+
+    public init(fileIndex: Int, dataType: Int, subType: Int, fileNumber: Int, ingestedAt: Int) {
+        self.fileIndex = fileIndex
+        self.dataType = dataType
+        self.subType = subType
+        self.fileNumber = fileNumber
+        self.ingestedAt = ingestedAt
+    }
+}
+
 /// One activity type's largest cumulative MONITORING counters on one local day, as one file saw them.
 /// `activityType` is the FIT activity_type, or -1 when the record carried none. `steps` is set only for
 /// the step types (`GarminWellnessParser.stepActivityTypes`): other types count strokes or revolutions.
@@ -166,6 +184,22 @@ extension WhoopStore {
                 """, arguments: [deviceId]).map {
                 GarminSyncedFileRow(fileIndex: $0["fileIndex"], dataType: $0["dataType"], subType: $0["subType"],
                                     fileNumber: $0["fileNumber"], ts: $0["ts"], size: $0["size"])
+            }
+        }
+    }
+
+    /// The latest `ingestedAt` of each file identity (the ledger key without ts and size) of this device. A
+    /// file the watch keeps appending to has one ledger row per version; this is when its newest version was
+    /// stored. Kotlin twin: `GarminSyncStore.lastIngested`.
+    public func garminLastIngested(deviceId: String) async throws -> [GarminLedgerIngestion] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: """
+                SELECT fileIndex, dataType, subType, fileNumber, MAX(ingestedAt) AS ingestedAt FROM garminSyncedFile
+                WHERE deviceId = ? GROUP BY fileIndex, dataType, subType, fileNumber
+                ORDER BY fileIndex, dataType, subType, fileNumber
+                """, arguments: [deviceId]).map {
+                GarminLedgerIngestion(fileIndex: $0["fileIndex"], dataType: $0["dataType"], subType: $0["subType"],
+                                      fileNumber: $0["fileNumber"], ingestedAt: $0["ingestedAt"])
             }
         }
     }

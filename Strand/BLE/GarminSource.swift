@@ -103,6 +103,8 @@ final class GarminSource: NSObject, ObservableObject {
     private let onLive: (GarminLiveEvent) -> Void
     private let nameMatches: (String) -> Bool
     private let loadSynced: () async -> Set<GarminSyncFileKey>
+    /// When each file identity was last ingested (the ledger's `ingestedAt`), for the grown-file floor.
+    private let loadIngestedAt: () async -> [GarminSyncFileIdentity: Int64]
     private let ingest: (GarminDownloadedFile) async -> Bool
     private let onSyncFinished: (GarminSyncSummary) -> Void
     private let syncFlow: (GarminDeviceInformation?) -> GarminSyncFlow
@@ -177,6 +179,7 @@ final class GarminSource: NSObject, ObservableObject {
          onLive: @escaping (GarminLiveEvent) -> Void = { _ in },
          nameMatches: @escaping (String) -> Bool = { _ in false },
          loadSynced: @escaping () async -> Set<GarminSyncFileKey> = { [] },
+         loadIngestedAt: @escaping () async -> [GarminSyncFileIdentity: Int64] = { [:] },
          ingest: @escaping (GarminDownloadedFile) async -> Bool = { _ in false },
          onSyncFinished: @escaping (GarminSyncSummary) -> Void = { _ in },
          syncFlow: @escaping (GarminDeviceInformation?) -> GarminSyncFlow = { GarminSyncModelPolicy.flow(productNumber: $0?.productNumber) },
@@ -195,6 +198,7 @@ final class GarminSource: NSObject, ObservableObject {
         self.onLive = onLive
         self.nameMatches = nameMatches
         self.loadSynced = loadSynced
+        self.loadIngestedAt = loadIngestedAt
         self.ingest = ingest
         self.onSyncFinished = onSyncFinished
         self.syncFlow = syncFlow
@@ -340,14 +344,19 @@ final class GarminSource: NSObject, ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let synced = await self.loadSynced()
+            let ingestedAt = await self.loadIngestedAt()
             self.syncPreparing = false
             guard var s = self.session, s.phase == .ready, !s.isSyncing else { return }
             let request = GarminSyncRequest(
                 flow: flow, synced: synced, resume: self.heldResume,
                 requestCompression: self.requestsCompression,
                 watchInitiated: watchInitiated,
-                notBeforeUnix: Int64(Date().timeIntervalSince1970 - Self.historyLookbackSeconds))
-            self.say(true, "sync (\(trigger)) starting with \(synced.count) files on record")
+                notBeforeUnix: Int64(Date().timeIntervalSince1970 - Self.historyLookbackSeconds),
+                lastIngestedAt: ingestedAt,
+                nowUnix: Int64(Date().timeIntervalSince1970),
+                grownFileFloorSeconds: GarminRadioPolicy.grownFileFloorSeconds(trigger))
+            self.say(true, "sync (\(trigger)) starting with \(synced.count) files on record, "
+                     + "growing files wait \(request.grownFileFloorSeconds) s")
             self.heldResume = nil
             let outputs = s.startSync(request, self.clock())
             self.session = s

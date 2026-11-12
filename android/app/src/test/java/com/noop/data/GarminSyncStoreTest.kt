@@ -181,6 +181,21 @@ class GarminSyncStoreTest {
         assertEquals(listOf(file(1)), store.syncedFiles(id))
     }
 
+    /** A growing file has one ledger row per version; the read keeps the newest `ingestedAt` per identity. */
+    @Test
+    fun lastIngestedIsTheNewestVersionOfEachIdentity() = runBlocking {
+        store.record(file(1, size = 100), id, 1_000)
+        store.record(file(1, size = 300), id, 2_000)
+        store.record(file(1, size = 200), id, 1_500)
+        store.record(file(2), id, 700)
+        store.record(file(1, size = 400), "garmin-OTHER", 9_000)
+        assertEquals(
+            listOf(GarminLedgerIngestion(1, 128, 32, 1, 2_000), GarminLedgerIngestion(2, 128, 32, 2, 700)),
+            store.lastIngested(id),
+        )
+        assertEquals("every version stays in the ledger", 4, store.syncedFiles(id).size)
+    }
+
     @Test
     fun recordWithoutDataIsIdempotent() = runBlocking {
         store.record(file(7), id, 1)
