@@ -3,6 +3,7 @@ package com.noop.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.noop.huawei.HuaweiDataType
+import com.noop.huawei.HuaweiStepCarry
 import com.noop.huawei.HuaweiSyncCursor
 
 /**
@@ -32,6 +33,12 @@ class HuaweiSyncPrefs(private val prefs: SharedPreferences) : HuaweiSyncCursor {
 
     override fun dictUnavailableUntil(deviceId: String): Long? = long(deviceId, "dictUnavailableUntil")
     override fun setDictUnavailableUntil(deviceId: String, ts: Long) = putLong(deviceId, "dictUnavailableUntil", ts)
+
+    override fun stepCarry(deviceId: String): HuaweiStepCarry? = HuaweiStepCarry.decode(prefs.getString(key(deviceId, "stepCarry"), null))
+    override fun setStepCarry(deviceId: String, carry: HuaweiStepCarry) =
+        prefs.edit().putString(key(deviceId, "stepCarry"), carry.encode()).apply()
+    override fun lastNightEnd(deviceId: String, type: HuaweiDataType): Long? = long(deviceId, "nightEnd.${type.key}")
+    override fun setLastNightEnd(deviceId: String, type: HuaweiDataType, ts: Long) = putLong(deviceId, "nightEnd.${type.key}", ts)
 
     override fun recordSyncOutcome(deviceId: String, at: Long, empty: Boolean) {
         prefs.edit()

@@ -28,7 +28,8 @@ data class HuaweiIngestCounts(
  *
  * The SQL follows [GarminSyncStore] statement for statement where the meaning is the same: a night replaces
  * any other unedited night of the band it overlaps; a day keeps its main (longest) night; steps, distance
- * and energy keep the larger value (the sync re-reads whole days, so a day's totals arrive complete); the
+ * and energy keep the larger value (the sync reads a day whole or folds it onto the day's carried base, so
+ * a day's totals arrive complete); the
  * day's own stress average goes to [StressToday.HUAWEI_STRESS_KEY]; the overnight SpO2 is the ONE resolver
  * [GarminSyncStore.rederiveNightVitals]. Kotlin-only; Swift twin deferred (fork).
  */
