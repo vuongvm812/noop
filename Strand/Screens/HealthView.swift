@@ -733,6 +733,14 @@ private struct FitnessAgeSection: View {
     /// from today's waist because the profile may have changed since the point was scored.
     @State private var vo2maxEstimator: Vo2MaxEstimator?
     @State private var loaded = false
+    /// Predicted race times from the user's runs, shown under the VO₂max hero. nil until loaded; the block
+    /// stays hidden until a run qualifies, so a non-runner's Health screen carries no empty card.
+    @State private var racePredictions: RacePredictor.Result?
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    @AppStorage(UnitPrefs.distanceSystemKey) private var distanceSystemRaw = ""
+    private var distanceUnitSystem: UnitSystem {
+        UnitPrefs.resolveDistance(system: UnitSystem(rawValue: unitSystemRaw) ?? .metric, override: distanceSystemRaw)
+    }
     /// True while a manual "refresh Fitness Age" recompute is running (spinner in the readiness card).
     @State private var refreshing = false
 
@@ -782,6 +790,9 @@ private struct FitnessAgeSection: View {
             SectionHeader("Fitness Age", overline: "Daily",
                           trailing: fitnessAge != nil ? String(localized: "vs age \(profile.age)") : nil)
             content
+            if let racePredictions, racePredictions.items.contains(where: { $0 != nil }) {
+                RacePredictionsCard(result: racePredictions, system: distanceUnitSystem, compact: true)
+            }
         }
         .sheet(item: $fitnessSheet) { which in
             NavigationStack {
@@ -1025,6 +1036,7 @@ private struct FitnessAgeSection: View {
             vo2maxEstimator = nil
         }
         loaded = true
+        racePredictions = await repo.racePredictions()
     }
 }
 

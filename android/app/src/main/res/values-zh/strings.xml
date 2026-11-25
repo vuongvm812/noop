@@ -4978,4 +4978,18 @@
     <string name="garmin_fit_skip_not_fit">非 FIT 文件</string>
     <string name="garmin_fit_skip_no_usable_activity">没有可用训练的活动文件</string>
     <string name="garmin_fit_skip_failed">读取失败的文件</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">半程马拉松</string>
+    <string name="race_target_marathon">全程马拉松</string>
+    <string name="race_unlock_hint">跑 %1$s 或更长即可解锁</string>
+    <string name="race_based_on">基于你 %2$s 的 %1$s 跑步。</string>
+    <string name="race_source_caption">%1$s 跑步 · %2$s</string>
+    <string name="race_from_your_runs">来自你的跑步</string>
+    <string name="race_empty">记录一次至少 3 公里、12 分钟的跑步即可查看预测。</string>
+    <string name="race_all_history">过去 90 天没有跑步，因此使用你的全部历史记录。</string>
+    <string name="race_method_note">基于整次跑步的 Riegel 公式，而非你最快的片段。仅供参考，假设你针对该距离训练；对全程马拉松最不准确。</string>
+    <string name="race_this_run_predicts">本次跑步预测</string>
+    <string name="race_your_best">你的最佳</string>
+    <string name="race_this_run_note">基于本次整次跑步的 Riegel 公式。“你的最佳”标记本次跑步决定你当前预测的距离。</string>
 </resources>

@@ -5228,4 +5228,18 @@
     <string name="garmin_fit_skip_not_fit">Pliki, które nie są plikami FIT</string>
     <string name="garmin_fit_skip_no_usable_activity">Pliki aktywności bez użytecznego treningu</string>
     <string name="garmin_fit_skip_failed">Pliki, których nie udało się odczytać</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Półmaraton</string>
+    <string name="race_target_marathon">Maraton</string>
+    <string name="race_unlock_hint">Przebiegnij %1$s lub więcej, aby odblokować</string>
+    <string name="race_based_on">Na podstawie biegu na %1$s z %2$s.</string>
+    <string name="race_source_caption">Bieg na %1$s · %2$s</string>
+    <string name="race_from_your_runs">Z twoich biegów</string>
+    <string name="race_empty">Zapisz bieg na co najmniej 3 km i 12 minut, aby zobaczyć prognozy.</string>
+    <string name="race_all_history">Brak biegu w ostatnich 90 dniach, więc użyto całej historii.</string>
+    <string name="race_method_note">Wzór Riegela dla całych biegów, nie najszybszych odcinków. Orientacyjnie, przy założeniu treningu pod dystans; najmniej wiarygodny dla maratonu.</string>
+    <string name="race_this_run_predicts">Ten bieg prognozuje</string>
+    <string name="race_your_best">Twój najlepszy</string>
+    <string name="race_this_run_note">Wzór Riegela dla całego tego biegu. „Twój najlepszy” oznacza dystanse, dla których ten bieg wyznacza obecną prognozę.</string>
 </resources>

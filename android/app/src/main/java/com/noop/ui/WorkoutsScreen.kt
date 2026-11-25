@@ -175,6 +175,8 @@ fun WorkoutsScreen(vm: AppViewModel) {
     // The ViewModel owns the loaded rows now (ALL sources incl. detected, dismissed-filtered) so a
     // mutation (add / edit / relabel / dismiss / delete) republishes the list and the screen updates.
     val allRows by vm.workouts.collectAsState()
+    // Predicted race times over the whole history (not the selected range); recomputed on every load.
+    val racePredictions by vm.racePredictions.collectAsState()
     val lastHistorySyncAt by vm.lastHistorySyncAt.collectAsStateWithLifecycle()
     // Cached daily metrics — the Charge side of the post-log activity-cost note (#439).
     val recentDays by vm.recentDays.collectAsStateWithLifecycle()
@@ -326,6 +328,7 @@ fun WorkoutsScreen(vm: AppViewModel) {
             postLogNote?.let { item { PostLogNoteBanner(it) } }
             item { EffortHero(rows = windowRows, effectiveRange = resolved, groups = groups) }
             item { SummarySection(rows = windowRows, effectiveRange = resolved, groups = groups) }
+            racePredictions?.let { item { RacePredictionsCard(it) } }
             item { CalorieHeatmapSection(recentDays) }
             item { BreakdownSection(groups = groups, rows = windowRows) }
             item { ZonesSection(windowRows) }
@@ -1666,6 +1669,8 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
     var powerCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
     var cadenceCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
     var elevationCurve by remember(row.startTs) { mutableStateOf<List<MetricBucket>>(emptyList()) }
+    // The current best race predictions, so "This run predicts" can mark the targets this run holds.
+    val raceBest by vm.racePredictions.collectAsState()
     LaunchedEffect(row.startTs, row.endTs) {
         hrCurve = vm.workoutHrBuckets(row.startTs, row.endTs, row.source, row.deviceId)
         powerCurve = vm.workoutMetricBuckets(DeviceMetricKind.POWER_W, row.startTs, row.endTs, row.source, row.deviceId)
@@ -1748,6 +1753,8 @@ internal fun WorkoutDetailSheet(vm: AppViewModel, row: WorkoutRow, onDismiss: ()
                 CardDivider()
                 SessionEffortCard(strain = strain, effortScale = effortScale)
             }
+
+            RunRacePredictionsSection(run = vm.raceRun(row), best = raceBest)
 
             // HR curve over the session window (#410). A faint baseline shows under 2 points.
             if (hrCurve.size > 1) {

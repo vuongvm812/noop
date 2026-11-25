@@ -5089,4 +5089,18 @@
     <string name="garmin_fit_skip_not_fit">Dateien, die keine FIT-Dateien sind</string>
     <string name="garmin_fit_skip_no_usable_activity">Aktivitätsdateien ohne verwertbares Training</string>
     <string name="garmin_fit_skip_failed">Dateien, die nicht gelesen werden konnten</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Halbmarathon</string>
+    <string name="race_target_marathon">Marathon</string>
+    <string name="race_unlock_hint">Lauf ab %1$s schaltet dies frei</string>
+    <string name="race_based_on">Basierend auf deinem Lauf über %1$s am %2$s.</string>
+    <string name="race_source_caption">Lauf über %1$s · %2$s</string>
+    <string name="race_from_your_runs">Aus deinen Läufen</string>
+    <string name="race_empty">Erfasse einen Lauf von mindestens 3 km und 12 Minuten, um Prognosen zu sehen.</string>
+    <string name="race_all_history">Kein Lauf in den letzten 90 Tagen, daher basieren diese auf deinem gesamten Verlauf.</string>
+    <string name="race_method_note">Riegel-Formel über ganze Läufe, nicht deine schnellsten Abschnitte. Ein Richtwert, der Training für die Distanz voraussetzt; am wenigsten zuverlässig für den Marathon.</string>
+    <string name="race_this_run_predicts">Dieser Lauf prognostiziert</string>
+    <string name="race_your_best">Deine Bestleistung</string>
+    <string name="race_this_run_note">Riegel-Formel über diesen ganzen Lauf. „Deine Bestleistung“ markiert die Ziele, bei denen dieser Lauf deine aktuelle Prognose bestimmt.</string>
 </resources>

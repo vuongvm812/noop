@@ -14,6 +14,7 @@ import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
 import com.noop.analytics.IllnessInputs
 import com.noop.analytics.IllnessWatch
+import com.noop.analytics.RacePredictor
 import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.IntelligencePersistence
 import com.noop.analytics.DayCycleIntelligenceIntegration
@@ -1997,6 +1998,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** All workouts for the Workouts screen (newest first), dismissed detected bouts removed. */
     val workouts: StateFlow<List<WorkoutRow>> = _workouts.asStateFlow()
 
+    private val _racePredictions = MutableStateFlow<RacePredictor.Result?>(null)
+    /**
+     * Predicted race times from every run in [workouts] (the whole deduped history), recomputed each time
+     * [loadWorkouts] publishes the list, so a new, imported, edited or deleted run moves them. Nothing is
+     * stored. null until the first load. Swift twin: `Repository.racePredictions`.
+     */
+    val racePredictions: StateFlow<RacePredictor.Result?> = _racePredictions.asStateFlow()
+
     /** Persist a bed/wake-time edit for one sleep session (delete-then-upsert at the new window), then
      *  re-score the affected day immediately so Charge / Rest / recovery and the persisted
      *  sleep_performance honor the corrected window without waiting for the 15-min loop — matching Swift
@@ -2291,6 +2300,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             val sorted = deduped.sortedByDescending { it.startTs }
             _workouts.value = sorted
+            _racePredictions.value = RacePredictor.predictions(sorted.map { raceRun(it) }, now)
             // Post-workout summary (#517) — opt-in, default OFF. The newest session (by start) drives a
             // one-shot Effort + duration + avg-HR notification when it's strictly newer than the last one
             // summarised, so a re-sync of the same backlog never re-fires. Honest timing: a strap-only
@@ -2298,6 +2308,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             sorted.firstOrNull()?.let { maybeNotifyWorkout(it) }
         }
     }
+
+    /** One workout row as the race predictor reads it. */
+    fun raceRun(row: WorkoutRow): RacePredictor.Run =
+        RacePredictor.Run(row.startTs, row.endTs, row.sport, row.distanceM, row.durationS)
 
     /** Seed the post-workout notification frontier to the newest existing workout WITHOUT notifying, so
      *  enabling the toggle doesn't immediately fire a summary for a session already in history (#517).

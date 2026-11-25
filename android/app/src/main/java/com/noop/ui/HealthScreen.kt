@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -707,6 +708,10 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
     val (rhrDays, readiness) = rememberFitnessReadiness(days, profile)
 
     var showChecklist by remember { mutableStateOf(false) }
+    // Predicted race times from the user's runs, shown under the VO₂max hero once a run qualifies (a
+    // non-runner's Health screen carries no empty card). The list loads here too, as Insights does.
+    val racePredictions by vm.racePredictions.collectAsState()
+    LaunchedEffect(Unit) { vm.loadWorkouts() }
 
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
         SectionHeader(uiString(R.string.l10n_health_screen_fitness_age_12383b4a), overline = uiString(R.string.l10n_health_screen_daily_728298d3), trailing = uiString(R.string.l10n_health_screen_5_yr_71ff0799))
@@ -769,6 +774,7 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
                 },
             )
         }
+        racePredictions?.takeIf { r -> r.items.any { it != null } }?.let { RacePredictionsCard(it, compact = true) }
     }
 }
 

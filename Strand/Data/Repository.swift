@@ -3034,6 +3034,32 @@ final class Repository: ObservableObject {
     /// user's prior "not a workout" decisions and the confirmation card cannot resurrect those windows.
     func workoutRows(days: Int = 4000) async -> [WorkoutRow] {
         guard let store = await ensureStore() else { return [] }
+        let visible = await dedupedWorkoutRows(days: days, store: store, trace: true)
+        return await reconcileWorkoutHrWithTrace(visible, store: store)
+    }
+
+    /// Race predictions from every run in the same deduped, dismissed-filtered workout union the Workouts
+    /// list shows, over the whole history. Recomputed on each call and never stored, so a new, imported,
+    /// edited or deleted run moves them on the next load. Skips the display-only HR reconcile, which
+    /// touches neither distance nor duration. Android derives the same result in `AppViewModel.loadWorkouts`.
+    func racePredictions() async -> RacePredictor.Result {
+        let now = Int(Date().timeIntervalSince1970)
+        guard let store = await ensureStore() else { return RacePredictor.predictions(runs: [], nowTs: now) }
+        let rows = await dedupedWorkoutRows(days: 4000, store: store, trace: false)
+        return RacePredictor.predictions(runs: rows.map(Self.raceRun), nowTs: now)
+    }
+
+    /// One workout row as the race predictor reads it.
+    static func raceRun(_ row: WorkoutRow) -> RacePredictor.Run {
+        RacePredictor.Run(startTs: row.startTs, endTs: row.endTs, sport: row.sport,
+                          distanceM: row.distanceM, durationS: row.durationS)
+    }
+
+    /// The workout union behind `workoutRows`, before its display-only HR reconcile: every namespace,
+    /// natural-key deduped, dismissed spans removed, cross-source twins collapsed, newest first. `trace`
+    /// emits the Workouts test-mode dedup lines; a second reader of the same rows passes false so one
+    /// refresh does not log every collapsed pair twice.
+    private func dedupedWorkoutRows(days: Int, store: WhoopStore, trace: Bool) async -> [WorkoutRow] {
         let now = Int(Date().timeIntervalSince1970)
         let lo = now - days * 86_400, hi = now + 86_400
         // UNION every registered WHOOP + canonical (and computed siblings) so workouts banked before a
@@ -3068,15 +3094,14 @@ final class Repository: ObservableObject {
         // is one UserDefaults bool read inside emitWorkouts), and the kept list equals dedupCrossSource(...)
         // exactly, so the workout list the screen shows is unchanged.
         let deduped: [WorkoutRow]
-        if TestCentre.active(.workouts), workoutsLog != nil {
-            let (kept, trace) = WorkoutSource.dedupCrossSourceTrace(filtered)
-            for line in trace { emitWorkouts(line) }
+        if trace, TestCentre.active(.workouts), workoutsLog != nil {
+            let (kept, lines) = WorkoutSource.dedupCrossSourceTrace(filtered)
+            for line in lines { emitWorkouts(line) }
             deduped = kept
         } else {
             deduped = WorkoutSource.dedupCrossSource(filtered)
         }
-        let visible = deduped.sorted { $0.startTs > $1.startTs }
-        return await reconcileWorkoutHrWithTrace(visible, store: store)
+        return deduped.sorted { $0.startTs > $1.startTs }
     }
 
     /// DISPLAY-ONLY: reconcile each workout's shown Avg/Max HR with the strap trace that actually drives
