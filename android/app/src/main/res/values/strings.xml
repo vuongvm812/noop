@@ -5105,4 +5105,18 @@
     <string name="garmin_fit_skip_not_fit">Files that are not FIT</string>
     <string name="garmin_fit_skip_no_usable_activity">Activity files without a usable workout</string>
     <string name="garmin_fit_skip_failed">Files that failed to read</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Half marathon</string>
+    <string name="race_target_marathon">Marathon</string>
+    <string name="race_unlock_hint">Run %1$s or longer to unlock</string>
+    <string name="race_based_on">Based on your %1$s run on %2$s.</string>
+    <string name="race_source_caption">%1$s run · %2$s</string>
+    <string name="race_from_your_runs">From your runs</string>
+    <string name="race_empty">Log a run of at least 3 km and 12 minutes to see predictions.</string>
+    <string name="race_all_history">No run in the last 90 days, so these use your whole history.</string>
+    <string name="race_method_note">Riegel\'s formula over whole runs, not your fastest segments. A guide that assumes you train for the distance; least reliable for the marathon.</string>
+    <string name="race_this_run_predicts">This run predicts</string>
+    <string name="race_your_best">Your best</string>
+    <string name="race_this_run_note">Riegel\'s formula over this whole run. \"Your best\" marks the targets where this run sets your current prediction.</string>
 </resources>

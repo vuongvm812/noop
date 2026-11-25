@@ -85,6 +85,10 @@ struct WorkoutDetailView: View {
     @State private var cadenceBuckets: [MetricBucket] = []
     @State private var elevationBuckets: [MetricBucket] = []
 
+    /// The current best race predictions, read only for a qualifying run so "This run predicts" can mark
+    /// the targets this run holds. nil until loaded, and for every other workout.
+    @State private var raceBest: RacePredictor.Result?
+
     var body: some View {
         ScreenScaffold(title: "\(WorkoutSource.displaySport(row.sport))",
                        subtitle: "\(dateLabel(row.startTs))",
@@ -101,6 +105,7 @@ struct WorkoutDetailView: View {
             headerCard
             statStrip
             routeCard
+            RunRacePredictionsSection(run: Repository.raceRun(row), best: raceBest, system: distanceUnitSystem)
             hrCurveCard
             metricCard(kind: .powerW, title: "POWER", unit: "W", buckets: powerBuckets, tint: StrandPalette.metricAmber)
             metricCard(kind: .cadence, title: "CADENCE", unit: cadenceUnit, buckets: cadenceBuckets,
@@ -184,8 +189,11 @@ struct WorkoutDetailView: View {
         let power = await repo.workoutMetricBuckets(kind: .powerW, from: row.startTs, to: row.endTs, source: row.source)
         let cadence = await repo.workoutMetricBuckets(kind: .cadence, from: row.startTs, to: row.endTs, source: row.source)
         let elevation = await repo.workoutMetricBuckets(kind: .altitudeM, from: row.startTs, to: row.endTs, source: row.source)
+        var best: RacePredictor.Result?
+        if RacePredictor.qualifies(Repository.raceRun(row)) { best = await repo.racePredictions() }
 
         await MainActor.run {
+            self.raceBest = best
             self.powerBuckets = power
             self.cadenceBuckets = cadence
             self.elevationBuckets = elevation

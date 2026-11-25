@@ -113,6 +113,10 @@ struct WorkoutsView: View {
     /// launches hundreds of raw-HR reads.
     @State private var recoveryTrend: [WorkoutRecoveryTrendPoint] = []
 
+    /// Predicted race times from every run in the whole history, not the selected range (the predictor
+    /// keeps its own 90-day window). nil until loaded; recomputed on each refresh and after an edit.
+    @State private var racePredictions: RacePredictor.Result?
+
     // MARK: - Filters + selection (#64)
 
     /// Filter beyond the time range: a displayed-sport key (nil = all), an origin class (nil = all), and
@@ -206,6 +210,9 @@ struct WorkoutsView: View {
                 if let postLogNote { postLogBanner(postLogNote) }
                 effortHero(rows: windowRows, effectiveRange: resolved, groups: groups)
                 summarySection(rows: windowRows, effectiveRange: resolved, groups: groups)
+                if let racePredictions {
+                    RacePredictionsCard(result: racePredictions, system: distanceUnitSystem)
+                }
                 heatmapSection()
                 breakdownSection(groups: groups, rows: windowRows)
                 if let z = zonesSummary {
@@ -226,6 +233,8 @@ struct WorkoutsView: View {
                 range = defaultRange(for: r)
                 seededInitialRange = true
             }
+            // After first paint, like the heatmap below: the predictions read the whole history.
+            racePredictions = await repo.racePredictions()
             // 13-week active-calorie heatmap: pull ~100 days of daily metrics and map day → active kcal.
             // Loaded AFTER `loaded`/range are set so the secondary heatmap never delays the list's first
             // paint — the card is hidden until this populates, then appears in place.
@@ -306,6 +315,7 @@ struct WorkoutsView: View {
     /// (`effectiveRange`) still covers a now-empty window.
     private func reload() async {
         allRows = await repo.workoutRows(days: loadedWindowDays ?? 4000)
+        racePredictions = await repo.racePredictions()
     }
 
     // MARK: - Heart-rate recovery trend (#516)

@@ -4951,4 +4951,18 @@
     <string name="garmin_fit_skip_not_fit">Tệp không phải FIT</string>
     <string name="garmin_fit_skip_no_usable_activity">Tệp hoạt động không có buổi tập dùng được</string>
     <string name="garmin_fit_skip_failed">Tệp đọc không thành công</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Bán marathon</string>
+    <string name="race_target_marathon">Marathon</string>
+    <string name="race_unlock_hint">Chạy từ %1$s trở lên để mở khóa</string>
+    <string name="race_based_on">Dựa trên lần chạy %1$s của bạn vào %2$s.</string>
+    <string name="race_source_caption">Chạy %1$s · %2$s</string>
+    <string name="race_from_your_runs">Từ các lần chạy của bạn</string>
+    <string name="race_empty">Ghi một lần chạy ít nhất 3 km và 12 phút để xem dự đoán.</string>
+    <string name="race_all_history">Không có lần chạy nào trong 90 ngày qua, nên dùng toàn bộ lịch sử của bạn.</string>
+    <string name="race_method_note">Công thức Riegel trên toàn bộ lần chạy, không phải đoạn nhanh nhất. Chỉ mang tính tham khảo, giả định bạn tập cho cự ly đó; kém chính xác nhất với marathon.</string>
+    <string name="race_this_run_predicts">Lần chạy này dự đoán</string>
+    <string name="race_your_best">Tốt nhất của bạn</string>
+    <string name="race_this_run_note">Công thức Riegel trên toàn bộ lần chạy này. \"Tốt nhất của bạn\" đánh dấu các cự ly mà lần chạy này đang quyết định dự đoán hiện tại.</string>
 </resources>

@@ -5076,4 +5076,18 @@
     <string name="garmin_fit_skip_not_fit">Archivos que no son FIT</string>
     <string name="garmin_fit_skip_no_usable_activity">Archivos de actividad sin un entrenamiento utilizable</string>
     <string name="garmin_fit_skip_failed">Archivos que no se pudieron leer</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Media maratón</string>
+    <string name="race_target_marathon">Maratón</string>
+    <string name="race_unlock_hint">Corre %1$s o más para desbloquear</string>
+    <string name="race_based_on">Basado en tu carrera de %1$s del %2$s.</string>
+    <string name="race_source_caption">Carrera de %1$s · %2$s</string>
+    <string name="race_from_your_runs">De tus carreras</string>
+    <string name="race_empty">Registra una carrera de al menos 3 km y 12 minutos para ver predicciones.</string>
+    <string name="race_all_history">Ninguna carrera en los últimos 90 días, así que se usa todo tu historial.</string>
+    <string name="race_method_note">Fórmula de Riegel sobre carreras completas, no tus tramos más rápidos. Una guía que supone que entrenas para la distancia; menos fiable para el maratón.</string>
+    <string name="race_this_run_predicts">Esta carrera predice</string>
+    <string name="race_your_best">Tu mejor marca</string>
+    <string name="race_this_run_note">Fórmula de Riegel sobre esta carrera completa. «Tu mejor marca» señala los objetivos en los que esta carrera fija tu predicción actual.</string>
 </resources>

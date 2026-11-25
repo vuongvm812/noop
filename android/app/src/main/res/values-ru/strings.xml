@@ -5225,4 +5225,18 @@
     <string name="garmin_fit_skip_not_fit">Файлы, не являющиеся FIT</string>
     <string name="garmin_fit_skip_no_usable_activity">Файлы тренировок без пригодной тренировки</string>
     <string name="garmin_fit_skip_failed">Файлы, которые не удалось прочитать</string>
+    <string name="race_target_5k">5K</string>
+    <string name="race_target_10k">10K</string>
+    <string name="race_target_half">Полумарафон</string>
+    <string name="race_target_marathon">Марафон</string>
+    <string name="race_unlock_hint">Пробегите %1$s или больше, чтобы открыть</string>
+    <string name="race_based_on">По вашей пробежке на %1$s от %2$s.</string>
+    <string name="race_source_caption">Пробежка %1$s · %2$s</string>
+    <string name="race_from_your_runs">По вашим пробежкам</string>
+    <string name="race_empty">Запишите пробежку не менее 3 км и 12 минут, чтобы увидеть прогнозы.</string>
+    <string name="race_all_history">За последние 90 дней пробежек нет, поэтому используется вся история.</string>
+    <string name="race_method_note">Формула Ригеля по целым пробежкам, а не по самым быстрым отрезкам. Ориентир при условии подготовки к дистанции; менее всего надёжна для марафона.</string>
+    <string name="race_this_run_predicts">Прогноз по этой пробежке</string>
+    <string name="race_your_best">Ваш лучший</string>
+    <string name="race_this_run_note">Формула Ригеля по всей этой пробежке. «Ваш лучший» отмечает дистанции, для которых эта пробежка задаёт текущий прогноз.</string>
 </resources>
