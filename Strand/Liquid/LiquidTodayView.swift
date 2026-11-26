@@ -386,6 +386,9 @@ struct LiquidTodayView: View {
                         case .workouts: lastWorkoutsSection
                         case .heartRate: heartRateSection
                         case .recoveryVitals: recoveryVitalsSection
+                        // What affects your HRV and sleep: the shared What Moves You ranking's top HRV and
+                        // Rest rows; tap opens the Insights hub. Today only. Twin of Android's WHAT_AFFECTS arm.
+                        case .whatAffects: if selectedDayOffset == 0 { WhatAffectsTodayCard() }
                         case .yourCards: yourCardsSection
                         case .menstrualCycle:
                             if selectedDayOffset == 0 { MenstrualCycleHomeCard() }

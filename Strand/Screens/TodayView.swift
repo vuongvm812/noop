@@ -1995,6 +1995,9 @@ struct TodayView: View {
             heartRateTrendSection
         case .recoveryVitals:
             recoveryVitalsSection
+        case .whatAffects:
+            // Today only, like the journal widget: the ranking describes your history, not a past day.
+            if selectedDayOffset == 0 { WhatAffectsTodayCard() }
         case .yourCards:
             yourCardsSection
         case .menstrualCycle:

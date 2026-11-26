@@ -5111,4 +5111,30 @@
     <string name="race_trend_title">Tiempo previsto, cada día del último año</string>
     <string name="race_trend_range">Mejor %1$s · más lento %2$s</string>
     <string name="race_this_run_blend_note">Tu tarjeta de carreras también combina la frecuencia cardíaca y el VO₂max, así que sus tiempos pueden diferir de los de esta carrera.</string>
+    <string name="what_moves_you_from_your_data">De tus datos</string>
+    <string name="what_moves_you_origin_journal">Diario</string>
+    <string name="auto_factor_late_workout">Entreno tardío</string>
+    <string name="auto_factor_hard_effort">Día de esfuerzo alto</string>
+    <string name="auto_factor_rest_day">Día de descanso</string>
+    <string name="auto_factor_late_bedtime">Acostarse tarde</string>
+    <string name="auto_factor_irregular_bedtime">Hora de dormir irregular</string>
+    <string name="auto_factor_low_steps">Pocos pasos</string>
+    <string name="auto_factor_high_steps">Muchos pasos</string>
+    <string name="auto_factor_control_earlier_workout">Entreno más temprano</string>
+    <string name="auto_factor_control_easier_day">Día más suave</string>
+    <string name="auto_factor_control_workout_day">Día de entreno</string>
+    <string name="auto_factor_control_usual_bedtime">Hora de dormir habitual</string>
+    <string name="auto_factor_control_regular_bedtime">Hora de dormir regular</string>
+    <string name="auto_factor_control_usual_steps">Pasos habituales</string>
+    <string name="what_affects_title">Qué afecta a tu HRV y a tu sueño</string>
+    <string name="what_affects_open_what_moves_you">Abrir Lo que te mueve</string>
+    <string name="what_moves_you_not_enough_data">Aún no hay datos suficientes para comparar tus días en %1$s. Cada hábito del diario y cada factor de tus datos necesita días con y sin él antes de que NOOP pueda leer su efecto.</string>
+    <string name="what_affects_needs_two_weeks">Necesita ~2 semanas de datos</string>
+    <string name="what_affects_no_patterns">Aún no hay patrones claros. Sigue llevando tu banda y registrando tu diario.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ frente a ‘%2$s’: %3$s no cambió (media %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ frente a ‘%2$s’: %3$s fue un %4$d%% más alto (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ frente a ‘%2$s’: %3$s fue un %4$d%% más bajo (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ frente a ‘%2$s’: %3$s fue %4$s más alto (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ frente a ‘%2$s’: %3$s fue %4$s más bajo (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

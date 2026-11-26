@@ -58,4 +58,28 @@ final class InsightsSentencesTests: XCTestCase {
             XCTAssertEqual(InsightsSentences.dose(r), r.sentence(), "perUnit \(u)")
         }
     }
+
+    private func autoEffect(_ key: String, _ outcome: String, _ delta: Double, _ pct: Double?) -> BehaviorEffect {
+        BehaviorEffect(behavior: key, outcome: outcome, meanWith: 55.4, meanWithout: 60.2, delta: delta,
+                       pctChange: pct, nWith: 26, nWithout: 67, cohensD: -1.2, pApprox: 0.001, significant: true)
+    }
+
+    /// Automatic factors read as "group vs control". Kotlin `InsightsSentencesTest` pins the same English.
+    func testAutoFactorSentencesAndTodayLine() {
+        let late = AutoFactors.Factor.lateWorkout.key
+        XCTAssertEqual(InsightsSentences.effect(autoEffect(late, "HRV", -4.8, -7.97)),
+                       "‘Late workout’ vs ‘Earlier workout’: HRV was 8% lower (avg 55 vs 60, n=26 vs 67).")
+        XCTAssertEqual(InsightsSentences.effect(autoEffect(AutoFactors.Factor.highSteps.key, "Rest", 3.46, nil)),
+                       "‘High steps’ vs ‘Usual steps’: Rest was 3.5 higher (avg 55 vs 60, n=26 vs 67).")
+        XCTAssertEqual(InsightsSentences.effect(autoEffect(AutoFactors.Factor.restDay.key, "Charge", 0, 0)),
+                       "‘Rest day’ vs ‘Workout day’: Charge was no different (avg 55 vs 60, n=26 vs 67).")
+        let row = RankedEffect(behavior: late, outcome: "HRV", lag: 1,
+                               effect: autoEffect(late, "HRV", -4.8, -7.97), confidence: .solid)
+        XCTAssertEqual(InsightsSentences.todayLine(row), "Late workout → HRV \u{2212}8% next morning")
+        let journal = RankedEffect(behavior: "Alcohol", outcome: "Rest", lag: 2,
+                                   effect: autoEffect("Alcohol", "Rest", 3.46, nil), confidence: .building)
+        XCTAssertEqual(InsightsSentences.todayLine(journal), "Alcohol → Rest +3.5 2 mornings later")
+        XCTAssertEqual(InsightsSentences.behaviorLabel("auto.lateBedtime"), "Late bedtime")
+        XCTAssertEqual(InsightsSentences.behaviorLabel("Alcohol"), "Alcohol")
+    }
 }

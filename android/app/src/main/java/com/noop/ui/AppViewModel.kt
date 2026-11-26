@@ -10,6 +10,8 @@ import com.noop.alarm.SmartAlarmStore
 import com.noop.alarm.WindDownScheduler
 import com.noop.alarm.WindDownStore
 import com.noop.analytics.AnalyticsEngine
+import com.noop.analytics.AutoFactors
+import com.noop.analytics.EffectRanker
 import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
 import com.noop.analytics.IllnessInputs
@@ -73,6 +75,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -2002,6 +2005,132 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** All workouts for the Workouts screen (newest first), dismissed detected bouts removed. */
     val workouts: StateFlow<List<WorkoutRow>> = _workouts.asStateFlow()
 
+    /**
+     * The ONE What Moves You load behind both readouts, the Insights hub's ranked feed and the Today "What
+     * affects your HRV and sleep" card, so the two show the same rows from the same ranking. Journal Yes/No
+     * days (imported union ∪ native) plus the automatic factors from sensor data ([AutoFactors]) are ranked
+     * against the four outcomes in ONE [EffectRanker.rankFamily] call, so both share a single
+     * Benjamini–Hochberg family. Outcomes cover the full merged history; Rest goes through the same
+     * resolver as every other Rest surface ([WhoopRepository.restScoresFor]). null until the first load.
+     * Swift twin: `WhatMovesYouLoader`.
+     */
+    data class WhatMovesYouSnapshot(
+        /** Journal Yes days per question (the dose cards back-fill from these). */
+        val journalBehaviours: Map<String, Set<String>>,
+        /** Outcome series per metric key ("recovery" / "hrv" / "sleep_performance" / "rhr"). */
+        val outcomeByKey: Map<String, Map<String, Double>>,
+        /** Ranked rows per [InsightsOutcome.outcomeName], from one family across every outcome and behaviour. */
+        val ranked: Map<String, List<com.noop.analytics.RankedEffect>>,
+        /** Days that carry an HRV or Rest value (the Today card's "needs about two weeks" gate). */
+        val sleepOutcomeDays: Int,
+    )
+
+    private val _whatMovesYou = MutableStateFlow<WhatMovesYouSnapshot?>(null)
+    val whatMovesYou: StateFlow<WhatMovesYouSnapshot?> = _whatMovesYou.asStateFlow()
+    private var whatMovesYouJob: Job? = null
+    /** Incremented by every [loadWhatMovesYou]; a build publishes only while it is still the newest. */
+    private var whatMovesYouGeneration = 0
+    /** The [recentDays] emission and [WhoopRepository.journalVersion] the published snapshot was built from. */
+    private var whatMovesYouBuiltFrom: Pair<List<DailyMetric>, Int>? = null
+    /** The inputs of the build in flight, so a repeat call for the same inputs leaves it running. */
+    private var whatMovesYouPending: Pair<List<DailyMetric>, Int>? = null
+
+    /** Journal changes counted by the repository (every write and delete), for the Today card's reload key. */
+    val journalVersion: StateFlow<Int> get() = repository.journalVersion
+
+    /**
+     * Load the What Moves You snapshot. Without [force] it is skipped while the snapshot already reflects the
+     * current [recentDays] emission and journal version, and a build starts only after a short quiet period, so
+     * a burst of emissions during a sync coalesces into one build; the hub passes true on entry to build at
+     * once. A newer call replaces one still running, and only the newest build publishes.
+     */
+    fun loadWhatMovesYou(force: Boolean = false) {
+        val inputs = recentDays.value to repository.journalVersion.value
+        if (!force) {
+            val built = whatMovesYouBuiltFrom
+            if (_whatMovesYou.value != null && built != null && built.first === inputs.first && built.second == inputs.second) return
+            val pending = whatMovesYouPending
+            if (whatMovesYouJob?.isActive == true && pending != null &&
+                pending.first === inputs.first && pending.second == inputs.second
+            ) return
+        }
+        whatMovesYouJob?.cancel()
+        val generation = ++whatMovesYouGeneration
+        whatMovesYouPending = inputs
+        whatMovesYouJob = viewModelScope.launch {
+            if (!force) delay(750)
+            val snapshot = buildWhatMovesYou()
+            if (generation != whatMovesYouGeneration) return@launch
+            _whatMovesYou.value = snapshot
+            whatMovesYouBuiltFrom = inputs
+        }
+    }
+
+    private suspend fun buildWhatMovesYou(): WhatMovesYouSnapshot {
+        // Reads only here; every bit of shaping happens off the main thread below.
+        val imported = repository.importedJournalUnion(deviceId, "0000-01-01", "9999-12-31")
+        val native = repository.journal(JOURNAL_DEVICE_ID, "0000-01-01", "9999-12-31")
+        val days = repository.daysMergedFlow(deviceId).first()
+        val outcomeKeys = listOf("recovery", "hrv", "rhr")
+        val sourceIds = repository.importedSourceIds(deviceId)
+        val seriesRows = outcomeKeys.associateWith { key ->
+            sourceIds.map { id -> repository.metricSeries(id, key, "0000-01-01", "9999-12-31") }
+        }
+        val rest = repository.restScoresFor(deviceId, days)
+        val now = System.currentTimeMillis() / 1000L
+        // Timing only: no strap HR reconcile, no test-mode trace (the Workouts list owns both).
+        val workoutRows = withContext(Dispatchers.Default) { dedupedWorkoutRows(now, trace = false, fillHr = false) }
+        val sleepRows = repository.allSleepSessionsUnion(deviceId)
+
+        return withContext(Dispatchers.Default) {
+            // Journal → Yes days and No days per question, kept apart; an unanswered day is in neither.
+            val yes = HashMap<String, MutableSet<String>>()
+            val no = HashMap<String, MutableSet<String>>()
+            for (e in mergeJournalEntries(imported, native)) {
+                (if (e.answeredYes) yes else no).getOrPut(e.question) { mutableSetOf() }.add(e.day)
+            }
+            val journalYes: Map<String, Set<String>> = yes.mapValues { it.value.toSet() }
+
+            // Outcomes over the FULL merged history: imported metricSeries ∪ the DailyMetric column for Charge /
+            // HRV / RHR (Swift's series ∪ daily fallback), Rest through the shared resolver.
+            val outcomeByKey = HashMap<String, Map<String, Double>>()
+            val picks = mapOf<String, (DailyMetric) -> Double?>(
+                "recovery" to { it.recovery },
+                "hrv" to { it.avgHrv },
+                "rhr" to { it.restingHr?.toDouble() },
+            )
+            for ((key, pick) in picks) {
+                val dict = HashMap<String, Double>()
+                for (rows in seriesRows[key].orEmpty()) {
+                    for (row in rows) dict.putIfAbsent(row.day, row.value)
+                }
+                for (d in days) if (!dict.containsKey(d.day)) pick(d)?.let { dict[d.day] = it }
+                outcomeByKey[key] = dict
+            }
+            outcomeByKey["sleep_performance"] = rest
+
+            // Automatic factors from sensor data, each timestamp with its own local offset.
+            val tz = java.util.TimeZone.getDefault()
+            val offset = { ts: Long -> (tz.getOffset(ts * 1000L) / 1000).toLong() }
+            val workouts = workoutRows.map { AutoFactors.Workout(it.startTs, it.endTs, offset(it.startTs)) }
+            val sleeps = sleepRows.map { AutoFactors.Sleep(it.effectiveStartTs, it.endTs, offset(it.effectiveStartTs)) }
+            val factorDays = days.map { AutoFactors.Day(it.day, it.strain, it.steps) }
+            val today = AnalyticsEngine.dayString(now, offset(now))
+
+            val auto = AutoFactors.factors(workouts, sleeps, factorDays, today)
+            val behaviors = HashMap<String, Set<String>>(journalYes)
+            val controls = HashMap<String, Set<String>>(no.mapValues { it.value.toSet() })
+            for ((k, v) in auto.behaviors) behaviors.putIfAbsent(k, v)
+            for ((k, v) in auto.controls) controls.putIfAbsent(k, v)
+            // ONE family across every outcome the feed can show and every behaviour (journal ∪ automatic).
+            // An automatic factor's day is the day it happened, so its lag 0 (the morning before) is not tested.
+            val outcomes = InsightsOutcome.entries.associate { it.outcomeName to (outcomeByKey[it.key] ?: emptyMap()) }
+            val ranked = EffectRanker.rankFamilyExcludingSameDay(behaviors, controls, outcomes, noSameDay = auto.behaviors.keys)
+            val sleepDays = (outcomeByKey["hrv"].orEmpty().keys + outcomeByKey["sleep_performance"].orEmpty().keys).size
+            WhatMovesYouSnapshot(journalYes, outcomeByKey, ranked, sleepDays)
+        }
+    }
+
     private val _racePredictions = MutableStateFlow<RacePredictor.Result?>(null)
     /**
      * Predicted race times from every run in [workouts] (the whole deduped history), recomputed each time
@@ -2386,75 +2515,88 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * The workout union the Workouts list shows, newest first: every source, strap HR filled, dismissed
+     * spans removed, cross-source twins collapsed. [loadWorkouts] publishes it; What Moves You reads workout
+     * timing from it. Swift twin: `Repository.dedupedWorkouts` (the same union, without the HR reconcile).
+     * [trace] emits the Workouts test-mode dedup lines; a second reader passes false so one refresh does not
+     * log every collapsed pair twice. [fillHr] runs the strap HR / Effort reconcile; a reader that needs only
+     * timing passes false and skips it, as Swift's `Repository.dedupedWorkouts` does.
+     */
+    internal suspend fun dedupedWorkoutRows(now: Long, trace: Boolean = true, fillHr: Boolean = true): List<WorkoutRow> {
+        // #28: read across the strap-id + "my-whoop" union (like HR/sleep), so a re-added/newly-paired
+        // strap whose workouts live under "my-whoop" isn't shown an empty Workouts screen.
+        val whoop = repository.workoutsUnion(deviceId, 0L, now)
+        val apple = repository.workouts("apple-health", 0L, now) +
+            repository.workouts("health-connect", 0L, now)
+        val detected = repository.detectedWorkoutsUnion(deviceId, 0L, now)
+        // Imported lifting sessions (Hevy / Liftosaur) carry a volume-load note but no HR — they're
+        // a strength-volume estimate, not cardio. Kept OUT of the strap HR-fill below so we never
+        // fabricate a heart rate the lift never measured.
+        val lifting = repository.workouts(LiftingImporter.SOURCE_ID, 0L, now)
+        // #29: imported activity FILES (FIT / GPX / TCX) live under their own "activity-file" source, so
+        // without reading it a successful file import never appears in the Workouts list (Data Sources
+        // counts it, the load didn't). They're cardio (often GPS + HR), so they go through the strap
+        // HR-fill below like the imported Apple sessions — a GPX with no HR borrows the strap's, while a
+        // FIT that already carries HR is untouched (fill only fills nulls).
+        val activityFiles = repository.workouts(ActivityFileImporter.SOURCE_ID, 0L, now)
+        // Every other id holding workouts: a Gadgetbridge import ("huawei-import"), a Garmin watch or
+        // Huawei band that is not the active device, an Oura ring. Without this the list showed only
+        // the sources named above. They are device-recorded sessions, so they take the same HR-fill.
+        // Manual rows are left out: edit and delete reach only the strap ids on Swift, so a manual row
+        // shown from here could not be removed there (#2278). Both platforms skip them the same way.
+        val others = repository.otherWorkoutSourceIds(
+            deviceId,
+            listOf("apple-health", "health-connect", LiftingImporter.SOURCE_ID, ActivityFileImporter.SOURCE_ID),
+        ).flatMap { repository.workouts(it, 0L, now) }
+            .filter { WorkoutEditing.classify(it.source) != WorkoutSource.MANUAL }
+        val markers = repository.dismissedDetectedUnion(deviceId)
+        // Fill imported sessions' missing HR from strap samples (#77), same as before; detected /
+        // manual rows already carry their own HR so they pass through unchanged. #961: also backfill a
+        // strap-native row's Effort (strain) from the strap trace when it's null, so a live/manual
+        // session that ended with sparse HR can't show a blank Effort while the day total counted it.
+        // #1601: pass the ACTIVE strap id. Left to its "my-whoop" default, the fill resolved
+        // `importedSourceIdsFor("my-whoop")` = the canonical id ALONE, while the detail sheet's chart,
+        // zones and HR-recovery all resolve `importedSourceIdsFor(deviceId)` = active ∪ canonical. On
+        // an install whose strap banks under a non-canonical id the chart therefore found HR and this
+        // fill did not, and an imported session rendered "AVG –" beside a populated graph, a full zone
+        // split and a peak — every one of them derived from the samples the average claimed not to
+        // have. The fill's own doc promises "display == graph == zones == effort by construction";
+        // this is the line that has to pass the same id for that to hold.
+        val unfilled = whoop + apple + detected + activityFiles + others
+        val filled = if (!fillHr) unfilled else repository.fillWorkoutHrFromStrap(
+            unfilled,
+            strapDeviceId = deviceId,
+            strainMaxHR = profileStore.hrMax.toDouble(),
+            strainSex = profileStore.sex,
+            effortMethod = NoopPrefs.effortMethod(appContext),
+            // #50: newest measured resting HR (recentDays is oldest-first), as Swift reads `days`.
+            strainRestingHR = recentDays.value.lastOrNull { it.restingHr != null }?.restingHr?.toDouble(),
+        )
+        // #687: collapse the SAME activity tracked live under the strap AND imported from Health
+        // Connect / Apple Health into one richer entry — they sit under different sources so without
+        // this they show as two sessions. Dedup runs on the dismissed-filtered set, before the sort.
+        val filteredRows = WorkoutEditing.filterDismissed(filled + lifting, markers)
+        // Workouts & GPS test mode: when on, run the dedup twin which returns the BYTE-IDENTICAL kept list
+        // plus a trace line per collapsed cross-source pair, tagged .workouts. Zero-cost when off (the gate
+        // is one SharedPreferences bool read), and the kept list equals dedupCrossSource exactly, so the
+        // workout list the screen shows is unchanged. Mirrors the macOS Repository.workoutRows wiring.
+        val deduped = if (trace && com.noop.testcentre.TestCentre.from(appContext)
+                .active(com.noop.testcentre.TestDomain.WORKOUTS)
+        ) {
+            val (kept, lines) = WorkoutEditing.dedupCrossSourceTrace(filteredRows)
+            for (line in lines) ble.externalLog(line, com.noop.testcentre.TestDomain.WORKOUTS)
+            kept
+        } else {
+            WorkoutEditing.dedupCrossSource(filteredRows)
+        }
+        return deduped.sortedByDescending { it.startTs }
+    }
+
     fun loadWorkouts() {
         viewModelScope.launch {
             val now = System.currentTimeMillis() / 1000
-            // #28: read across the strap-id + "my-whoop" union (like HR/sleep), so a re-added/newly-paired
-            // strap whose workouts live under "my-whoop" isn't shown an empty Workouts screen.
-            val whoop = repository.workoutsUnion(deviceId, 0L, now)
-            val apple = repository.workouts("apple-health", 0L, now) +
-                repository.workouts("health-connect", 0L, now)
-            val detected = repository.detectedWorkoutsUnion(deviceId, 0L, now)
-            // Imported lifting sessions (Hevy / Liftosaur) carry a volume-load note but no HR — they're
-            // a strength-volume estimate, not cardio. Kept OUT of the strap HR-fill below so we never
-            // fabricate a heart rate the lift never measured.
-            val lifting = repository.workouts(LiftingImporter.SOURCE_ID, 0L, now)
-            // #29: imported activity FILES (FIT / GPX / TCX) live under their own "activity-file" source, so
-            // without reading it a successful file import never appears in the Workouts list (Data Sources
-            // counts it, the load didn't). They're cardio (often GPS + HR), so they go through the strap
-            // HR-fill below like the imported Apple sessions — a GPX with no HR borrows the strap's, while a
-            // FIT that already carries HR is untouched (fill only fills nulls).
-            val activityFiles = repository.workouts(ActivityFileImporter.SOURCE_ID, 0L, now)
-            // Every other id holding workouts: a Gadgetbridge import ("huawei-import"), a Garmin watch or
-            // Huawei band that is not the active device, an Oura ring. Without this the list showed only
-            // the sources named above. They are device-recorded sessions, so they take the same HR-fill.
-            // Manual rows are left out: edit and delete reach only the strap ids on Swift, so a manual row
-            // shown from here could not be removed there (#2278). Both platforms skip them the same way.
-            val others = repository.otherWorkoutSourceIds(
-                deviceId,
-                listOf("apple-health", "health-connect", LiftingImporter.SOURCE_ID, ActivityFileImporter.SOURCE_ID),
-            ).flatMap { repository.workouts(it, 0L, now) }
-                .filter { WorkoutEditing.classify(it.source) != WorkoutSource.MANUAL }
-            val markers = repository.dismissedDetectedUnion(deviceId)
-            // Fill imported sessions' missing HR from strap samples (#77), same as before; detected /
-            // manual rows already carry their own HR so they pass through unchanged. #961: also backfill a
-            // strap-native row's Effort (strain) from the strap trace when it's null, so a live/manual
-            // session that ended with sparse HR can't show a blank Effort while the day total counted it.
-            // #1601: pass the ACTIVE strap id. Left to its "my-whoop" default, the fill resolved
-            // `importedSourceIdsFor("my-whoop")` = the canonical id ALONE, while the detail sheet's chart,
-            // zones and HR-recovery all resolve `importedSourceIdsFor(deviceId)` = active ∪ canonical. On
-            // an install whose strap banks under a non-canonical id the chart therefore found HR and this
-            // fill did not, and an imported session rendered "AVG –" beside a populated graph, a full zone
-            // split and a peak — every one of them derived from the samples the average claimed not to
-            // have. The fill's own doc promises "display == graph == zones == effort by construction";
-            // this is the line that has to pass the same id for that to hold.
-            val filled = repository.fillWorkoutHrFromStrap(
-                (whoop + apple + detected + activityFiles + others),
-                strapDeviceId = deviceId,
-                strainMaxHR = profileStore.hrMax.toDouble(),
-                strainSex = profileStore.sex,
-                effortMethod = NoopPrefs.effortMethod(appContext),
-                // #50: newest measured resting HR (recentDays is oldest-first), as Swift reads `days`.
-                strainRestingHR = recentDays.value.lastOrNull { it.restingHr != null }?.restingHr?.toDouble(),
-            )
-            // #687: collapse the SAME activity tracked live under the strap AND imported from Health
-            // Connect / Apple Health into one richer entry — they sit under different sources so without
-            // this they show as two sessions. Dedup runs on the dismissed-filtered set, before the sort.
-            val filteredRows = WorkoutEditing.filterDismissed(filled + lifting, markers)
-            // Workouts & GPS test mode: when on, run the dedup twin which returns the BYTE-IDENTICAL kept list
-            // plus a trace line per collapsed cross-source pair, tagged .workouts. Zero-cost when off (the gate
-            // is one SharedPreferences bool read), and the kept list equals dedupCrossSource exactly, so the
-            // workout list the screen shows is unchanged. Mirrors the macOS Repository.workoutRows wiring.
-            val deduped = if (com.noop.testcentre.TestCentre.from(appContext)
-                    .active(com.noop.testcentre.TestDomain.WORKOUTS)
-            ) {
-                val (kept, trace) = WorkoutEditing.dedupCrossSourceTrace(filteredRows)
-                for (line in trace) ble.externalLog(line, com.noop.testcentre.TestDomain.WORKOUTS)
-                kept
-            } else {
-                WorkoutEditing.dedupCrossSource(filteredRows)
-            }
-            val sorted = deduped.sortedByDescending { it.startTs }
+            val sorted = dedupedWorkoutRows(now)
             _workouts.value = sorted
             // Post-workout summary (#517) — opt-in, default OFF. The newest session (by start) drives a
             // one-shot Effort + duration + avg-HR notification when it's strictly newer than the last one

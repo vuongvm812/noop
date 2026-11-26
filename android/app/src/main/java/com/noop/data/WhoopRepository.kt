@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlin.math.roundToInt
 
 /**
@@ -564,6 +565,12 @@ class WhoopRepository(
      *  so a shared counter would let one strap spend another's budget. Only the single-threaded offload
      *  path banks v18 rows, so a plain map is enough. Swift twin: `WhoopStore.v18AuxRowsSincePrune`. */
     private val v18AuxRowsSincePrune = mutableMapOf<String, Int>()
+
+    /** Bumped by every journal write and delete below, so a reader that caches journal-derived results
+     *  (What Moves You) can tell a stored answer changed. The counter lives in the companion: more than one
+     *  repository instance writes the journal (the Coach view model builds its own), and one counter keeps
+     *  every writer visible to every reader. Swift twin: `Repository.journalSeq`. */
+    val journalVersion: StateFlow<Int> = journalVersionFlow.asStateFlow()
 
     private val _sleepSampleRevision = MutableStateFlow(0L)
     val sleepSampleRevision: StateFlow<Long> = _sleepSampleRevision.asStateFlow()
@@ -1299,7 +1306,10 @@ class WhoopRepository(
         dao.deleteMetricSeriesPoint(deviceId, day, key)
     suspend fun deleteMetricSeries(deviceId: String, key: String) =
         dao.deleteMetricSeries(deviceId, key)
-    suspend fun upsertJournal(rows: List<JournalEntry>) = dao.upsertJournal(rows)
+    suspend fun upsertJournal(rows: List<JournalEntry>) {
+        dao.upsertJournal(rows)
+        journalVersionFlow.update { it + 1 }
+    }
     suspend fun upsertWorkouts(rows: List<WorkoutRow>) = dao.upsertWorkouts(rows)
 
     /**
@@ -1980,6 +1990,28 @@ class WhoopRepository(
     }
 
     /**
+     * [restScoreFor] over many [days] at once, with the same per-day precedence (imported WHOOP
+     * `sleep_performance`, else the engine's computed value, else the cold-start composite) but two series
+     * reads in total instead of two per day. Days with no Rest are absent. What Moves You reads the whole
+     * history through this; Swift resolves each day with `Repository.restScore(_:)`.
+     */
+    suspend fun restScoresFor(activeStrapId: String, days: List<DailyMetric>): Map<String, Double> {
+        if (days.isEmpty()) return emptyMap()
+        val from = days.minOf { it.day }
+        val to = days.maxOf { it.day }
+        val imported = HashMap<String, Double>()
+        for (row in metricSeries(WHOOP_SOURCE, "sleep_performance", from, to)) imported.putIfAbsent(row.day, row.value)
+        val computed = HashMap<String, Double>()
+        for (row in metricSeriesComputedUnion(activeStrapId, "sleep_performance", from, to)) computed[row.day] = row.value
+        val out = HashMap<String, Double>()
+        for (d in days) {
+            val v = imported[d.day] ?: computed[d.day] ?: com.noop.analytics.RestScorer.restFromDaily(d)
+            if (v != null) out[d.day] = v
+        }
+        return out
+    }
+
+    /**
      * Computed ("-noop") [key] series across the active-strap UNION (the active strap's own computed
      * sibling + the canonical "my-whoop-noop"), deduped per day with the active strap winning. This is
      * how the weekly computed scores (fitness_age / vo2max_est / vitality / body_age) MUST be read:
@@ -2064,16 +2096,26 @@ class WhoopRepository(
     suspend fun journal(deviceId: String, from: String, to: String): List<JournalEntry> =
         dao.journal(deviceId, from, to)
 
+    /** Imported journal rows across the imported read union (active strap, then canonical "my-whoop"), so a
+     *  journal imported under a re-added strap's id is not dropped. Mirrors the imported half of Swift
+     *  `Repository.journalEntries`. */
+    suspend fun importedJournalUnion(activeDeviceId: String, from: String, to: String): List<JournalEntry> =
+        importedSourceIds(activeDeviceId).flatMap { dao.journal(it, from, to) }
+
     /** Delete one native journal answer by natural key (only ever called with the "noop-journal"
      *  source id , imported rows are never touched). */
-    suspend fun deleteJournalEntry(deviceId: String, day: String, question: String) =
+    suspend fun deleteJournalEntry(deviceId: String, day: String, question: String) {
         dao.deleteJournalEntry(deviceId, day, question)
+        journalVersionFlow.update { it + 1 }
+    }
 
     /** Atomically replace a device's imported journal within a day range (#136) — the WHOOP importer
      *  clears the span it re-writes and upserts in ONE transaction, so the wake-day re-keying leaves no
      *  pre-fix onset-keyed duplicates and a crash mid-import can't drop the range's journal. */
-    suspend fun replaceJournalRange(deviceId: String, from: String, to: String, rows: List<JournalEntry>) =
+    suspend fun replaceJournalRange(deviceId: String, from: String, to: String, rows: List<JournalEntry>) {
         dao.replaceJournalRange(deviceId, from, to, rows)
+        journalVersionFlow.update { it + 1 }
+    }
 
     /** Apple-Health daily aggregates for the inclusive day range [from, to] (YYYY-MM-DD), oldest first. */
     suspend fun appleDaily(deviceId: String, from: String, to: String): List<AppleDaily> =
@@ -2694,6 +2736,9 @@ class WhoopRepository(
     suspend fun latestBattery(deviceId: String): BatterySample? = dao.latestBattery(deviceId)
 
     companion object {
+        /** Backing counter for [journalVersion], process-wide (see there). */
+        private val journalVersionFlow = MutableStateFlow(0)
+
         /** A workout row is STRAP-NATIVE when NOOP recorded/scored it from a strap trace: a "manual"
          *  session or a detected bout (source "<id>-noop"). Everything else (Apple Health / Health Connect /
          *  WHOOP CSV / activity file) is IMPORTED and carries its own avg/max. Single source of truth for the

@@ -12,6 +12,7 @@ extension TodaySection {
         case .workouts: return "figure.run"
         case .heartRate: return "waveform.path.ecg"
         case .recoveryVitals: return "heart.text.square"
+        case .whatAffects: return "sparkle.magnifyingglass"
         case .yourCards: return "rectangle.stack"
         case .menstrualCycle: return "drop.degreesign"
         case .journal: return "book.closed"
@@ -30,6 +31,7 @@ extension TodaySection {
         case .workouts: return StrandPalette.effortColor
         case .heartRate: return StrandPalette.metricRose
         case .recoveryVitals: return StrandPalette.metricCyan
+        case .whatAffects: return StrandPalette.restColor
         case .yourCards: return StrandPalette.accent
         case .menstrualCycle: return StrandPalette.restColor
         case .journal: return StrandPalette.metricAmber

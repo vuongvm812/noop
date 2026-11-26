@@ -14,10 +14,10 @@ final class TodayLayoutPrefsTests: XCTestCase {
     func testEncodeDecodeRoundTripsAReorderedList() {
         let reordered: [TodaySection] = [
             .heartRate, .hero, .yourCards, .liveSession, .synthesis, .keyMetrics, .workouts, .recoveryVitals,
-            .journal, .menstrualCycle, .supplements, .tomorrowCharge, .addedCards,
+            .whatAffects, .journal, .menstrualCycle, .supplements, .tomorrowCharge, .addedCards,
         ]
         let encoded = TodayLayoutPrefs.encode(reordered)
-        XCTAssertEqual(encoded, "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,journal,menstrualCycle,supplements,tomorrowCharge,addedCards")
+        XCTAssertEqual(encoded, "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,whatAffects,journal,menstrualCycle,supplements,tomorrowCharge,addedCards")
         XCTAssertEqual(TodayLayoutPrefs.decodeOrder(encoded), reordered)
     }
 
@@ -29,7 +29,7 @@ final class TodayLayoutPrefsTests: XCTestCase {
         XCTAssertEqual(
             TodayLayoutPrefs.decodeOrder(firstCut),
             // journal(8) follows everything saved → appended; addedCards(10) is last, appended after it.
-            [.hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .heartRate, .recoveryVitals, .yourCards, .menstrualCycle, .journal, .supplements, .addedCards]
+            [.hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .heartRate, .recoveryVitals, .whatAffects, .yourCards, .menstrualCycle, .journal, .supplements, .addedCards]
         )
     }
 
@@ -37,7 +37,7 @@ final class TodayLayoutPrefsTests: XCTestCase {
         let partial = "heartRate,synthesis,keyMetrics,recoveryVitals"
         XCTAssertEqual(
             TodayLayoutPrefs.decodeOrder(partial),
-            [.hero, .liveSession, .tomorrowCharge, .workouts, .heartRate, .synthesis, .keyMetrics, .recoveryVitals, .yourCards, .menstrualCycle, .journal, .supplements, .addedCards]
+            [.hero, .liveSession, .tomorrowCharge, .workouts, .heartRate, .synthesis, .keyMetrics, .recoveryVitals, .whatAffects, .yourCards, .menstrualCycle, .journal, .supplements, .addedCards]
         )
     }
 
@@ -45,7 +45,7 @@ final class TodayLayoutPrefsTests: XCTestCase {
         let messy = "yourCards,BOGUS,yourCards,heartRate, ,heartRate"
         XCTAssertEqual(
             TodayLayoutPrefs.decodeOrder(messy),
-            [.hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .recoveryVitals, .yourCards, .heartRate, .menstrualCycle, .journal, .supplements, .addedCards]
+            [.hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .recoveryVitals, .whatAffects, .yourCards, .heartRate, .menstrualCycle, .journal, .supplements, .addedCards]
         )
     }
 
@@ -63,10 +63,10 @@ final class TodayLayoutPrefsTests: XCTestCase {
         let order = "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,journal"
         XCTAssertEqual(
             TodayLayoutPrefs.visibleOrder(orderRaw: order, hiddenRaw: "hero,workouts"),
-            [.tomorrowCharge, .heartRate, .yourCards, .liveSession, .synthesis, .keyMetrics, .recoveryVitals, .menstrualCycle, .journal, .supplements, .addedCards]
+            [.tomorrowCharge, .heartRate, .whatAffects, .yourCards, .liveSession, .synthesis, .keyMetrics, .recoveryVitals, .menstrualCycle, .journal, .supplements, .addedCards]
         )
         XCTAssertEqual(TodayLayoutPrefs.decodeOrder(order), [
-            .tomorrowCharge, .heartRate, .hero, .yourCards, .liveSession, .synthesis, .keyMetrics, .workouts,
+            .tomorrowCharge, .heartRate, .hero, .whatAffects, .yourCards, .liveSession, .synthesis, .keyMetrics, .workouts,
             .recoveryVitals, .menstrualCycle, .journal, .supplements, .addedCards,
         ])
     }
@@ -93,7 +93,7 @@ final class TodayLayoutPrefsTests: XCTestCase {
         // Pin the exact wire strings — they must match the Android TodaySection byte-for-byte.
         XCTAssertEqual(
             raws,
-            ["hero", "liveSession", "synthesis", "tomorrowCharge", "keyMetrics", "workouts", "heartRate", "recoveryVitals", "yourCards", "menstrualCycle", "journal", "supplements", "addedCards"]
+            ["hero", "liveSession", "synthesis", "tomorrowCharge", "keyMetrics", "workouts", "heartRate", "recoveryVitals", "whatAffects", "yourCards", "menstrualCycle", "journal", "supplements", "addedCards"]
         )
     }
 
@@ -102,7 +102,10 @@ final class TodayLayoutPrefsTests: XCTestCase {
     func testSupplementsInsertsAfterJournalForASavedOrderThatPredatesIt() {
         let saved = "journal,hero,liveSession,synthesis,keyMetrics,workouts,heartRate,recoveryVitals,yourCards,menstrualCycle,addedCards"
         XCTAssertEqual(TodayLayoutPrefs.decodeOrder(saved), [
-            .tomorrowCharge, .journal, .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .recoveryVitals,
+            // tomorrowCharge (default 3) and whatAffects (default 8) also predate this saved order; each lands
+            // before the first saved section with a later default index, which is the leading journal (11).
+            .tomorrowCharge, .whatAffects,
+            .journal, .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .recoveryVitals,
             .yourCards, .menstrualCycle, .supplements, .addedCards,
         ])
         XCTAssertTrue(TodayLayoutPrefs.visibleOrder(orderRaw: saved, hiddenRaw: "journal").contains(.supplements))

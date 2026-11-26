@@ -127,7 +127,7 @@ ANDROID_TODAY_RUNTIME_COPY = {
 ANDROID_HELPER_NON_UI_LITERALS = {
     # TodayLayoutPrefs stable backup/persistence wire values.
     "hero", "liveSession", "synthesis", "tomorrowCharge", "keyMetrics", "workouts", "heartRate", "stress",
-    "recoveryVitals", "yourCards", "menstrualCycle", "journal", "supplements", "addedCards",
+    "recoveryVitals", "whatAffects", "yourCards", "menstrualCycle", "journal", "supplements", "addedCards",
     "today.sectionOrder", "today.hiddenSections",
     # TodayScoring parse/default formats.
     "9999-12-31", "d MMM", "24h", "12h", "6h", "3h", "1h",

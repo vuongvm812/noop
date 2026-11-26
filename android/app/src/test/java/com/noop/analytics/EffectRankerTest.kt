@@ -326,4 +326,41 @@ class EffectRankerTest {
         assertEquals(single.lag, joint.lag)
         assertTrue(joint.effect.pAdjusted >= single.effect.pAdjusted)
     }
+
+    /** Twin of Swift `testNoSameDaySkipsLagZeroAndShrinksFamily`: "Auto" carries a planted SAME-day
+     *  dip and wins at lag 0 by default. Listed in noSameDay, lag 0 is never tested, so its row moves
+     *  to lag 2, and the journal row "J" keeps its raw p but gets a new q from the smaller family. */
+    @Test
+    fun noSameDaySkipsLagZeroAndShrinksFamily() {
+        val outcome = HashMap<String, Double>()
+        for (d in 1..30) outcome[ymd(2026, 6, d)] = 70 + jitter(d)
+        for (d in 1..8) outcome[ymd(2026, 7, d)] = 70 + jitter(d)
+        val auto = HashSet<String>()
+        val journal = HashSet<String>()
+        for (i in 0 until 6) {
+            auto.add(ymd(2026, 6, 1 + 4 * i))                          // same-day dip on 1,5,…,21
+            outcome[ymd(2026, 6, 1 + 4 * i)] = 50 + jitter(1 + 4 * i)
+            journal.add(ymd(2026, 6, 2 + 4 * i))                       // next-morning dip on 3,7,…,23
+            outcome[ymd(2026, 6, 3 + 4 * i)] = 55 + jitter(3 + 4 * i)
+        }
+        val behaviors = mapOf("Auto" to auto, "J" to journal)
+        val controls = mapOf("Auto" to (outcome.keys - auto), "J" to (outcome.keys - journal))
+
+        val all = EffectRanker.rankFamily(behaviors, controls, mapOf("Charge" to outcome)).getValue("Charge")
+        val skip = EffectRanker.rankFamilyExcludingSameDay(behaviors, controls, mapOf("Charge" to outcome),
+            noSameDay = setOf("Auto")).getValue("Charge")
+        assertEquals(0, row(all, "Auto")?.lag)
+        assertEquals(2, row(skip, "Auto")?.lag)
+
+        val jAll = row(all, "J")!!
+        val jSkip = row(skip, "J")!!
+        assertEquals(1, jAll.lag)
+        assertEquals(1, jSkip.lag)
+        assertEquals(jAll.effect.pApprox, jSkip.effect.pApprox, 0.0)
+        assertTrue(jSkip.effect.pAdjusted != jAll.effect.pAdjusted)
+        // Pinned on both platforms (Swift EffectRankerTests.testNoSameDaySkipsLagZeroAndShrinksFamily).
+        assertEquals("0.000000002", "%.9f".format(java.util.Locale.US, jAll.effect.pApprox))
+        assertEquals("0.000000006", "%.9f".format(java.util.Locale.US, jAll.effect.pAdjusted))
+        assertEquals("0.000000010", "%.9f".format(java.util.Locale.US, jSkip.effect.pAdjusted))
+    }
 }

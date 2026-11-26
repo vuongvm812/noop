@@ -5124,4 +5124,30 @@
     <string name="race_trend_title">Prognostizierte Zeit, jeder Tag im letzten Jahr</string>
     <string name="race_trend_range">Beste %1$s · langsamste %2$s</string>
     <string name="race_this_run_blend_note">Deine Wettkampfkarte rechnet auch Herzfrequenz und VO₂max ein, daher können ihre Zeiten von diesem Lauf abweichen.</string>
+    <string name="what_moves_you_from_your_data">Aus deinen Daten</string>
+    <string name="what_moves_you_origin_journal">Tagebuch</string>
+    <string name="auto_factor_late_workout">Spätes Training</string>
+    <string name="auto_factor_hard_effort">Tag mit hoher Belastung</string>
+    <string name="auto_factor_rest_day">Ruhetag</string>
+    <string name="auto_factor_late_bedtime">Späte Schlafenszeit</string>
+    <string name="auto_factor_irregular_bedtime">Unregelmäßige Schlafenszeit</string>
+    <string name="auto_factor_low_steps">Wenige Schritte</string>
+    <string name="auto_factor_high_steps">Viele Schritte</string>
+    <string name="auto_factor_control_earlier_workout">Früheres Training</string>
+    <string name="auto_factor_control_easier_day">Leichterer Tag</string>
+    <string name="auto_factor_control_workout_day">Trainingstag</string>
+    <string name="auto_factor_control_usual_bedtime">Übliche Schlafenszeit</string>
+    <string name="auto_factor_control_regular_bedtime">Regelmäßige Schlafenszeit</string>
+    <string name="auto_factor_control_usual_steps">Übliche Schrittzahl</string>
+    <string name="what_affects_title">Was deine HRV und deinen Schlaf beeinflusst</string>
+    <string name="what_affects_open_what_moves_you">„Was dich bewegt“ öffnen</string>
+    <string name="what_moves_you_not_enough_data">Noch nicht genug Daten, um deine Tage für %1$s zu vergleichen. Jede Tagebuch-Gewohnheit und jeder Faktor aus deinen Daten braucht Tage mit und ohne, bevor NOOP die Wirkung ablesen kann.</string>
+    <string name="what_affects_needs_two_weeks">Braucht ca. 2 Wochen Daten</string>
+    <string name="what_affects_no_patterns">Noch keine klaren Muster. Trag dein Band weiter und führe dein Tagebuch.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs. ‘%2$s’: %3$s war unverändert (Ø %4$d vs. %5$d, n=%6$d vs. %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs. ‘%2$s’: %3$s war %4$d%% höher (Ø %5$d vs. %6$d, n=%7$d vs. %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs. ‘%2$s’: %3$s war %4$d%% niedriger (Ø %5$d vs. %6$d, n=%7$d vs. %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs. ‘%2$s’: %3$s war %4$s höher (Ø %5$d vs. %6$d, n=%7$d vs. %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs. ‘%2$s’: %3$s war %4$s niedriger (Ø %5$d vs. %6$d, n=%7$d vs. %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

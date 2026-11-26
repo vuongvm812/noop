@@ -5013,4 +5013,30 @@
     <string name="race_trend_title">预测时间（过去一年的每一天）</string>
     <string name="race_trend_range">最佳 %1$s · 最慢 %2$s</string>
     <string name="race_this_run_blend_note">比赛预测卡还会结合心率和最大摄氧量，因此其时间可能与这次跑步不同。</string>
+    <string name="what_moves_you_from_your_data">来自你的数据</string>
+    <string name="what_moves_you_origin_journal">日志</string>
+    <string name="auto_factor_late_workout">较晚的训练</string>
+    <string name="auto_factor_hard_effort">高消耗日</string>
+    <string name="auto_factor_rest_day">休息日</string>
+    <string name="auto_factor_late_bedtime">晚睡</string>
+    <string name="auto_factor_irregular_bedtime">就寝时间不规律</string>
+    <string name="auto_factor_low_steps">步数少</string>
+    <string name="auto_factor_high_steps">步数多</string>
+    <string name="auto_factor_control_earlier_workout">较早的训练</string>
+    <string name="auto_factor_control_easier_day">较轻松的一天</string>
+    <string name="auto_factor_control_workout_day">训练日</string>
+    <string name="auto_factor_control_usual_bedtime">平常的就寝时间</string>
+    <string name="auto_factor_control_regular_bedtime">就寝时间规律</string>
+    <string name="auto_factor_control_usual_steps">平常步数</string>
+    <string name="what_affects_title">什么影响你的 HRV 和睡眠</string>
+    <string name="what_affects_open_what_moves_you">打开“动力之源”</string>
+    <string name="what_moves_you_not_enough_data">数据还不足以比较你的 %1$s。每个日志习惯和来自你数据的因素都需要有和没有它的天数，NOOP 才能读出其影响。</string>
+    <string name="what_affects_needs_two_weeks">需要约 2 周的数据</string>
+    <string name="what_affects_no_patterns">暂无明显规律。请继续佩戴手环并记录日志。</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ 对比 ‘%2$s’：%3$s 无差异（平均 %4$d 对 %5$d，n=%6$d 对 %7$d）。</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ 对比 ‘%2$s’：%3$s 高 %4$d%%（平均 %5$d 对 %6$d，n=%7$d 对 %8$d）。</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ 对比 ‘%2$s’：%3$s 低 %4$d%%（平均 %5$d 对 %6$d，n=%7$d 对 %8$d）。</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ 对比 ‘%2$s’：%3$s 高 %4$s（平均 %5$d 对 %6$d，n=%7$d 对 %8$d）。</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ 对比 ‘%2$s’：%3$s 低 %4$s（平均 %5$d 对 %6$d，n=%7$d 对 %8$d）。</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

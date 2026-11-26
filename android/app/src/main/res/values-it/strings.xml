@@ -5079,4 +5079,30 @@
     <string name="race_trend_title">Tempo previsto, ogni giorno dell\'ultimo anno</string>
     <string name="race_trend_range">Migliore %1$s · più lento %2$s</string>
     <string name="race_this_run_blend_note">La tua scheda gare combina anche frequenza cardiaca e VO₂max, quindi i suoi tempi possono differire da quelli di questa corsa.</string>
+    <string name="what_moves_you_from_your_data">Dai tuoi dati</string>
+    <string name="what_moves_you_origin_journal">Diario</string>
+    <string name="auto_factor_late_workout">Allenamento tardivo</string>
+    <string name="auto_factor_hard_effort">Giorno di sforzo intenso</string>
+    <string name="auto_factor_rest_day">Giorno di riposo</string>
+    <string name="auto_factor_late_bedtime">Andare a letto tardi</string>
+    <string name="auto_factor_irregular_bedtime">Orario di sonno irregolare</string>
+    <string name="auto_factor_low_steps">Pochi passi</string>
+    <string name="auto_factor_high_steps">Molti passi</string>
+    <string name="auto_factor_control_earlier_workout">Allenamento più presto</string>
+    <string name="auto_factor_control_easier_day">Giorno più leggero</string>
+    <string name="auto_factor_control_workout_day">Giorno di allenamento</string>
+    <string name="auto_factor_control_usual_bedtime">Orario di sonno abituale</string>
+    <string name="auto_factor_control_regular_bedtime">Orario di sonno regolare</string>
+    <string name="auto_factor_control_usual_steps">Passi abituali</string>
+    <string name="what_affects_title">Cosa influenza la tua HRV e il tuo sonno</string>
+    <string name="what_affects_open_what_moves_you">Apri Cosa ti muove</string>
+    <string name="what_moves_you_not_enough_data">Non ci sono ancora dati sufficienti per confrontare i tuoi giorni per %1$s. Ogni abitudine del diario e ogni fattore dai tuoi dati richiede giorni con e senza prima che NOOP possa leggerne l\'effetto.</string>
+    <string name="what_affects_needs_two_weeks">Servono ~2 settimane di dati</string>
+    <string name="what_affects_no_patterns">Nessuno schema chiaro per ora. Continua a indossare la fascia e a compilare il diario.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs ‘%2$s’: %3$s non è cambiato (media %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs ‘%2$s’: %3$s è stato più alto del %4$d%% (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs ‘%2$s’: %3$s è stato più basso del %4$d%% (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs ‘%2$s’: %3$s è stato più alto di %4$s (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs ‘%2$s’: %3$s è stato più basso di %4$s (media %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

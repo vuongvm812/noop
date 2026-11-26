@@ -4986,4 +4986,30 @@
     <string name="race_trend_title">Thời gian dự đoán, từng ngày trong năm qua</string>
     <string name="race_trend_range">Tốt nhất %1$s · chậm nhất %2$s</string>
     <string name="race_this_run_blend_note">Thẻ dự đoán cũng kết hợp nhịp tim và VO₂max, nên thời gian ở đó có thể khác với lần chạy này.</string>
+    <string name="what_moves_you_from_your_data">Từ dữ liệu của bạn</string>
+    <string name="what_moves_you_origin_journal">Nhật ký</string>
+    <string name="auto_factor_late_workout">Tập luyện muộn</string>
+    <string name="auto_factor_hard_effort">Ngày gắng sức cao</string>
+    <string name="auto_factor_rest_day">Ngày nghỉ</string>
+    <string name="auto_factor_late_bedtime">Đi ngủ muộn</string>
+    <string name="auto_factor_irregular_bedtime">Giờ ngủ thất thường</string>
+    <string name="auto_factor_low_steps">Ít bước</string>
+    <string name="auto_factor_high_steps">Nhiều bước</string>
+    <string name="auto_factor_control_earlier_workout">Tập luyện sớm hơn</string>
+    <string name="auto_factor_control_easier_day">Ngày nhẹ hơn</string>
+    <string name="auto_factor_control_workout_day">Ngày tập luyện</string>
+    <string name="auto_factor_control_usual_bedtime">Giờ ngủ thường lệ</string>
+    <string name="auto_factor_control_regular_bedtime">Giờ ngủ đều đặn</string>
+    <string name="auto_factor_control_usual_steps">Số bước thường lệ</string>
+    <string name="what_affects_title">Điều gì ảnh hưởng đến HRV và giấc ngủ của bạn</string>
+    <string name="what_affects_open_what_moves_you">Mở Điều gì tác động đến bạn</string>
+    <string name="what_moves_you_not_enough_data">Chưa đủ dữ liệu để so sánh các ngày của bạn về %1$s. Mỗi thói quen trong nhật ký và mỗi yếu tố từ dữ liệu của bạn cần có ngày có và không có nó trước khi NOOP đọc được tác động.</string>
+    <string name="what_affects_needs_two_weeks">Cần khoảng 2 tuần dữ liệu</string>
+    <string name="what_affects_no_patterns">Chưa có xu hướng rõ ràng. Hãy tiếp tục đeo vòng và ghi nhật ký.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ so với ‘%2$s’: %3$s không khác biệt (TB %4$d so với %5$d, n=%6$d so với %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ so với ‘%2$s’: %3$s cao hơn %4$d%% (TB %5$d so với %6$d, n=%7$d so với %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ so với ‘%2$s’: %3$s thấp hơn %4$d%% (TB %5$d so với %6$d, n=%7$d so với %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ so với ‘%2$s’: %3$s cao hơn %4$s (TB %5$d so với %6$d, n=%7$d so với %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ so với ‘%2$s’: %3$s thấp hơn %4$s (TB %5$d so với %6$d, n=%7$d so với %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

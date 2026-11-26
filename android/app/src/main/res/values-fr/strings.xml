@@ -5110,4 +5110,30 @@
     <string name="race_trend_title">Temps prédit, chaque jour sur la dernière année</string>
     <string name="race_trend_range">Meilleur %1$s · plus lent %2$s</string>
     <string name="race_this_run_blend_note">Votre carte de course intègre aussi la fréquence cardiaque et la VO₂max, ses temps peuvent donc différer de ceux de cette course.</string>
+    <string name="what_moves_you_from_your_data">D\'après vos données</string>
+    <string name="what_moves_you_origin_journal">Journal</string>
+    <string name="auto_factor_late_workout">Entraînement tardif</string>
+    <string name="auto_factor_hard_effort">Journée d\'effort intense</string>
+    <string name="auto_factor_rest_day">Jour de repos</string>
+    <string name="auto_factor_late_bedtime">Coucher tardif</string>
+    <string name="auto_factor_irregular_bedtime">Coucher irrégulier</string>
+    <string name="auto_factor_low_steps">Peu de pas</string>
+    <string name="auto_factor_high_steps">Beaucoup de pas</string>
+    <string name="auto_factor_control_earlier_workout">Entraînement plus tôt</string>
+    <string name="auto_factor_control_easier_day">Journée plus légère</string>
+    <string name="auto_factor_control_workout_day">Jour d\'entraînement</string>
+    <string name="auto_factor_control_usual_bedtime">Coucher habituel</string>
+    <string name="auto_factor_control_regular_bedtime">Coucher régulier</string>
+    <string name="auto_factor_control_usual_steps">Pas habituels</string>
+    <string name="what_affects_title">Ce qui influence votre HRV et votre sommeil</string>
+    <string name="what_affects_open_what_moves_you">Ouvrir Ce qui vous fait bouger</string>
+    <string name="what_moves_you_not_enough_data">Pas encore assez de données pour comparer vos jours pour %1$s. Chaque habitude du journal et chaque facteur issu de vos données nécessite des jours avec et sans avant que NOOP puisse en lire l\'effet.</string>
+    <string name="what_affects_needs_two_weeks">Nécessite ~2 semaines de données</string>
+    <string name="what_affects_no_patterns">Pas encore de tendance nette. Continuez à porter votre bracelet et à tenir votre journal.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs ‘%2$s’ : %3$s était inchangé (moy. %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs ‘%2$s’ : %3$s était %4$d%% plus élevé (moy. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs ‘%2$s’ : %3$s était %4$d%% plus bas (moy. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs ‘%2$s’ : %3$s était %4$s plus élevé (moy. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs ‘%2$s’ : %3$s était %4$s plus bas (moy. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

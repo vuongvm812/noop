@@ -116,4 +116,34 @@ class InsightsSentencesTest {
             assertEquals(r.sentence(), InsightsSentences.dose(r, EnglishFromXml))
         }
     }
+
+    private fun autoEffect(key: String, outcome: String, delta: Double, pct: Double?) = BehaviorEffect(
+        behavior = key, outcome = outcome, meanWith = 55.4, meanWithout = 60.2, delta = delta, pctChange = pct,
+        nWith = 26, nWithout = 67, cohensD = -1.2, pApprox = 0.001, significant = true,
+    )
+
+    /** Automatic factors read as "group vs control". Swift `InsightsSentencesTests` pins the same English. */
+    @Test
+    fun autoFactorSentencesAndTodayLine() {
+        val late = com.noop.analytics.AutoFactors.Factor.LATE_WORKOUT.key
+        assertEquals(
+            "‘Late workout’ vs ‘Earlier workout’: HRV was 8% lower (avg 55 vs 60, n=26 vs 67).",
+            InsightsSentences.effect(autoEffect(late, "HRV", -4.8, -7.97), EnglishFromXml),
+        )
+        val steps = com.noop.analytics.AutoFactors.Factor.HIGH_STEPS.key
+        assertEquals(
+            "‘High steps’ vs ‘Usual steps’: Rest was 3.5 higher (avg 55 vs 60, n=26 vs 67).",
+            InsightsSentences.effect(autoEffect(steps, "Rest", 3.46, null), EnglishFromXml),
+        )
+        assertEquals(
+            "‘Rest day’ vs ‘Workout day’: Charge was no different (avg 55 vs 60, n=26 vs 67).",
+            InsightsSentences.effect(autoEffect(com.noop.analytics.AutoFactors.Factor.REST_DAY.key, "Charge", 0.0, 0.0), EnglishFromXml),
+        )
+        val row = RankedEffect(late, "HRV", 1, autoEffect(late, "HRV", -4.8, -7.97), ScoreConfidence.SOLID)
+        assertEquals("Late workout → HRV \u22128% next morning", InsightsSentences.todayLine(row, EnglishFromXml))
+        val journal = RankedEffect("Alcohol", "Rest", 2, autoEffect("Alcohol", "Rest", 3.46, null), ScoreConfidence.BUILDING)
+        assertEquals("Alcohol → Rest +3.5 2 mornings later", InsightsSentences.todayLine(journal, EnglishFromXml))
+        assertEquals("Late bedtime", InsightsSentences.behaviorLabel("auto.lateBedtime", EnglishFromXml))
+        assertEquals("Alcohol", InsightsSentences.behaviorLabel("Alcohol", EnglishFromXml))
+    }
 }

@@ -261,6 +261,11 @@ final class Repository: ObservableObject {
     @Published private(set) var cycleTrackingSeq = 0
     func noteCycleTrackingChanged() { cycleTrackingSeq += 1 }
 
+    /// Bumped by every native journal write (answer / numeric value / clear). What Moves You keys its
+    /// load on this beside `refreshSeq`, which a journal write never causes, so a newly logged answer
+    /// reaches the Today card and the hub at once. Same idea as `hydrationSeq`.
+    @Published private(set) var journalSeq = 0
+
     /// Workouts & GPS test mode (Test Centre): the tagged sink for the `.workouts` diagnostic lines
     /// (auto-detect inputs/thresholds/why, cross-source dedup decisions). Default nil (inert) so tests +
     /// non-prod inits get the byte-identical untraced path; AppModel wires it to `live.append(log:domain:)`.
@@ -2993,6 +2998,7 @@ final class Repository: ObservableObject {
         _ = try? await store.upsertJournal(
             [JournalEntry(day: day, question: question, answeredYes: answeredYes, notes: notes)],
             deviceId: Self.journalDeviceId)
+        journalSeq += 1
     }
 
     /// Write one native NUMERIC answer (#322): stores the value AND answeredYes=true, so the existing
@@ -3004,6 +3010,7 @@ final class Repository: ObservableObject {
             [JournalEntry(day: day, question: question, answeredYes: true, notes: notes,
                           numericValue: value)],
             deviceId: Self.journalDeviceId)
+        journalSeq += 1
     }
 
     /// Per-question numeric series (question → [day: value]) over the imported ∪ native union, native
@@ -3024,6 +3031,7 @@ final class Repository: ObservableObject {
     func clearJournalAnswer(day: String, question: String) async {
         guard let store = await ensureStore() else { return }
         _ = try? await store.deleteJournal(deviceId: Self.journalDeviceId, day: day, question: question)
+        journalSeq += 1
     }
 
     /// All workouts (WHOOP + Apple Health + manual + grandfathered detected bouts), newest first.
@@ -3059,6 +3067,14 @@ final class Repository: ObservableObject {
             ?? RacePredictor.predictions(runs: runs, nowTs: now)
         if persistHistory { await persistRaceHistory(store: store, runs: runs, days: inputs) }
         return result
+    }
+
+    /// The workout union the Workouts list shows (deduped, dismissed spans removed) over the whole
+    /// history, without the display-only HR reconcile. What Moves You reads workout timing from it.
+    /// Android reads the same union in `AppViewModel.dedupedWorkoutRows`.
+    func dedupedWorkouts() async -> [WorkoutRow] {
+        guard let store = await ensureStore() else { return [] }
+        return await dedupedWorkoutRows(days: 4000, store: store, trace: false)
     }
 
     /// One workout row as the race predictor reads it.

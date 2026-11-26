@@ -1124,6 +1124,24 @@
       "twin_path": "Strand/Data/Repository.swift"
     },
     {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::restScoresFor/2#1",
+      "identity_sha256": "3d50f80fa3d7bab502e0c9fd87e4bb3f27805b03a3d3eaa01568ea55047d282e",
+      "platform": "kotlin",
+      "rationale": "Batch form of restScoreFor for What Moves You's full-history Rest series, same per-day precedence; Swift resolves each day with Repository.restScore in the excluded app layer.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
+      "type": "out_of_scope_twin",
+      "kind": "add-unpaired-function",
+      "identity": "kotlin\u0000android/app/src/main/java/com/noop/data/WhoopRepository.kt::importedJournalUnion/3#1",
+      "identity_sha256": "f3a5d4204e95d6be6c2245f9ac498f990ceb68e5a3f51628b213b0ecd554cdec",
+      "platform": "kotlin",
+      "rationale": "Imported journal rows across the imported read union; Swift reads the same union inline in Repository.journalEntries in the excluded app layer.",
+      "twin_path": "Strand/Data/Repository.swift"
+    },
+    {
       "type": "platform_specific",
       "kind": "add-unpaired-function",
       "identity": "kotlin\u0000android/app/src/main/java/com/noop/analytics/AnalyticsEngine.kt::swiftRounded/1#1",
