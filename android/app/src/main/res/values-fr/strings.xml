@@ -5094,4 +5094,20 @@
     <string name="tomorrow_charge_accuracy">%1$d dernières prévisions : écart moyen de ~%2$d points, %3$d/%4$d dans la plage.</string>
     <string name="tomorrow_charge_bedtime">Heure du coucher</string>
     <string name="intelligence_forecast_footnote">Estimation basée sur l\'effort d\'aujourd\'hui, votre besoin de sommeil, un coucher à %1$s et votre référence de récupération sur %2$d nuits, pas une mesure. Votre Charge réelle est calculée à partir de la VFC de demain à votre réveil.</string>
+    <string name="race_basis_hr_vo2">D\'après vos courses · fréquence cardiaque · VO₂max</string>
+    <string name="race_basis_hr">D\'après vos courses · fréquence cardiaque</string>
+    <string name="race_basis_vo2">D\'après vos courses · VO₂max</string>
+    <string name="race_blend_note">Votre fréquence cardiaque en course et votre VO₂max sont lues via les tables VDOT de Daniels et intégrées, pour que les sorties faciles comptent aussi.</string>
+    <string name="race_trend_link">Évolution de la prédiction</string>
+    <string name="race_estimate_caption">Estimation : pas encore de course aussi longue</string>
+    <string name="race_trend_note">Plus bas, c\'est plus rapide. Comparer l\'affiche à côté des prédictions de votre montre.</string>
+    <string name="race_trend_empty">Pas encore assez de jours.</string>
+    <string name="snapshot_item_race_pred_5k_s">Prédiction NOOP 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">Prédiction NOOP 10K</string>
+    <string name="snapshot_item_race_pred_half_s">Prédiction NOOP de semi-marathon</string>
+    <string name="snapshot_item_race_pred_marathon_s">Prédiction NOOP de marathon</string>
+    <string name="race_trend_overline">Évolution quotidienne</string>
+    <string name="race_trend_title">Temps prédit, chaque jour sur la dernière année</string>
+    <string name="race_trend_range">Meilleur %1$s · plus lent %2$s</string>
+    <string name="race_this_run_blend_note">Votre carte de course intègre aussi la fréquence cardiaque et la VO₂max, ses temps peuvent donc différer de ceux de cette course.</string>
 </resources>

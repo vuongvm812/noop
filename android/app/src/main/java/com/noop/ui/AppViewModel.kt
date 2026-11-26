@@ -2456,18 +2456,124 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             val sorted = deduped.sortedByDescending { it.startTs }
             _workouts.value = sorted
-            _racePredictions.value = RacePredictor.predictions(sorted.map { raceRun(it) }, now)
             // Post-workout summary (#517) — opt-in, default OFF. The newest session (by start) drives a
             // one-shot Effort + duration + avg-HR notification when it's strictly newer than the last one
             // summarised, so a re-sync of the same backlog never re-fires. Honest timing: a strap-only
             // workout only surfaces on the next history offload, so the copy says "after your strap synced".
             sorted.firstOrNull()?.let { maybeNotifyWorkout(it) }
+            // After the summary, so the year of history work below never delays it.
+            refreshRacePredictions(sorted, now)
         }
+    }
+
+    /**
+     * Publish [racePredictions] for [rows] (the deduped list [loadWorkouts] just published), blended with the
+     * heart-rate and VO₂max estimates as of today, then bring the stored daily history
+     * ([RacePredictor.historyKeys] under the computed id; the trend chart and Compare read it) up to date for
+     * the last [RacePredictor.historyDays] days, writing only the days that changed. The live result is
+     * published before the history is touched. A failed physiology read publishes the run-only (Riegel)
+     * predictions and skips the history; a failed history write leaves the published predictions in place.
+     * Swift twin: `Repository.racePredictions`.
+     */
+    private suspend fun refreshRacePredictions(rows: List<WorkoutRow>, now: Long) {
+        val runs = rows.map { raceRun(it) }
+        val days = raceHistoryDays(now, RacePredictor.historyDays(), java.time.ZoneId.systemDefault())
+        val inputs = runCatching { raceInputs(days) }
+            .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+            .getOrNull()
+        if (inputs == null) {
+            _racePredictions.value = RacePredictor.predictions(runs, now)
+            return
+        }
+        _racePredictions.value = inputs.lastOrNull()?.let { RacePredictor.blendedPredictions(runs, now, it.inputs) }
+            ?: RacePredictor.predictions(runs, now)
+        runCatching { persistRaceHistory(runs, inputs) }
+            .onFailure { if (it is kotlin.coroutines.cancellation.CancellationException) throw it }
+    }
+
+    /** The physiology each of [days] reads: the profile's HRmax, the median resting HR of the seven days ending
+     *  on it and the newest `vo2max_est` up to 30 days old (watch value before NOOP's estimate, as that series
+     *  already resolves them). Resting HR comes from bounded reads over just the days the window needs, never
+     *  the full merged history (#797): the imported union with the wearable-export history folded under it
+     *  (the twin of the Swift `Repository.dailyMetrics(fromDay:toDay:)`), else the computed union.
+     *  Swift twin: `Repository.raceInputs`. */
+    private suspend fun raceInputs(days: List<Pair<Int, Long>>): List<RacePredictor.HistoryDay> {
+        val first = days.firstOrNull()?.first ?: return emptyList()
+        val last = days.last().first
+        val iso = { e: Int -> java.time.LocalDate.ofEpochDay(e.toLong()).toString() }
+        val rhrFrom = iso(first - RacePredictor.restingHrDays() + 1)
+        val rhrTo = iso(last)
+        val imported = WhoopRepository.unionByDay(
+            repository.importedSourceIds(deviceId).map { repository.dailyMetrics(it, rhrFrom, rhrTo) },
+        )
+        val history = WhoopRepository.unionByDay(
+            repository.historySourceIds(deviceId).map { repository.dailyMetrics(it, rhrFrom, rhrTo) },
+        )
+        // Imported (and wearable-history) resting HR wins per day; a strap-only day falls back to the
+        // engine's computed value, the precedence mergeDaily gives the dashboard.
+        val rhrByDay = HashMap<String, Int>()
+        for (d in repository.computedDailyUnion(activeStrapId, rhrFrom, rhrTo)) d.restingHr?.let { rhrByDay[d.day] = it }
+        for (d in WhoopRepository.foldWearableHistory(imported, history)) d.restingHr?.let { rhrByDay[d.day] = it }
+        val rhr = rhrByDay.mapNotNull { (day, v) -> raceEpochDay(day)?.let { RacePredictor.DayValue(it, v.toDouble()) } }
+        val vo2 = repository.metricSeriesComputedUnion(
+            activeStrapId, "vo2max_est", iso(first - RacePredictor.vo2maxMaxAgeDays()), iso(last),
+        ).mapNotNull { p -> raceEpochDay(p.day)?.let { RacePredictor.DayValue(it, p.value) } }
+        val hrMax = profileStore.hrMax.toDouble()
+        return days.map { (epochDay, asOfTs) ->
+            RacePredictor.HistoryDay(
+                epochDay, asOfTs,
+                RacePredictor.Inputs(hrMax, RacePredictor.restingHrAsOf(rhr, epochDay), RacePredictor.vo2maxAsOf(vo2, epochDay)),
+            )
+        }
+    }
+
+    /** Replays the prediction for each of [days] off the main thread and writes the stored history's changes
+     *  under the computed id: new or moved values upserted, a day that no longer predicts deleted. The delete
+     *  reaches every computed id the chart unions ([WhoopRepository.computedSourceIds]) as well as the one
+     *  written, so a stale row under another id cannot keep drawing. Swift twin: `Repository.persistRaceHistory`. */
+    private suspend fun persistRaceHistory(runs: List<RacePredictor.Run>, days: List<RacePredictor.HistoryDay>) {
+        val first = days.firstOrNull()?.epochDay ?: return
+        val last = days.last().epochDay
+        val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            RacePredictor.dailyHistory(runs, days)
+        }
+        val keys = RacePredictor.historyKeys()
+        val computedId = "$deviceId-noop"
+        val from = java.time.LocalDate.ofEpochDay(first.toLong()).toString()
+        val to = java.time.LocalDate.ofEpochDay(last.toLong()).toString()
+        val stored = keys.map { key ->
+            repository.metricSeries(computedId, key, from, to).mapNotNull { p ->
+                raceEpochDay(p.day)?.let { RacePredictor.DayValue(it, p.value) }
+            }
+        }
+        val changes = RacePredictor.historyChanges(points, stored)
+        val writes = changes.mapNotNull { c ->
+            c.seconds?.let {
+                MetricSeriesRow(computedId, java.time.LocalDate.ofEpochDay(c.epochDay.toLong()).toString(), keys[c.targetIndex], it.toDouble())
+            }
+        }
+        if (writes.isNotEmpty()) repository.upsertMetricSeries(writes)
+        val deleteIds = (repository.computedSourceIds(activeStrapId) + computedId).distinct()
+        for (c in changes) {
+            if (c.seconds != null) continue
+            val day = java.time.LocalDate.ofEpochDay(c.epochDay.toLong()).toString()
+            for (id in deleteIds) repository.deleteMetricSeriesPoint(id, day, keys[c.targetIndex])
+        }
+    }
+
+    /** The stored daily prediction for [targetIndex] across the computed ids over the replayed window (the
+     *  last [RacePredictor.historyDays] local days, today included), oldest first: what the race trend chart
+     *  draws. Swift twin: `Repository.racePredictionHistory`. */
+    suspend fun racePredictionHistory(targetIndex: Int): List<MetricSeriesRow> {
+        val key = RacePredictor.historyKeys().getOrNull(targetIndex) ?: return emptyList()
+        val today = java.time.LocalDate.now()
+        val from = today.minusDays((RacePredictor.historyDays() - 1).toLong()).toString()
+        return repository.metricSeriesComputedUnion(activeStrapId, key, from, today.toString())
     }
 
     /** One workout row as the race predictor reads it. */
     fun raceRun(row: WorkoutRow): RacePredictor.Run =
-        RacePredictor.Run(row.startTs, row.endTs, row.sport, row.distanceM, row.durationS)
+        RacePredictor.Run(row.startTs, row.endTs, row.sport, row.distanceM, row.durationS, row.avgHr?.toDouble())
 
     /** Seed the post-workout notification frontier to the newest existing workout WITHOUT notifying, so
      *  enabling the toggle doesn't immediately fire a summary for a session already in history (#517).
@@ -3892,3 +3998,19 @@ internal fun elapsedClock(elapsedS: Long): String {
  */
 internal fun resolveSelectedModel(recorded: WhoopModel?, remembered: WhoopModel?): WhoopModel =
     recorded ?: remembered ?: WhoopModel.WHOOP4
+
+/** The last [count] local days ending today, oldest first, as (epoch day, the instant to predict as of): each
+ *  past day's last second, and [now] for today so today's point equals the live card.
+ *  Swift twin: `Repository.raceHistoryDays`. */
+internal fun raceHistoryDays(now: Long, count: Int, zone: java.time.ZoneId): List<Pair<Int, Long>> {
+    val today = java.time.Instant.ofEpochSecond(now).atZone(zone).toLocalDate()
+    return (maxOf(1, count) - 1 downTo 0).map { back ->
+        val d = today.minusDays(back.toLong())
+        val asOf = if (back == 0) now else d.plusDays(1).atStartOfDay(zone).toEpochSecond() - 1
+        d.toEpochDay().toInt() to asOf
+    }
+}
+
+/** Days since 1970-01-01 for a "yyyy-MM-dd" day, or null when it does not parse. */
+private fun raceEpochDay(day: String): Int? =
+    runCatching { java.time.LocalDate.parse(day).toEpochDay().toInt() }.getOrNull()

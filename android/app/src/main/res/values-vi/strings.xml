@@ -4970,4 +4970,20 @@
     <string name="tomorrow_charge_accuracy">%1$d dự báo gần nhất: lệch trung bình ~%2$d điểm, %3$d/%4$d nằm trong khoảng.</string>
     <string name="tomorrow_charge_bedtime">Giờ đi ngủ</string>
     <string name="intelligence_forecast_footnote">Ước tính từ nỗ lực hôm nay, nhu cầu ngủ, giờ đi ngủ %1$s và mức nền phục hồi %2$d đêm của bạn, không phải số đo. Năng lượng thật của bạn được chấm từ HRV ngày mai khi bạn thức dậy.</string>
+    <string name="race_basis_hr_vo2">Dựa trên các lần chạy của bạn · nhịp tim · VO₂max</string>
+    <string name="race_basis_hr">Dựa trên các lần chạy của bạn · nhịp tim</string>
+    <string name="race_basis_vo2">Dựa trên các lần chạy của bạn · VO₂max</string>
+    <string name="race_blend_note">Nhịp tim khi chạy và VO₂max của bạn được quy đổi qua bảng VDOT của Daniels rồi kết hợp vào, nên các buổi chạy nhẹ cũng được tính.</string>
+    <string name="race_trend_link">Xu hướng dự đoán</string>
+    <string name="race_estimate_caption">Ước tính: chưa có lần chạy dài như vậy</string>
+    <string name="race_trend_note">Thấp hơn là nhanh hơn. So sánh hiển thị điều này bên cạnh dự đoán của đồng hồ bạn.</string>
+    <string name="race_trend_empty">Chưa đủ số ngày.</string>
+    <string name="snapshot_item_race_pred_5k_s">Dự đoán NOOP 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">Dự đoán NOOP 10K</string>
+    <string name="snapshot_item_race_pred_half_s">Dự đoán NOOP bán marathon</string>
+    <string name="snapshot_item_race_pred_marathon_s">Dự đoán NOOP marathon</string>
+    <string name="race_trend_overline">Xu hướng hằng ngày</string>
+    <string name="race_trend_title">Thời gian dự đoán, từng ngày trong năm qua</string>
+    <string name="race_trend_range">Tốt nhất %1$s · chậm nhất %2$s</string>
+    <string name="race_this_run_blend_note">Thẻ dự đoán cũng kết hợp nhịp tim và VO₂max, nên thời gian ở đó có thể khác với lần chạy này.</string>
 </resources>

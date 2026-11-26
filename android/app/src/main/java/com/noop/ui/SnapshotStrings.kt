@@ -112,6 +112,10 @@ internal fun snapshotItemLabelRes(id: String): Int = when (id) {
     "race_10k_s" -> R.string.snapshot_item_race_10k_s
     "race_half_s" -> R.string.snapshot_item_race_half_s
     "race_marathon_s" -> R.string.snapshot_item_race_marathon_s
+    "race_pred_5k_s" -> R.string.snapshot_item_race_pred_5k_s
+    "race_pred_10k_s" -> R.string.snapshot_item_race_pred_10k_s
+    "race_pred_half_s" -> R.string.snapshot_item_race_pred_half_s
+    "race_pred_marathon_s" -> R.string.snapshot_item_race_pred_marathon_s
     "stress_max" -> R.string.snapshot_item_stress_max
     "stress_low_min" -> R.string.snapshot_item_stress_low_min
     "stress_medium_min" -> R.string.snapshot_item_stress_medium_min

@@ -138,6 +138,8 @@ data class CompareMetric(
             "carbs_g" -> uiString(R.string.l10n_compare_screen_carbs_d1b71194)
             "fat_g" -> uiString(R.string.l10n_compare_screen_fat_7b71bd0c)
             "mood" -> uiString(R.string.l10n_compare_screen_mood_c16981e6)
+            "race_pred_5k_s", "race_pred_10k_s", "race_pred_half_s", "race_pred_marathon_s" ->
+                uiString(snapshotItemLabelRes(key))
             else -> if (source == "garmin-import") uiString(snapshotItemLabelRes(key)) else titleEn
         }
 
@@ -216,6 +218,11 @@ private object CompareCatalog {
         CompareMetric("vo2max_est", "VO₂ Max (estimated)", "Heart", "", "my-whoop", 1),
         CompareMetric("vitality", "Vitality", "Heart", "", "my-whoop", 0),
         CompareMetric("body_age", "Body Age", "Heart", "yrs", "my-whoop", 0),
+        // NOOP's own race predictions (RacePredictor history, computed "-noop" id), beside Garmin's race_*_s.
+        CompareMetric("race_pred_5k_s", "NOOP 5K prediction", "Heart", "s", "my-whoop", 0),
+        CompareMetric("race_pred_10k_s", "NOOP 10K prediction", "Heart", "s", "my-whoop", 0),
+        CompareMetric("race_pred_half_s", "NOOP half marathon prediction", "Heart", "s", "my-whoop", 0),
+        CompareMetric("race_pred_marathon_s", "NOOP marathon prediction", "Heart", "s", "my-whoop", 0),
         // Charge (was Recovery)
         CompareMetric("recovery", "Charge", "Charge", "%", "my-whoop", 0),
         CompareMetric("hrv", "Heart Rate Variability", "Charge", "ms", "my-whoop", 0),

@@ -5244,4 +5244,20 @@
     <string name="tomorrow_charge_accuracy">Последние %1$d прогнозов: средняя ошибка ~%2$d, %3$d/%4$d в пределах диапазона.</string>
     <string name="tomorrow_charge_bedtime">Время отхода ко сну</string>
     <string name="intelligence_forecast_footnote">Оценка на основе сегодняшнего усилия, вашей потребности во сне, отхода ко сну в %1$s и нормы восстановления за %2$d ночей — не измерение. Реальный Заряд рассчитывается по ВСР завтрашнего утра, когда вы проснётесь.</string>
+    <string name="race_basis_hr_vo2">По вашим пробежкам · пульс · VO₂max</string>
+    <string name="race_basis_hr">По вашим пробежкам · пульс</string>
+    <string name="race_basis_vo2">По вашим пробежкам · VO₂max</string>
+    <string name="race_blend_note">Пульс на пробежках и VO₂max пересчитываются по таблицам VDOT Дэниелса и учитываются, поэтому лёгкие пробежки тоже идут в зачёт.</string>
+    <string name="race_trend_link">Динамика прогноза</string>
+    <string name="race_estimate_caption">Оценка: пока нет такой длинной пробежки</string>
+    <string name="race_trend_note">Ниже — значит быстрее. В «Сравнить» это показано рядом с прогнозами ваших часов.</string>
+    <string name="race_trend_empty">Пока недостаточно дней.</string>
+    <string name="snapshot_item_race_pred_5k_s">Прогноз NOOP на 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">Прогноз NOOP на 10K</string>
+    <string name="snapshot_item_race_pred_half_s">Прогноз NOOP на полумарафон</string>
+    <string name="snapshot_item_race_pred_marathon_s">Прогноз NOOP на марафон</string>
+    <string name="race_trend_overline">По дням</string>
+    <string name="race_trend_title">Прогнозное время за каждый день последнего года</string>
+    <string name="race_trend_range">Лучший %1$s · самый медленный %2$s</string>
+    <string name="race_this_run_blend_note">Карточка прогнозов также учитывает пульс и VO₂max, поэтому её время может отличаться от времени этой пробежки.</string>
 </resources>

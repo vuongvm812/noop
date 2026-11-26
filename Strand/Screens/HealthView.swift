@@ -790,7 +790,7 @@ private struct FitnessAgeSection: View {
             SectionHeader("Fitness Age", overline: "Daily",
                           trailing: fitnessAge != nil ? String(localized: "vs age \(profile.age)") : nil)
             content
-            if let racePredictions, racePredictions.items.contains(where: { $0 != nil }) {
+            if let racePredictions, racePredictions.estimates.contains(where: { $0 != nil }) {
                 RacePredictionsCard(result: racePredictions, system: distanceUnitSystem, compact: true)
             }
         }

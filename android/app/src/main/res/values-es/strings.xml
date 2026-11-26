@@ -5095,4 +5095,20 @@
     <string name="tomorrow_charge_accuracy">Últimas %1$d predicciones: desvío medio de ~%2$d puntos, %3$d/%4$d dentro del rango.</string>
     <string name="tomorrow_charge_bedtime">Hora de acostarse</string>
     <string name="intelligence_forecast_footnote">Estimación a partir del esfuerzo de hoy, tu necesidad de sueño, acostarte a las %1$s y tu línea base de recuperación de %2$d noches, no una medición. Tu Carga real se calcula con el VFC de mañana al despertar.</string>
+    <string name="race_basis_hr_vo2">Basado en tus carreras · frecuencia cardíaca · VO₂max</string>
+    <string name="race_basis_hr">Basado en tus carreras · frecuencia cardíaca</string>
+    <string name="race_basis_vo2">Basado en tus carreras · VO₂max</string>
+    <string name="race_blend_note">Tu frecuencia cardíaca al correr y tu VO₂max se interpretan con las tablas VDOT de Daniels y se combinan, así que las carreras suaves también cuentan.</string>
+    <string name="race_trend_link">Tendencia de la predicción</string>
+    <string name="race_estimate_caption">Estimación: aún no hay una carrera tan larga</string>
+    <string name="race_trend_note">Más bajo es más rápido. Comparar lo muestra junto a las predicciones de tu reloj.</string>
+    <string name="race_trend_empty">Aún no hay suficientes días.</string>
+    <string name="snapshot_item_race_pred_5k_s">Predicción NOOP 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">Predicción NOOP 10K</string>
+    <string name="snapshot_item_race_pred_half_s">Predicción NOOP de media maratón</string>
+    <string name="snapshot_item_race_pred_marathon_s">Predicción NOOP de maratón</string>
+    <string name="race_trend_overline">Tendencia diaria</string>
+    <string name="race_trend_title">Tiempo previsto, cada día del último año</string>
+    <string name="race_trend_range">Mejor %1$s · más lento %2$s</string>
+    <string name="race_this_run_blend_note">Tu tarjeta de carreras también combina la frecuencia cardíaca y el VO₂max, así que sus tiempos pueden diferir de los de esta carrera.</string>
 </resources>

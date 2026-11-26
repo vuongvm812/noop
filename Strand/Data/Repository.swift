@@ -3039,20 +3039,115 @@ final class Repository: ObservableObject {
     }
 
     /// Race predictions from every run in the same deduped, dismissed-filtered workout union the Workouts
-    /// list shows, over the whole history. Recomputed on each call and never stored, so a new, imported,
-    /// edited or deleted run moves them on the next load. Skips the display-only HR reconcile, which
-    /// touches neither distance nor duration. Android derives the same result in `AppViewModel.loadWorkouts`.
-    func racePredictions() async -> RacePredictor.Result {
+    /// list shows, over the whole history, blended with the heart-rate and VO₂max estimates
+    /// (`raceInputs`). Recomputed on each call, so a new, imported, edited or deleted run moves them on the
+    /// next load. Reads the same reconciled average HR the Workouts list shows (`workoutRows`, after
+    /// `reconcileWorkoutHrWithTrace`), which the heart-rate estimate consumes; Android reads the rows after
+    /// `fillWorkoutHrFromStrap` in `AppViewModel.loadWorkouts`.
+    /// `persistHistory` also brings the stored daily history (`RacePredictor.historyKeys()`, the trend
+    /// chart and Compare read it) up to date for the last `RacePredictor.historyDays()` days, writing only
+    /// the days that changed. Android derives the same result in `AppViewModel.loadWorkouts`.
+    func racePredictions(persistHistory: Bool = true) async -> RacePredictor.Result {
         let now = Int(Date().timeIntervalSince1970)
         guard let store = await ensureStore() else { return RacePredictor.predictions(runs: [], nowTs: now) }
-        let rows = await dedupedWorkoutRows(days: 4000, store: store, trace: false)
-        return RacePredictor.predictions(runs: rows.map(Self.raceRun), nowTs: now)
+        let rows = await reconcileWorkoutHrWithTrace(
+            dedupedWorkoutRows(days: 4000, store: store, trace: false), store: store)
+        let runs = rows.map(Self.raceRun)
+        let days = Self.raceHistoryDays(now: now, count: persistHistory ? RacePredictor.historyDays() : 1)
+        let inputs = await raceInputs(store: store, days: days)
+        let result = inputs.last.map { RacePredictor.blendedPredictions(runs: runs, nowTs: now, inputs: $0.inputs) }
+            ?? RacePredictor.predictions(runs: runs, nowTs: now)
+        if persistHistory { await persistRaceHistory(store: store, runs: runs, days: inputs) }
+        return result
     }
 
     /// One workout row as the race predictor reads it.
     static func raceRun(_ row: WorkoutRow) -> RacePredictor.Run {
         RacePredictor.Run(startTs: row.startTs, endTs: row.endTs, sport: row.sport,
-                          distanceM: row.distanceM, durationS: row.durationS)
+                          distanceM: row.distanceM, durationS: row.durationS, avgHr: row.avgHr.map(Double.init))
+    }
+
+    /// The last `count` local days ending today, oldest first, as (epoch day, the instant to predict as of):
+    /// each past day's last second, and `now` for today so today's point equals the live card.
+    static func raceHistoryDays(now: Int, count: Int) -> [(epochDay: Int, asOfTs: Int)] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(now)))
+        return (0..<max(1, count)).reversed().compactMap { back -> (epochDay: Int, asOfTs: Int)? in
+            guard let start = cal.date(byAdding: .day, value: -back, to: today),
+                  let next = cal.date(byAdding: .day, value: 1, to: start),
+                  let epochDay = Baselines.isoEpochDay(dayString(start)) else { return nil }
+            return (epochDay, back == 0 ? now : Int(next.timeIntervalSince1970) - 1)
+        }
+    }
+
+    /// The physiology each of `days` reads: the profile's HRmax, the median resting HR of the seven days
+    /// ending on it (`RacePredictor.restingHrAsOf`) and the newest VO₂max up to 30 days old, the watch's
+    /// value before NOOP's estimate as `vo2max_est` already resolves them (`RacePredictor.vo2maxAsOf`).
+    private func raceInputs(store: WhoopStore, days: [(epochDay: Int, asOfTs: Int)]) async -> [RacePredictor.HistoryDay] {
+        guard let first = days.first?.epochDay, let last = days.last?.epochDay else { return [] }
+        let iso = { (e: Int) in Baselines.isoDay(fromEpochDay: e) }
+        // Imported (and wearable-history) resting HR wins per day; a strap-only day falls back to the
+        // engine's computed value, the precedence `mergeDaily` gives the dashboard.
+        let rhrFrom = iso(first - RacePredictor.restingHrDays() + 1)
+        var rhrByDay: [String: Int] = [:]
+        for d in await unionComputedDailyMetrics(store: store, from: rhrFrom, to: iso(last)) { rhrByDay[d.day] = d.restingHr }
+        for d in await dailyMetrics(fromDay: rhrFrom, toDay: iso(last)) where d.restingHr != nil { rhrByDay[d.day] = d.restingHr }
+        let rhr = rhrByDay.compactMap { day, v -> RacePredictor.DayValue? in
+            guard let e = Baselines.isoEpochDay(day) else { return nil }
+            return RacePredictor.DayValue(epochDay: e, value: Double(v))
+        }
+        let vo2 = await unionComputedMetricSeries(
+            store: store, key: "vo2max_est", from: iso(first - RacePredictor.vo2maxMaxAgeDays()), to: iso(last))
+            .compactMap { p in Baselines.isoEpochDay(p.day).map { RacePredictor.DayValue(epochDay: $0, value: p.value) } }
+        let hrMax = strainProfile?.hrMax
+        return days.map { d in
+            RacePredictor.HistoryDay(epochDay: d.epochDay, asOfTs: d.asOfTs, inputs: RacePredictor.Inputs(
+                hrMax: hrMax,
+                restingHr: RacePredictor.restingHrAsOf(rhr, epochDay: d.epochDay),
+                vo2max: RacePredictor.vo2maxAsOf(vo2, epochDay: d.epochDay)))
+        }
+    }
+
+    /// Replays the prediction for each of `days` and writes the stored history's changes under the computed
+    /// id: new or moved values upserted, a day that no longer predicts deleted under every computed read id
+    /// (the chart reads their union, so a stale point under the canonical sibling would otherwise linger).
+    /// The replay runs off the main actor; an unchanged history writes nothing.
+    private func persistRaceHistory(store: WhoopStore, runs: [RacePredictor.Run], days: [RacePredictor.HistoryDay]) async {
+        guard let first = days.first?.epochDay, let last = days.last?.epochDay else { return }
+        let points = await Task.detached(priority: .utility) { RacePredictor.dailyHistory(runs: runs, days: days) }.value
+        let keys = RacePredictor.historyKeys()
+        let from = Baselines.isoDay(fromEpochDay: first), to = Baselines.isoDay(fromEpochDay: last)
+        var stored: [[RacePredictor.DayValue]] = []
+        for key in keys {
+            let rows = (try? await store.metricSeries(deviceId: computedDeviceId, key: key, from: from, to: to)) ?? []
+            stored.append(rows.compactMap { p in
+                Baselines.isoEpochDay(p.day).map { RacePredictor.DayValue(epochDay: $0, value: p.value) }
+            })
+        }
+        let changes = RacePredictor.historyChanges(points: points, stored: stored)
+        let writes = changes.compactMap { c in
+            c.seconds.map { MetricPoint(day: Baselines.isoDay(fromEpochDay: c.epochDay), key: keys[c.targetIndex], value: Double($0)) }
+        }
+        if !writes.isEmpty { _ = try? await store.upsertMetricSeries(writes, deviceId: computedDeviceId) }
+        for c in changes where c.seconds == nil {
+            let day = Baselines.isoDay(fromEpochDay: c.epochDay)
+            for id in computedReadIds {
+                _ = try? await store.deleteMetricSeriesPoint(deviceId: id, day: day, key: keys[c.targetIndex])
+            }
+        }
+    }
+
+    /// The stored daily prediction for target `targetIndex` across the computed ids, oldest first, over the
+    /// replayed window only (the last `RacePredictor.historyDays()` local days, ending today): what the race
+    /// trend chart draws.
+    func racePredictionHistory(targetIndex: Int) async -> [MetricPoint] {
+        let keys = RacePredictor.historyKeys()
+        guard targetIndex >= 0, targetIndex < keys.count, let store = await ensureStore() else { return [] }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let start = cal.date(byAdding: .day, value: -(RacePredictor.historyDays() - 1), to: today) ?? today
+        return await unionComputedMetricSeries(
+            store: store, key: keys[targetIndex], from: Self.dayString(start), to: Self.dayString(today))
     }
 
     /// The workout union behind `workoutRows`, before its display-only HR reconcile: every namespace,

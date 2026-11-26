@@ -5108,4 +5108,20 @@
     <string name="tomorrow_charge_accuracy">Letzte %1$d Prognosen: im Schnitt ~%2$d Punkte daneben, %3$d/%4$d im Bereich.</string>
     <string name="tomorrow_charge_bedtime">Schlafenszeit</string>
     <string name="intelligence_forecast_footnote">Schätzung aus der heutigen Belastung, deinem Schlafbedarf, einer Schlafenszeit um %1$s und deiner Erholungs-Basislinie aus %2$d Nächten, keine Messung. Deine echte Ladung wird aus der HRV von morgen berechnet, wenn du aufwachst.</string>
+    <string name="race_basis_hr_vo2">Basierend auf deinen Läufen · Herzfrequenz · VO₂max</string>
+    <string name="race_basis_hr">Basierend auf deinen Läufen · Herzfrequenz</string>
+    <string name="race_basis_vo2">Basierend auf deinen Läufen · VO₂max</string>
+    <string name="race_blend_note">Deine Herzfrequenz beim Laufen und deine VO₂max werden über Daniels\' VDOT-Tabellen eingerechnet, damit auch lockere Läufe zählen.</string>
+    <string name="race_trend_link">Prognoseverlauf</string>
+    <string name="race_estimate_caption">Schätzung: noch kein so langer Lauf</string>
+    <string name="race_trend_note">Niedriger ist schneller. Vergleichen zeigt dies neben den eigenen Prognosen deiner Uhr.</string>
+    <string name="race_trend_empty">Noch nicht genug Tage.</string>
+    <string name="snapshot_item_race_pred_5k_s">NOOP-Prognose 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">NOOP-Prognose 10K</string>
+    <string name="snapshot_item_race_pred_half_s">NOOP-Prognose Halbmarathon</string>
+    <string name="snapshot_item_race_pred_marathon_s">NOOP-Prognose Marathon</string>
+    <string name="race_trend_overline">Täglicher Verlauf</string>
+    <string name="race_trend_title">Prognostizierte Zeit, jeder Tag im letzten Jahr</string>
+    <string name="race_trend_range">Beste %1$s · langsamste %2$s</string>
+    <string name="race_this_run_blend_note">Deine Wettkampfkarte rechnet auch Herzfrequenz und VO₂max ein, daher können ihre Zeiten von diesem Lauf abweichen.</string>
 </resources>
