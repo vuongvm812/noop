@@ -408,7 +408,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Por día</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">La carga pesa su variabilidad de la frecuencia cardíaca contra su base personal (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Esfuerzo</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Estimación del esfuerzo de hoy, su sueño típico y su %1$s-noche recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Cómo funciona esto</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Inteligencia</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">No hay días con puntuación en esta ventana. Amplía el rango o importa más historial.</string>
@@ -5090,4 +5089,10 @@
     <string name="race_this_run_predicts">Esta carrera predice</string>
     <string name="race_your_best">Tu mejor marca</string>
     <string name="race_this_run_note">Fórmula de Riegel sobre esta carrera completa. «Tu mejor marca» señala los objetivos en los que esta carrera fija tu predicción actual.</string>
+    <string name="today_section_tomorrow_charge">Carga de mañana</string>
+    <string name="tomorrow_charge_bed_by">En la cama antes de las %1$s</string>
+    <string name="tomorrow_charge_suggested">Hora de acostarse sugerida: %1$s, para dormir %2$s antes de despertar a las %3$s.</string>
+    <string name="tomorrow_charge_accuracy">Últimas %1$d predicciones: desvío medio de ~%2$d puntos, %3$d/%4$d dentro del rango.</string>
+    <string name="tomorrow_charge_bedtime">Hora de acostarse</string>
+    <string name="intelligence_forecast_footnote">Estimación a partir del esfuerzo de hoy, tu necesidad de sueño, acostarte a las %1$s y tu línea base de recuperación de %2$d noches, no una medición. Tu Carga real se calcula con el VFC de mañana al despertar.</string>
 </resources>

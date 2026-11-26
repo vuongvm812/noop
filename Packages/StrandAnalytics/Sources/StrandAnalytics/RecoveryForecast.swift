@@ -233,3 +233,306 @@ public enum RecoveryForecaster {
         return x
     }
 }
+
+// MARK: - Tonight's plan: bedtime → planned sleep → forecast
+//
+// The forecast above takes planned sleep hours as a given. This layer derives them from a BEDTIME, so the
+// evening card can answer "if I'm in bed by 22:45, where does tomorrow's Charge land?":
+//
+//   plannedSleep  = (wake − bedtime) × efficiency                  (hours asleep, not hours in bed)
+//   suggested     = wake − needHours ÷ efficiency, floored to the 15-min grid
+//   options       = the anchor bedtime, one hour earlier, one hour later
+//
+// `needHours` is the SAME SleepNeed context the night is later scored against (base + strain + debt), and
+// `needNights` counts the recorded nights behind its base, so the confidence tier can reach "solid". The
+// wake time, sleep efficiency and every timestamp are resolved by the caller (they need the calendar and
+// the alarm settings); everything here is plain arithmetic over them.
+
+extension RecoveryForecaster {
+
+    /// Trailing nights the typical sleep efficiency (and the caller's typical wake time) are taken over.
+    public static let planHistoryNights: Int = 14
+    /// Sleep efficiency (asleep ÷ in bed) assumed when no recent night carries one.
+    public static let defaultEfficiency: Double = 0.88
+    /// Lowest efficiency a plan accepts, so one fragmented night can't demand a 16-hour bedtime.
+    public static let minEfficiency: Double = 0.5
+    /// Bedtime grid in seconds: the slider step and the suggestion's rounding.
+    public static let bedtimeStepSec: Double = 900
+    /// Offset of the two alternative bedtimes from the anchor, in seconds.
+    public static let alternativeOffsetSec: Double = 3600
+    /// Shortest sleep span (seconds) that counts as the night's sleep starting. A shorter nap after the
+    /// window opens does not freeze tonight's forecast.
+    public static let mainSleepMinSec: Double = 3 * 3600
+    /// Wake minute-of-day assumed when there is neither an alarm nor any recorded wake (07:00).
+    public static let defaultWakeMinute: Double = 7 * 60
+    /// Local hour on the evening day from which tonight's forecast is live (the afternoon).
+    public static let openHour: Int = 12
+    /// Local hour on the target day at which it closes at the latest (the logical-day rollover).
+    public static let closeHour: Int = 4
+    /// The bedtime slider's range: from this local hour on the evening day…
+    public static let sliderStartHour: Int = 21
+    /// …to this local hour on the target day.
+    public static let sliderEndHour: Int = 2
+
+    /// What the forecast knows tonight apart from the bedtime.
+    public struct Plan: Equatable, Sendable {
+        /// Recent daily Charge, OLDEST→NEWEST, up to and including this morning.
+        public let recentCharge: [Double]
+        /// Recent daily Effort, OLDEST→NEWEST.
+        public let recentEffort: [Double]
+        /// Today's Effort, or nil to drop the strain term.
+        public let todayEffort: Double?
+        /// Tonight's sleep need in hours (SleepNeed context total).
+        public let needHours: Double
+        /// Recorded nights behind the need's base.
+        public let needNights: Int
+        /// Tomorrow's wake time, unix seconds.
+        public let wakeTs: Double
+        /// Typical sleep efficiency, a fraction in [minEfficiency, 1].
+        public let efficiency: Double
+
+        public init(recentCharge: [Double], recentEffort: [Double], todayEffort: Double?, needHours: Double,
+                    needNights: Int, wakeTs: Double, efficiency: Double) {
+            self.recentCharge = recentCharge
+            self.recentEffort = recentEffort
+            self.todayEffort = todayEffort
+            self.needHours = needHours
+            self.needNights = needNights
+            self.wakeTs = wakeTs
+            self.efficiency = efficiency
+        }
+    }
+
+    /// One bedtime and the forecast it gives.
+    public struct BedtimeOption: Equatable, Sendable {
+        public let bedtimeTs: Double
+        public let forecast: RecoveryForecast
+
+        public init(bedtimeTs: Double, forecast: RecoveryForecast) {
+            self.bedtimeTs = bedtimeTs
+            self.forecast = forecast
+        }
+    }
+
+    /// Sleep need for `day` from the nights before it: the SleepNeed context total (base + strain + debt)
+    /// and the number of recorded nights in the base window. Kotlin twin: `RecoveryForecaster.need`.
+    public static func need(nights: [SleepNeed.Night], day: String, age: Int?) -> (hours: Double, nights: Int) {
+        let hours = SleepNeed.contexts(nights: nights, days: [day], age: age)[day]?.totalHours
+            ?? AnalyticsEngine.Rest.personalizedNeedHours(nightlyHours: [], age: age)
+        guard let d = DayOrdinal.ordinal(day) else { return (hours, 0) }
+        var seen = Set<Int>()
+        for n in nights {
+            guard let o = DayOrdinal.ordinal(n.day), o >= d - SleepNeed.baseWindowDays, o < d,
+                  let m = n.mainMin, m > 0 else { continue }
+            seen.insert(o)
+        }
+        return (hours, seen.count)
+    }
+
+    /// A stored efficiency as a fraction: values above 1 are percentages. nil for a missing, non-finite or
+    /// non-positive value. Kotlin twin: `RecoveryForecaster.efficiencyFraction`.
+    public static func efficiencyFraction(_ value: Double?) -> Double? {
+        guard let v = value, v.isFinite, v > 0 else { return nil }
+        let f = v > 1 ? v / 100 : v
+        return f > 1 ? nil : f
+    }
+
+    /// Typical efficiency: the median of the trailing `planHistoryNights` usable values (OLDEST→NEWEST,
+    /// any scale `efficiencyFraction` accepts), floored at `minEfficiency`; `defaultEfficiency` when none.
+    /// Kotlin twin: `RecoveryForecaster.typicalEfficiency`.
+    public static func typicalEfficiency(_ values: [Double?]) -> Double {
+        let usable = values.compactMap { efficiencyFraction($0) }
+        guard let m = median(Array(usable.suffix(planHistoryNights))) else { return defaultEfficiency }
+        return Swift.max(m, minEfficiency)
+    }
+
+    /// Typical wake minute-of-day: the median of the trailing `planHistoryNights` values (OLDEST→NEWEST),
+    /// or nil when there are none. Kotlin twin: `RecoveryForecaster.typicalWakeMinute`.
+    public static func typicalWakeMinute(_ minutes: [Double]) -> Double? {
+        median(Array(minutes.filter { $0.isFinite }.suffix(planHistoryNights)))
+    }
+
+    /// Median (mean of the middle two for an even count); nil when empty. Kotlin twin: `RecoveryForecaster.median`.
+    public static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let s = values.sorted()
+        let mid = s.count / 2
+        return s.count % 2 == 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
+    }
+
+    /// `efficiency` clamped to [minEfficiency, 1]; `defaultEfficiency` when it is not finite.
+    /// Kotlin twin: `RecoveryForecaster.planEfficiency`.
+    static func planEfficiency(_ efficiency: Double) -> Double {
+        efficiency.isFinite ? clamp(efficiency, minEfficiency, 1.0) : defaultEfficiency
+    }
+
+    /// Hours asleep for a bedtime: time in bed until the wake, times the efficiency. 0 when the bedtime is
+    /// at or after the wake. Kotlin twin: `RecoveryForecaster.plannedSleep`.
+    public static func plannedSleep(bedtimeTs: Double, wakeTs: Double, efficiency: Double) -> Double {
+        Swift.max(wakeTs - bedtimeTs, 0) / 3600 * planEfficiency(efficiency)
+    }
+
+    /// The latest bedtime on the 15-minute grid that still meets `needHours` asleep by the wake.
+    /// Kotlin twin: `RecoveryForecaster.suggestedBedtime`.
+    public static func suggestedBedtime(wakeTs: Double, needHours: Double, efficiency: Double) -> Double {
+        let inBed = Swift.max(needHours, 0) * 3600 / planEfficiency(efficiency)
+        return ((wakeTs - inBed) / bedtimeStepSec).rounded(.down) * bedtimeStepSec
+    }
+
+    /// `ts` rounded to the nearest grid step, then clamped to [earliest, latest] (the slider's range).
+    /// Kotlin twin: `RecoveryForecaster.snapBedtime`.
+    public static func snapBedtime(_ ts: Double, earliest: Double, latest: Double) -> Double {
+        let snapped = (ts / bedtimeStepSec + 0.5).rounded(.down) * bedtimeStepSec
+        return clamp(snapped, earliest, latest)
+    }
+
+    /// The forecast for one bedtime under `plan`; nil while the Charge baseline is too thin.
+    /// Kotlin twin: `RecoveryForecaster.forecastAt`.
+    public static func forecastAt(plan: Plan, bedtimeTs: Double) -> RecoveryForecast? {
+        forecast(recentCharge: plan.recentCharge,
+                 recentEffort: plan.recentEffort,
+                 todayEffort: plan.todayEffort,
+                 plannedSleepHours: plannedSleep(bedtimeTs: bedtimeTs, wakeTs: plan.wakeTs,
+                                                 efficiency: plan.efficiency),
+                 needHours: plan.needHours,
+                 needNights: plan.needNights)
+    }
+
+    /// The anchor bedtime first, then one hour earlier and one hour later; empty while the Charge baseline
+    /// is too thin. Kotlin twin: `RecoveryForecaster.options`.
+    public static func options(plan: Plan, anchorTs: Double) -> [BedtimeOption] {
+        var out: [BedtimeOption] = []
+        for ts in [anchorTs, anchorTs - alternativeOffsetSec, anchorTs + alternativeOffsetSec] {
+            guard let f = forecastAt(plan: plan, bedtimeTs: ts) else { return [] }
+            out.append(BedtimeOption(bedtimeTs: ts, forecast: f))
+        }
+        return out
+    }
+
+    /// When the night's sleep started: the earliest start among spans that begin at or after `openTs` and
+    /// last at least `mainSleepMinSec`; nil when none has. Kotlin twin: `RecoveryForecaster.sleepStart`.
+    public static func sleepStart(spans: [(startTs: Double, endTs: Double)], openTs: Double) -> Double? {
+        var first: Double?
+        for s in spans where s.startTs >= openTs && s.endTs - s.startTs >= mainSleepMinSec {
+            if first == nil || s.startTs < first! { first = s.startTs }
+        }
+        return first
+    }
+
+    /// Whether tonight's forecast is live: inside [openTs, closeTs) and before the night's sleep started.
+    /// The one gate for both showing the Today card and overwriting the stored forecast; once it closes the
+    /// stored forecast is frozen. Kotlin twin: `RecoveryForecaster.isOpen`.
+    public static func isOpen(nowTs: Double, openTs: Double, closeTs: Double, sleepStartTs: Double?) -> Bool {
+        guard nowTs >= openTs, nowTs < closeTs else { return false }
+        if let s = sleepStartTs, nowTs >= s { return false }
+        return true
+    }
+}
+
+// MARK: - Tonight: one resolver for every surface that shows tomorrow's Charge
+
+extension RecoveryForecaster {
+
+    /// One stored day as the evening plan reads it.
+    public struct DayRow: Equatable, Sendable {
+        public let day: String
+        public let recovery: Double?
+        public let strain: Double?
+        public let sleepMin: Double?
+        public let efficiency: Double?
+
+        public init(day: String, recovery: Double?, strain: Double?, sleepMin: Double?, efficiency: Double?) {
+            self.day = day
+            self.recovery = recovery
+            self.strain = strain
+            self.sleepMin = sleepMin
+            self.efficiency = efficiency
+        }
+    }
+
+    /// Tonight's clock, resolved by the caller from the local calendar and the alarm settings.
+    public struct Window: Equatable, Sendable {
+        /// The day whose evening this is (its Effort is "today's").
+        public let eveningDay: String
+        /// The day whose morning Charge is forecast.
+        public let targetDay: String
+        /// From when the forecast is live (the evening day's afternoon).
+        public let openTs: Double
+        /// When it closes at the latest (the target day's early morning).
+        public let closeTs: Double
+        /// The slider's earliest and latest bedtime.
+        public let earliestTs: Double
+        public let latestTs: Double
+        /// Tomorrow's wake time.
+        public let wakeTs: Double
+
+        public init(eveningDay: String, targetDay: String, openTs: Double, closeTs: Double,
+                    earliestTs: Double, latestTs: Double, wakeTs: Double) {
+            self.eveningDay = eveningDay
+            self.targetDay = targetDay
+            self.openTs = openTs
+            self.closeTs = closeTs
+            self.earliestTs = earliestTs
+            self.latestTs = latestTs
+            self.wakeTs = wakeTs
+        }
+    }
+
+    /// Tonight's resolved forecast.
+    public struct Tonight: Equatable, Sendable {
+        public let window: Window
+        public let plan: Plan
+        /// The bedtime that meets the need by the wake (not snapped to the slider range).
+        public let suggestedTs: Double
+        /// The bedtime the headline uses: a selection inside [sliderStartTs, latestTs], else the
+        /// suggestion, either one snapped to the grid and clamped into that range.
+        public let anchorTs: Double
+        /// Where the slider thumb sits: always `anchorTs`, so the thumb and the headline cannot disagree.
+        public let sliderTs: Double
+        /// The slider's lowest selectable bedtime: the window's earliest bedtime, or now rounded up to
+        /// the 15-minute grid once that is later (never past latestTs).
+        public let sliderStartTs: Double
+        /// The anchor first, then one hour earlier and one hour later.
+        public let options: [BedtimeOption]
+        /// True while the forecast may be shown on Today and overwritten in storage.
+        public let isOpen: Bool
+
+        /// The headline forecast (the anchor's).
+        public var headline: BedtimeOption { options[0] }
+    }
+
+    /// Resolve tonight from the stored days (any order; days on or after the target are ignored), the
+    /// caller's clock, the recorded sleep spans and an optional slider selection. The anchor is the
+    /// selection when it lies in [sliderStartTs, latestTs], else the suggestion, clamped into that range,
+    /// so the headline never names a bedtime outside the slider or already in the past. nil while the
+    /// Charge baseline is too thin. Kotlin twin: `RecoveryForecaster.tonight`.
+    public static func tonight(rows: [DayRow], window: Window, age: Int?, nowTs: Double,
+                               spans: [(startTs: Double, endTs: Double)], selectedTs: Double?) -> Tonight? {
+        let past = rows.filter { $0.day < window.targetDay }.sorted { $0.day < $1.day }
+        let nights = past.map { SleepNeed.Night(day: $0.day, mainMin: $0.sleepMin, strain: $0.strain) }
+        let need = need(nights: nights, day: window.targetDay, age: age)
+        let plan = Plan(recentCharge: past.compactMap(\.recovery),
+                        recentEffort: past.compactMap(\.strain),
+                        todayEffort: past.last(where: { $0.day == window.eveningDay })?.strain,
+                        needHours: need.hours,
+                        needNights: need.nights,
+                        wakeTs: window.wakeTs,
+                        efficiency: typicalEfficiency(past.map(\.efficiency)))
+        let suggested = suggestedBedtime(wakeTs: plan.wakeTs, needHours: plan.needHours, efficiency: plan.efficiency)
+        let floorTs = Swift.min(Swift.max(window.earliestTs,
+                                          (nowTs / bedtimeStepSec).rounded(.up) * bedtimeStepSec),
+                                window.latestTs)
+        let anchor: Double
+        if let s = selectedTs, s.isFinite, s >= floorTs, s <= window.latestTs {
+            anchor = snapBedtime(s, earliest: floorTs, latest: window.latestTs)
+        } else {
+            anchor = snapBedtime(suggested, earliest: floorTs, latest: window.latestTs)
+        }
+        let opts = options(plan: plan, anchorTs: anchor)
+        guard !opts.isEmpty else { return nil }
+        let open = isOpen(nowTs: nowTs, openTs: window.openTs, closeTs: window.closeTs,
+                          sleepStartTs: sleepStart(spans: spans, openTs: window.openTs))
+        return Tonight(window: window, plan: plan, suggestedTs: suggested, anchorTs: anchor,
+                       sliderTs: anchor, sliderStartTs: floorTs, options: opts, isOpen: open)
+    }
+}

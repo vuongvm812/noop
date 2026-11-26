@@ -557,7 +557,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">按天查看</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">充能 (Charge) 是通过对比您的心率变异性 (HRV) 与个人历史基线得出的指标，衡量您身体的恢复水平。 (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">负荷</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">此预估值基于您今天的运动负荷、常规睡眠习惯，以及您 %1$s 晚的睡眠数据。 recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">工作原理</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">智能洞察</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">当前时间段内没有已评分的日期。请扩大时间范围或导入更多历史数据。</string>
@@ -4992,4 +4991,10 @@
     <string name="race_this_run_predicts">本次跑步预测</string>
     <string name="race_your_best">你的最佳</string>
     <string name="race_this_run_note">基于本次整次跑步的 Riegel 公式。“你的最佳”标记本次跑步决定你当前预测的距离。</string>
+    <string name="today_section_tomorrow_charge">明日充能</string>
+    <string name="tomorrow_charge_bed_by">%1$s 前上床</string>
+    <string name="tomorrow_charge_suggested">建议 %1$s 就寝，在 %3$s 起床前睡足 %2$s。</string>
+    <string name="tomorrow_charge_accuracy">最近 %1$d 次预测：平均偏差约 %2$d 分，%3$d/%4$d 落在范围内。</string>
+    <string name="tomorrow_charge_bedtime">就寝时间</string>
+    <string name="intelligence_forecast_footnote">根据今天的消耗、你的睡眠需求、%1$s 就寝以及你 %2$d 晚的恢复基线得出的估算，而非测量值。你真正的充能是在你醒来后根据明天的 HRV 评分得出的。</string>
 </resources>

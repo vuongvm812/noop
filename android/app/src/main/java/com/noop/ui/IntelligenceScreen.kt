@@ -32,7 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.noop.analytics.RecoveryForecast
-import com.noop.analytics.RecoveryForecaster
 import com.noop.data.DailyMetric
 import java.time.LocalDate
 import java.util.Calendar
@@ -73,22 +72,11 @@ fun IntelligenceScreen(vm: AppViewModel) {
     // Newest first for the per-day list (macOS ForEach renders most-recent at top).
     val ordered = remember(days) { days.reversed() }
 
-    // Evening forecast of tomorrow-morning Charge from tonight's known levers. `days` is
-    // already OLDEST→NEWEST (what the forecaster wants); today's Effort is the newest day.
-    // null (and the card hidden) until there are enough scored nights to anchor honestly.
-    val forecast = remember(days) {
-        val charge = days.mapNotNull { it.recovery }
-        val effort = days.mapNotNull { it.strain }
-        val sleeps = days.mapNotNull { it.totalSleepMin }
-        val plannedHours = if (sleeps.isEmpty()) RecoveryForecaster.defaultNeedHours
-            else (sleeps.sum() / sleeps.size) / 60.0
-        RecoveryForecaster.forecast(
-            recentCharge = charge,
-            recentEffort = effort,
-            todayEffort = ordered.firstOrNull()?.strain,
-            plannedSleepHours = plannedHours,
-        )
-    }
+    // Tonight's forecast of tomorrow-morning Charge, from the SAME resolver flow as Today's Tomorrow's
+    // Charge card (AppViewModel.tomorrowForecast): the real sleep need, the bedtime picked on Today (else
+    // the suggested one) and the alarm or typical wake. null (and the card hidden) until there are enough
+    // scored nights to anchor honestly.
+    val tonight by vm.tomorrowForecast.collectAsStateWithLifecycle()
 
     // Range + filtered day list are hoisted ABOVE the lazy scaffold: these are @Composable
     // state hooks (remember), which can't run inside the LazyListScope content lambda. The
@@ -105,7 +93,7 @@ fun IntelligenceScreen(vm: AppViewModel) {
         title = uiString(R.string.l10n_intelligence_screen_intelligence_c698f940),
         subtitle = uiString(R.string.l10n_intelligence_screen_charge_effort_and_rest_scored_with_801fda8a),
     ) {
-        item { forecast?.let { ForecastCard(it) } }
+        item { tonight?.let { ForecastCard(it.headline.forecast, it.anchorTs) } }
         item { ExplainerCard(effortScale) }
         item { ModelBreakdownCard(effortScale) }
 
@@ -175,7 +163,8 @@ fun IntelligenceScreen(vm: AppViewModel) {
 // from tomorrow's HRV. The number, band and copy are unchanged.
 
 @Composable
-private fun ForecastCard(f: RecoveryForecast) {
+private fun ForecastCard(f: RecoveryForecast, bedtimeTs: Double) {
+    val is24h = ClockPrefs.uses24Hour(LocalContext.current)
     val charge = f.charge.roundToInt()
     val band = f.band.roundToInt()
     Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
@@ -217,7 +206,7 @@ private fun ForecastCard(f: RecoveryForecast) {
                         color = Palette.textSecondary,
                     )
                     Text(
-                        uiString(R.string.l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560, f.nights),
+                        uiString(R.string.intelligence_forecast_footnote, clockTimeLabel(bedtimeTs.toLong(), is24h), f.nights),
                         style = NoopType.footnote,
                         color = Palette.textTertiary,
                     )

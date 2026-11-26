@@ -1984,6 +1984,9 @@ struct TodayView: View {
             if liveSessionsBeta { liveSessionStartSection }
         case .synthesis:
             synthesisSection
+        case .tomorrowCharge:
+            // Evening forecast with a bedtime slider; self-hides outside its window. Today only.
+            if selectedDayOffset == 0 { TomorrowChargeCard() }
         case .keyMetrics:
             metricsSection
         case .workouts:

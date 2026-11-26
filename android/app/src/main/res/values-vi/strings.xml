@@ -882,7 +882,6 @@
     <string name="l10n_intelligence_screen_band_ec8a8993">± %1$s</string>
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Theo ngày</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Năng lượng cân nhắc biến thiên nhịp tim của bạn so với mức nền cá nhân (~55%%), nhịp tim nghỉ (~20%%), chất lượng nghỉ ngơi (~15%%), hô hấp (~5%%) và độ lệch nhiệt độ da (~5%%). Gắng sức là tải tim mạch 0 - %1$s từ thời gian ở mỗi vùng nhịp tim. Nghỉ ngơi được phân giai đoạn từ chuyển động và nhịp tim. Việc tính lại đầy đủ trên thiết bị từ luồng thô của dây đeo sẽ có ở bản sau; các điểm bên dưới được đọc từ chỉ số đã lưu của từng ngày.</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Ước tính từ nỗ lực hôm nay, giấc ngủ thông thường và mức nền phục hồi %1$s đêm của bạn - không phải số đo. Năng lượng thật của bạn được chấm từ HRV ngày mai khi bạn thức dậy.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Cách hoạt động</string>
     <string name="l10n_steps_calibration_screen_how_this_works_b895a8c3">Cách hoạt động</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Không có ngày nào được chấm điểm trong khoảng này. Hãy mở rộng phạm vi hoặc nhập thêm lịch sử.</string>
@@ -4965,4 +4964,10 @@
     <string name="race_this_run_predicts">Lần chạy này dự đoán</string>
     <string name="race_your_best">Tốt nhất của bạn</string>
     <string name="race_this_run_note">Công thức Riegel trên toàn bộ lần chạy này. \"Tốt nhất của bạn\" đánh dấu các cự ly mà lần chạy này đang quyết định dự đoán hiện tại.</string>
+    <string name="today_section_tomorrow_charge">Năng lượng ngày mai</string>
+    <string name="tomorrow_charge_bed_by">Lên giường trước %1$s</string>
+    <string name="tomorrow_charge_suggested">Giờ đi ngủ gợi ý %1$s để ngủ đủ %2$s trước khi thức dậy lúc %3$s.</string>
+    <string name="tomorrow_charge_accuracy">%1$d dự báo gần nhất: lệch trung bình ~%2$d điểm, %3$d/%4$d nằm trong khoảng.</string>
+    <string name="tomorrow_charge_bedtime">Giờ đi ngủ</string>
+    <string name="intelligence_forecast_footnote">Ước tính từ nỗ lực hôm nay, nhu cầu ngủ, giờ đi ngủ %1$s và mức nền phục hồi %2$d đêm của bạn, không phải số đo. Năng lượng thật của bạn được chấm từ HRV ngày mai khi bạn thức dậy.</string>
 </resources>

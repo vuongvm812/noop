@@ -702,7 +702,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">By Day</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Charge weighs your heart-rate variability against your personal baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Effort</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Estimate from today\'s effort, your typical sleep and your %1$s-night recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">How this works</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Intelligence</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">No scored days in this window. Widen the range or import more history.</string>
@@ -5119,4 +5118,10 @@
     <string name="race_this_run_predicts">This run predicts</string>
     <string name="race_your_best">Your best</string>
     <string name="race_this_run_note">Riegel\'s formula over this whole run. \"Your best\" marks the targets where this run sets your current prediction.</string>
+    <string name="today_section_tomorrow_charge">Tomorrow\'s Charge</string>
+    <string name="tomorrow_charge_bed_by">Bed by %1$s</string>
+    <string name="tomorrow_charge_suggested">Suggested bedtime %1$s to sleep %2$s before your %3$s wake.</string>
+    <string name="tomorrow_charge_accuracy">Last %1$d forecasts: off by ~%2$d points on average, %3$d/%4$d inside the range.</string>
+    <string name="tomorrow_charge_bedtime">Bedtime</string>
+    <string name="intelligence_forecast_footnote">Estimate from today\'s effort, your sleep need, a %1$s bedtime and your %2$d-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
 </resources>

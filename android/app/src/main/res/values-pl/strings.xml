@@ -567,7 +567,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">W dzień</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Energia porównuje zmienność tętna z osobistą wartością bazową (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Wysiłek</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Oszacuj na podstawie dzisiejszego wysiłku, Twojego typowego snu i Twojej %1$s-noc recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Jak to działa</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Inteligencja</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Brak zdobytych dni w tym oknie. Poszerz asortyment lub zaimportuj więcej historii.</string>
@@ -5242,4 +5241,10 @@
     <string name="race_this_run_predicts">Ten bieg prognozuje</string>
     <string name="race_your_best">Twój najlepszy</string>
     <string name="race_this_run_note">Wzór Riegela dla całego tego biegu. „Twój najlepszy” oznacza dystanse, dla których ten bieg wyznacza obecną prognozę.</string>
+    <string name="today_section_tomorrow_charge">Jutrzejsza Energia</string>
+    <string name="tomorrow_charge_bed_by">W łóżku do %1$s</string>
+    <string name="tomorrow_charge_suggested">Sugerowana pora snu %1$s, aby przespać %2$s przed pobudką o %3$s.</string>
+    <string name="tomorrow_charge_accuracy">Ostatnie %1$d prognoz: średni błąd ~%2$d pkt, %3$d/%4$d w zakresie.</string>
+    <string name="tomorrow_charge_bedtime">Pora snu</string>
+    <string name="intelligence_forecast_footnote">Szacunek na podstawie dzisiejszego wysiłku, zapotrzebowania na sen, pójścia spać o %1$s i bazowej regeneracji z %2$d nocy, a nie pomiar. Twoja prawdziwa Energia zostanie obliczona na podstawie jutrzejszego HRV, gdy się obudzisz.</string>
 </resources>

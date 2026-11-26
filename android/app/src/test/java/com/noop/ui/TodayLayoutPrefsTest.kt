@@ -25,11 +25,11 @@ class TodayLayoutPrefsTest {
             TodaySection.HEART_RATE, TodaySection.HERO, TodaySection.YOUR_CARDS,
             TodaySection.LIVE_SESSION, TodaySection.SYNTHESIS, TodaySection.KEY_METRICS,
             TodaySection.WORKOUTS, TodaySection.RECOVERY_VITALS, TodaySection.JOURNAL,
-            TodaySection.MENSTRUAL_CYCLE, TodaySection.SUPPLEMENTS, TodaySection.ADDED_CARDS,
+            TodaySection.MENSTRUAL_CYCLE, TodaySection.SUPPLEMENTS, TodaySection.TOMORROW_CHARGE, TodaySection.ADDED_CARDS,
         )
         val encoded = TodayLayoutPrefs.encode(reordered)
         assertEquals(
-            "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,journal,menstrualCycle,supplements,addedCards",
+            "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,journal,menstrualCycle,supplements,tomorrowCharge,addedCards",
             encoded,
         )
         assertEquals(reordered, TodayLayoutPrefs.decodeOrder(encoded))
@@ -44,7 +44,7 @@ class TodayLayoutPrefsTest {
         assertEquals(
             listOf(
                 TodaySection.HERO, TodaySection.LIVE_SESSION,
-                TodaySection.SYNTHESIS, TodaySection.KEY_METRICS, TodaySection.WORKOUTS,
+                TodaySection.SYNTHESIS, TodaySection.TOMORROW_CHARGE, TodaySection.KEY_METRICS, TodaySection.WORKOUTS,
                 TodaySection.HEART_RATE, TodaySection.RECOVERY_VITALS, TodaySection.YOUR_CARDS,
                 TodaySection.MENSTRUAL_CYCLE, TodaySection.JOURNAL, TodaySection.SUPPLEMENTS, TodaySection.ADDED_CARDS,
             ),
@@ -63,7 +63,7 @@ class TodayLayoutPrefsTest {
             listOf(
                 // hero(0), liveSession(1), workouts(4) all precede heartRate(5) in default order, so all
                 // insert before the saved heartRate, in default order among themselves:
-                TodaySection.HERO, TodaySection.LIVE_SESSION, TodaySection.WORKOUTS,
+                TodaySection.HERO, TodaySection.LIVE_SESSION, TodaySection.TOMORROW_CHARGE, TodaySection.WORKOUTS,
                 TodaySection.HEART_RATE, TodaySection.SYNTHESIS, TodaySection.KEY_METRICS,
                 TodaySection.RECOVERY_VITALS,
                 TodaySection.YOUR_CARDS, TodaySection.MENSTRUAL_CYCLE, TodaySection.JOURNAL,
@@ -82,7 +82,7 @@ class TodayLayoutPrefsTest {
             listOf(
                 // Every missing section's default index precedes yourCards(7), so each inserts before it,
                 // accumulating in default order; the saved yourCards→heartRate order is preserved at the end.
-                TodaySection.HERO, TodaySection.LIVE_SESSION, TodaySection.SYNTHESIS,
+                TodaySection.HERO, TodaySection.LIVE_SESSION, TodaySection.SYNTHESIS, TodaySection.TOMORROW_CHARGE,
                 TodaySection.KEY_METRICS, TodaySection.WORKOUTS, TodaySection.RECOVERY_VITALS,
                 TodaySection.YOUR_CARDS, TodaySection.HEART_RATE,
                 TodaySection.MENSTRUAL_CYCLE, TodaySection.JOURNAL, TodaySection.SUPPLEMENTS, TodaySection.ADDED_CARDS,
@@ -108,7 +108,7 @@ class TodayLayoutPrefsTest {
         val order = "heartRate,hero,yourCards,liveSession,synthesis,keyMetrics,workouts,recoveryVitals,journal"
         assertEquals(
             listOf(
-                TodaySection.HEART_RATE, TodaySection.YOUR_CARDS, TodaySection.LIVE_SESSION,
+                TodaySection.TOMORROW_CHARGE, TodaySection.HEART_RATE, TodaySection.YOUR_CARDS, TodaySection.LIVE_SESSION,
                 TodaySection.SYNTHESIS, TodaySection.KEY_METRICS, TodaySection.RECOVERY_VITALS,
                 TodaySection.MENSTRUAL_CYCLE, TodaySection.JOURNAL, TodaySection.SUPPLEMENTS, TodaySection.ADDED_CARDS,
             ),
@@ -134,7 +134,8 @@ class TodayLayoutPrefsTest {
         val saved = "journal,hero,liveSession,synthesis,keyMetrics,workouts,heartRate,recoveryVitals,yourCards,menstrualCycle,addedCards"
         assertEquals(
             listOf(
-                TodaySection.JOURNAL, TodaySection.HERO, TodaySection.LIVE_SESSION, TodaySection.SYNTHESIS,
+                TodaySection.TOMORROW_CHARGE, TodaySection.JOURNAL, TodaySection.HERO, TodaySection.LIVE_SESSION,
+                TodaySection.SYNTHESIS,
                 TodaySection.KEY_METRICS, TodaySection.WORKOUTS, TodaySection.HEART_RATE,
                 TodaySection.RECOVERY_VITALS, TodaySection.YOUR_CARDS, TodaySection.MENSTRUAL_CYCLE,
                 TodaySection.SUPPLEMENTS, TodaySection.ADDED_CARDS,
@@ -160,7 +161,7 @@ class TodayLayoutPrefsTest {
         // Pin the exact wire strings — they cross the .noopbak boundary and must match macOS byte-for-byte.
         assertEquals(
             listOf(
-                "hero", "liveSession", "synthesis", "keyMetrics",
+                "hero", "liveSession", "synthesis", "tomorrowCharge", "keyMetrics",
                 "workouts", "heartRate", "recoveryVitals", "yourCards", "menstrualCycle", "journal",
                 "supplements", "addedCards",
             ),

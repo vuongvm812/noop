@@ -214,4 +214,55 @@ class RecoveryForecastTest {
         assertEquals(0.25, RecoveryForecaster.clamp(0.25, -1.0, 1.0), 0.0)
         assertEquals(1.0, RecoveryForecaster.clamp(1.01, -1.0, 1.0), 0.0)
     }
+
+    // Real sleep need (SleepNeed context) instead of the fixed default
+
+    /** 20 recorded nights of 7 h, every day at Effort 50. Mirrors the Swift `recordedNights`. */
+    private fun recordedNights(minutes: Double = 420.0, count: Int = 20): List<SleepNeed.Night> {
+        val start = DayOrdinal.ordinal("2026-02-01")!!
+        return (0 until count).map { SleepNeed.Night(day = DayOrdinal.key(start + it), mainMin = minutes, strain = 50.0) }
+    }
+
+    @Test
+    fun realNeedFromRecordedNightsReachesSolid() {
+        val (hours, nights) = RecoveryForecaster.need(recordedNights(), "2026-02-21", null)
+        assertEquals(20, nights)
+        val f = RecoveryForecaster.forecast(
+            recentCharge = steadyCharge, recentEffort = steadyEffort, todayEffort = 50.0,
+            plannedSleepHours = hours, needHours = hours, needNights = nights,
+        )!!
+        assertEquals(ScoreConfidence.SOLID, f.confidence)
+        assertEquals(hours, f.needHours, 1e-9)
+        assertEquals(60.0, f.charge, 0.5)
+    }
+
+    @Test
+    fun fewRecordedNightsStayBuilding() {
+        val (hours, nights) = RecoveryForecaster.need(recordedNights(count = 4), "2026-02-05", null)
+        assertEquals(4, nights)
+        val f = RecoveryForecaster.forecast(
+            recentCharge = steadyCharge, todayEffort = null,
+            plannedSleepHours = hours, needHours = hours, needNights = nights,
+        )!!
+        assertEquals(ScoreConfidence.BUILDING, f.confidence)
+    }
+
+    @Test
+    fun sleepDebtRaisesNeedAndLowersTheSameNight() {
+        val rested = RecoveryForecaster.need(recordedNights(minutes = 480.0), "2026-02-21", null)
+        val short = recordedNights(minutes = 480.0).mapIndexed { i, n ->
+            if (i >= 15) SleepNeed.Night(day = n.day, mainMin = 300.0, strain = 50.0) else n
+        }
+        val indebted = RecoveryForecaster.need(short, "2026-02-21", null)
+        assertTrue(indebted.first > rested.first)
+        val a = RecoveryForecaster.forecast(
+            recentCharge = steadyCharge, todayEffort = null, plannedSleepHours = 7.0,
+            needHours = rested.first, needNights = rested.second,
+        )!!
+        val b = RecoveryForecaster.forecast(
+            recentCharge = steadyCharge, todayEffort = null, plannedSleepHours = 7.0,
+            needHours = indebted.first, needNights = indebted.second,
+        )!!
+        assertTrue(b.charge < a.charge)
+    }
 }
