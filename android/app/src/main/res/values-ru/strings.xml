@@ -633,7 +633,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">По дням</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Заряд сопоставляет вариабельность вашего сердечного ритма с вашей личной нормой (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Усилие</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Оценка по сегодняшнему Усилию, вашему обычному сну и вашим %1$s ночам recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Как это работает</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Аналитика</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">В этом диапазоне нет дней с рассчитанными показателями. Расширьте диапазон или импортируйте больше истории.</string>
@@ -5239,4 +5238,10 @@
     <string name="race_this_run_predicts">Прогноз по этой пробежке</string>
     <string name="race_your_best">Ваш лучший</string>
     <string name="race_this_run_note">Формула Ригеля по всей этой пробежке. «Ваш лучший» отмечает дистанции, для которых эта пробежка задаёт текущий прогноз.</string>
+    <string name="today_section_tomorrow_charge">Заряд на завтра</string>
+    <string name="tomorrow_charge_bed_by">Лечь до %1$s</string>
+    <string name="tomorrow_charge_suggested">Рекомендуемое время отхода ко сну %1$s, чтобы поспать %2$s до пробуждения в %3$s.</string>
+    <string name="tomorrow_charge_accuracy">Последние %1$d прогнозов: средняя ошибка ~%2$d, %3$d/%4$d в пределах диапазона.</string>
+    <string name="tomorrow_charge_bedtime">Время отхода ко сну</string>
+    <string name="intelligence_forecast_footnote">Оценка на основе сегодняшнего усилия, вашей потребности во сне, отхода ко сну в %1$s и нормы восстановления за %2$d ночей — не измерение. Реальный Заряд рассчитывается по ВСР завтрашнего утра, когда вы проснётесь.</string>
 </resources>

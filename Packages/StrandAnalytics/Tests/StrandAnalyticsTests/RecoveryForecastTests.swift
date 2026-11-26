@@ -190,4 +190,48 @@ final class RecoveryForecastTests: XCTestCase {
         XCTAssertEqual(RecoveryForecaster.clamp(0.25, -1.0, 1.0), 0.25)
         XCTAssertEqual(RecoveryForecaster.clamp(1.01, -1.0, 1.0), 1.0)
     }
+
+    // MARK: - Real sleep need (SleepNeed context) instead of the fixed default
+
+    /// 20 recorded nights of 7 h, every day at Effort 50: the need comes from SleepNeed (base + strain +
+    /// debt), and the nights behind its base reach the solid threshold.
+    private func recordedNights(minutes: Double = 420, count: Int = 20) -> [SleepNeed.Night] {
+        let start = DayOrdinal.ordinal("2026-02-01")!
+        return (0..<count).map { SleepNeed.Night(day: DayOrdinal.key(start + $0), mainMin: minutes, strain: 50) }
+    }
+
+    func testRealNeedFromRecordedNightsReachesSolid() {
+        let need = RecoveryForecaster.need(nights: recordedNights(), day: "2026-02-21", age: nil)
+        XCTAssertEqual(need.nights, 20)
+        let f = RecoveryForecaster.forecast(recentCharge: steadyCharge, recentEffort: steadyEffort,
+                                            todayEffort: 50, plannedSleepHours: need.hours,
+                                            needHours: need.hours, needNights: need.nights)!
+        XCTAssertEqual(f.confidence, .solid)
+        XCTAssertEqual(f.needHours, need.hours, accuracy: 1e-9)
+        XCTAssertEqual(f.charge, 60, accuracy: 0.5)   // sleeping exactly the need is neutral
+    }
+
+    func testFewRecordedNightsStayBuilding() {
+        let need = RecoveryForecaster.need(nights: recordedNights(count: 4), day: "2026-02-05", age: nil)
+        XCTAssertEqual(need.nights, 4)
+        let f = RecoveryForecaster.forecast(recentCharge: steadyCharge, todayEffort: nil,
+                                            plannedSleepHours: need.hours,
+                                            needHours: need.hours, needNights: need.nights)!
+        XCTAssertEqual(f.confidence, .building)
+    }
+
+    func testSleepDebtRaisesNeedAndLowersTheSameNight() {
+        // Short nights build debt, so tonight's need rises above the rested user's and the same 7 h
+        // planned sleep forecasts lower.
+        let rested = RecoveryForecaster.need(nights: recordedNights(minutes: 480), day: "2026-02-21", age: nil)
+        var short = recordedNights(minutes: 480)
+        for i in 15..<20 { short[i] = SleepNeed.Night(day: short[i].day, mainMin: 300, strain: 50) }
+        let indebted = RecoveryForecaster.need(nights: short, day: "2026-02-21", age: nil)
+        XCTAssertGreaterThan(indebted.hours, rested.hours)
+        let a = RecoveryForecaster.forecast(recentCharge: steadyCharge, todayEffort: nil, plannedSleepHours: 7,
+                                            needHours: rested.hours, needNights: rested.nights)!
+        let b = RecoveryForecaster.forecast(recentCharge: steadyCharge, todayEffort: nil, plannedSleepHours: 7,
+                                            needHours: indebted.hours, needNights: indebted.nights)!
+        XCTAssertLessThan(b.charge, a.charge)
+    }
 }

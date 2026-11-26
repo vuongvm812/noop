@@ -575,7 +575,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Por dia</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Carga pondera a variabilidade da frequência cardíaca em relação à sua linha de base pessoal (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Esforço</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Estime a partir do esforço de hoje, o teu sono típico e a tua noite %1$s recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Como funciona</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Inteligência</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Não há dias marcados nesta janela. Alargue o alcance ou importe mais histórico.</string>
@@ -5082,4 +5081,10 @@
     <string name="race_this_run_predicts">Esta corrida prevê</string>
     <string name="race_your_best">O seu melhor</string>
     <string name="race_this_run_note">Fórmula de Riegel sobre toda esta corrida. «O seu melhor» assinala as distâncias em que esta corrida define a sua previsão atual.</string>
+    <string name="today_section_tomorrow_charge">Carga de amanhã</string>
+    <string name="tomorrow_charge_bed_by">Na cama até às %1$s</string>
+    <string name="tomorrow_charge_suggested">Hora de deitar sugerida %1$s para dormir %2$s antes de acordar às %3$s.</string>
+    <string name="tomorrow_charge_accuracy">Últimas %1$d previsões: desvio médio de ~%2$d pontos, %3$d/%4$d dentro do intervalo.</string>
+    <string name="tomorrow_charge_bedtime">Hora de dormir</string>
+    <string name="intelligence_forecast_footnote">Estimativa a partir do esforço de hoje, da tua necessidade de sono, de te deitares às %1$s e da tua linha de base de recuperação de %2$d noites, não uma medição. A tua Carga real é pontuada a partir da VFC de amanhã quando acordares.</string>
 </resources>

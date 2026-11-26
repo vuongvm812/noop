@@ -610,7 +610,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Nach Tag</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Ladung wiegt deine Herzfrequenzvariabilität gegen deine persönliche Baseline (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Anstrengung</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Schätzung aus dem heutigen Aufwand, deinem typischen Schlaf und deiner %1$s-Nacht recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Wie das funktioniert</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Intelligenz</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Keine bewerteten Tage in diesem Fenster. Erweitere den Zeitraum oder importiere mehr Verlauf.</string>
@@ -5103,4 +5102,10 @@
     <string name="race_this_run_predicts">Dieser Lauf prognostiziert</string>
     <string name="race_your_best">Deine Bestleistung</string>
     <string name="race_this_run_note">Riegel-Formel über diesen ganzen Lauf. „Deine Bestleistung“ markiert die Ziele, bei denen dieser Lauf deine aktuelle Prognose bestimmt.</string>
+    <string name="today_section_tomorrow_charge">Ladung von morgen</string>
+    <string name="tomorrow_charge_bed_by">Bis %1$s ins Bett</string>
+    <string name="tomorrow_charge_suggested">Empfohlene Schlafenszeit %1$s, um vor dem Aufwachen um %3$s %2$s zu schlafen.</string>
+    <string name="tomorrow_charge_accuracy">Letzte %1$d Prognosen: im Schnitt ~%2$d Punkte daneben, %3$d/%4$d im Bereich.</string>
+    <string name="tomorrow_charge_bedtime">Schlafenszeit</string>
+    <string name="intelligence_forecast_footnote">Schätzung aus der heutigen Belastung, deinem Schlafbedarf, einer Schlafenszeit um %1$s und deiner Erholungs-Basislinie aus %2$d Nächten, keine Messung. Deine echte Ladung wird aus der HRV von morgen berechnet, wenn du aufwachst.</string>
 </resources>

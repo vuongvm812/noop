@@ -379,6 +379,9 @@ struct LiquidTodayView: View {
                             if chargeLegacyRRGap { ChargeLegacyRRGapNote() }
                         case .liveSession: if liveSessionsBeta { liveSessionStartRow }
                         case .synthesis: synthesisSection
+                        // Tomorrow's Charge: the evening forecast with a bedtime slider. Today only; the card
+                        // self-hides outside its afternoon-to-sleep window. Twin of Android's TOMORROW_CHARGE arm.
+                        case .tomorrowCharge: if selectedDayOffset == 0 { TomorrowChargeCard() }
                         case .keyMetrics: keyMetricsSection
                         case .workouts: lastWorkoutsSection
                         case .heartRate: heartRateSection

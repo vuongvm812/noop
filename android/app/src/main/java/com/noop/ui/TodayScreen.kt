@@ -366,6 +366,9 @@ fun TodayScreen(
     val cycleEnabled by viewModel.cycleTrackingEnabled.collectAsStateWithLifecycle()
     val cycleHidden by viewModel.cycleAwarenessHidden.collectAsStateWithLifecycle()
     val periodStarts by viewModel.periodStarts.collectAsStateWithLifecycle()
+    // Tomorrow's Charge: the same resolver flow the Intelligence card reads, and the forecast-accuracy footer.
+    val tomorrowForecast by viewModel.tomorrowForecast.collectAsStateWithLifecycle()
+    val forecastAccuracy by viewModel.forecastAccuracy.collectAsStateWithLifecycle()
     var showCycleTracker by remember { mutableStateOf(false) }
     val live by viewModel.live.collectAsStateWithLifecycle()
     // The in-flight manual workout (single source of truth, survives an app kill via rehydration), so the
@@ -1757,6 +1760,8 @@ fun TodayScreen(
                 TodaySection.JOURNAL ->
                     selectedDayOffset == 0 && journalReminderOn
                 TodaySection.SUPPLEMENTS -> selectedDayOffset == 0
+                // Evening only: from the afternoon until that night's sleep starts (the resolver's one gate).
+                TodaySection.TOMORROW_CHARGE -> selectedDayOffset == 0 && tomorrowForecast?.isOpen == true
                 TodaySection.ADDED_CARDS ->
                     selectedDayOffset == 0 && enabledHostedCards.isNotEmpty()
                 else -> true
@@ -2029,6 +2034,11 @@ fun TodayScreen(
                             days = days,
                             onOpenJournal = onOpenJournal,
                         )
+                        // Tomorrow's Charge: evening forecast with a bedtime slider. Gated at the loop level on
+                        // the resolver's open window. Twin of iOS LiquidTodayView's `.tomorrowCharge` arm.
+                        TodaySection.TOMORROW_CHARGE -> tomorrowForecast?.let {
+                            TomorrowChargeCard(viewModel, it, forecastAccuracy)
+                        }
                         // #today-hosted-cards: the Trends/Sleep cards the user pulled into Today, in
                         // arranged order. Each is the SAME card its home tab renders (a mirror).
                         TodaySection.ADDED_CARDS -> HostedCardsSection(

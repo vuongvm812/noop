@@ -673,7 +673,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Per giorno</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">La Carica confronta la tua variabilità della frequenza cardiaca con la tua linea di base personale (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Sforzo</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Stima basata sullo sforzo di oggi, sul tuo sonno tipico e sul tuo andamento di %1$s notti recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Come funziona</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Intelligenza</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Nessun giorno con punteggio in questo intervallo. Allarga l\'intervallo o importa più cronologia.</string>
@@ -5058,4 +5057,10 @@
     <string name="race_this_run_predicts">Questa corsa prevede</string>
     <string name="race_your_best">Il tuo migliore</string>
     <string name="race_this_run_note">Formula di Riegel su tutta questa corsa. «Il tuo migliore» indica gli obiettivi per cui questa corsa determina la tua previsione attuale.</string>
+    <string name="today_section_tomorrow_charge">Carica di domani</string>
+    <string name="tomorrow_charge_bed_by">A letto entro le %1$s</string>
+    <string name="tomorrow_charge_suggested">Ora di andare a letto consigliata %1$s per dormire %2$s prima della sveglia delle %3$s.</string>
+    <string name="tomorrow_charge_accuracy">Ultime %1$d previsioni: scarto medio di ~%2$d punti, %3$d/%4$d nell\'intervallo.</string>
+    <string name="tomorrow_charge_bedtime">Ora di andare a letto</string>
+    <string name="intelligence_forecast_footnote">Stima basata sullo sforzo di oggi, sul tuo fabbisogno di sonno, su un orario di andare a letto alle %1$s e sulla tua linea di base di recupero di %2$d notti, non è una misurazione. La tua Carica reale viene calcolata dall\'HRV di domani al risveglio.</string>
 </resources>

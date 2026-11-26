@@ -426,7 +426,6 @@
     <string name="l10n_intelligence_screen_by_day_2e5d14ca">Par jour</string>
     <string name="l10n_intelligence_screen_charge_weighs_your_heart_rate_variability_026745e6">Charge pèse votre variabilité cardiaque par rapport à votre base personnelle (~55%%), resting heart rate (~20%%), rest quality (~15%%), respiration (~5%%) and skin-temperature deviation (~5%%). Effort is a 0 - %1$s cardiovascular load from time spent in each heart-rate zone. Rest is staged from movement and heart rate. The full on-device recompute from the strap\'s raw streams is a later port; the scores below are read from each day\'s cached metrics.</string>
     <string name="l10n_intelligence_screen_effort_8c974bc6">Effort</string>
-    <string name="l10n_intelligence_screen_estimate_from_today_s_effort_your_667d7560">Estimation de l\'effort d\'aujourd\'hui, de votre sommeil typique et de votre nuit %1$s recovery baseline - not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
     <string name="l10n_intelligence_screen_how_this_works_b895a8c3">Comment ça fonctionne</string>
     <string name="l10n_intelligence_screen_intelligence_c698f940">Intelligence</string>
     <string name="l10n_intelligence_screen_no_scored_days_in_this_window_03f1165b">Aucun jour noté dans cette fenêtre. Élargissez la plage ou importez plus d\'historique.</string>
@@ -5089,4 +5088,10 @@
     <string name="race_this_run_predicts">Cette course prédit</string>
     <string name="race_your_best">Votre meilleur</string>
     <string name="race_this_run_note">Formule de Riegel sur toute cette course. « Votre meilleur » signale les distances pour lesquelles cette course fixe votre prédiction actuelle.</string>
+    <string name="today_section_tomorrow_charge">Charge de demain</string>
+    <string name="tomorrow_charge_bed_by">Au lit avant %1$s</string>
+    <string name="tomorrow_charge_suggested">Coucher suggéré à %1$s pour dormir %2$s avant votre réveil à %3$s.</string>
+    <string name="tomorrow_charge_accuracy">%1$d dernières prévisions : écart moyen de ~%2$d points, %3$d/%4$d dans la plage.</string>
+    <string name="tomorrow_charge_bedtime">Heure du coucher</string>
+    <string name="intelligence_forecast_footnote">Estimation basée sur l\'effort d\'aujourd\'hui, votre besoin de sommeil, un coucher à %1$s et votre référence de récupération sur %2$d nuits, pas une mesure. Votre Charge réelle est calculée à partir de la VFC de demain à votre réveil.</string>
 </resources>

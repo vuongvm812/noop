@@ -14,7 +14,9 @@ import com.noop.analytics.Baselines
 import com.noop.analytics.ChargeBaselines
 import com.noop.analytics.IllnessInputs
 import com.noop.analytics.IllnessWatch
+import com.noop.analytics.ForecastAccuracy
 import com.noop.analytics.RacePredictor
+import com.noop.analytics.RecoveryForecaster
 import com.noop.analytics.IntelligenceEngine
 import com.noop.analytics.IntelligencePersistence
 import com.noop.analytics.DayCycleIntelligenceIntegration
@@ -41,6 +43,7 @@ import androidx.health.connect.client.HealthConnectClient
 import com.noop.data.DailyMetric
 import com.noop.data.CycleTrackingStore
 import com.noop.data.HrSample
+import com.noop.data.MetricSeriesRow
 import com.noop.data.WhoopRepository
 import com.noop.data.WorkoutRow
 import com.noop.ingest.ActivityFileImporter
@@ -65,6 +68,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.flatMapLatest
@@ -2005,6 +2009,158 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * stored. null until the first load. Swift twin: `Repository.racePredictions`.
      */
     val racePredictions: StateFlow<RacePredictor.Result?> = _racePredictions.asStateFlow()
+
+    // --- Tomorrow's Charge: the one resolver behind the Today card and the Intelligence card. ---
+
+    private val _tomorrowBedtime = MutableStateFlow(
+        NoopPrefs.of(appContext).getLong(TomorrowForecastResolver.KEY_BEDTIME, 0L).takeIf { it > 0L }?.toDouble(),
+    )
+
+    /** Store the bedtime picked on the Today slider (unix seconds). A pick outside the current night's slider
+     *  range is ignored by the resolver, so yesterday's pick never leaks into tonight. */
+    fun setTomorrowBedtime(ts: Double) {
+        NoopPrefs.of(appContext).edit().putLong(TomorrowForecastResolver.KEY_BEDTIME, ts.toLong()).apply()
+        _tomorrowBedtime.value = ts
+    }
+
+    /** A minute tick, so the card closes on time without a data refresh. */
+    private val forecastClock = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(System.currentTimeMillis() / 1000L)
+            delay(60_000L)
+        }
+    }
+
+    /** Recent sleep spans (effective onset, end) for the typical wake time and the sleep-started gate. */
+    private val forecastSleepSpans: StateFlow<List<Pair<Double, Double>>> = recentDays
+        .map {
+            val now = System.currentTimeMillis() / 1000L
+            repository.sleepSessionsMerged(
+                deviceId, now - TomorrowForecastResolver.wakeHistoryDays * 86_400L, now + 86_400L,
+            ).map { it.effectiveStartTs.toDouble() to it.endTs.toDouble() }
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The alarm wake minute for a target weekday (`Calendar.DAY_OF_WEEK`), by the priority in
+     * [TomorrowForecastResolver.alarmWakeMinute]: the phone alarm when it is armed for that day, else the
+     * strap smart alarm when it is armed for that day (that day's override, else its default time), else
+     * the phone alarm's wake time when only the wind-down reminder is on (the reminder is anchored to it),
+     * else null so the resolver falls back to the typical wake.
+     */
+    private fun forecastAlarmWakeMinute(weekday: Int): Double? {
+        val alarm = phoneAlarmStore
+        val phoneArmed = alarm.enabled && (alarm.weekdays.isEmpty() || weekday in alarm.weekdays)
+        val strapDays = NoopPrefs.smartAlarmWeekdays(appContext)
+        val strapArmed = NoopPrefs.smartAlarmEnabled(appContext) && (strapDays.isEmpty() || weekday in strapDays)
+        return TomorrowForecastResolver.alarmWakeMinute(
+            phone = if (phoneArmed) alarm.targetFor(weekday) else null,
+            strap = if (strapArmed) {
+                NoopPrefs.smartAlarmDayOverrides(appContext)[weekday] ?: NoopPrefs.smartAlarmMinutes(appContext)
+            } else {
+                null
+            },
+            windDown = if (windDownStore.enabled) alarm.targetFor(weekday) else null,
+        )
+    }
+
+    /**
+     * Tonight's forecast of tomorrow-morning Charge: the real sleep need, the slider's bedtime (else the
+     * suggested one), the alarm or typical wake. null until the Charge baseline has enough nights. Read by
+     * BOTH the Today card and the Intelligence card. Swift twin: `Repository.tomorrowForecast`.
+     */
+    val tomorrowForecast: StateFlow<RecoveryForecaster.Tonight?> =
+        combine(recentDays, forecastSleepSpans, _tomorrowBedtime, forecastClock) { days, spans, bedtime, now ->
+            val age = currentProfile().age
+            TomorrowForecastResolver.resolve(
+                days = days,
+                spans = spans,
+                nowSec = now,
+                zone = java.time.ZoneId.systemDefault(),
+                alarmWakeMinute = ::forecastAlarmWakeMinute,
+                selectedTs = bedtime,
+                age = if (age > 0) age.toInt() else null,
+            )
+        }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // Store tonight's headline forecast for the day it targets, under the computed source. Driven by
+    // tomorrowForecast itself (not by a card), so a headline moved by new data is saved too. Writes are
+    // keyed by the target day, the headline (charge, low, high) and its bedtime, debounced, and a newer
+    // forecast cancels a pending older write, so writes cannot land out of order. A closed forecast (sleep
+    // started, or the window over) cancels a pending write as well. This collector keeps tomorrowForecast
+    // (a one-minute tick) hot for the view model's lifetime.
+    init {
+        viewModelScope.launch {
+            tomorrowForecast
+                .map { t -> t?.takeIf { it.isOpen } }
+                .distinctUntilChanged { a, b -> forecastSaveKey(a) == forecastSaveKey(b) }
+                .collectLatest { t ->
+                    if (t == null) return@collectLatest
+                    delay(500L)
+                    persistTomorrowForecast(t)
+                }
+        }
+    }
+
+    /** What decides whether a forecast needs storing again; null for no open forecast. */
+    private fun forecastSaveKey(t: RecoveryForecaster.Tonight?): List<Any>? {
+        if (t == null) return null
+        val f = t.headline.forecast
+        return listOf(t.window.targetDay, f.charge, f.low, f.high, t.anchorTs)
+    }
+
+    /**
+     * Upsert the headline under `<deviceId>-noop` for the target day. Re-checks the freeze against the
+     * clock and the sleep spans at write time, so a write that waited out the debounce past the night's
+     * sleep start (or the window's close) is dropped and the stored forecast stays frozen.
+     */
+    private suspend fun persistTomorrowForecast(t: RecoveryForecaster.Tonight) {
+        val nowSec = (System.currentTimeMillis() / 1000L).toDouble()
+        val w = t.window
+        val sleepStart = RecoveryForecaster.sleepStart(forecastSleepSpans.value, w.openTs)
+        if (!RecoveryForecaster.isOpen(nowSec, w.openTs, w.closeTs, sleepStart)) return
+        val f = t.headline.forecast
+        val id = "$deviceId-noop"
+        withContext(Dispatchers.IO) {
+            runCatching {
+                repository.upsertMetricSeries(
+                    listOf(
+                        MetricSeriesRow(id, w.targetDay, ForecastAccuracy.forecastKey, f.charge),
+                        MetricSeriesRow(id, w.targetDay, ForecastAccuracy.lowKey, f.low),
+                        MetricSeriesRow(id, w.targetDay, ForecastAccuracy.highKey, f.high),
+                    ),
+                )
+            }
+        }
+    }
+
+    /**
+     * How the stored forecasts compare with the Charge then scored, over the last scored days; null until
+     * [ForecastAccuracy.minPairs] days are scored. Swift twin: `Repository.forecastAccuracy`.
+     */
+    val forecastAccuracy: StateFlow<ForecastAccuracy.Summary?> = recentDays
+        .map { days ->
+            val today = java.time.LocalDate.now()
+            val from = today.minusDays(60).toString()
+            val to = today.toString()
+            suspend fun read(key: String): Map<String, Double> =
+                repository.metricSeriesComputedUnion(deviceId, key, from, to).associate { it.day to it.value }
+            val actual = HashMap<String, Double>()
+            for (d in days) d.recovery?.let { actual[d.day] = it }
+            ForecastAccuracy.summary(
+                ForecastAccuracy.pairs(
+                    read(ForecastAccuracy.forecastKey),
+                    read(ForecastAccuracy.lowKey),
+                    read(ForecastAccuracy.highKey),
+                    actual,
+                ),
+            )
+        }
+        .flowOn(Dispatchers.IO)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Persist a bed/wake-time edit for one sleep session (delete-then-upsert at the new window), then
      *  re-score the affected day immediately so Charge / Rest / recovery and the persisted

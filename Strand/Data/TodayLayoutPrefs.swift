@@ -26,6 +26,10 @@ enum TodaySection: String, CaseIterable, Identifiable {
     case hero
     case liveSession
     case synthesis
+    /// Tomorrow's Charge (evening forecast with a bedtime slider). Visible from the afternoon until that
+    /// night's sleep starts; renders nothing otherwise. Placed after Synthesis; `decodeOrder` inserts it
+    /// there for saved orders.
+    case tomorrowCharge
     case keyMetrics
     case workouts
     case heartRate
@@ -50,6 +54,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
         case .hero:           return String(localized: "Charge / Effort / Rest")
         case .liveSession:    return String(localized: "Start session")
         case .synthesis:      return String(localized: "Synthesis")
+        case .tomorrowCharge: return String(localized: "Tomorrow's Charge")
         case .keyMetrics:     return String(localized: "Key Metrics")
         case .workouts:       return String(localized: "Workouts")
         case .heartRate:      return String(localized: "Heart Rate")
@@ -65,7 +70,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
     /// The original, hard-coded section order — the default when the layout isn't customised. The journal
     /// widget (#656) is last by default, where it was first added, above the data-sources card.
     static let defaultOrder: [TodaySection] = [
-        .hero, .liveSession, .synthesis, .keyMetrics, .workouts, .heartRate, .recoveryVitals,
+        .hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .heartRate, .recoveryVitals,
         .yourCards, .menstrualCycle, .journal, .supplements, .addedCards,
     ]
 
