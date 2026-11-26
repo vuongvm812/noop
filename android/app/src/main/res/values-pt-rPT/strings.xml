@@ -5087,4 +5087,20 @@
     <string name="tomorrow_charge_accuracy">Últimas %1$d previsões: desvio médio de ~%2$d pontos, %3$d/%4$d dentro do intervalo.</string>
     <string name="tomorrow_charge_bedtime">Hora de dormir</string>
     <string name="intelligence_forecast_footnote">Estimativa a partir do esforço de hoje, da tua necessidade de sono, de te deitares às %1$s e da tua linha de base de recuperação de %2$d noites, não uma medição. A tua Carga real é pontuada a partir da VFC de amanhã quando acordares.</string>
+    <string name="race_basis_hr_vo2">Com base nas suas corridas · frequência cardíaca · VO₂máx.</string>
+    <string name="race_basis_hr">Com base nas suas corridas · frequência cardíaca</string>
+    <string name="race_basis_vo2">Com base nas suas corridas · VO₂máx.</string>
+    <string name="race_blend_note">A sua frequência cardíaca a correr e o VO₂máx. são lidos pelas tabelas VDOT de Daniels e combinados, por isso as corridas leves também contam.</string>
+    <string name="race_trend_link">Tendência da previsão</string>
+    <string name="race_estimate_caption">Estimativa: ainda sem corrida tão longa</string>
+    <string name="race_trend_note">Mais baixo é mais rápido. Comparar mostra isto ao lado das previsões do seu relógio.</string>
+    <string name="race_trend_empty">Ainda não há dias suficientes.</string>
+    <string name="snapshot_item_race_pred_5k_s">Previsão NOOP 5K</string>
+    <string name="snapshot_item_race_pred_10k_s">Previsão NOOP 10K</string>
+    <string name="snapshot_item_race_pred_half_s">Previsão NOOP de meia maratona</string>
+    <string name="snapshot_item_race_pred_marathon_s">Previsão NOOP de maratona</string>
+    <string name="race_trend_overline">Tendência diária</string>
+    <string name="race_trend_title">Tempo previsto, cada dia do último ano</string>
+    <string name="race_trend_range">Melhor %1$s · mais lento %2$s</string>
+    <string name="race_this_run_blend_note">O seu cartão de corridas também combina frequência cardíaca e VO₂máx., por isso os tempos podem diferir dos desta corrida.</string>
 </resources>

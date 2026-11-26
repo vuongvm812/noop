@@ -4997,4 +4997,20 @@
     <string name="tomorrow_charge_accuracy">最近 %1$d 次预测：平均偏差约 %2$d 分，%3$d/%4$d 落在范围内。</string>
     <string name="tomorrow_charge_bedtime">就寝时间</string>
     <string name="intelligence_forecast_footnote">根据今天的消耗、你的睡眠需求、%1$s 就寝以及你 %2$d 晚的恢复基线得出的估算，而非测量值。你真正的充能是在你醒来后根据明天的 HRV 评分得出的。</string>
+    <string name="race_basis_hr_vo2">基于你的跑步 · 心率 · 最大摄氧量</string>
+    <string name="race_basis_hr">基于你的跑步 · 心率</string>
+    <string name="race_basis_vo2">基于你的跑步 · 最大摄氧量</string>
+    <string name="race_blend_note">你跑步时的心率和最大摄氧量会通过 Daniels 的 VDOT 表换算后合并计入，因此轻松跑也会计入。</string>
+    <string name="race_trend_link">预测趋势</string>
+    <string name="race_estimate_caption">估算：还没有这么长的跑步</string>
+    <string name="race_trend_note">越低越快。对比页会把它和手表自己的预测并列显示。</string>
+    <string name="race_trend_empty">天数还不够。</string>
+    <string name="snapshot_item_race_pred_5k_s">NOOP 5K 预测</string>
+    <string name="snapshot_item_race_pred_10k_s">NOOP 10K 预测</string>
+    <string name="snapshot_item_race_pred_half_s">NOOP 半程马拉松预测</string>
+    <string name="snapshot_item_race_pred_marathon_s">NOOP 马拉松预测</string>
+    <string name="race_trend_overline">每日趋势</string>
+    <string name="race_trend_title">预测时间（过去一年的每一天）</string>
+    <string name="race_trend_range">最佳 %1$s · 最慢 %2$s</string>
+    <string name="race_this_run_blend_note">比赛预测卡还会结合心率和最大摄氧量，因此其时间可能与这次跑步不同。</string>
 </resources>

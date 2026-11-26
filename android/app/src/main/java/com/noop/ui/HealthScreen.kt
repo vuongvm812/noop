@@ -774,7 +774,7 @@ private fun FitnessAgeSection(vm: AppViewModel, days: List<DailyMetric>, profile
                 },
             )
         }
-        racePredictions?.takeIf { r -> r.items.any { it != null } }?.let { RacePredictionsCard(it, compact = true) }
+        racePredictions?.takeIf { r -> r.estimates.any { it != null } }?.let { RacePredictionsCard(it, vm, compact = true) }
     }
 }
 

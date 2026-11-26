@@ -190,7 +190,7 @@ struct WorkoutDetailView: View {
         let cadence = await repo.workoutMetricBuckets(kind: .cadence, from: row.startTs, to: row.endTs, source: row.source)
         let elevation = await repo.workoutMetricBuckets(kind: .altitudeM, from: row.startTs, to: row.endTs, source: row.source)
         var best: RacePredictor.Result?
-        if RacePredictor.qualifies(Repository.raceRun(row)) { best = await repo.racePredictions() }
+        if RacePredictor.qualifies(Repository.raceRun(row)) { best = await repo.racePredictions(persistHistory: false) }
 
         await MainActor.run {
             self.raceBest = best

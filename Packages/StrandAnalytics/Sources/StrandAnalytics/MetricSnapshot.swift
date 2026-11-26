@@ -245,6 +245,10 @@ public enum MetricSnapshotCatalog {
         m("race_10k_s", .fitness, "10K race prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_10k_s", sources: [g]),
         m("race_half_s", .fitness, "Half marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_half_s", sources: [g]),
         m("race_marathon_s", .fitness, "Marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_marathon_s", sources: [g]),
+        m("race_pred_5k_s", .fitness, "NOOP 5K prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_pred_5k_s", sources: [w]),
+        m("race_pred_10k_s", .fitness, "NOOP 10K prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_pred_10k_s", sources: [w]),
+        m("race_pred_half_s", .fitness, "NOOP half marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_pred_half_s", sources: [w]),
+        m("race_pred_marathon_s", .fitness, "NOOP marathon prediction", "s", 0, rollup: .latest, direction: .lowerBetter, key: "race_pred_marathon_s", sources: [w]),
         // Watch metrics (the paired watch's own series; the data layer reads them under the watch id)
         m("watch_stress", .watch, "Watch stress", "", 0, direction: .lowerBetter),
         m("body_battery_min", .watch, "Body Battery low", "", 0, rollup: .min),

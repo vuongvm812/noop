@@ -5124,4 +5124,20 @@
     <string name="tomorrow_charge_accuracy">Last %1$d forecasts: off by ~%2$d points on average, %3$d/%4$d inside the range.</string>
     <string name="tomorrow_charge_bedtime">Bedtime</string>
     <string name="intelligence_forecast_footnote">Estimate from today\'s effort, your sleep need, a %1$s bedtime and your %2$d-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow\'s HRV when you wake.</string>
+    <string name="race_basis_hr_vo2">Based on your runs · heart rate · VO₂max</string>
+    <string name="race_basis_hr">Based on your runs · heart rate</string>
+    <string name="race_basis_vo2">Based on your runs · VO₂max</string>
+    <string name="race_blend_note">Your running heart rate and VO₂max are read through Daniels\' VDOT tables and blended in, so easy runs count too.</string>
+    <string name="race_trend_link">Prediction trend</string>
+    <string name="race_estimate_caption">Estimate: no run this long yet</string>
+    <string name="race_trend_note">Lower is faster. Compare shows this beside your watch\'s own predictions.</string>
+    <string name="race_trend_empty">Not enough days yet.</string>
+    <string name="snapshot_item_race_pred_5k_s">NOOP 5K prediction</string>
+    <string name="snapshot_item_race_pred_10k_s">NOOP 10K prediction</string>
+    <string name="snapshot_item_race_pred_half_s">NOOP half marathon prediction</string>
+    <string name="snapshot_item_race_pred_marathon_s">NOOP marathon prediction</string>
+    <string name="race_trend_overline">Daily trend</string>
+    <string name="race_trend_title">Predicted time, each day over the last year</string>
+    <string name="race_trend_range">Best %1$s · slowest %2$s</string>
+    <string name="race_this_run_blend_note">Your race card also blends in heart rate and VO₂max, so its times can differ from this run\'s.</string>
 </resources>

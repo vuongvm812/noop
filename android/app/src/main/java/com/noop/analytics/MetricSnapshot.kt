@@ -220,6 +220,10 @@ object MetricSnapshotCatalog {
         m("race_10k_s", C[6], "10K race prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_10k_s", sources = listOf(G)),
         m("race_half_s", C[6], "Half marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_half_s", sources = listOf(G)),
         m("race_marathon_s", C[6], "Marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_marathon_s", sources = listOf(G)),
+        m("race_pred_5k_s", C[6], "NOOP 5K prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_pred_5k_s", sources = listOf(W)),
+        m("race_pred_10k_s", C[6], "NOOP 10K prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_pred_10k_s", sources = listOf(W)),
+        m("race_pred_half_s", C[6], "NOOP half marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_pred_half_s", sources = listOf(W)),
+        m("race_pred_marathon_s", C[6], "NOOP marathon prediction", "s", 0, rollup = SnapshotRollup.LATEST, direction = SnapshotDirection.LOWER_BETTER, key = "race_pred_marathon_s", sources = listOf(W)),
         // Watch metrics (the paired watch's own series; the data layer reads them under the watch id)
         m("watch_stress", C[7], "Watch stress", "", 0, direction = SnapshotDirection.LOWER_BETTER),
         m("body_battery_min", C[7], "Body Battery low", "", 0, rollup = SnapshotRollup.MIN),

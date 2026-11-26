@@ -128,6 +128,11 @@ enum MetricCatalog {
         d("vo2max_est", String(localized: "VO₂ Max (estimated)"), "Heart", "", "my-whoop", "lungs", 1, true),
         d("vitality", String(localized: "Vitality"), "Heart", "", "my-whoop", "sparkles", 0, true),
         d("body_age", String(localized: "Body Age"), "Heart", "yrs", "my-whoop", "figure.stand", 0, false),
+        // NOOP's own race predictions (`RacePredictor` history, computed "-noop" id), beside Garmin's race_*_s.
+        d("race_pred_5k_s", String(localized: "NOOP 5K prediction"), "Heart", "s", "my-whoop", "stopwatch", 0, false),
+        d("race_pred_10k_s", String(localized: "NOOP 10K prediction"), "Heart", "s", "my-whoop", "stopwatch", 0, false),
+        d("race_pred_half_s", String(localized: "NOOP half marathon prediction"), "Heart", "s", "my-whoop", "stopwatch", 0, false),
+        d("race_pred_marathon_s", String(localized: "NOOP marathon prediction"), "Heart", "s", "my-whoop", "stopwatch", 0, false),
 
         // ── Charge (was Recovery)
         d("recovery", String(localized: "Charge"), "Charge", "%", "my-whoop", "heart.circle", 0, true,

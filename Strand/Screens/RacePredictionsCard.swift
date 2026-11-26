@@ -6,7 +6,8 @@ import StrandAnalytics
 //
 // Predicted 5K / 10K / half marathon / marathon times from the user's own runs (`RacePredictor`). One row
 // component serves the Workouts card, the compact block in Health › Fitness Age, and the "This run
-// predicts" section of a run's detail. Android mirrors it in `RacePredictionsCard.kt`.
+// predicts" section of a run's detail; the card links to the daily trend. Android mirrors it in
+// `RacePredictionsCard.kt`.
 
 /// Display copy shared by the race prediction surfaces.
 enum RacePredictionCopy {
@@ -53,6 +54,19 @@ enum RacePredictionCopy {
         return String(localized: "\(distance) run · \(runDate(p.sourceStartTs))")
     }
 
+    /// "Based on your runs · heart rate · VO₂max": which estimates joined Riegel in `result`. nil when Riegel
+    /// stands alone, since the run source line already says where the numbers come from.
+    static func basis(_ result: RacePredictor.Result) -> String? {
+        let hr = result.estimates.contains { $0?.components.hrS != nil }
+        let vo2 = result.estimates.contains { $0?.components.vo2S != nil }
+        switch (hr, vo2) {
+        case (true, true): return String(localized: "Based on your runs · heart rate · VO₂max")
+        case (true, false): return String(localized: "Based on your runs · heart rate")
+        case (false, true): return String(localized: "Based on your runs · VO₂max")
+        case (false, false): return nil
+        }
+    }
+
     /// True when every available prediction comes from the same run, so one source line covers them all.
     static func sharesOneRun(_ items: [RacePredictor.Prediction?]) -> Bool {
         let shown = items.compactMap { $0 }
@@ -62,10 +76,13 @@ enum RacePredictionCopy {
 }
 
 /// One target: its label (with an optional caption) on the left, the predicted time and pace on the right,
-/// or the unlock hint when no run reaches it.
+/// or the unlock hint when nothing predicts it.
 struct RacePredictionRow: View {
     let targetIndex: Int
-    let prediction: RacePredictor.Prediction?
+    /// The predicted time in whole seconds; nil shows the unlock hint.
+    let seconds: Int?
+    /// Pace for `seconds`, seconds per kilometre.
+    let secPerKm: Double
     let system: UnitSystem
     var caption: String?
     var highlighted = false
@@ -84,12 +101,12 @@ struct RacePredictionRow: View {
                 }
             }
             Spacer(minLength: NoopMetrics.space2)
-            if let p = prediction {
+            if let seconds {
                 VStack(alignment: .trailing, spacing: NoopMetrics.spaceHalf) {
-                    Text(RacePredictor.formatTime(p.seconds))
+                    Text(RacePredictor.formatTime(seconds))
                         .font(StrandFont.number(compact ? 17 : 22))
                         .foregroundStyle(highlighted ? StrandPalette.statusPositive : StrandPalette.metricCyan)
-                    Text(UnitFormatter.paceFromSecPerKm(RacePredictor.secPerKm(p), system: system))
+                    Text(UnitFormatter.paceFromSecPerKm(secPerKm, system: system))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
@@ -104,18 +121,20 @@ struct RacePredictionRow: View {
     }
 }
 
-/// The four predictions with their source and method notes. `compact` is the Health › Fitness Age block:
-/// tighter rows, and the method note left to the Workouts card.
+/// The four predictions with their source and method notes, and a link to their daily trend. `compact` is
+/// the Health › Fitness Age block: tighter rows, and the method note left to the Workouts card.
 struct RacePredictionsCard: View {
     let result: RacePredictor.Result
     let system: UnitSystem
     var compact = false
+    @EnvironmentObject private var repo: Repository
+    @State private var showTrend = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Race predictions", overline: "From your runs")
             NoopCard(tint: StrandPalette.metricCyan) {
-                if result.items.allSatisfy({ $0 == nil }) {
+                if result.estimates.allSatisfy({ $0 == nil }) {
                     Text("Log a run of at least 3 km and 12 minutes to see predictions.")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
@@ -125,27 +144,59 @@ struct RacePredictionsCard: View {
                 }
             }
         }
+        .sheet(isPresented: $showTrend) {
+            // Re-injected: a sheet is its own presentation and the app does not rely on it inheriting.
+            RacePredictionTrendSheet(system: system, onClose: { showTrend = false })
+                .environmentObject(repo)
+        }
     }
 
     @ViewBuilder private var rows: some View {
         let shared = RacePredictionCopy.sharesOneRun(result.items)
+        let blended = RacePredictionCopy.basis(result)
         VStack(alignment: .leading, spacing: compact ? NoopMetrics.space2 : NoopMetrics.space3) {
-            ForEach(Array(result.items.enumerated()), id: \.offset) { index, p in
-                RacePredictionRow(targetIndex: index, prediction: p, system: system,
-                                  caption: shared ? nil : p.map { RacePredictionCopy.sourceCaption($0, system: system) },
-                                  compact: compact)
+            ForEach(Array(result.estimates.enumerated()), id: \.offset) { index, e in
+                RacePredictionRow(targetIndex: index, seconds: e?.seconds,
+                                  secPerKm: e.map { RacePredictor.paceSecPerKm(seconds: $0.seconds, targetIndex: index) } ?? 0,
+                                  system: system,
+                                  caption: caption(e, shared: shared), compact: compact)
             }
             Divider().overlay(StrandPalette.hairline)
             if shared, let first = result.items.compactMap({ $0 }).first {
                 note(RacePredictionCopy.basedOn(first, system: system))
             }
+            if let blended { note(blended) }
             if result.fromAllHistory {
                 note(String(localized: "No run in the last 90 days, so these use your whole history."))
             }
             if !compact {
                 note(String(localized: "Riegel's formula over whole runs, not your fastest segments. A guide that assumes you train for the distance; least reliable for the marathon."))
+                if blended != nil {
+                    note(String(localized: "Your running heart rate and VO₂max are read through Daniels' VDOT tables and blended in, so easy runs count too."))
+                }
             }
+            Button { showTrend = true } label: {
+                HStack {
+                    Text("Prediction trend")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(StrandPalette.metricCyan)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
+    }
+
+    /// The row caption: "Estimate" where no run reaches the target, else the run behind the Riegel pick when
+    /// the rows come from different runs.
+    private func caption(_ e: RacePredictor.Estimate?, shared: Bool) -> String? {
+        guard let e else { return nil }
+        guard let riegel = e.riegel else { return String(localized: "Estimate: no run this long yet") }
+        return shared ? nil : RacePredictionCopy.sourceCaption(riegel, system: system)
     }
 
     private func note(_ text: String) -> some View {
@@ -153,6 +204,90 @@ struct RacePredictionsCard: View {
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// The daily history of one target's prediction (`Repository.racePredictionHistory`), picked from 5K / 10K /
+/// Half / Marathon. Each point is replayed from the current runs for one day of the last year, as of that day.
+struct RacePredictionTrendSheet: View {
+    @EnvironmentObject var repo: Repository
+    let system: UnitSystem
+    let onClose: () -> Void
+    @State private var target = 0
+    @State private var points: [TrendPoint] = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                    Picker("Distance", selection: $target) {
+                        ForEach(0..<RacePredictor.targetDistancesM().count, id: \.self) { i in
+                            Text(RacePredictionCopy.targetLabel(i)).tag(i)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    ChartCard(title: "Predicted time",
+                              subtitle: String(localized: "Each day over the last year"),
+                              trailing: points.last.map { RacePredictor.formatTime(Int($0.value)) },
+                              tint: StrandPalette.metricCyan,
+                              chart: {
+                                  if points.count >= 2 {
+                                      TrendChart(points: points,
+                                                 gradient: Gradient(colors: [StrandPalette.metricCyan, StrandPalette.metricCyan]),
+                                                 valueRange: range,
+                                                 showsArea: false,
+                                                 height: NoopMetrics.chartHeight,
+                                                 valueFormat: { RacePredictor.formatTime(Int($0.rounded())) },
+                                                 accessibilityLabel: String(localized: "Race prediction trend"))
+                                  } else {
+                                      Text("Not enough days yet.")
+                                          .font(StrandFont.subhead)
+                                          .foregroundStyle(StrandPalette.textTertiary)
+                                          .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                  }
+                              },
+                              footer: {
+                                  ChartFooter([
+                                      ("Best", points.map(\.value).min().map { RacePredictor.formatTime(Int($0)) } ?? "—"),
+                                      ("Slowest", points.map(\.value).max().map { RacePredictor.formatTime(Int($0)) } ?? "—"),
+                                  ])
+                              })
+                    Text("Lower is faster. Compare shows this beside your watch's own predictions.")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(NoopMetrics.gap)
+            }
+            .navigationTitle(Text("Race predictions"))
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { onClose() } }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 520)
+        #endif
+        .task(id: target) { await load() }
+    }
+
+    /// A value range with a little headroom, so a flat line does not sit on the chart's edge.
+    private var range: ClosedRange<Double> {
+        let v = points.map(\.value)
+        guard let lo = v.min(), let hi = v.max() else { return 0...1 }
+        let pad = max(30, (hi - lo) * 0.1)
+        return (lo - pad)...(hi + pad)
+    }
+
+    private func load() async {
+        let rows = await repo.racePredictionHistory(targetIndex: target)
+        points = rows.compactMap { p in Self.localDate(p.day).map { TrendPoint(date: $0, value: p.value) } }
+    }
+
+    /// Local midnight of a "yyyy-MM-dd" day, or nil when it does not parse.
+    private static func localDate(_ day: String) -> Date? {
+        let parts = day.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 }
 
@@ -174,7 +309,8 @@ struct RunRacePredictionsSection: View {
                         ForEach(Array(items.enumerated()), id: \.offset) { index, p in
                             if let p {
                                 let isBest = isCurrentBest(index)
-                                RacePredictionRow(targetIndex: index, prediction: p, system: system,
+                                RacePredictionRow(targetIndex: index, seconds: p.seconds,
+                                                  secPerKm: RacePredictor.secPerKm(p), system: system,
                                                   caption: isBest ? String(localized: "Your best") : nil,
                                                   highlighted: isBest)
                             }
@@ -184,10 +320,22 @@ struct RunRacePredictionsSection: View {
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if cardBlends {
+                            Text(String(localized: "Your race card also blends in heart rate and VO₂max, so its times can differ from this run's."))
+                                .font(StrandFont.footnote)
+                                .foregroundStyle(StrandPalette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// True when the race card's times blend in a heart-rate or VO₂max estimate, so they can differ from
+    /// the Riegel-only "Your best" marks here.
+    private var cardBlends: Bool {
+        best?.estimates.contains { $0?.components.hrS != nil || $0?.components.vo2S != nil } ?? false
     }
 
     private func isCurrentBest(_ index: Int) -> Bool {

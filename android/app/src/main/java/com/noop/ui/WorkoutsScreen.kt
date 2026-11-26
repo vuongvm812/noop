@@ -328,7 +328,7 @@ fun WorkoutsScreen(vm: AppViewModel) {
             postLogNote?.let { item { PostLogNoteBanner(it) } }
             item { EffortHero(rows = windowRows, effectiveRange = resolved, groups = groups) }
             item { SummarySection(rows = windowRows, effectiveRange = resolved, groups = groups) }
-            racePredictions?.let { item { RacePredictionsCard(it) } }
+            racePredictions?.let { item { RacePredictionsCard(it, vm) } }
             item { CalorieHeatmapSection(recentDays) }
             item { BreakdownSection(groups = groups, rows = windowRows) }
             item { ZonesSection(windowRows) }
