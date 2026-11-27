@@ -34,6 +34,11 @@ enum TodaySection: String, CaseIterable, Identifiable {
     case workouts
     case heartRate
     case recoveryVitals
+    /// What affects your HRV and sleep: the top significant What Moves You effects on HRV and Rest,
+    /// from the same ranking the Insights hub shows. Placed after Recovery Vitals by default; for a
+    /// saved order without it, `decodeOrder` inserts it before the first saved section that comes
+    /// later in the default order (Your Cards onward), or appends it when there is none.
+    case whatAffects
     case yourCards
     case menstrualCycle
     case journal
@@ -59,6 +64,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
         case .workouts:       return String(localized: "Workouts")
         case .heartRate:      return String(localized: "Heart Rate")
         case .recoveryVitals: return String(localized: "Recovery Vitals")
+        case .whatAffects:    return String(localized: "What affects your HRV and sleep")
         case .yourCards:      return String(localized: "Your Cards")
         case .menstrualCycle: return String(localized: "Menstrual Cycle")
         case .journal:        return String(localized: "Journal")
@@ -71,7 +77,7 @@ enum TodaySection: String, CaseIterable, Identifiable {
     /// widget (#656) is last by default, where it was first added, above the data-sources card.
     static let defaultOrder: [TodaySection] = [
         .hero, .liveSession, .synthesis, .tomorrowCharge, .keyMetrics, .workouts, .heartRate, .recoveryVitals,
-        .yourCards, .menstrualCycle, .journal, .supplements, .addedCards,
+        .whatAffects, .yourCards, .menstrualCycle, .journal, .supplements, .addedCards,
     ]
 
     /// Section keys an earlier version stored and this one no longer has. `stress` was the #42 Today card,

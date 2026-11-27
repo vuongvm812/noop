@@ -72,7 +72,7 @@ struct InsightsHubView: View {
 
             if model.ranked.isEmpty {
                 NoopCard {
-                    Text(String(localized: "Not enough overlap between your journal answers and \(outcome.outcomeName.lowercased()) yet. Keep logging. Each behaviour needs days both with and without it before NOOP can read its effect."))
+                    Text(String(localized: "Not enough data yet to compare your days for \(outcome.outcomeName.lowercased()). Each journal habit and factor from your data needs days both with and without it before NOOP can read its effect."))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -104,14 +104,30 @@ struct InsightsHubView: View {
             if let pct = e.pctChange { return "\(arrow) \(Int(abs(pct).rounded()))%" }
             return "\(arrow) \(String(format: "%.1f", abs(e.delta)))"
         }()
+        // An automatic factor names both of its groups ("Late workout" / "Earlier workout"); a journal
+        // habit compares the days it was logged Yes with the days it was logged No.
+        let factor = AutoFactors.factorForKey(r.behavior)
+        let withLabel: LocalizedStringKey
+        let withoutLabel: LocalizedStringKey
+        if let f = factor {
+            withLabel = "\(InsightsSentences.factorLabel(f))"
+            withoutLabel = "\(InsightsSentences.factorControlLabel(f))"
+        } else {
+            withLabel = "With"
+            withoutLabel = "Without"
+        }
 
         return NoopCard(tint: outcome.domain.color) {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
+                // Where the behaviour comes from: sensor data (automatic factor) or the journal.
+                Text(factor != nil
+                     ? String(localized: "From your data") : String(localized: "Journal"))
+                    .strandOverline()
                 // Header: behaviour name + lead/lag chip + confidence pill.
                 HStack(alignment: .firstTextBaseline) {
                     HStack(spacing: 8) {
                         Circle().fill(tintColor).frame(width: 8, height: 8)
-                        Text(r.behavior)
+                        Text(InsightsSentences.behaviorLabel(r.behavior))
                             .font(StrandFont.headline)
                             .foregroundStyle(StrandPalette.textPrimary)
                             .lineLimit(1)
@@ -127,16 +143,16 @@ struct InsightsHubView: View {
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // With / without means as uniform StatTiles.
+                // The two groups' means as uniform StatTiles.
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: NoopMetrics.gap)],
                           alignment: .leading, spacing: NoopMetrics.gap) {
-                    StatTile(label: "With",
+                    StatTile(label: withLabel,
                              value: outcome.format(e.meanWith),
                              caption: String(localized: "n = \(e.nWith)"),
                              accent: tintColor,
                              delta: deltaText,
                              deltaColor: tintColor)
-                    StatTile(label: "Without",
+                    StatTile(label: withoutLabel,
                              value: outcome.format(e.meanWithout),
                              caption: String(localized: "n = \(e.nWithout)"),
                              accent: StrandPalette.textPrimary)
@@ -502,10 +518,10 @@ private struct DoseCurveChart: View {
 
 // MARK: - View-model
 //
-// Self-contained: loads the journal (behaviour → days), dose rows (under the dedicated
-// noop-journal-dose source), and the outcome series (imported metricSeries ∪ DailyMetric
-// fallback, exactly as InsightsView), then runs EffectRanker for the ranked feed and
-// DoseResponseEngine for each dosed behaviour the user has data for. No edits to AppModel.
+// The ranked feed comes from WhatMovesYouLoader (journal ∪ automatic factors, one ranked family),
+// the same snapshot the Today card reads. This view model adds the dose rows (under the dedicated
+// noop-journal-dose source) and runs DoseResponseEngine for each dosed behaviour the user has data
+// for. No edits to AppModel.
 
 @MainActor
 final class InsightsHubViewModel: ObservableObject {
@@ -564,46 +580,24 @@ final class InsightsHubViewModel: ObservableObject {
     @Published private(set) var ranked: [RankedEffect] = []
     @Published private(set) var doseCards: [DoseCard] = []
 
-    // MARK: Loaded inputs (kept so the outcome segmented control can re-rank cheaply)
+    // MARK: Loaded inputs
 
-    private var behaviours: [String: Set<String>] = [:]
-    /// Per behaviour, the days it was logged NO — the only legitimate control group.
-    private var controls: [String: Set<String>] = [:]
-    private var outcomeByKey: [String: [String: Double]] = [:]
+    /// The shared What Moves You ranking (the Today card reads the same snapshot).
+    private var ranking: [Outcome: [RankedEffect]] = [:]
     private var currentOutcome: Outcome = .recovery
 
     /// The source id dose rows are parked under (mirrors MoodStore's noop-mood isolation).
     static let doseSource = "noop-journal-dose"
 
-    private let outcomeKeys = ["recovery", "hrv", "sleep_performance", "rhr"]
-
     // MARK: Load
 
     func load(repo: Repository) async {
-        // Journal → behaviour → days (only "yes" answers count as the behaviour occurring).
-        let entries = await repo.journalEntries()
-        // Yes days and NO days, kept apart. A day with no journal row for the question lands in
-        // neither, so an unanswered day is never counted as a No (BehaviorInsights.effect).
-        var byBehaviour: [String: Set<String>] = [:]
-        var controlsByBehaviour: [String: Set<String>] = [:]
-        for e in entries {
-            if e.answeredYes { byBehaviour[e.question, default: []].insert(e.day) }
-            else { controlsByBehaviour[e.question, default: []].insert(e.day) }
-        }
-
-        // Outcome series: imported metricSeries ∪ the DailyMetric column fallback so an
-        // account-free (strap-only) user still gets effects — the exact contract InsightsView uses.
-        let mergedDays = repo.days
-        var byKey: [String: [String: Double]] = [:]
-        for key in outcomeKeys {
-            let s = await repo.series(key: key, source: "my-whoop")
-            var dict: [String: Double] = [:]
-            for row in s { dict[row.day] = row.value }
-            for d in mergedDays where dict[d.day] == nil {
-                if let v = Self.dailyOutcome(key: key, day: d) { dict[d.day] = v }
-            }
-            byKey[key] = dict
-        }
+        // Journal, automatic factors, outcomes and the one ranked family come from the shared loader.
+        let loader = WhatMovesYouLoader.shared
+        await loader.load(repo: repo, force: true)
+        guard let snap = loader.snapshot else { return }
+        let byBehaviour = snap.journalBehaviours
+        let byKey = snap.outcomeByKey
 
         // Dose rows per dosed behaviour, under the dedicated dose source, keyed by the
         // behaviour's storage key. A logged "yes" with no dose row reads as dose = 1
@@ -637,37 +631,21 @@ final class InsightsHubViewModel: ObservableObject {
             cards.append(DoseCard(behavior: behavior, response: response, latestOutcome: latest))
         }
 
-        self.behaviours = byBehaviour
-        self.controls = controlsByBehaviour
-        self.outcomeByKey = byKey
+        self.ranking = snap.ranked
         self.doseCards = cards
         self.loaded = true
         rankFor(currentOutcome)
     }
 
-    /// Re-rank the mover feed for a (possibly new) outcome selection — no DB.
+    /// Show the feed for a (possibly new) outcome selection — no DB, no re-rank. The false-discovery
+    /// family already spans every outcome and every behaviour, so switching outcomes cannot shop for a
+    /// significant row.
     func rankFor(_ outcome: Outcome) {
         currentOutcome = outcome
-        // The false-discovery family is every outcome the feed can show (behaviours × outcomes × lags),
-        // so switching outcomes cannot shop for a significant row.
-        var outcomes: [String: [String: Double]] = [:]
-        for o in Outcome.allCases { outcomes[o.outcomeName] = outcomeByKey[o.key] ?? [:] }
-        ranked = EffectRanker.rankFamily(behaviors: behaviours, controls: controls,
-                                         outcomes: outcomes)[outcome.outcomeName] ?? []
+        ranked = ranking[outcome] ?? []
     }
 
     // MARK: Static shaping helpers
-
-    /// The merged DailyMetric column backing an outcome key (strap-only fallback). sleep_performance
-    /// has no daily column, so it stays import-only — never seeded here (matches InsightsView).
-    private static func dailyOutcome(key: String, day d: DailyMetric) -> Double? {
-        switch key {
-        case "recovery": return d.recovery
-        case "hrv":      return d.avgHrv
-        case "rhr":      return d.restingHr.map(Double.init)
-        default:         return nil
-        }
-    }
 
     /// The metricSeries key a DoseResponsePriors outcome NAME maps to ("Charge"→recovery, "HRV"→hrv).
     static func outcomeKey(forEngineName name: String) -> String {

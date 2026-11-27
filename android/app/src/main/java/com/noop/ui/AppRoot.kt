@@ -685,6 +685,9 @@ fun AppRoot(viewModel: AppViewModel = viewModel()) {
                         // #627: the journal-reminder card opens the journal (hosted in Insights), same
                         // destination the Sleep screen's morning sheet uses.
                         onOpenJournal = { nav.navigateTopLevel(Destination.Insights.route) },
+                        // The What affects your HRV and sleep card opens What Moves You, the same way the
+                        // Insights screen's link does (iOS: router.openInsightsHub()).
+                        onOpenInsightsHub = { nav.navigateTopLevel(Destination.InsightsHub.route) },
                     )
                 }
                 composable(Destination.Live.route) {

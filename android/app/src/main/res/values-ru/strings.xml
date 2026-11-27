@@ -5260,4 +5260,30 @@
     <string name="race_trend_title">Прогнозное время за каждый день последнего года</string>
     <string name="race_trend_range">Лучший %1$s · самый медленный %2$s</string>
     <string name="race_this_run_blend_note">Карточка прогнозов также учитывает пульс и VO₂max, поэтому её время может отличаться от времени этой пробежки.</string>
+    <string name="what_moves_you_from_your_data">По вашим данным</string>
+    <string name="what_moves_you_origin_journal">Журнал</string>
+    <string name="auto_factor_late_workout">Поздняя тренировка</string>
+    <string name="auto_factor_hard_effort">День большого усилия</string>
+    <string name="auto_factor_rest_day">День отдыха</string>
+    <string name="auto_factor_late_bedtime">Поздний отход ко сну</string>
+    <string name="auto_factor_irregular_bedtime">Нерегулярный отход ко сну</string>
+    <string name="auto_factor_low_steps">Мало шагов</string>
+    <string name="auto_factor_high_steps">Много шагов</string>
+    <string name="auto_factor_control_earlier_workout">Тренировка раньше</string>
+    <string name="auto_factor_control_easier_day">Более лёгкий день</string>
+    <string name="auto_factor_control_workout_day">День тренировки</string>
+    <string name="auto_factor_control_usual_bedtime">Обычный отход ко сну</string>
+    <string name="auto_factor_control_regular_bedtime">Регулярный отход ко сну</string>
+    <string name="auto_factor_control_usual_steps">Обычное число шагов</string>
+    <string name="what_affects_title">Что влияет на ваш HRV и сон</string>
+    <string name="what_affects_open_what_moves_you">Открыть «Что вами движет»</string>
+    <string name="what_moves_you_not_enough_data">Пока недостаточно данных, чтобы сравнить ваши дни по показателю %1$s. Каждой привычке из журнала и каждому фактору из ваших данных нужны дни с ними и без них, чтобы NOOP смог оценить эффект.</string>
+    <string name="what_affects_needs_two_weeks">Нужно ~2 недели данных</string>
+    <string name="what_affects_no_patterns">Явных закономерностей пока нет. Продолжайте носить браслет и вести журнал.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ против ‘%2$s’: %3$s — без изменений (среднее %4$d против %5$d, n=%6$d против %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ против ‘%2$s’: %3$s — на %4$d%% выше (среднее %5$d против %6$d, n=%7$d против %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ против ‘%2$s’: %3$s — на %4$d%% ниже (среднее %5$d против %6$d, n=%7$d против %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ против ‘%2$s’: %3$s — на %4$s выше (среднее %5$d против %6$d, n=%7$d против %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ против ‘%2$s’: %3$s — на %4$s ниже (среднее %5$d против %6$d, n=%7$d против %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

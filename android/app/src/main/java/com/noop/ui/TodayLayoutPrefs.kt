@@ -36,6 +36,12 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
     HEART_RATE("heartRate", R.string.today_section_heart_rate),
 
     RECOVERY_VITALS("recoveryVitals", R.string.today_section_recovery_vitals),
+
+    /** What affects your HRV and sleep: the top significant What Moves You effects on HRV and Rest, from the
+     *  same ranking the Insights hub shows. Placed after Recovery Vitals by default; for a saved order that
+     *  lacks it, [decodeOrder] inserts it before the first saved section whose default position comes later
+     *  (Your Cards in an unchanged order), so a reordered layout may place it elsewhere. */
+    WHAT_AFFECTS("whatAffects", R.string.what_affects_title),
     YOUR_CARDS("yourCards", R.string.today_section_your_cards),
     MENSTRUAL_CYCLE("menstrualCycle", R.string.today_section_menstrual_cycle),
     JOURNAL("journal", R.string.today_section_journal),
@@ -57,7 +63,7 @@ enum class TodaySection(val raw: String, @StringRes val titleRes: Int) {
          *  journal widget (#656) is last by default, where it was first added, above the data-sources card. */
         val defaultOrder: List<TodaySection> = listOf(
             HERO, LIVE_SESSION, SYNTHESIS, TOMORROW_CHARGE, KEY_METRICS, WORKOUTS, HEART_RATE, RECOVERY_VITALS,
-            YOUR_CARDS, MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
+            WHAT_AFFECTS, YOUR_CARDS, MENSTRUAL_CYCLE, JOURNAL, SUPPLEMENTS, ADDED_CARDS,
         )
 
         /** Section keys an earlier version stored and this one no longer has. `stress` was the #42 Today

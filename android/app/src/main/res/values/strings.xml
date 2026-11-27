@@ -5140,4 +5140,30 @@
     <string name="race_trend_title">Predicted time, each day over the last year</string>
     <string name="race_trend_range">Best %1$s · slowest %2$s</string>
     <string name="race_this_run_blend_note">Your race card also blends in heart rate and VO₂max, so its times can differ from this run\'s.</string>
+    <string name="what_moves_you_from_your_data">From your data</string>
+    <string name="what_moves_you_origin_journal">Journal</string>
+    <string name="auto_factor_late_workout">Late workout</string>
+    <string name="auto_factor_hard_effort">Hard Effort day</string>
+    <string name="auto_factor_rest_day">Rest day</string>
+    <string name="auto_factor_late_bedtime">Late bedtime</string>
+    <string name="auto_factor_irregular_bedtime">Irregular bedtime</string>
+    <string name="auto_factor_low_steps">Low steps</string>
+    <string name="auto_factor_high_steps">High steps</string>
+    <string name="auto_factor_control_earlier_workout">Earlier workout</string>
+    <string name="auto_factor_control_easier_day">Easier day</string>
+    <string name="auto_factor_control_workout_day">Workout day</string>
+    <string name="auto_factor_control_usual_bedtime">Usual bedtime</string>
+    <string name="auto_factor_control_regular_bedtime">Regular bedtime</string>
+    <string name="auto_factor_control_usual_steps">Usual steps</string>
+    <string name="what_affects_title">What affects your HRV and sleep</string>
+    <string name="what_affects_open_what_moves_you">Open What Moves You</string>
+    <string name="what_moves_you_not_enough_data">Not enough data yet to compare your days for %1$s. Each journal habit and factor from your data needs days both with and without it before NOOP can read its effect.</string>
+    <string name="what_affects_needs_two_weeks">Needs ~2 weeks of data</string>
+    <string name="what_affects_no_patterns">No clear patterns yet. Keep wearing your strap and logging your journal.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs ‘%2$s’: %3$s was no different (avg %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs ‘%2$s’: %3$s was %4$d%% higher (avg %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs ‘%2$s’: %3$s was %4$d%% lower (avg %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs ‘%2$s’: %3$s was %4$s higher (avg %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs ‘%2$s’: %3$s was %4$s lower (avg %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

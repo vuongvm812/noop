@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import com.noop.R
 import com.noop.analytics.ActivityCost
 import com.noop.analytics.ActivityCostEngine
+import com.noop.analytics.AutoFactors
 import com.noop.analytics.BehaviorEffect
 import com.noop.analytics.DoseResponse
 import com.noop.analytics.EffectRanker
@@ -55,6 +56,7 @@ internal object InsightsSentences {
 
     /** `EffectRanker.sentence`. */
     fun effect(e: BehaviorEffect, t: InsightsText = UiInsightsText): String {
+        AutoFactors.factorForKey(e.behavior)?.let { return autoEffect(e, it, t) }
         val avgWith = EffectRanker.roundedInt(e.meanWith)
         val avgWithout = EffectRanker.roundedInt(e.meanWithout)
         if (e.delta == 0.0 || e.delta.isNaN()) {
@@ -119,4 +121,72 @@ internal object InsightsSentences {
             else -> t.string(if (lower) R.string.l10n_insights_sentences_each_extra_unit_tends_to_line_ebce1154 else R.string.l10n_insights_sentences_each_extra_unit_tends_to_line_5e59158b, mag, outcome, r.nUser)
         }
     }
+
+    // Automatic factors ("From your data"). Swift twin: the same section of `InsightsSentences.swift`.
+
+    /** A ranker behaviour name as the user reads it: an automatic factor's label, or the journal question. */
+    fun behaviorLabel(name: String, t: InsightsText = UiInsightsText): String =
+        AutoFactors.factorForKey(name)?.let { factorLabel(it, t) } ?: name
+
+    /** The yes-group label of an automatic factor. */
+    fun factorLabel(f: AutoFactors.Factor, t: InsightsText = UiInsightsText): String = t.string(
+        when (f) {
+            AutoFactors.Factor.LATE_WORKOUT -> R.string.auto_factor_late_workout
+            AutoFactors.Factor.HARD_EFFORT -> R.string.auto_factor_hard_effort
+            AutoFactors.Factor.REST_DAY -> R.string.auto_factor_rest_day
+            AutoFactors.Factor.LATE_BEDTIME -> R.string.auto_factor_late_bedtime
+            AutoFactors.Factor.IRREGULAR_BEDTIME -> R.string.auto_factor_irregular_bedtime
+            AutoFactors.Factor.LOW_STEPS -> R.string.auto_factor_low_steps
+            AutoFactors.Factor.HIGH_STEPS -> R.string.auto_factor_high_steps
+        },
+    )
+
+    /** The control-group label an automatic factor is compared against. */
+    fun factorControlLabel(f: AutoFactors.Factor, t: InsightsText = UiInsightsText): String = t.string(
+        when (f) {
+            AutoFactors.Factor.LATE_WORKOUT -> R.string.auto_factor_control_earlier_workout
+            AutoFactors.Factor.HARD_EFFORT -> R.string.auto_factor_control_easier_day
+            AutoFactors.Factor.REST_DAY -> R.string.auto_factor_control_workout_day
+            AutoFactors.Factor.LATE_BEDTIME -> R.string.auto_factor_control_usual_bedtime
+            AutoFactors.Factor.IRREGULAR_BEDTIME -> R.string.auto_factor_control_regular_bedtime
+            AutoFactors.Factor.LOW_STEPS, AutoFactors.Factor.HIGH_STEPS -> R.string.auto_factor_control_usual_steps
+        },
+    )
+
+    /** The effect sentence for an automatic factor: its group against its control group. */
+    fun autoEffect(e: BehaviorEffect, f: AutoFactors.Factor, t: InsightsText = UiInsightsText): String {
+        val yes = factorLabel(f, t)
+        val control = factorControlLabel(f, t)
+        val avgWith = EffectRanker.roundedInt(e.meanWith)
+        val avgWithout = EffectRanker.roundedInt(e.meanWithout)
+        if (e.delta == 0.0 || e.delta.isNaN()) {
+            return t.string(R.string.auto_factor_effect_no_different, yes, control, e.outcome, avgWith, avgWithout, e.nWith, e.nWithout)
+        }
+        val higher = e.delta > 0
+        val pct = e.pctChange
+        if (pct != null) {
+            val p = EffectRanker.roundedInt(abs(pct))
+            return t.string(
+                if (higher) R.string.auto_factor_effect_pct_higher else R.string.auto_factor_effect_pct_lower,
+                yes, control, e.outcome, p, avgWith, avgWithout, e.nWith, e.nWithout,
+            )
+        }
+        val mag = EffectRanker.round1(abs(e.delta)).toString()
+        return t.string(
+            if (higher) R.string.auto_factor_effect_abs_higher else R.string.auto_factor_effect_abs_lower,
+            yes, control, e.outcome, mag, avgWith, avgWithout, e.nWith, e.nWithout,
+        )
+    }
+
+    /** The signed change a row reads as on Today: "−8%", "+12%", or "−3.5" when there is no percentage. */
+    fun signedChange(e: BehaviorEffect): String {
+        val sign = if (e.delta < 0) "\u2212" else if (e.delta > 0) "+" else ""
+        val pct = e.pctChange
+        if (pct != null) return "$sign${EffectRanker.roundedInt(abs(pct))}%"
+        return "$sign${EffectRanker.round1(abs(e.delta))}"
+    }
+
+    /** One Today row: "Late workout → HRV −8% next morning". */
+    fun todayLine(r: RankedEffect, t: InsightsText = UiInsightsText): String =
+        t.string(R.string.what_affects_today_line, behaviorLabel(r.behavior, t), displayOutcome(r.outcome, t), signedChange(r.effect), leadLag(r.lag, t))
 }

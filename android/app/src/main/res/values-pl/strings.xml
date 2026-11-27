@@ -5263,4 +5263,30 @@
     <string name="race_trend_title">Przewidywany czas, każdy dzień z ostatniego roku</string>
     <string name="race_trend_range">Najlepszy %1$s · najwolniejszy %2$s</string>
     <string name="race_this_run_blend_note">Karta prognoz uwzględnia też tętno i VO₂maks, więc jej czasy mogą różnić się od czasów tego biegu.</string>
+    <string name="what_moves_you_from_your_data">Z twoich danych</string>
+    <string name="what_moves_you_origin_journal">Dziennik</string>
+    <string name="auto_factor_late_workout">Późny trening</string>
+    <string name="auto_factor_hard_effort">Dzień dużego wysiłku</string>
+    <string name="auto_factor_rest_day">Dzień odpoczynku</string>
+    <string name="auto_factor_late_bedtime">Późne pójście spać</string>
+    <string name="auto_factor_irregular_bedtime">Nieregularna pora snu</string>
+    <string name="auto_factor_low_steps">Mało kroków</string>
+    <string name="auto_factor_high_steps">Dużo kroków</string>
+    <string name="auto_factor_control_earlier_workout">Wcześniejszy trening</string>
+    <string name="auto_factor_control_easier_day">Lżejszy dzień</string>
+    <string name="auto_factor_control_workout_day">Dzień treningowy</string>
+    <string name="auto_factor_control_usual_bedtime">Zwykła pora snu</string>
+    <string name="auto_factor_control_regular_bedtime">Regularna pora snu</string>
+    <string name="auto_factor_control_usual_steps">Zwykła liczba kroków</string>
+    <string name="what_affects_title">Co wpływa na twoje HRV i sen</string>
+    <string name="what_affects_open_what_moves_you">Otwórz Co Cię porusza</string>
+    <string name="what_moves_you_not_enough_data">Za mało danych, by porównać twoje dni pod kątem %1$s. Każdy nawyk z dziennika i każdy czynnik z twoich danych potrzebuje dni z nim i bez niego, zanim NOOP odczyta jego wpływ.</string>
+    <string name="what_affects_needs_two_weeks">Potrzeba ok. 2 tygodni danych</string>
+    <string name="what_affects_no_patterns">Brak jeszcze wyraźnych wzorców. Noś dalej opaskę i prowadź dziennik.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs ‘%2$s’: %3$s bez zmian (śr. %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs ‘%2$s’: %3$s wyższe o %4$d%% (śr. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs ‘%2$s’: %3$s niższe o %4$d%% (śr. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs ‘%2$s’: %3$s wyższe o %4$s (śr. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs ‘%2$s’: %3$s niższe o %4$s (śr. %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>

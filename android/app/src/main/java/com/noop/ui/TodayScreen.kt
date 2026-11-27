@@ -338,6 +338,9 @@ fun TodayScreen(
     // The #627 journal-reminder card links straight to the journal (Insights). Defaulted to a no-op so
     // the call site stays compiling; AppRoot binds it to nav.navigateTopLevel(Insights), same as Sleep.
     onOpenJournal: () -> Unit = {},
+    // The What affects your HRV and sleep card opens the Insights hub (What Moves You). Defaulted to a no-op
+    // so the call site stays compiling; AppRoot binds it to the InsightsHub route.
+    onOpenInsightsHub: () -> Unit = {},
 ) {
     val today by viewModel.today.collectAsStateWithLifecycle()
     val alert by viewModel.healthAlert.collectAsStateWithLifecycle()
@@ -1762,6 +1765,7 @@ fun TodayScreen(
                 TodaySection.SUPPLEMENTS -> selectedDayOffset == 0
                 // Evening only: from the afternoon until that night's sleep starts (the resolver's one gate).
                 TodaySection.TOMORROW_CHARGE -> selectedDayOffset == 0 && tomorrowForecast?.isOpen == true
+                TodaySection.WHAT_AFFECTS -> selectedDayOffset == 0
                 TodaySection.ADDED_CARDS ->
                     selectedDayOffset == 0 && enabledHostedCards.isNotEmpty()
                 else -> true
@@ -2025,6 +2029,14 @@ fun TodayScreen(
                             viewModel = viewModel,
                             days = days,
                             onOpenJournal = onOpenJournal,
+                        )
+                        // What affects your HRV and sleep: the shared What Moves You ranking's top HRV and
+                        // Rest rows; tap opens the Insights hub. Today-only, gated at the loop level. Twin of
+                        // iOS LiquidTodayView's `.whatAffects` arm.
+                        TodaySection.WHAT_AFFECTS -> WhatAffectsTodayCard(
+                            viewModel = viewModel,
+                            days = days,
+                            onOpenInsightsHub = onOpenInsightsHub,
                         )
                         // #33: today's supplement intake, logged in place from the Journal's Supplements
                         // group. Today-only, gated at the loop level. Twin of iOS LiquidTodayView's

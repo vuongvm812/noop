@@ -198,4 +198,42 @@ final class EffectRankerTests: XCTestCase {
         XCTAssertEqual(joint.lag, single.lag)
         XCTAssertGreaterThanOrEqual(joint.effect.pAdjusted, single.effect.pAdjusted)
     }
+
+    // MARK: - noSameDay drops lag 0 from the candidates and the family
+
+    /// "Auto" carries a planted SAME-day dip, so it wins at lag 0 by default. Listed in `noSameDay`,
+    /// lag 0 is never tested: its row moves to a later lag (or drops), and because that test also
+    /// leaves the Benjamini–Hochberg family, the journal row "J" keeps its raw p but gets a new q.
+    func testNoSameDaySkipsLagZeroAndShrinksFamily() throws {
+        var outcome: [String: Double] = [:]
+        for d in 1...30 { outcome[ymd(2026, 6, d)] = 70 + jitter(d) }
+        for d in 1...8 { outcome[ymd(2026, 7, d)] = 70 + jitter(d) }
+        var auto: Set<String> = [], journal: Set<String> = []
+        for i in 0..<6 {
+            auto.insert(ymd(2026, 6, 1 + 4 * i))                       // same-day dip on 1,5,…,21
+            outcome[ymd(2026, 6, 1 + 4 * i)] = 50 + jitter(1 + 4 * i)
+            journal.insert(ymd(2026, 6, 2 + 4 * i))                    // next-morning dip on 3,7,…,23
+            outcome[ymd(2026, 6, 3 + 4 * i)] = 55 + jitter(3 + 4 * i)
+        }
+        let behaviors = ["Auto": auto, "J": journal]
+        let controls = ["Auto": Set(outcome.keys).subtracting(auto), "J": Set(outcome.keys).subtracting(journal)]
+
+        let all = try XCTUnwrap(EffectRanker.rankFamily(behaviors: behaviors, controls: controls,
+                                                        outcomes: ["Charge": outcome])["Charge"])
+        let skip = try XCTUnwrap(EffectRanker.rankFamilyExcludingSameDay(behaviors: behaviors, controls: controls,
+                                                         outcomes: ["Charge": outcome],
+                                                         noSameDay: ["Auto"])["Charge"])
+        XCTAssertEqual(row(all, "Auto")?.lag, 0)
+        XCTAssertEqual(row(skip, "Auto")?.lag, 2)
+
+        let jAll = try XCTUnwrap(row(all, "J")), jSkip = try XCTUnwrap(row(skip, "J"))
+        XCTAssertEqual(jAll.lag, 1)
+        XCTAssertEqual(jSkip.lag, 1)
+        XCTAssertEqual(jSkip.effect.pApprox, jAll.effect.pApprox)
+        XCTAssertNotEqual(jSkip.effect.pAdjusted, jAll.effect.pAdjusted)
+        // Pinned on both platforms (Kotlin EffectRankerTest.noSameDaySkipsLagZeroAndShrinksFamily).
+        XCTAssertEqual(String(format: "%.9f", jAll.effect.pApprox), "0.000000002")
+        XCTAssertEqual(String(format: "%.9f", jAll.effect.pAdjusted), "0.000000006")
+        XCTAssertEqual(String(format: "%.9f", jSkip.effect.pAdjusted), "0.000000010")
+    }
 }

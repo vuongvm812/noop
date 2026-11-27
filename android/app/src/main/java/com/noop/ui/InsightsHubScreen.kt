@@ -46,12 +46,12 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.noop.analytics.AutoFactors
 import com.noop.analytics.DoseCurvePoint
 import com.noop.analytics.DoseResponse
 import com.noop.analytics.DoseResponseEngine
 import com.noop.analytics.DoseResponsePriors
 import com.noop.analytics.DosedBehavior
-import com.noop.analytics.EffectRanker
 import com.noop.analytics.RankedEffect
 import com.noop.analytics.ScoreConfidence
 import com.noop.data.DailyMetric
@@ -82,21 +82,27 @@ import kotlin.math.roundToInt
 //     Charge tomorrow" — driven by a small dose stepper on the latest Charge. Never a nudge
 //     to drink or abstain.
 //
-// SELF-CONTAINED: owns its own InsightsHubViewModel (constructed from vm.repo + cached days);
-// does NOT edit AppViewModel / AppRoot / the central nav. Wave 3 surfaces it at the head of the
-// Insights hub. All maths is in com.noop.analytics (EffectRanker / DoseResponseEngine).
+// The ranked feed reads AppViewModel.whatMovesYou, the one What Moves You load (journal ∪ automatic
+// factors from sensor data, one ranked family) that the Today card also reads. InsightsHubViewModel adds
+// the dose cards. All maths is in com.noop.analytics (AutoFactors / EffectRanker / DoseResponseEngine).
 
 @Composable
 fun InsightsHubScreen(vm: AppViewModel) {
     val days by vm.recentDays.collectAsState()
+    // The shared What Moves You snapshot (journal ∪ automatic factors, one ranked family); the Today card
+    // reads the same one, so the two cannot disagree.
+    val snapshot by vm.whatMovesYou.collectAsState()
     val hub = remember { InsightsHubViewModel() }
     val state by hub.state.collectAsState()
 
-    // Re-derive whenever the cached days change underneath (journal + dose are read via repo).
-    androidx.compose.runtime.LaunchedEffect(days) { hub.load(vm, days) }
+    // Reload on entry (a journal answer logged since must show) and whenever the cached days change.
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.loadWhatMovesYou(force = true) }
+    androidx.compose.runtime.LaunchedEffect(days) { vm.loadWhatMovesYou() }
+    // Dose cards are derived from the snapshot (journal Yes days + outcome series) plus the dose rows.
+    androidx.compose.runtime.LaunchedEffect(snapshot) { snapshot?.let { hub.load(vm, it) } }
 
     var outcome by remember { mutableStateOf(InsightsOutcome.Recovery) }
-    val ranked = remember(state, outcome) { hub.rankFor(state, outcome) }
+    val ranked = remember(snapshot, outcome) { hub.rankFor(snapshot, outcome) }
 
     // PERF (#707): lazy scaffold — each section (and its standalone Spacer, a real child of the eager
     // `spacedBy(20.dp)` Column) becomes one `item { }`, so the LazyColumn's matching `spacedBy(20.dp)`
@@ -162,7 +168,7 @@ private fun MoversSection(
         if (ranked.isEmpty()) {
             NoopCard {
                 Text(
-                    uiString(R.string.l10n_insights_hub_screen_not_enough_overlap_between_your_journal_0ebdd7a2, outcome.displayName.lowercase(Locale.getDefault())),
+                    uiString(R.string.what_moves_you_not_enough_data, outcome.displayName.lowercase(Locale.getDefault())),
                     style = NoopType.subhead,
                     color = Palette.textTertiary,
                 )
@@ -195,6 +201,12 @@ private fun MoverCard(r: RankedEffect, outcome: InsightsOutcome) {
 
     NoopCard(tint = outcome.domain.color) {
         Column(verticalArrangement = Arrangement.spacedBy(Metrics.gap)) {
+            // Where the behaviour comes from: sensor data (automatic factor) or the journal.
+            Overline(
+                if (AutoFactors.factorForKey(r.behavior) != null) uiString(R.string.what_moves_you_from_your_data)
+                else uiString(R.string.what_moves_you_origin_journal),
+                color = Palette.textTertiary,
+            )
             // Header: behaviour name + lead/lag chip + confidence pill.
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(
@@ -209,7 +221,7 @@ private fun MoverCard(r: RankedEffect, outcome: InsightsOutcome) {
                             .drawBehind { drawCircle(tintColor) },
                     )
                     Text(
-                        r.behavior,
+                        InsightsSentences.behaviorLabel(r.behavior),
                         style = NoopType.headline,
                         color = Palette.textPrimary,
                         maxLines = 1,
@@ -223,11 +235,14 @@ private fun MoverCard(r: RankedEffect, outcome: InsightsOutcome) {
 
             Text(InsightsSentences.ranked(r), style = NoopType.body, color = Palette.textSecondary)
 
-            // With / without means as uniform StatTiles.
+            // With / without means as uniform StatTiles. An automatic factor names its own two groups
+            // ("Late workout" against "Earlier workout"), since its control is not simply the factor's absence.
+            val factor = AutoFactors.factorForKey(r.behavior)
             Row(horizontalArrangement = Arrangement.spacedBy(Metrics.gap)) {
                 StatTile(
                     modifier = Modifier.weight(1f),
-                    label = uiString(R.string.l10n_insights_hub_screen_with_564f8c6e),
+                    label = factor?.let { InsightsSentences.factorLabel(it) }
+                        ?: uiString(R.string.l10n_insights_hub_screen_with_564f8c6e),
                     value = outcome.format(e.meanWith),
                     caption = uiString(R.string.l10n_insights_screen_n_1_d_cf12fc18, e.nWith),
                     accent = tintColor,
@@ -236,7 +251,8 @@ private fun MoverCard(r: RankedEffect, outcome: InsightsOutcome) {
                 )
                 StatTile(
                     modifier = Modifier.weight(1f),
-                    label = uiString(R.string.l10n_insights_hub_screen_without_cb735356),
+                    label = factor?.let { InsightsSentences.factorControlLabel(it) }
+                        ?: uiString(R.string.l10n_insights_hub_screen_without_cb735356),
                     value = outcome.format(e.meanWithout),
                     caption = uiString(R.string.l10n_insights_screen_n_1_d_cf12fc18, e.nWithout),
                     accent = Palette.textPrimary,
@@ -407,7 +423,7 @@ private fun HonestyBanner(text: String, accent: Color) {
 
 /** The confidence-lifecycle pill: Solid (positive/gold) / Building (accent) / Calibrating (neutral). */
 @Composable
-private fun ConfidencePill(c: ScoreConfidence) {
+internal fun ConfidencePill(c: ScoreConfidence) {
     val (label, tone) = when (c) {
         ScoreConfidence.SOLID -> uiString(R.string.scoring_guide_solid) to StrandTone.Positive
         ScoreConfidence.BUILDING -> uiString(R.string.scoring_guide_building) to StrandTone.Accent
@@ -617,19 +633,15 @@ internal data class DoseCardData(
 
 // MARK: - View-model
 //
-// Self-contained: loads the journal (behaviour → days), dose rows (under the dedicated
-// noop-journal-dose source), and outcome series (cached DailyMetric rows), then runs
-// EffectRanker for the ranked feed and DoseResponseEngine for each dosed behaviour with data.
-// No edits to AppViewModel. Holds an immutable snapshot in a StateFlow.
+// The ranked feed comes from AppViewModel.whatMovesYou (journal ∪ automatic factors, one ranked family),
+// the same snapshot the Today card reads. This view model adds the dose rows (under the dedicated
+// noop-journal-dose source) and runs DoseResponseEngine for each dosed behaviour with data. Holds an
+// immutable snapshot in a StateFlow.
 
 internal class InsightsHubViewModel {
 
     data class Snapshot(
         val loaded: Boolean = false,
-        val behaviours: Map<String, Set<String>> = emptyMap(),
-        /** Per behaviour, the days it was logged NO — the only legitimate control group. */
-        val controls: Map<String, Set<String>> = emptyMap(),
-        val outcomeByKey: Map<String, Map<String, Double>> = emptyMap(),
         val doseCards: List<DoseCardData> = emptyList(),
     )
 
@@ -638,7 +650,6 @@ internal class InsightsHubViewModel {
 
     companion object {
         const val DOSE_SOURCE = "noop-journal-dose"
-        private val OUTCOME_KEYS = listOf("recovery", "hrv", "sleep_performance", "rhr")
 
         fun doseKey(behavior: DosedBehavior): String = "dose_${behavior.raw}"
 
@@ -659,30 +670,9 @@ internal class InsightsHubViewModel {
         }
     }
 
-    suspend fun load(vm: AppViewModel, days: List<DailyMetric>) {
-        // Journal → behaviour → days (imported ∪ native, native wins). BOTH answers count now, kept in
-        // separate maps; the merge is what guarantees a day cannot be Yes and No for one question.
-        val imported = vm.repo.journal("my-whoop", "0000-01-01", "9999-12-31")
-        val native = vm.repo.journal(JOURNAL_DEVICE_ID, "0000-01-01", "9999-12-31")
-        val entries = mergeJournalEntries(imported, native)
-        val byBehaviour = HashMap<String, MutableSet<String>>()
-        val controlsByBehaviour = HashMap<String, MutableSet<String>>()
-        // Yes days and NO days, kept apart. A day with no journal row for the question appears in
-        // neither, so the ranker cannot mistake "never logged" for "logged No" (#EffectRanker.effect).
-        for (e in entries) {
-            val bucket = if (e.answeredYes) byBehaviour else controlsByBehaviour
-            bucket.getOrPut(e.question) { mutableSetOf() }.add(e.day)
-        }
-        val behaviours = byBehaviour.mapValues { it.value.toSet() }
-        val controls = controlsByBehaviour.mapValues { it.value.toSet() }
-
-        // Outcome series straight off the cached DailyMetric rows (the guaranteed Android source).
-        val outcomeByKey = HashMap<String, Map<String, Double>>()
-        for (o in InsightsOutcome.entries) {
-            val dict = HashMap<String, Double>()
-            for (d in days) o.pick(d)?.let { dict[d.day] = it }
-            outcomeByKey[o.key] = dict
-        }
+    suspend fun load(vm: AppViewModel, snap: AppViewModel.WhatMovesYouSnapshot) {
+        val behaviours = snap.journalBehaviours
+        val outcomeByKey = snap.outcomeByKey
 
         // Dose rows per dosed behaviour, under the dedicated dose source; logged "yes" days
         // back-fill dose = 1, explicit dose rows override (matches the Swift contract).
@@ -703,24 +693,13 @@ internal class InsightsHubViewModel {
             doseCards.add(DoseCardData(behavior, response, latest))
         }
 
-        _state.value = Snapshot(
-            loaded = true,
-            behaviours = behaviours,
-            controls = controls,
-            outcomeByKey = outcomeByKey,
-            doseCards = doseCards,
-        )
+        _state.value = Snapshot(loaded = true, doseCards = doseCards)
     }
 
-    /** Re-rank the mover feed for a (possibly new) outcome — cheap, no DB. */
-    fun rankFor(snapshot: Snapshot, outcome: InsightsOutcome): List<RankedEffect> {
-        if (!snapshot.loaded) return emptyList()
-        // False-discovery family = every outcome the feed can show (twin of Swift InsightsHubView).
-        val outcomes = InsightsOutcome.values().associate { o ->
-            o.outcomeName to (snapshot.outcomeByKey[o.key] ?: emptyMap())
-        }
-        return EffectRanker.rankFamily(snapshot.behaviours, snapshot.controls, outcomes)[outcome.outcomeName].orEmpty()
-    }
+    /** The mover feed for an outcome, read from the shared ranking — no DB, no re-rank. The family already
+     *  spans every outcome and behaviour (twin of Swift InsightsHubView). */
+    fun rankFor(snapshot: AppViewModel.WhatMovesYouSnapshot?, outcome: InsightsOutcome): List<RankedEffect> =
+        snapshot?.ranked?.get(outcome.outcomeName).orEmpty()
 }
 
 // MARK: - Copy helpers

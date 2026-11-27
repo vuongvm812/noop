@@ -142,12 +142,29 @@ object EffectRanker {
     /**
      * Rank every behaviour against EVERY outcome in [outcomes] (label → day series), with the
      * Benjamini–Hochberg family spanning behaviours × outcomes × lags. Twin of Swift
-     * `EffectRanker.rankFamily`; every outcome key maps to its ranked rows (possibly empty).
+     * `EffectRanker.rankFamily`; every outcome key maps to its ranked rows (possibly empty). Every
+     * behaviour is tested at every lag (no noSameDay exclusions).
      */
     fun rankFamily(
         behaviors: Map<String, Set<String>>,
         controls: Map<String, Set<String>>,
         outcomes: Map<String, Map<String, Double>>,
+    ): Map<String, List<RankedEffect>> = rankFamilyExcludingSameDay(behaviors, controls, outcomes, emptySet())
+
+    /**
+     * [rankFamily] with some behaviours kept off lag 0. Twin of Swift
+     * `EffectRanker.rankFamilyExcludingSameDay`.
+     *
+     * [noSameDay] names behaviours whose lag 0 is not tested at all: no candidate and no member of
+     * the Benjamini–Hochberg family. Automatic factors are keyed on the day the behaviour happened,
+     * so their lag 0 would pair it with the morning BEFORE it. Journal rows use the wake-day key and
+     * keep lag 0. Lags 1 and 2 are unchanged.
+     */
+    fun rankFamilyExcludingSameDay(
+        behaviors: Map<String, Set<String>>,
+        controls: Map<String, Set<String>>,
+        outcomes: Map<String, Map<String, Double>>,
+        noSameDay: Set<String>,
     ): Map<String, List<RankedEffect>> {
         data class Candidate(val outcome: String, val behavior: String, val lag: Int, val effect: BehaviorEffect)
         val candidates = ArrayList<Candidate>()
@@ -158,6 +175,7 @@ object EffectRanker {
                 val days = behaviors.getValue(name)
                 val controlDays = controls[name].orEmpty()
                 for ((k, lag) in lagSet.withIndex()) {
+                    if (lag == 0 && name in noSameDay) continue
                     val e = effect(days, controlDays, shiftedByLag[k], name, outcome) ?: continue
                     if (minOf(e.nWith, e.nWithout) < minGroupForSignificance) continue
                     candidates.add(Candidate(outcome, name, lag, e))

@@ -26,6 +26,7 @@ enum InsightsSentences {
     // MARK: - Behaviour effect (BehaviorInsights.sentence)
 
     static func effect(_ e: BehaviorEffect) -> String {
+        if let factor = AutoFactors.factorForKey(e.behavior) { return autoEffect(e, factor: factor) }
         let avgWith = Int(e.meanWith.rounded())
         let avgWithout = Int(e.meanWithout.rounded())
         let higher = e.delta > 0
@@ -109,6 +110,75 @@ enum InsightsSentences {
         return lower
             ? String(localized: "Each extra unit tends to line up with about \(mag) \(outcome) lower for you (n=\(r.nUser)).")
             : String(localized: "Each extra unit tends to line up with about \(mag) \(outcome) higher for you (n=\(r.nUser)).")
+    }
+
+    // MARK: - Automatic factors ("From your data")
+
+    /// A ranker behaviour name as the user reads it: an automatic factor's label, or the journal question.
+    static func behaviorLabel(_ name: String) -> String {
+        AutoFactors.factorForKey(name).map(factorLabel) ?? name
+    }
+
+    /// The yes-group label of an automatic factor.
+    static func factorLabel(_ f: AutoFactors.Factor) -> String {
+        switch f {
+        case .lateWorkout:      return String(localized: "Late workout")
+        case .hardEffort:       return String(localized: "Hard Effort day")
+        case .restDay:          return String(localized: "Rest day")
+        case .lateBedtime:      return String(localized: "Late bedtime")
+        case .irregularBedtime: return String(localized: "Irregular bedtime")
+        case .lowSteps:         return String(localized: "Low steps")
+        case .highSteps:        return String(localized: "High steps")
+        }
+    }
+
+    /// The control-group label an automatic factor is compared against.
+    static func factorControlLabel(_ f: AutoFactors.Factor) -> String {
+        switch f {
+        case .lateWorkout:      return String(localized: "Earlier workout")
+        case .hardEffort:       return String(localized: "Easier day")
+        case .restDay:          return String(localized: "Workout day")
+        case .lateBedtime:      return String(localized: "Usual bedtime")
+        case .irregularBedtime: return String(localized: "Regular bedtime")
+        case .lowSteps, .highSteps: return String(localized: "Usual steps")
+        }
+    }
+
+    /// The effect sentence for an automatic factor: its group against its control group.
+    static func autoEffect(_ e: BehaviorEffect, factor: AutoFactors.Factor) -> String {
+        let yes = factorLabel(factor)
+        let control = factorControlLabel(factor)
+        let avgWith = Int(e.meanWith.rounded())
+        let avgWithout = Int(e.meanWithout.rounded())
+        let higher = e.delta > 0
+        if e.delta == 0 || e.delta.isNaN {
+            return String(localized: "‘\(yes)’ vs ‘\(control)’: \(e.outcome) was no different (avg \(avgWith) vs \(avgWithout), n=\(e.nWith) vs \(e.nWithout)).")
+        }
+        if let pct = e.pctChange {
+            let p = Int(abs(pct).rounded())
+            return higher
+                ? String(localized: "‘\(yes)’ vs ‘\(control)’: \(e.outcome) was \(p)% higher (avg \(avgWith) vs \(avgWithout), n=\(e.nWith) vs \(e.nWithout)).")
+                : String(localized: "‘\(yes)’ vs ‘\(control)’: \(e.outcome) was \(p)% lower (avg \(avgWith) vs \(avgWithout), n=\(e.nWith) vs \(e.nWithout)).")
+        }
+        let mag = String(describing: round1(abs(e.delta)))
+        return higher
+            ? String(localized: "‘\(yes)’ vs ‘\(control)’: \(e.outcome) was \(mag) higher (avg \(avgWith) vs \(avgWithout), n=\(e.nWith) vs \(e.nWithout)).")
+            : String(localized: "‘\(yes)’ vs ‘\(control)’: \(e.outcome) was \(mag) lower (avg \(avgWith) vs \(avgWithout), n=\(e.nWith) vs \(e.nWithout)).")
+    }
+
+    /// The signed change a row reads as on Today: "−8%", "+12%", or "−3.5" when there is no percentage.
+    static func signedChange(_ e: BehaviorEffect) -> String {
+        let sign = e.delta < 0 ? "\u{2212}" : (e.delta > 0 ? "+" : "")
+        if let pct = e.pctChange { return "\(sign)\(Int(abs(pct).rounded()))%" }
+        return "\(sign)\(String(describing: round1(abs(e.delta))))"
+    }
+
+    /// One Today row: "Late workout → HRV −8% next morning".
+    static func todayLine(_ r: RankedEffect) -> String {
+        let label = behaviorLabel(r.behavior)
+        let change = signedChange(r.effect)
+        let lead = leadLag(r.lag)
+        return String(localized: "\(label) → \(r.outcome) \(change) \(lead)")
     }
 
     private static func round1(_ x: Double) -> Double { (x * 10).rounded() / 10 }

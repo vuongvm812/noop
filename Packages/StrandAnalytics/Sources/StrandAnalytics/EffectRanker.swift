@@ -118,10 +118,28 @@ public enum EffectRanker {
 
     /// Rank every behaviour against EVERY outcome in `outcomes` (label → day series), with the
     /// Benjamini–Hochberg family spanning behaviours × outcomes × lags. Returns the ranked rows
-    /// per outcome label; an outcome with no usable row maps to an empty list.
+    /// per outcome label; an outcome with no usable row maps to an empty list. Every behaviour is
+    /// tested at every lag (no `noSameDay` exclusions).
+    ///
+    /// Kotlin twin: `EffectRanker.rankFamily`.
     public static func rankFamily(behaviors: [String: Set<String>],
                                   controls: [String: Set<String>],
                                   outcomes: [String: [String: Double]]) -> [String: [RankedEffect]] {
+        rankFamilyExcludingSameDay(behaviors: behaviors, controls: controls, outcomes: outcomes, noSameDay: [])
+    }
+
+    /// `rankFamily(behaviors:controls:outcomes:)` with some behaviours kept off lag 0.
+    ///
+    /// `noSameDay` names behaviours whose lag 0 is not tested at all: no candidate and no member of
+    /// the Benjamini–Hochberg family. Automatic factors are keyed on the day the behaviour happened,
+    /// so their lag 0 would pair it with the morning BEFORE it. Journal rows use the wake-day key and
+    /// keep lag 0. Lags 1 and 2 are unchanged.
+    ///
+    /// Kotlin twin: `EffectRanker.rankFamilyExcludingSameDay`.
+    public static func rankFamilyExcludingSameDay(behaviors: [String: Set<String>],
+                                                  controls: [String: Set<String>],
+                                                  outcomes: [String: [String: Double]],
+                                                  noSameDay: Set<String>) -> [String: [RankedEffect]] {
         struct Candidate { let outcome: String; let behavior: String; let lag: Int; let effect: BehaviorEffect }
         var candidates: [Candidate] = []
         // Sorted iteration so the family order (and so tie handling) is deterministic.
@@ -135,6 +153,7 @@ public enum EffectRanker {
                 // the insight rather than getting one measured against every unlogged day.
                 let controlDays = controls[name] ?? []
                 for (k, lag) in lagSet.enumerated() {
+                    if lag == 0 && noSameDay.contains(name) { continue }
                     guard let e = BehaviorInsights.effect(behaviorDays: days,
                                                           controlDays: controlDays,
                                                           outcomeByDay: shiftedByLag[k],

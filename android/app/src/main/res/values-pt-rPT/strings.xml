@@ -5103,4 +5103,30 @@
     <string name="race_trend_title">Tempo previsto, cada dia do último ano</string>
     <string name="race_trend_range">Melhor %1$s · mais lento %2$s</string>
     <string name="race_this_run_blend_note">O seu cartão de corridas também combina frequência cardíaca e VO₂máx., por isso os tempos podem diferir dos desta corrida.</string>
+    <string name="what_moves_you_from_your_data">Dos seus dados</string>
+    <string name="what_moves_you_origin_journal">Diário</string>
+    <string name="auto_factor_late_workout">Treino tardio</string>
+    <string name="auto_factor_hard_effort">Dia de esforço elevado</string>
+    <string name="auto_factor_rest_day">Dia de descanso</string>
+    <string name="auto_factor_late_bedtime">Deitar tarde</string>
+    <string name="auto_factor_irregular_bedtime">Hora de deitar irregular</string>
+    <string name="auto_factor_low_steps">Poucos passos</string>
+    <string name="auto_factor_high_steps">Muitos passos</string>
+    <string name="auto_factor_control_earlier_workout">Treino mais cedo</string>
+    <string name="auto_factor_control_easier_day">Dia mais leve</string>
+    <string name="auto_factor_control_workout_day">Dia de treino</string>
+    <string name="auto_factor_control_usual_bedtime">Hora de deitar habitual</string>
+    <string name="auto_factor_control_regular_bedtime">Hora de deitar regular</string>
+    <string name="auto_factor_control_usual_steps">Passos habituais</string>
+    <string name="what_affects_title">O que afeta a sua HRV e o seu sono</string>
+    <string name="what_affects_open_what_moves_you">Abrir O que te move</string>
+    <string name="what_moves_you_not_enough_data">Ainda não há dados suficientes para comparar os seus dias para %1$s. Cada hábito do diário e cada fator dos seus dados precisa de dias com e sem ele antes de o NOOP poder ler o seu efeito.</string>
+    <string name="what_affects_needs_two_weeks">Precisa de ~2 semanas de dados</string>
+    <string name="what_affects_no_patterns">Ainda sem padrões claros. Continue a usar a pulseira e a registar o diário.</string>
+    <string name="auto_factor_effect_no_different">‘%1$s’ vs ‘%2$s’: %3$s não mudou (média %4$d vs %5$d, n=%6$d vs %7$d).</string>
+    <string name="auto_factor_effect_pct_higher">‘%1$s’ vs ‘%2$s’: %3$s foi %4$d%% mais alto (média %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_pct_lower">‘%1$s’ vs ‘%2$s’: %3$s foi %4$d%% mais baixo (média %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_higher">‘%1$s’ vs ‘%2$s’: %3$s foi %4$s mais alto (média %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="auto_factor_effect_abs_lower">‘%1$s’ vs ‘%2$s’: %3$s foi %4$s mais baixo (média %5$d vs %6$d, n=%7$d vs %8$d).</string>
+    <string name="what_affects_today_line">%1$s → %2$s %3$s %4$s</string>
 </resources>
